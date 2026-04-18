@@ -95,6 +95,11 @@ def init_db():
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         );
     ''')
+    # Migrations: add columns introduced after initial schema
+    existing_cols = {r[1] for r in conn.execute("PRAGMA table_info(checkins)").fetchall()}
+    if 'extended_data' not in existing_cols:
+        conn.execute('ALTER TABLE checkins ADD COLUMN extended_data TEXT')
+
     _seed_medication_reference(conn)
     conn.commit()
     conn.close()
@@ -382,19 +387,66 @@ def assign_patient_to_provider(patient_user_id, provider_id):
 # ── Check-ins ─────────────────────────────────────────────────────────────────
 
 def create_checkin(patient_id, date_str, time_of_day, mood_score, medications,
-                   sleep_hours, stress_score, symptoms, notes):
+                   sleep_hours, stress_score, symptoms, notes, extended_data=None):
     meds_json = json.dumps(medications) if isinstance(medications, list) else medications
+    ext_json = json.dumps(extended_data) if extended_data else None
     conn = get_db()
     conn.execute('''
         INSERT INTO checkins
-        (patient_id, date, time_of_day, mood_score, medications, sleep_hours, stress_score, symptoms, notes)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (patient_id, date, time_of_day, mood_score, medications, sleep_hours, stress_score, symptoms, notes, extended_data)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ''', (patient_id, date_str, time_of_day, mood_score, meds_json,
-          sleep_hours, stress_score, symptoms, notes))
+          sleep_hours, stress_score, symptoms, notes, ext_json))
     checkin_id = conn.execute('SELECT last_insert_rowid()').fetchone()[0]
     conn.commit()
     conn.close()
     return checkin_id
+
+
+def get_checkin_baseline(patient_id, days=7):
+    since = (date.today() - timedelta(days=days)).isoformat()
+    conn = get_db()
+    rows = conn.execute('''
+        SELECT mood_score, sleep_hours, stress_score, extended_data
+        FROM checkins WHERE patient_id = ? AND date >= ?
+        ORDER BY date DESC
+    ''', (patient_id, since)).fetchall()
+    conn.close()
+    if not rows:
+        return {}
+
+    moods, sleep_vals, stress_vals = [], [], []
+    energy_vals, caffeine_vals, sleep_quality_vals = [], [], []
+
+    for row in rows:
+        if row['mood_score'] is not None:
+            moods.append(row['mood_score'])
+        if row['sleep_hours'] is not None:
+            sleep_vals.append(row['sleep_hours'])
+        if row['stress_score'] is not None:
+            stress_vals.append(row['stress_score'])
+        if row['extended_data']:
+            try:
+                ext = json.loads(row['extended_data'])
+                if ext.get('energy') is not None:
+                    energy_vals.append(ext['energy'])
+                if ext.get('caffeine_mg') is not None:
+                    caffeine_vals.append(ext['caffeine_mg'])
+                if ext.get('sleep_quality') is not None:
+                    sleep_quality_vals.append(ext['sleep_quality'])
+            except Exception:
+                pass
+
+    def avg(lst): return round(sum(lst) / len(lst), 2) if lst else None
+
+    result = {}
+    if moods: result['avgMood'] = avg(moods)
+    if sleep_vals: result['avgSleepHours'] = avg(sleep_vals)
+    if stress_vals: result['avgAnxiety'] = avg(stress_vals)
+    if energy_vals: result['avgEnergy'] = avg(energy_vals)
+    if caffeine_vals: result['avgCaffeineMg'] = avg(caffeine_vals)
+    if sleep_quality_vals: result['avgSleepQuality'] = avg(sleep_quality_vals)
+    return result
 
 
 def get_checkins(patient_id, days=30):

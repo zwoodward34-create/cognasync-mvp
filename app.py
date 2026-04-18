@@ -134,11 +134,7 @@ def checkin_page():
     user, redir = _require_patient()
     if redir:
         return redir
-    checkins = db.get_checkins(user['id'], days=7)
-    profile = db.get_patient_profile(user['id'])
-    meds = profile.get('current_medications', []) if profile else []
-    return render_template('patient/checkin.html', user=user, checkins=checkins,
-                           saved_medications=meds)
+    return render_template('patient/checkin_react.html', user=user)
 
 
 @app.route('/journal')
@@ -283,7 +279,7 @@ def api_create_checkin():
     user, err = _api_user('patient')
     if err:
         return err
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     try:
         mood = int(data.get('mood_score', 0))
         stress = int(data.get('stress_score', 0))
@@ -308,12 +304,35 @@ def api_create_checkin():
         stress_score=stress,
         symptoms=data.get('symptoms', ''),
         notes=data.get('notes', ''),
+        extended_data=data.get('extended_data'),
     )
     return jsonify({
         'checkin_id': checkin_id,
         'patient_id': user['id'],
         'message': 'Check-in recorded successfully',
     }), 201
+
+
+@app.route('/api/checkins/baseline', methods=['GET'])
+def api_checkin_baseline():
+    user, err = _api_user()
+    if err:
+        return err
+    days = int(request.args.get('days', 7))
+    baseline = db.get_checkin_baseline(user['id'], days=days)
+    return jsonify(baseline), 200
+
+
+@app.route('/api/patient/profile', methods=['GET'])
+def api_patient_profile():
+    user, err = _api_user('patient')
+    if err:
+        return err
+    profile = db.get_patient_profile(user['id']) or {}
+    return jsonify({
+        'current_medications': profile.get('current_medications', []),
+        'diagnosis': profile.get('diagnosis', ''),
+    }), 200
 
 
 @app.route('/api/checkins', methods=['GET'])

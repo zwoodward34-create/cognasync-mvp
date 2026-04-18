@@ -1,0 +1,14 @@
+{% extends "layout.html" %}
+{% block title %}Daily Check-In — CognaSync{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='dist/assets/index.css') }}">
+{% endblock %}
+
+{% block content %}
+<div id="checkin-root"></div>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ url_for('static', filename='dist/assets/index.js') }}"></script>
+{% endblock %}
