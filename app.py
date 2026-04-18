@@ -564,6 +564,46 @@ def api_medication_search():
     return jsonify({'medications': names}), 200
 
 
+@app.route('/api/medications/info/<name>', methods=['GET'])
+def api_medication_info(name):
+    info = db.get_medication_info(name)
+    if not info:
+        return jsonify({'error': 'Medication not found'}), 404
+    return jsonify(info), 200
+
+
+@app.route('/api/medications/interactions', methods=['GET'])
+def api_medication_interactions():
+    user, err = _api_user()
+    if err:
+        return err
+    patient_id = user['id']
+    if user['role'] == 'provider':
+        patient_id = int(request.args.get('patient_id', 0))
+        if not patient_id:
+            return jsonify({'error': 'patient_id required'}), 400
+    alerts = db.check_medication_interactions(patient_id)
+    return jsonify({'interactions': alerts}), 200
+
+
+@app.route('/api/settings/profile/remove-medication', methods=['POST'])
+def api_remove_medication():
+    user, err = _api_user('patient')
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    name = data.get('name', '').strip().lower()
+    if not name:
+        return jsonify({'error': 'Medication name required'}), 400
+    profile = db.get_patient_profile(user['id'])
+    existing = profile.get('current_medications', []) if profile else []
+    if not isinstance(existing, list):
+        existing = []
+    updated = [m for m in existing if m.get('name', '').lower() != name]
+    db.update_patient_profile(user['id'], current_medications=updated)
+    return jsonify({'message': f'{name.title()} removed', 'medications': updated}), 200
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('FLASK_PORT', 5000))
     debug = os.environ.get('FLASK_ENV', 'development') == 'development'

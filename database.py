@@ -102,26 +102,163 @@ def init_db():
 
 def _seed_medication_reference(conn):
     meds = [
+        # SSRIs
         ("sertraline", '["25mg","50mg","100mg","150mg","200mg"]', "2-4 weeks",
-         "nausea, insomnia, headache, dizziness", "MAOIs: serotonin syndrome risk"),
+         "Nausea, insomnia, headache, dizziness, sexual dysfunction, increased sweating",
+         "MAOIs (serotonin syndrome); tramadol; linezolid; blood thinners (increased bleeding risk)"),
         ("fluoxetine", '["10mg","20mg","40mg","60mg","80mg"]', "4-6 weeks",
-         "nausea, headache, insomnia, sexual dysfunction", "MAOIs: serotonin syndrome risk"),
+         "Nausea, headache, insomnia, sexual dysfunction, decreased appetite, anxiety",
+         "MAOIs (serotonin syndrome); thioridazine; pimozide; tamoxifen (reduced effectiveness)"),
         ("escitalopram", '["5mg","10mg","20mg"]', "2-4 weeks",
-         "nausea, insomnia, fatigue, dry mouth", "MAOIs: serotonin syndrome risk"),
-        ("bupropion", '["75mg","100mg","150mg","200mg","300mg"]', "3-4 weeks",
-         "dry mouth, insomnia, headache, nausea", "MAOIs; lowers seizure threshold"),
-        ("alprazolam", '["0.25mg","0.5mg","1mg","2mg"]', "30-60 minutes (acute)",
-         "drowsiness, dizziness, impaired coordination", "CNS depressants, alcohol"),
-        ("lorazepam", '["0.5mg","1mg","2mg"]', "15-30 minutes (acute)",
-         "drowsiness, dizziness, weakness", "CNS depressants, alcohol"),
-        ("quetiapine", '["25mg","50mg","100mg","200mg","300mg","400mg"]', "1-2 weeks",
-         "drowsiness, weight gain, dry mouth", "CNS depressants"),
-        ("lithium", '["150mg","300mg","450mg","600mg"]', "1-3 weeks",
-         "tremor, thirst, frequent urination, nausea", "NSAIDs, diuretics"),
-        ("lamotrigine", '["25mg","50mg","100mg","150mg","200mg"]', "2-3 weeks",
-         "headache, dizziness, rash", "Valproate increases levels; watch for SJS rash"),
+         "Nausea, insomnia, fatigue, dry mouth, sweating, sexual dysfunction",
+         "MAOIs (serotonin syndrome); pimozide; cimetidine increases escitalopram levels"),
+        ("paroxetine", '["10mg","20mg","30mg","40mg"]', "2-4 weeks",
+         "Weight gain, sexual dysfunction, drowsiness, dry mouth, constipation, sweating",
+         "MAOIs (serotonin syndrome); tamoxifen (reduces effectiveness); blood thinners"),
+        ("citalopram", '["10mg","20mg","40mg"]', "2-4 weeks",
+         "Nausea, dry mouth, sweating, drowsiness, insomnia, sexual dysfunction",
+         "MAOIs (serotonin syndrome); pimozide; drugs that prolong QT interval"),
+        ("fluvoxamine", '["50mg","100mg","150mg","200mg"]', "4-6 weeks",
+         "Nausea, drowsiness, insomnia, dry mouth, constipation",
+         "MAOIs; tizanidine; thioridazine; alosetron; strong CYP1A2 interactions"),
+        # SNRIs
         ("venlafaxine", '["37.5mg","75mg","150mg","225mg"]', "2-4 weeks",
-         "nausea, headache, dizziness, insomnia", "MAOIs: serotonin syndrome risk"),
+         "Nausea, headache, dizziness, insomnia, increased blood pressure, sexual dysfunction",
+         "MAOIs (serotonin syndrome); linezolid; increases bleeding risk with NSAIDs"),
+        ("duloxetine", '["20mg","30mg","60mg"]', "2-4 weeks",
+         "Nausea, dry mouth, constipation, fatigue, dizziness, increased sweating",
+         "MAOIs (serotonin syndrome); thioridazine; heavy alcohol use (liver risk)"),
+        ("desvenlafaxine", '["25mg","50mg","100mg"]', "2-4 weeks",
+         "Nausea, dizziness, insomnia, constipation, sexual dysfunction",
+         "MAOIs (serotonin syndrome); linezolid; NSAIDs increase bleeding risk"),
+        ("levomilnacipran", '["20mg","40mg","80mg","120mg"]', "2-4 weeks",
+         "Nausea, constipation, increased heart rate, sweating, urinary hesitation",
+         "MAOIs (serotonin syndrome); strong CYP3A4 inhibitors increase levels"),
+        # Atypical antidepressants
+        ("bupropion", '["75mg","100mg","150mg","200mg","300mg","450mg"]', "3-4 weeks",
+         "Dry mouth, insomnia, headache, nausea, agitation, tremor",
+         "MAOIs; lowers seizure threshold — avoid in eating disorders or seizure history; alcohol withdrawal"),
+        ("mirtazapine", '["7.5mg","15mg","30mg","45mg"]', "1-3 weeks",
+         "Drowsiness, increased appetite, weight gain, dry mouth, dizziness",
+         "MAOIs (serotonin syndrome); CNS depressants increase sedation; alcohol"),
+        ("trazodone", '["50mg","100mg","150mg","200mg","300mg"]', "1-2 weeks (sleep); 2-4 weeks (mood)",
+         "Drowsiness, dizziness, dry mouth, blurred vision, priapism (rare)",
+         "MAOIs; CNS depressants; increases digoxin and phenytoin levels"),
+        ("vilazodone", '["10mg","20mg","40mg"]', "2-4 weeks",
+         "Diarrhea, nausea, vomiting, insomnia, dizziness",
+         "MAOIs (serotonin syndrome); strong CYP3A4 inhibitors/inducers"),
+        ("vortioxetine", '["5mg","10mg","15mg","20mg"]', "2-4 weeks",
+         "Nausea, vomiting, constipation, dizziness, sexual dysfunction",
+         "MAOIs (serotonin syndrome); linezolid; strong CYP2D6 inhibitors"),
+        # TCAs
+        ("amitriptyline", '["10mg","25mg","50mg","75mg","100mg","150mg"]', "2-4 weeks",
+         "Dry mouth, constipation, blurred vision, urinary retention, drowsiness, weight gain",
+         "MAOIs (hypertensive crisis); CNS depressants; anticholinergics; can prolong QT interval"),
+        ("nortriptyline", '["10mg","25mg","50mg","75mg"]', "2-4 weeks",
+         "Dry mouth, constipation, drowsiness, blurred vision, weight gain",
+         "MAOIs (hypertensive crisis); CNS depressants; quinidine increases nortriptyline levels"),
+        ("imipramine", '["10mg","25mg","50mg","75mg"]', "2-4 weeks",
+         "Dry mouth, constipation, blurred vision, urinary retention, drowsiness",
+         "MAOIs (hypertensive crisis); CNS depressants; cimetidine increases levels"),
+        ("clomipramine", '["25mg","50mg","75mg","100mg","150mg"]', "4-10 weeks",
+         "Dry mouth, constipation, drowsiness, tremor, sexual dysfunction, weight gain",
+         "MAOIs; CNS depressants; cimetidine; can lower seizure threshold"),
+        # Benzodiazepines
+        ("alprazolam", '["0.25mg","0.5mg","1mg","2mg"]', "30-60 minutes (acute)",
+         "Drowsiness, dizziness, impaired coordination, memory problems, dependence risk",
+         "CNS depressants (additive sedation); alcohol (dangerous); opioids (fatal respiratory depression); antifungals increase levels"),
+        ("lorazepam", '["0.5mg","1mg","2mg"]', "15-30 minutes (acute)",
+         "Drowsiness, dizziness, weakness, unsteadiness, dependence risk",
+         "CNS depressants (additive sedation); alcohol (dangerous); opioids (fatal respiratory depression)"),
+        ("clonazepam", '["0.5mg","1mg","2mg"]', "20-60 minutes (acute)",
+         "Drowsiness, dizziness, coordination problems, memory issues, dependence risk",
+         "CNS depressants; alcohol; opioids (fatal respiratory depression); valproate increases clonazepam levels"),
+        ("diazepam", '["2mg","5mg","10mg"]', "30-60 minutes (acute)",
+         "Drowsiness, dizziness, fatigue, muscle weakness, dependence risk",
+         "CNS depressants; alcohol; opioids (fatal respiratory depression); cimetidine increases levels"),
+        ("oxazepam", '["10mg","15mg","30mg"]', "45-90 minutes (acute)",
+         "Drowsiness, dizziness, headache, dependence risk",
+         "CNS depressants; alcohol; opioids (dangerous combination)"),
+        # Antipsychotics
+        ("quetiapine", '["25mg","50mg","100mg","200mg","300mg","400mg"]', "1-2 weeks",
+         "Drowsiness, weight gain, dry mouth, dizziness, metabolic changes, increased blood sugar",
+         "CNS depressants; drugs that prolong QT interval; strong CYP3A4 inhibitors increase levels"),
+        ("aripiprazole", '["2mg","5mg","10mg","15mg","20mg","30mg"]', "1-2 weeks",
+         "Restlessness (akathisia), insomnia, nausea, headache, weight gain",
+         "Strong CYP2D6 or CYP3A4 inhibitors; drugs that prolong QT interval"),
+        ("risperidone", '["0.5mg","1mg","2mg","3mg","4mg"]', "1-2 weeks",
+         "Weight gain, drowsiness, restlessness (akathisia), metabolic changes, sexual dysfunction",
+         "CNS depressants; drugs that prolong QT interval; strong CYP2D6 inhibitors"),
+        ("olanzapine", '["2.5mg","5mg","7.5mg","10mg","15mg","20mg"]', "1-2 weeks",
+         "Weight gain, drowsiness, increased appetite, metabolic changes, dry mouth",
+         "CNS depressants; fluvoxamine increases olanzapine levels; carbamazepine reduces levels"),
+        ("ziprasidone", '["20mg","40mg","60mg","80mg"]', "1-2 weeks",
+         "Drowsiness, dizziness, restlessness, nausea",
+         "QT-prolonging drugs (serious risk); carbamazepine reduces levels"),
+        ("lurasidone", '["20mg","40mg","60mg","80mg","120mg"]', "1-2 weeks",
+         "Drowsiness, restlessness (akathisia), nausea, weight gain",
+         "Strong CYP3A4 inhibitors/inducers; must be taken with food (≥350 calories)"),
+        ("haloperidol", '["0.5mg","1mg","2mg","5mg","10mg"]', "1-2 weeks",
+         "Extrapyramidal symptoms (muscle stiffness, restlessness), drowsiness, dry mouth",
+         "CNS depressants; QT-prolonging drugs; lithium; carbamazepine reduces levels"),
+        ("clozapine", '["12.5mg","25mg","50mg","100mg","200mg"]', "2-4 weeks",
+         "Drowsiness, weight gain, drooling, constipation, increased heart rate — requires regular blood monitoring",
+         "CNS depressants; drugs that suppress bone marrow; fluvoxamine greatly increases clozapine levels"),
+        # Mood stabilizers
+        ("lithium", '["150mg","300mg","450mg","600mg"]', "1-3 weeks",
+         "Tremor, thirst, frequent urination, nausea, weight gain, cognitive dulling",
+         "NSAIDs and diuretics (increase lithium levels to toxic range); ACE inhibitors; theophylline"),
+        ("lamotrigine", '["25mg","50mg","100mg","150mg","200mg","300mg","400mg"]', "2-3 weeks",
+         "Headache, dizziness, rash (rare but serious: Stevens-Johnson syndrome), blurred vision",
+         "Valproate doubles lamotrigine levels; carbamazepine reduces levels; oral contraceptives may reduce levels"),
+        ("valproate", '["125mg","250mg","500mg","750mg","1000mg"]', "1-2 weeks",
+         "Nausea, tremor, weight gain, hair loss, drowsiness, liver enzyme elevation",
+         "Lamotrigine (increases levels); carbamazepine; aspirin increases free valproate; teratogenic risk"),
+        ("carbamazepine", '["100mg","200mg","400mg"]', "1-2 weeks",
+         "Dizziness, drowsiness, nausea, blurred vision, rash",
+         "Many interactions — strong CYP3A4 inducer; reduces levels of many drugs including lamotrigine, valproate, antipsychotics"),
+        ("oxcarbazepine", '["150mg","300mg","600mg"]', "1-2 weeks",
+         "Dizziness, drowsiness, nausea, headache, hyponatremia (low sodium)",
+         "Reduces oral contraceptive effectiveness; can affect levels of other anticonvulsants"),
+        # Stimulants (ADHD)
+        ("amphetamine salts", '["5mg","10mg","15mg","20mg","25mg","30mg"]', "Within hours",
+         "Decreased appetite, insomnia, increased heart rate/blood pressure, dry mouth, irritability",
+         "MAOIs (hypertensive crisis); antihypertensives (reduced effect); acidifying agents reduce absorption"),
+        ("methylphenidate", '["5mg","10mg","20mg","36mg","54mg"]', "Within hours",
+         "Decreased appetite, insomnia, headache, stomach upset, increased heart rate",
+         "MAOIs (hypertensive crisis); blood pressure medications; warfarin; some seizure medications"),
+        ("lisdexamfetamine", '["20mg","30mg","40mg","50mg","60mg","70mg"]', "Within hours",
+         "Decreased appetite, insomnia, dry mouth, increased heart rate/blood pressure, irritability",
+         "MAOIs (hypertensive crisis); antihypertensives; acidifying agents reduce effect"),
+        ("atomoxetine", '["10mg","18mg","25mg","40mg","60mg","80mg","100mg"]', "2-4 weeks",
+         "Decreased appetite, nausea, headache, dry mouth, insomnia, sexual dysfunction in adults",
+         "MAOIs; strong CYP2D6 inhibitors (fluoxetine, paroxetine) greatly increase levels"),
+        # Sleep
+        ("zolpidem", '["5mg","10mg"]', "15-30 minutes",
+         "Drowsiness, dizziness, headache, sleepwalking/sleep-eating (rare), next-day impairment",
+         "CNS depressants; alcohol; strong CYP3A4 inhibitors; rifampin reduces effectiveness"),
+        ("eszopiclone", '["1mg","2mg","3mg"]', "15-30 minutes",
+         "Unpleasant taste, dizziness, drowsiness, dry mouth, next-day impairment",
+         "CNS depressants; alcohol; strong CYP3A4 inhibitors"),
+        ("suvorexant", '["5mg","10mg","15mg","20mg"]', "30 minutes",
+         "Drowsiness, headache, dizziness, unusual dreams, sleep paralysis (rare)",
+         "CNS depressants; strong CYP3A4 inhibitors significantly increase levels"),
+        ("melatonin", '["0.5mg","1mg","3mg","5mg","10mg"]', "30-60 minutes",
+         "Drowsiness, headache, dizziness",
+         "Blood thinners (increased bleeding risk); immunosuppressants; fluvoxamine increases melatonin levels"),
+        # Anti-anxiety
+        ("buspirone", '["5mg","7.5mg","10mg","15mg","30mg"]', "2-4 weeks",
+         "Dizziness, nausea, headache, nervousness, drowsiness",
+         "MAOIs (hypertensive reaction); strong CYP3A4 inhibitors increase levels; grapefruit juice"),
+        ("hydroxyzine", '["10mg","25mg","50mg"]', "30-60 minutes",
+         "Drowsiness, dry mouth, dizziness, headache",
+         "CNS depressants; alcohol; anticholinergics (dry mouth, urinary retention, confusion)"),
+        ("pregabalin", '["25mg","50mg","75mg","100mg","150mg","200mg","225mg","300mg"]', "1 week",
+         "Dizziness, drowsiness, weight gain, dry mouth, blurred vision, edema",
+         "CNS depressants; alcohol; opioids (respiratory depression risk); angiotensin medications"),
+        ("gabapentin", '["100mg","300mg","400mg","600mg","800mg"]', "1-2 weeks",
+         "Dizziness, drowsiness, coordination problems, weight gain, fatigue",
+         "CNS depressants; opioids (respiratory depression); antacids reduce gabapentin absorption"),
     ]
     conn.executemany('''
         INSERT OR IGNORE INTO medication_reference
@@ -387,6 +524,93 @@ def get_medication_info(name):
         except Exception:
             pass
     return d
+
+
+def check_medication_interactions(user_id):
+    """
+    Return a list of plain-language interaction alerts for the patient's
+    current medication list, derived from the medication_reference table.
+    """
+    profile = get_patient_profile(user_id)
+    if not profile:
+        return []
+    meds = profile.get('current_medications', [])
+    if not isinstance(meds, list):
+        return []
+
+    med_names = [m.get('name', '').lower() for m in meds if m.get('name')]
+    if len(med_names) < 2:
+        return []
+
+    conn = get_db()
+    alerts = []
+    seen = set()
+
+    for name in med_names:
+        row = conn.execute(
+            'SELECT name, common_side_effects, interaction_warnings FROM medication_reference WHERE name = ?',
+            (name,)
+        ).fetchone()
+        if not row:
+            continue
+        warnings = (row['interaction_warnings'] or '').lower()
+        for other in med_names:
+            if other == name:
+                continue
+            pair = tuple(sorted([name, other]))
+            if pair in seen:
+                continue
+            # Check if the other drug name appears in this drug's interaction warnings
+            if other in warnings:
+                seen.add(pair)
+                alerts.append({
+                    'drug_a': name.title(),
+                    'drug_b': other.title(),
+                    'warning': row['interaction_warnings'],
+                    'severity': 'caution',
+                })
+            # Also flag the classic dangerous combos by keyword
+            dangerous_pairs = [
+                (['alprazolam','lorazepam','clonazepam','diazepam','oxazepam'], ['opioid']),
+                (['alprazolam','lorazepam','clonazepam','diazepam','oxazepam'],
+                 ['alprazolam','lorazepam','clonazepam','diazepam','oxazepam']),
+            ]
+
+    # Catch general class interactions not caught by name matching
+    benzo_names = {'alprazolam','lorazepam','clonazepam','diazepam','oxazepam'}
+    ssri_snri = {'sertraline','fluoxetine','escitalopram','paroxetine','citalopram',
+                 'fluvoxamine','venlafaxine','duloxetine','desvenlafaxine'}
+    maoi_risk = ssri_snri | {'bupropion','mirtazapine','tramadol','trazodone','vortioxetine'}
+
+    taking_benzos = [n for n in med_names if n in benzo_names]
+    taking_ssri_snri = [n for n in med_names if n in ssri_snri]
+
+    # Multiple benzodiazepines
+    if len(taking_benzos) > 1:
+        pair = tuple(sorted(taking_benzos[:2]))
+        if pair not in seen:
+            seen.add(pair)
+            alerts.append({
+                'drug_a': taking_benzos[0].title(),
+                'drug_b': taking_benzos[1].title(),
+                'warning': 'Multiple benzodiazepines together significantly increase CNS depression, respiratory depression, and overdose risk.',
+                'severity': 'serious',
+            })
+
+    # Multiple SSRIs/SNRIs
+    if len(taking_ssri_snri) > 1:
+        pair = tuple(sorted(taking_ssri_snri[:2]))
+        if pair not in seen:
+            seen.add(pair)
+            alerts.append({
+                'drug_a': taking_ssri_snri[0].title(),
+                'drug_b': taking_ssri_snri[1].title(),
+                'warning': 'Combining two serotonergic antidepressants increases serotonin syndrome risk. Discuss with your provider.',
+                'severity': 'serious',
+            })
+
+    conn.close()
+    return alerts
 
 
 # ── Provider ──────────────────────────────────────────────────────────────────

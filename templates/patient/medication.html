@@ -5,33 +5,74 @@
 <div class="page-header">
   <div>
     <h1 class="page-title">Medications</h1>
-    <p class="page-sub">Track your current medications and adherence.</p>
+    <p class="page-sub">Track your current medications, side effects, and interactions.</p>
   </div>
 </div>
 
 <div id="med-success" class="alert alert-success hidden"></div>
 <div id="med-error" class="alert alert-error hidden"></div>
 
-<div class="med-current">
-  <h2 class="section-title">Current Medications</h2>
+<!-- ── Current Medications ──────────────────────────────────── -->
+<div class="med-section">
+  <h2 class="section-title">Your Current Medications</h2>
+
   {% if medications %}
-  <div class="med-grid">
+  <div id="interactions-panel" class="interactions-panel hidden">
+    <div class="interactions-heading">
+      <span class="warn-icon">⚠</span> Drug Interaction Notices
+    </div>
+    <div id="interactions-list"></div>
+  </div>
+
+  <div class="med-cards" id="med-cards">
     {% for med in medications %}
-    <div class="med-card">
-      <div class="med-card-name">{{ med.name }}</div>
-      <div class="med-card-dose">{{ med.dose }}</div>
-      {% if med.frequency %}
-      <div class="med-card-freq text-muted">{{ med.frequency }}</div>
-      {% endif %}
+    <div class="med-detail-card" id="med-card-{{ loop.index }}">
+      <div class="med-detail-header">
+        <div class="med-detail-name">{{ med.name | title }}</div>
+        <div class="med-detail-meta">
+          <span class="med-dose-badge">{{ med.dose }}</span>
+          {% if med.frequency %}<span class="med-freq-tag">{{ med.frequency }}</span>{% endif %}
+        </div>
+        <button class="btn-remove-card" onclick="removeMedication('{{ med.name }}')" title="Remove medication">×</button>
+      </div>
+
+      <div class="med-info-tabs">
+        <button class="med-tab active" onclick="switchMedTab(this, 'effects-{{ loop.index }}')">Side Effects</button>
+        <button class="med-tab" onclick="switchMedTab(this, 'interactions-{{ loop.index }}')">Interactions</button>
+        <button class="med-tab" onclick="switchMedTab(this, 'dosing-{{ loop.index }}')">Dosing Info</button>
+      </div>
+
+      <div id="effects-{{ loop.index }}" class="med-tab-pane">
+        <div class="med-info-loading" id="loading-effects-{{ loop.index }}">
+          <span class="spinner-sm"></span> Loading…
+        </div>
+        <div class="med-effects-content hidden" id="content-effects-{{ loop.index }}"></div>
+      </div>
+
+      <div id="interactions-{{ loop.index }}" class="med-tab-pane hidden">
+        <div class="med-info-loading" id="loading-int-{{ loop.index }}">
+          <span class="spinner-sm"></span> Loading…
+        </div>
+        <div class="med-int-content hidden" id="content-int-{{ loop.index }}"></div>
+      </div>
+
+      <div id="dosing-{{ loop.index }}" class="med-tab-pane hidden">
+        <div class="med-info-loading" id="loading-dos-{{ loop.index }}">
+          <span class="spinner-sm"></span> Loading…
+        </div>
+        <div class="med-dos-content hidden" id="content-dos-{{ loop.index }}"></div>
+      </div>
     </div>
     {% endfor %}
   </div>
+
   {% else %}
   <p class="empty-state">No medications added yet. Add one below.</p>
   {% endif %}
 </div>
 
-<div class="med-add-section">
+<!-- ── Add Medication ───────────────────────────────────────── -->
+<div class="med-section">
   <h2 class="section-title">Add Medication</h2>
   <form id="add-med-form" class="med-add-form">
     <div class="form-row">
@@ -63,7 +104,8 @@
   </form>
 </div>
 
-<div class="med-log-section">
+<!-- ── Log a Dose ────────────────────────────────────────────── -->
+<div class="med-section">
   <h2 class="section-title">Log a Dose</h2>
   <p class="page-sub">Record that you took a medication right now.</p>
   <form id="log-dose-form" class="med-log-form">
@@ -73,7 +115,7 @@
         <select id="log-med-name" class="form-input">
           {% if medications %}
             {% for med in medications %}
-            <option value="{{ med.name }}" data-dose="{{ med.dose }}">{{ med.name }} {{ med.dose }}</option>
+            <option value="{{ med.name }}" data-dose="{{ med.dose }}">{{ med.name | title }} {{ med.dose }}</option>
             {% endfor %}
           {% else %}
           <option value="">— Add a medication first —</option>
@@ -88,26 +130,170 @@
   <div id="log-success" class="alert alert-success hidden"></div>
 </div>
 
+<!-- ── Reference Lookup ──────────────────────────────────────── -->
 {% if med_names %}
-<div class="med-reference-section">
-  <h2 class="section-title">Medication Information</h2>
+<div class="med-section">
+  <h2 class="section-title">Medication Reference</h2>
+  <p class="page-sub">Look up any medication — not just those you're taking.</p>
   <div class="form-row">
     <div class="form-group">
-      <label for="ref-med-select">Look up a medication</label>
-      <select id="ref-med-select" class="form-input" onchange="lookupMed(this.value)">
+      <label for="ref-med-select">Search medication</label>
+      <select id="ref-med-select" class="form-input" onchange="lookupRefMed(this.value)">
         <option value="">Select a medication…</option>
         {% for name in med_names %}
-        <option value="{{ name }}">{{ name }}</option>
+        <option value="{{ name }}">{{ name | title }}</option>
         {% endfor %}
       </select>
     </div>
   </div>
-  <div id="med-info-panel" class="med-info-panel hidden"></div>
+  <div id="ref-info-panel" class="ref-info-panel hidden"></div>
 </div>
 {% endif %}
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
-<script>initMedications();</script>
+<script>
+// Medication names from server
+const currentMedNames = {{ medications | map(attribute='name') | list | tojson }};
+
+function switchMedTab(btn, paneid) {
+  const card = btn.closest('.med-detail-card');
+  card.querySelectorAll('.med-tab').forEach(b => b.classList.remove('active'));
+  card.querySelectorAll('.med-tab-pane').forEach(p => p.classList.add('hidden'));
+  btn.classList.add('active');
+  document.getElementById(paneid).classList.remove('hidden');
+}
+
+// Load medication info for each card on page load
+document.querySelectorAll('.med-detail-card').forEach((card, i) => {
+  const idx = i + 1;
+  const name = card.querySelector('.med-detail-name').textContent.trim().toLowerCase();
+  loadMedInfo(name, idx);
+});
+
+function loadMedInfo(name, idx) {
+  apiGet('/api/medications/info/' + encodeURIComponent(name))
+    .then(data => {
+      // Side effects tab
+      const efEl = document.getElementById('content-effects-' + idx);
+      const efLoad = document.getElementById('loading-effects-' + idx);
+      if (efEl) {
+        const sides = data.common_side_effects || 'No information available.';
+        const items = sides.split(/,\s*/).map(s =>
+          `<div class="effect-item">${s.trim()}</div>`
+        ).join('');
+        efEl.innerHTML = `<div class="effects-list">${items}</div>
+          <p class="onset-note"><strong>Onset:</strong> ${data.typical_onset || 'Varies'}</p>`;
+        efEl.classList.remove('hidden');
+        efLoad.classList.add('hidden');
+      }
+
+      // Interactions tab
+      const intEl = document.getElementById('content-int-' + idx);
+      const intLoad = document.getElementById('loading-int-' + idx);
+      if (intEl) {
+        const warns = data.interaction_warnings || 'No major interactions in our database.';
+        intEl.innerHTML = `<div class="interaction-warn-text">${warns}</div>`;
+        intEl.classList.remove('hidden');
+        intLoad.classList.add('hidden');
+      }
+
+      // Dosing tab
+      const dosEl = document.getElementById('content-dos-' + idx);
+      const dosLoad = document.getElementById('loading-dos-' + idx);
+      if (dosEl) {
+        let dosesHtml = '';
+        if (data.common_doses && Array.isArray(data.common_doses)) {
+          dosesHtml = `<div class="dose-chips">${data.common_doses.map(d =>
+            `<span class="dose-chip">${d}</span>`).join('')}</div>`;
+        }
+        dosEl.innerHTML = `${dosesHtml}
+          <p class="onset-note"><strong>Typical onset:</strong> ${data.typical_onset || 'Varies'}</p>`;
+        dosEl.classList.remove('hidden');
+        dosLoad.classList.add('hidden');
+      }
+    })
+    .catch(() => {
+      // Medication not in reference DB — show graceful message
+      ['effects','int','dos'].forEach(tab => {
+        const content = document.getElementById(`content-${tab}-${idx}`);
+        const loading = document.getElementById(`loading-${tab}-${idx}`);
+        if (content && loading) {
+          content.innerHTML = '<p class="text-muted">No reference information available for this medication.</p>';
+          content.classList.remove('hidden');
+          loading.classList.add('hidden');
+        }
+      });
+    });
+}
+
+// Load interaction warnings between all current medications
+if (currentMedNames.length >= 2) {
+  apiGet('/api/medications/interactions')
+    .then(data => {
+      const panel = document.getElementById('interactions-panel');
+      const list = document.getElementById('interactions-list');
+      if (!panel || !list) return;
+      if (data.interactions && data.interactions.length > 0) {
+        list.innerHTML = data.interactions.map(ia => `
+          <div class="interaction-alert interaction-alert--${ia.severity}">
+            <div class="ia-drugs">${ia.drug_a} + ${ia.drug_b}</div>
+            <div class="ia-warning">${ia.warning}</div>
+            <div class="ia-note">Discuss with your prescribing provider.</div>
+          </div>
+        `).join('');
+        panel.classList.remove('hidden');
+      }
+    })
+    .catch(() => {});
+}
+
+function removeMedication(name) {
+  if (!confirm(`Remove ${name} from your medication list?`)) return;
+  apiPost('/api/settings/profile/remove-medication', { name })
+    .then(() => {
+      showAlert('med-success', `${name.charAt(0).toUpperCase()+name.slice(1)} removed from your list.`, true);
+      setTimeout(() => location.reload(), 1000);
+    })
+    .catch(err => {
+      showAlert('med-error', err.message || 'Failed to remove medication.');
+    });
+}
+
+function lookupRefMed(name) {
+  const panel = document.getElementById('ref-info-panel');
+  if (!name) { panel.classList.add('hidden'); return; }
+
+  apiGet('/api/medications/info/' + encodeURIComponent(name))
+    .then(data => {
+      let dosesHtml = '';
+      if (data.common_doses && Array.isArray(data.common_doses)) {
+        dosesHtml = `<div class="dose-chips">${data.common_doses.map(d =>
+          `<span class="dose-chip">${d}</span>`).join('')}</div>`;
+      }
+      const sides = (data.common_side_effects || '').split(/,\s*/).map(s =>
+        `<div class="effect-item">${s.trim()}</div>`).join('');
+
+      panel.innerHTML = `
+        <div class="ref-card">
+          <div class="ref-card-name">${name.charAt(0).toUpperCase()+name.slice(1)}</div>
+          <div class="ref-card-onset">Onset: ${data.typical_onset || 'Varies'}</div>
+          <div class="ref-card-section-title">Common Doses</div>
+          ${dosesHtml || '<p class="text-muted">See prescriber for dosing information.</p>'}
+          <div class="ref-card-section-title">Common Side Effects</div>
+          <div class="effects-list">${sides}</div>
+          <div class="ref-card-section-title">Drug Interactions</div>
+          <div class="interaction-warn-text">${data.interaction_warnings || 'No major interactions listed.'}</div>
+        </div>`;
+      panel.classList.remove('hidden');
+    })
+    .catch(() => {
+      panel.innerHTML = '<p class="text-muted">No information available for this medication.</p>';
+      panel.classList.remove('hidden');
+    });
+}
+
+initMedications();
+</script>
 {% endblock %}

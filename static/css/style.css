@@ -689,6 +689,279 @@ input[type="number"], input[type="date"], select, .form-textarea, textarea {
 .med-info-panel { margin-top: 12px; }
 .med-info-card { background: var(--bg); border-radius: 8px; padding: 16px; }
 
+/* ── Medication section wrapper ──────────────────────────────── */
+.med-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px;
+  margin-bottom: 20px;
+}
+
+/* ── Detailed medication cards ───────────────────────────────── */
+.med-cards {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-top: 16px;
+}
+
+.med-detail-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.med-detail-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-wrap: wrap;
+}
+
+.med-detail-name {
+  font-weight: 700;
+  font-size: 1rem;
+  flex: 1;
+}
+
+.med-detail-meta {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.med-dose-badge {
+  background: var(--accent-light);
+  color: var(--accent);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
+.med-freq-tag {
+  background: var(--border-light);
+  color: var(--text-muted);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.78rem;
+}
+
+.btn-remove-card {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-muted);
+  font-size: 1.1rem;
+  width: 28px;
+  height: 28px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+.btn-remove-card:hover { background: var(--red-light); border-color: #f3b8b8; color: var(--red); }
+
+/* Tabs inside each med card */
+.med-info-tabs {
+  display: flex;
+  gap: 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.med-tab {
+  padding: 8px 14px;
+  border: none;
+  background: none;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  transition: var(--transition);
+}
+
+.med-tab:hover { color: var(--text); }
+.med-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 500; }
+
+.med-tab-pane {
+  padding: 16px 18px;
+}
+
+.med-tab-pane.hidden { display: none; }
+
+.med-info-loading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* Side effects list */
+.effects-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.effect-item {
+  background: var(--border-light);
+  color: var(--text);
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-size: 0.82rem;
+  line-height: 1.4;
+}
+
+.onset-note {
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  margin-top: 8px;
+}
+
+/* Interaction warning text */
+.interaction-warn-text {
+  font-size: 0.88rem;
+  line-height: 1.7;
+  color: var(--text);
+  background: #fff8f0;
+  border: 1px solid #f8e0c0;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+
+/* Dose chips */
+.dose-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.dose-chip {
+  background: var(--accent-light);
+  color: var(--accent);
+  padding: 3px 10px;
+  border-radius: 12px;
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+/* Cross-medication interaction panel (top of page) */
+.interactions-panel {
+  background: #fff8f0;
+  border: 1px solid #f0c882;
+  border-radius: var(--radius);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+}
+
+.interactions-heading {
+  font-weight: 600;
+  font-size: 0.9rem;
+  margin-bottom: 12px;
+  color: #7a4a00;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.warn-icon { font-size: 1rem; }
+
+.interaction-alert {
+  border-radius: 8px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+  font-size: 0.87rem;
+}
+
+.interaction-alert:last-child { margin-bottom: 0; }
+
+.interaction-alert--caution {
+  background: #fffbf0;
+  border: 1px solid #f0d890;
+}
+
+.interaction-alert--serious {
+  background: #fff5f5;
+  border: 1px solid #f8c0c0;
+}
+
+.ia-drugs {
+  font-weight: 700;
+  font-size: 0.9rem;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+
+.ia-warning {
+  color: var(--text);
+  line-height: 1.5;
+  margin-bottom: 4px;
+}
+
+.ia-note {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+/* Reference lookup panel */
+.ref-info-panel { margin-top: 16px; }
+
+.ref-card {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px;
+}
+
+.ref-card-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 1.4rem;
+  margin-bottom: 4px;
+}
+
+.ref-card-onset {
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  margin-bottom: 16px;
+}
+
+.ref-card-section-title {
+  font-weight: 600;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin: 16px 0 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.spinner-sm {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
 /* ── Summary ───────────────────────────────────────────────────────── */
 
 .summary-card {
