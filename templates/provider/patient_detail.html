@@ -1,0 +1,245 @@
+{% extends "layout.html" %}
+{% block title %}{{ patient.full_name }} — CognaSync{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <a href="{{ url_for('provider_dashboard') }}" class="back-link">← All Patients</a>
+    <h1 class="page-title">{{ patient.full_name }}</h1>
+    <p class="page-sub">{{ patient.email }}</p>
+  </div>
+  <div class="period-selector">
+    <a href="?days=7" class="period-btn {% if selected_days == 7 %}active{% endif %}">7d</a>
+    <a href="?days=14" class="period-btn {% if selected_days == 14 %}active{% endif %}">14d</a>
+    <a href="?days=30" class="period-btn {% if selected_days == 30 %}active{% endif %}">30d</a>
+  </div>
+</div>
+
+<div class="patient-overview">
+  <div class="overview-card">
+    <div class="overview-label">Check-ins ({{ selected_days }}d)</div>
+    <div class="overview-value">{{ patient.checkins_last_period }}</div>
+  </div>
+  <div class="overview-card">
+    <div class="overview-label">Avg Mood</div>
+    <div class="overview-value">{{ trends.mood.average }}/10</div>
+  </div>
+  <div class="overview-card">
+    <div class="overview-label">Avg Sleep</div>
+    <div class="overview-value">{{ trends.sleep.average }}h</div>
+  </div>
+  <div class="overview-card">
+    <div class="overview-label">Avg Stress</div>
+    <div class="overview-value">{{ trends.stress.average }}/10</div>
+  </div>
+  <div class="overview-card">
+    <div class="overview-label">Med Adherence</div>
+    <div class="overview-value">{{ trends.medication_adherence }}%</div>
+  </div>
+</div>
+
+{% if patient.current_medications %}
+<div class="detail-section">
+  <h2 class="section-title">Current Medications</h2>
+  <div class="med-tags">
+    {% for med in patient.current_medications %}
+    <span class="med-tag">{{ med.name }} {{ med.dose }}</span>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+<!-- Charts -->
+{% if trends.mood.daily_scores %}
+<div class="detail-section">
+  <h2 class="section-title">Trends</h2>
+  <div class="charts-grid">
+    <div class="chart-card">
+      <h3 class="chart-title">Mood</h3>
+      <canvas id="mood-chart" height="200"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Sleep</h3>
+      <canvas id="sleep-chart" height="200"></canvas>
+    </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Stress</h3>
+      <canvas id="stress-chart" height="200"></canvas>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<!-- AI Summary -->
+<div class="detail-section">
+  <div class="section-header">
+    <h2 class="section-title">AI Summary</h2>
+    <button class="btn btn-primary btn-sm" id="gen-summary-btn" onclick="generateSummary({{ patient.patient_id }})">
+      Generate New Summary
+    </button>
+  </div>
+  <div id="summary-loading" class="loading-panel hidden"><div class="spinner"></div><p>Generating…</p></div>
+  <div id="summary-error" class="alert alert-error hidden"></div>
+  <div id="new-summary" class="hidden">
+    <div class="summary-card summary-card--new">
+      <div class="summary-card-header">
+        <div class="summary-badge">New</div>
+        <div id="new-summary-dates" class="summary-dates"></div>
+      </div>
+      <div id="new-summary-text" class="summary-body"></div>
+    </div>
+  </div>
+
+  {% if summaries %}
+    {% for s in summaries %}
+    <div class="summary-card">
+      <div class="summary-card-header">
+        <div class="summary-dates">{{ s.date_range_start }} – {{ s.date_range_end }}</div>
+        <div class="text-muted">{{ s.created_at[:10] }}</div>
+      </div>
+      <div class="summary-body">{{ s.summary_text }}</div>
+    </div>
+    {% endfor %}
+  {% else %}
+  <p class="text-muted">No summaries yet for this patient.</p>
+  {% endif %}
+</div>
+
+<!-- Check-in Table -->
+{% if patient.recent_checkins %}
+<div class="detail-section">
+  <button class="collapsible-toggle" onclick="toggleSection('checkin-table')">
+    Recent Check-ins <span class="toggle-arrow">▼</span>
+  </button>
+  <div id="checkin-table" class="collapsible-body">
+    <table class="data-table">
+      <thead>
+        <tr><th>Date</th><th>Time</th><th>Mood</th><th>Sleep</th><th>Stress</th><th>Symptoms</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        {% for c in patient.recent_checkins %}
+        <tr>
+          <td>{{ c.date }}</td>
+          <td class="capitalize">{{ c.time_of_day or '—' }}</td>
+          <td><span class="score-badge score-mood">{{ c.mood_score }}/10</span></td>
+          <td>{{ c.sleep_hours }}h</td>
+          <td><span class="score-badge score-stress">{{ c.stress_score }}/10</span></td>
+          <td class="text-muted">{{ c.symptoms or '—' }}</td>
+          <td class="text-muted">{{ (c.notes or '')[:60] }}{% if c.notes and c.notes|length > 60 %}…{% endif %}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+
+<!-- Journal Entries -->
+{% if patient.journal_entries %}
+<div class="detail-section">
+  <button class="collapsible-toggle" onclick="toggleSection('journal-table')">
+    Recent Journal Entries <span class="toggle-arrow">▼</span>
+  </button>
+  <div id="journal-table" class="collapsible-body">
+    {% for j in patient.journal_entries %}
+    <div class="journal-entry-card">
+      <div class="journal-entry-meta">
+        <span class="entry-date">{{ j.created_at[:10] }}</span>
+        <span class="entry-type-badge">{{ j.entry_type or 'free_flow' }}</span>
+      </div>
+      <div class="journal-entry-preview">{{ j.raw_entry[:300] }}{% if j.raw_entry|length > 300 %}…{% endif %}</div>
+      {% if j.ai_analysis %}
+      <details class="analysis-details">
+        <summary>AI Reflection</summary>
+        <div class="analysis-content">{{ j.ai_analysis }}</div>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/common.js') }}"></script>
+<script src="{{ url_for('static', filename='js/provider-dashboard.js') }}"></script>
+<script>
+const trendsData = {{ trends | tojson }};
+
+function renderCharts() {
+  const defaults = { fill: true, tension: 0.4, pointRadius: 4 };
+  const opts = (min, max) => ({
+    responsive: true,
+    plugins: { legend: { display: false } },
+    scales: {
+      y: { min, max, grid: { color: 'rgba(0,0,0,0.05)' } },
+      x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
+    }
+  });
+  const mkLabels = arr => arr.map((_, i) => 'Day ' + (i + 1));
+
+  if (trendsData.mood.daily_scores.length) {
+    new Chart(document.getElementById('mood-chart'), {
+      type: 'line',
+      data: { labels: mkLabels(trendsData.mood.daily_scores),
+        datasets: [{ ...defaults, data: trendsData.mood.daily_scores,
+          borderColor: '#7c6fcd', backgroundColor: 'rgba(124,111,205,0.12)' }] },
+      options: opts(1, 10),
+    });
+  }
+  if (trendsData.sleep.daily_hours.length) {
+    new Chart(document.getElementById('sleep-chart'), {
+      type: 'line',
+      data: { labels: mkLabels(trendsData.sleep.daily_hours),
+        datasets: [{ ...defaults, data: trendsData.sleep.daily_hours,
+          borderColor: '#5aa9a3', backgroundColor: 'rgba(90,169,163,0.12)' }] },
+      options: opts(0, 12),
+    });
+  }
+  if (trendsData.stress.daily_scores.length) {
+    new Chart(document.getElementById('stress-chart'), {
+      type: 'line',
+      data: { labels: mkLabels(trendsData.stress.daily_scores),
+        datasets: [{ ...defaults, data: trendsData.stress.daily_scores,
+          borderColor: '#d4856a', backgroundColor: 'rgba(212,133,106,0.12)' }] },
+      options: opts(1, 10),
+    });
+  }
+}
+
+renderCharts();
+
+function generateSummary(patientId) {
+  const btn = document.getElementById('gen-summary-btn');
+  const loading = document.getElementById('summary-loading');
+  const error = document.getElementById('summary-error');
+  const panel = document.getElementById('new-summary');
+
+  btn.disabled = true;
+  loading.classList.remove('hidden');
+  error.classList.add('hidden');
+  panel.classList.add('hidden');
+
+  apiPost('/api/provider/generate-summary/' + patientId, { days: 14 })
+    .then(data => {
+      document.getElementById('new-summary-dates').textContent =
+        data.date_range_start + ' – ' + data.date_range_end;
+      document.getElementById('new-summary-text').textContent = data.summary_text;
+      panel.classList.remove('hidden');
+      loading.classList.add('hidden');
+      btn.disabled = false;
+    })
+    .catch(err => {
+      error.textContent = err.message || 'Failed to generate summary.';
+      error.classList.remove('hidden');
+      loading.classList.add('hidden');
+      btn.disabled = false;
+    });
+}
+</script>
+{% endblock %}

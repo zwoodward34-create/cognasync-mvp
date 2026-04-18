@@ -1,0 +1,84 @@
+{% extends "layout.html" %}
+{% block title %}Pre-Appointment Summary — CognaSync{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Pre-Appointment Summary</h1>
+    <p class="page-sub">AI-generated synthesis of your past two weeks for your provider.</p>
+  </div>
+  <button id="generate-btn" class="btn btn-primary" onclick="generateSummary()">
+    Generate New Summary
+  </button>
+</div>
+
+<div id="summary-loading" class="loading-panel hidden">
+  <div class="spinner"></div>
+  <p>Synthesizing your past 14 days…</p>
+</div>
+<div id="summary-error" class="alert alert-error hidden"></div>
+
+<div id="new-summary-panel" class="hidden">
+  <div class="summary-card summary-card--new">
+    <div class="summary-card-header">
+      <div class="summary-badge">New</div>
+      <div id="new-summary-dates" class="summary-dates"></div>
+    </div>
+    <div id="new-summary-text" class="summary-body"></div>
+  </div>
+</div>
+
+{% if summaries %}
+<div class="past-section">
+  <h2 class="section-title">Past Summaries</h2>
+  {% for s in summaries %}
+  <div class="summary-card">
+    <div class="summary-card-header">
+      <div class="summary-dates">{{ s.date_range_start }} – {{ s.date_range_end }}</div>
+      <div class="summary-meta text-muted">Generated {{ s.created_at[:10] }}</div>
+    </div>
+    <div class="summary-body">{{ s.summary_text }}</div>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="empty-state-panel">
+  <div class="empty-icon">◈</div>
+  <p>No summaries yet. Generate your first one above.</p>
+  <p class="text-muted">You'll need at least a few check-ins logged before generating a summary.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
+<script>
+function generateSummary() {
+  const btn = document.getElementById('generate-btn');
+  const loading = document.getElementById('summary-loading');
+  const error = document.getElementById('summary-error');
+  const panel = document.getElementById('new-summary-panel');
+
+  btn.disabled = true;
+  loading.classList.remove('hidden');
+  error.classList.add('hidden');
+  panel.classList.add('hidden');
+
+  apiPost('/api/summaries', {days: 14})
+    .then(data => {
+      document.getElementById('new-summary-dates').textContent =
+        data.date_range_start + ' – ' + data.date_range_end;
+      document.getElementById('new-summary-text').textContent = data.summary_text;
+      panel.classList.remove('hidden');
+      loading.classList.add('hidden');
+      btn.disabled = false;
+    })
+    .catch(err => {
+      error.textContent = err.message || 'Failed to generate summary. Please try again.';
+      error.classList.remove('hidden');
+      loading.classList.add('hidden');
+      btn.disabled = false;
+    });
+}
+</script>
+{% endblock %}

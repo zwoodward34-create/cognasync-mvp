@@ -1,0 +1,124 @@
+{% extends "layout.html" %}
+{% block title %}Daily Check-In — CognaSync{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Daily Check-In</h1>
+    <p class="page-sub">How are you doing right now?</p>
+  </div>
+</div>
+
+<div class="checkin-container">
+  <div class="time-tabs">
+    <button class="time-tab active" data-time="morning">Morning</button>
+    <button class="time-tab" data-time="afternoon">Afternoon</button>
+    <button class="time-tab" data-time="evening">Evening</button>
+    <button class="time-tab" data-time="self-prompted">Any Time</button>
+  </div>
+
+  <div id="checkin-success" class="alert alert-success hidden">
+    Check-in recorded! Great job keeping your streak going.
+  </div>
+  <div id="checkin-error" class="alert alert-error hidden"></div>
+
+  <form id="checkin-form" class="checkin-form">
+    <input type="hidden" id="time_of_day" name="time_of_day" value="morning">
+
+    <div class="form-section">
+      <label class="form-label">Mood <span class="range-value" id="mood-val">5</span>/10</label>
+      <p class="form-hint">From "Very Low" to "Excellent"</p>
+      <input type="range" id="mood_score" name="mood_score" min="1" max="10" value="5"
+             class="range-slider" oninput="document.getElementById('mood-val').textContent=this.value">
+      <div class="range-labels"><span>Very Low</span><span>Excellent</span></div>
+    </div>
+
+    <div class="form-section">
+      <label class="form-label">Sleep last night <span class="range-value" id="sleep-val">7</span> hrs</label>
+      <input type="range" id="sleep_hours" name="sleep_hours" min="0" max="24" step="0.5" value="7"
+             class="range-slider" oninput="document.getElementById('sleep-val').textContent=this.value">
+      <div class="range-labels"><span>0h</span><span>24h</span></div>
+    </div>
+
+    <div class="form-section">
+      <label class="form-label">Stress level <span class="range-value" id="stress-val">5</span>/10</label>
+      <p class="form-hint">From "Calm" to "Very Stressed"</p>
+      <input type="range" id="stress_score" name="stress_score" min="1" max="10" value="5"
+             class="range-slider" oninput="document.getElementById('stress-val').textContent=this.value">
+      <div class="range-labels"><span>Calm</span><span>Very Stressed</span></div>
+    </div>
+
+    <div class="form-section">
+      <label class="form-label">Medications</label>
+      <div id="medications-list" class="meds-list">
+        {% for med in saved_medications %}
+        <div class="med-row">
+          <input type="text" class="med-name" value="{{ med.name }}" placeholder="Medication name">
+          <input type="text" class="med-dose" value="{{ med.dose }}" placeholder="Dose">
+          <label class="med-taken-label">
+            <input type="checkbox" class="med-taken" {% if med.taken %}checked{% endif %}> Taken
+          </label>
+          <button type="button" class="btn-remove-med" onclick="this.parentElement.remove()">×</button>
+        </div>
+        {% endfor %}
+      </div>
+      <button type="button" id="add-med-btn" class="btn btn-ghost btn-sm">+ Add medication</button>
+    </div>
+
+    <div class="form-section">
+      <label class="form-label" for="symptoms">Symptoms <span class="label-hint">(optional)</span></label>
+      <input type="text" id="symptoms" name="symptoms" placeholder="e.g. anxiety, fatigue, headache"
+             class="form-input">
+    </div>
+
+    <div class="form-section">
+      <label class="form-label" for="notes">Notes <span class="label-hint">(optional)</span></label>
+      <textarea id="notes" name="notes" rows="3" class="form-textarea"
+                placeholder="Anything else worth noting today?"></textarea>
+    </div>
+
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" id="checkin-submit">Save Check-In</button>
+    </div>
+  </form>
+</div>
+
+{% if checkins %}
+<div class="past-section">
+  <button class="collapsible-toggle" onclick="toggleSection('past-checkins')">
+    Past 7 Days <span class="toggle-arrow">▼</span>
+  </button>
+  <div id="past-checkins" class="collapsible-body">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Time</th>
+          <th>Mood</th>
+          <th>Sleep</th>
+          <th>Stress</th>
+          <th>Symptoms</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for c in checkins %}
+        <tr>
+          <td>{{ c.date }}</td>
+          <td class="capitalize">{{ c.time_of_day or '—' }}</td>
+          <td><span class="score-badge score-mood">{{ c.mood_score }}/10</span></td>
+          <td>{{ c.sleep_hours }}h</td>
+          <td><span class="score-badge score-stress">{{ c.stress_score }}/10</span></td>
+          <td class="text-muted">{{ c.symptoms or '—' }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
+<script>initCheckin();</script>
+{% endblock %}

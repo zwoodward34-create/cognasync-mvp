@@ -1,0 +1,81 @@
+{% extends "layout.html" %}
+{% block title %}Home — CognaSync{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Welcome back, {{ first_name }}.</h1>
+    <p class="page-sub">Here's your mental health snapshot.</p>
+  </div>
+  <div class="streak-badge">
+    <span class="streak-number">{{ streak }}</span>
+    <span class="streak-label">day streak</span>
+  </div>
+</div>
+
+<div class="quick-cards">
+  <a href="{{ url_for('checkin_page') }}" class="quick-card {% if has_checkin_today %}quick-card--done{% endif %}">
+    <div class="quick-card-icon">✓</div>
+    <div class="quick-card-body">
+      <div class="quick-card-title">Daily Check-In</div>
+      <div class="quick-card-sub">
+        {% if has_checkin_today %}Logged today{% else %}Not yet logged today{% endif %}
+      </div>
+    </div>
+    <div class="quick-card-arrow">→</div>
+  </a>
+
+  <a href="{{ url_for('journal_page') }}" class="quick-card">
+    <div class="quick-card-icon">✎</div>
+    <div class="quick-card-body">
+      <div class="quick-card-title">Journal</div>
+      <div class="quick-card-sub">Reflect &amp; explore your thoughts</div>
+    </div>
+    <div class="quick-card-arrow">→</div>
+  </a>
+
+  <a href="{{ url_for('medication_page') }}" class="quick-card">
+    <div class="quick-card-icon">⊕</div>
+    <div class="quick-card-body">
+      <div class="quick-card-title">Medications</div>
+      <div class="quick-card-sub">Track doses &amp; adherence</div>
+    </div>
+    <div class="quick-card-arrow">→</div>
+  </a>
+
+  <a href="{{ url_for('summary_page') }}" class="quick-card">
+    <div class="quick-card-icon">◈</div>
+    <div class="quick-card-body">
+      <div class="quick-card-title">Pre-Appointment Summary</div>
+      <div class="quick-card-sub">
+        {% if latest_summary %}
+          Last generated {{ latest_summary.created_at[:10] }}
+        {% else %}
+          No summary yet — generate one before your next visit
+        {% endif %}
+      </div>
+    </div>
+    <div class="quick-card-arrow">→</div>
+  </a>
+
+  <a href="{{ url_for('trends_page') }}" class="quick-card">
+    <div class="quick-card-icon">↗</div>
+    <div class="quick-card-body">
+      <div class="quick-card-title">Trends</div>
+      <div class="quick-card-sub">View mood, sleep &amp; stress charts</div>
+    </div>
+    <div class="quick-card-arrow">→</div>
+  </a>
+</div>
+
+{% if latest_summary %}
+<div class="home-summary-preview">
+  <div class="section-header">
+    <h2 class="section-title">Latest Summary</h2>
+    <span class="section-meta">{{ latest_summary.date_range_start }} – {{ latest_summary.date_range_end }}</span>
+  </div>
+  <div class="summary-excerpt">{{ latest_summary.summary_text[:400] }}{% if latest_summary.summary_text|length > 400 %}…{% endif %}</div>
+  <a href="{{ url_for('summary_page') }}" class="btn btn-ghost">View full summary →</a>
+</div>
+{% endif %}
+{% endblock %}

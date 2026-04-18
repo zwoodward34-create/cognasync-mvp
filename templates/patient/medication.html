@@ -1,0 +1,113 @@
+{% extends "layout.html" %}
+{% block title %}Medications — CognaSync{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Medications</h1>
+    <p class="page-sub">Track your current medications and adherence.</p>
+  </div>
+</div>
+
+<div id="med-success" class="alert alert-success hidden"></div>
+<div id="med-error" class="alert alert-error hidden"></div>
+
+<div class="med-current">
+  <h2 class="section-title">Current Medications</h2>
+  {% if medications %}
+  <div class="med-grid">
+    {% for med in medications %}
+    <div class="med-card">
+      <div class="med-card-name">{{ med.name }}</div>
+      <div class="med-card-dose">{{ med.dose }}</div>
+      {% if med.frequency %}
+      <div class="med-card-freq text-muted">{{ med.frequency }}</div>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <p class="empty-state">No medications added yet. Add one below.</p>
+  {% endif %}
+</div>
+
+<div class="med-add-section">
+  <h2 class="section-title">Add Medication</h2>
+  <form id="add-med-form" class="med-add-form">
+    <div class="form-row">
+      <div class="form-group">
+        <label for="med-name-input">Medication name</label>
+        <input type="text" id="med-name-input" list="med-suggestions"
+               placeholder="e.g. sertraline" class="form-input" autocomplete="off">
+        <datalist id="med-suggestions">
+          {% for name in med_names %}
+          <option value="{{ name }}">
+          {% endfor %}
+        </datalist>
+      </div>
+      <div class="form-group">
+        <label for="med-dose-input">Dose</label>
+        <input type="text" id="med-dose-input" placeholder="e.g. 50mg" class="form-input">
+      </div>
+      <div class="form-group">
+        <label for="med-freq-input">Frequency</label>
+        <select id="med-freq-input" class="form-input">
+          <option value="daily">Daily</option>
+          <option value="twice daily">Twice daily</option>
+          <option value="as-needed">As-needed</option>
+          <option value="weekly">Weekly</option>
+        </select>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-primary">Add Medication</button>
+  </form>
+</div>
+
+<div class="med-log-section">
+  <h2 class="section-title">Log a Dose</h2>
+  <p class="page-sub">Record that you took a medication right now.</p>
+  <form id="log-dose-form" class="med-log-form">
+    <div class="form-row">
+      <div class="form-group">
+        <label for="log-med-name">Medication</label>
+        <select id="log-med-name" class="form-input">
+          {% if medications %}
+            {% for med in medications %}
+            <option value="{{ med.name }}" data-dose="{{ med.dose }}">{{ med.name }} {{ med.dose }}</option>
+            {% endfor %}
+          {% else %}
+          <option value="">— Add a medication first —</option>
+          {% endif %}
+        </select>
+      </div>
+    </div>
+    <button type="submit" class="btn btn-secondary" {% if not medications %}disabled{% endif %}>
+      Log as Taken Now
+    </button>
+  </form>
+  <div id="log-success" class="alert alert-success hidden"></div>
+</div>
+
+{% if med_names %}
+<div class="med-reference-section">
+  <h2 class="section-title">Medication Information</h2>
+  <div class="form-row">
+    <div class="form-group">
+      <label for="ref-med-select">Look up a medication</label>
+      <select id="ref-med-select" class="form-input" onchange="lookupMed(this.value)">
+        <option value="">Select a medication…</option>
+        {% for name in med_names %}
+        <option value="{{ name }}">{{ name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+  <div id="med-info-panel" class="med-info-panel hidden"></div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
+<script>initMedications();</script>
+{% endblock %}

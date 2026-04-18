@@ -1,0 +1,129 @@
+{% extends "layout.html" %}
+{% block title %}Journal — CognaSync{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Journal</h1>
+    <p class="page-sub">Write freely. Reflect honestly.</p>
+  </div>
+</div>
+
+<div class="journal-modes">
+  <button class="mode-tab active" data-mode="free_flow">Free Flow</button>
+  <button class="mode-tab" data-mode="prompt">Journal Prompt</button>
+  <button class="mode-tab" data-mode="guided">Guided Journal</button>
+</div>
+
+<!-- Free Flow -->
+<div id="mode-free_flow" class="journal-panel">
+  <div id="journal-success" class="alert alert-success hidden"></div>
+  <div id="journal-crisis" class="alert alert-crisis hidden"></div>
+  <div id="journal-error" class="alert alert-error hidden"></div>
+
+  <form id="journal-form">
+    <input type="hidden" id="entry_type" value="free_flow">
+    <div class="form-section">
+      <label class="form-label" for="raw_entry">What's on your mind?</label>
+      <textarea id="raw_entry" name="raw_entry" rows="8" class="form-textarea journal-textarea"
+                placeholder="Write freely. There is no right or wrong way to journal. Just let it flow..."></textarea>
+      <div class="char-counter"><span id="char-count">0</span> characters</div>
+    </div>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary" id="journal-submit">Save &amp; Analyze</button>
+    </div>
+  </form>
+
+  <div id="analysis-result" class="analysis-panel hidden">
+    <div class="analysis-grid">
+      <div class="analysis-col">
+        <h3 class="analysis-heading">Your Entry</h3>
+        <div id="display-entry" class="analysis-text"></div>
+      </div>
+      <div class="analysis-col">
+        <h3 class="analysis-heading">Reflection</h3>
+        <div id="display-analysis" class="analysis-text analysis-text--ai"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Prompt Mode -->
+<div id="mode-prompt" class="journal-panel hidden">
+  <div class="prompt-card">
+    <div class="prompt-label">Today's Prompt</div>
+    <div id="prompt-text" class="prompt-question"></div>
+    <button class="btn btn-ghost btn-sm" onclick="refreshPrompt()">New prompt</button>
+  </div>
+  <form id="prompt-journal-form">
+    <input type="hidden" id="prompt_entry_type" value="prompt">
+    <textarea id="prompt_raw_entry" rows="6" class="form-textarea journal-textarea"
+              placeholder="Respond to the prompt above..."></textarea>
+    <div class="form-actions">
+      <button type="submit" class="btn btn-primary">Save &amp; Analyze</button>
+    </div>
+  </form>
+  <div id="prompt-analysis-result" class="analysis-panel hidden">
+    <div class="analysis-grid">
+      <div class="analysis-col">
+        <h3 class="analysis-heading">Your Entry</h3>
+        <div id="prompt-display-entry" class="analysis-text"></div>
+      </div>
+      <div class="analysis-col">
+        <h3 class="analysis-heading">Reflection</h3>
+        <div id="prompt-display-analysis" class="analysis-text analysis-text--ai"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Guided Mode -->
+<div id="mode-guided" class="journal-panel hidden">
+  <div class="guided-container">
+    <div id="guided-progress" class="guided-progress">
+      <div class="progress-bar"><div id="progress-fill" class="progress-fill"></div></div>
+      <span id="progress-text">Question 1 of 5</span>
+    </div>
+    <div id="guided-question" class="guided-question"></div>
+    <textarea id="guided-answer" rows="5" class="form-textarea journal-textarea"
+              placeholder="Take your time..."></textarea>
+    <div class="guided-nav">
+      <button class="btn btn-ghost" id="guided-prev" onclick="guidedPrev()" style="display:none">← Back</button>
+      <button class="btn btn-primary" id="guided-next" onclick="guidedNext()">Next →</button>
+    </div>
+    <div id="guided-complete" class="alert alert-success hidden">
+      All done! Your guided entry has been saved.
+    </div>
+  </div>
+</div>
+
+{% if journals %}
+<div class="past-section">
+  <button class="collapsible-toggle" onclick="toggleSection('past-journals')">
+    Past Entries <span class="toggle-arrow">▼</span>
+  </button>
+  <div id="past-journals" class="collapsible-body">
+    {% for j in journals %}
+    <div class="journal-entry-card">
+      <div class="journal-entry-meta">
+        <span class="entry-date">{{ j.created_at[:10] }}</span>
+        <span class="entry-type-badge">{{ j.entry_type or 'free_flow' }}</span>
+      </div>
+      <div class="journal-entry-preview">{{ j.raw_entry[:200] }}{% if j.raw_entry|length > 200 %}…{% endif %}</div>
+      {% if j.ai_analysis %}
+      <details class="analysis-details">
+        <summary>View reflection</summary>
+        <div class="analysis-content">{{ j.ai_analysis }}</div>
+      </details>
+      {% endif %}
+    </div>
+    {% endfor %}
+  </div>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
+<script>initJournal();</script>
+{% endblock %}

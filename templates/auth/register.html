@@ -1,0 +1,52 @@
+{% extends "layout.html" %}
+{% block title %}Create Account — CognaSync{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block full_page %}
+<div class="auth-shell">
+  <div class="auth-brand">
+    <div class="auth-logo">CS</div>
+    <h1 class="auth-title">CognaSync</h1>
+    <p class="auth-subtitle">Start tracking your mental health journey</p>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="auth-card">
+    <h2 class="auth-card-title">Create your account</h2>
+    <form method="POST" action="{{ url_for('register_post') }}" class="auth-form">
+      <div class="form-group">
+        <label for="full_name">Full name</label>
+        <input type="text" id="full_name" name="full_name" required
+               value="{{ full_name or '' }}" placeholder="Alex Johnson">
+      </div>
+      <div class="form-group">
+        <label for="email">Email address</label>
+        <input type="email" id="email" name="email" required
+               value="{{ email or '' }}" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="password">Password <span class="label-hint">(min. 8 characters)</span></label>
+        <input type="password" id="password" name="password" required
+               placeholder="Create a password" minlength="8" autocomplete="new-password">
+      </div>
+      <div class="form-group">
+        <label for="role">I am a</label>
+        <select id="role" name="role">
+          <option value="patient" {% if role == 'patient' or not role %}selected{% endif %}>Patient</option>
+          <option value="provider" {% if role == 'provider' %}selected{% endif %}>Provider (Therapist / Psychiatrist)</option>
+        </select>
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Create account</button>
+    </form>
+    <p class="auth-switch">Already have an account? <a href="{{ url_for('login_page') }}">Sign in</a></p>
+  </div>
+</div>
+{% endblock %}

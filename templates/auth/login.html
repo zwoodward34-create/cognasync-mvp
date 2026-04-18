@@ -1,0 +1,40 @@
+{% extends "layout.html" %}
+{% block title %}Sign In — CognaSync{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block full_page %}
+<div class="auth-shell">
+  <div class="auth-brand">
+    <div class="auth-logo">CS</div>
+    <h1 class="auth-title">CognaSync</h1>
+    <p class="auth-subtitle">Your mental health, tracked with care</p>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="auth-card">
+    <h2 class="auth-card-title">Welcome back</h2>
+    <form method="POST" action="{{ url_for('login_post') }}" class="auth-form">
+      <div class="form-group">
+        <label for="email">Email address</label>
+        <input type="email" id="email" name="email" required
+               value="{{ email or '' }}" placeholder="you@example.com" autocomplete="email">
+      </div>
+      <div class="form-group">
+        <label for="password">Password</label>
+        <input type="password" id="password" name="password" required
+               placeholder="Your password" autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Sign in</button>
+    </form>
+    <p class="auth-switch">Don't have an account? <a href="{{ url_for('register_page') }}">Create one</a></p>
+  </div>
+</div>
+{% endblock %}

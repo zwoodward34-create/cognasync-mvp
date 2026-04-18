@@ -1,0 +1,79 @@
+{% extends "layout.html" %}
+{% block title %}Settings — CognaSync{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Settings</h1>
+    <p class="page-sub">Manage your account and profile.</p>
+  </div>
+</div>
+
+<div id="settings-success" class="alert alert-success hidden"></div>
+<div id="settings-error" class="alert alert-error hidden"></div>
+
+<div class="settings-sections">
+
+  <div class="settings-card">
+    <h2 class="settings-heading">Profile</h2>
+    <div class="settings-row">
+      <span class="settings-label">Name</span>
+      <span class="settings-value">{{ user.full_name }}</span>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">Email</span>
+      <span class="settings-value">{{ user.email }}</span>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">Account type</span>
+      <span class="settings-value capitalize">{{ user.role }}</span>
+    </div>
+    <div class="settings-row">
+      <span class="settings-label">Member since</span>
+      <span class="settings-value">{{ user.created_at[:10] }}</span>
+    </div>
+  </div>
+
+  <div class="settings-card">
+    <h2 class="settings-heading">Emergency Contact</h2>
+    <form id="emergency-form">
+      <div class="form-group">
+        <label for="emergency_contact">Emergency contact name &amp; phone</label>
+        <input type="text" id="emergency_contact" name="emergency_contact"
+               value="{{ profile.emergency_contact if profile else '' }}"
+               placeholder="e.g. Jane Smith — (555) 123-4567" class="form-input">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Save</button>
+    </form>
+  </div>
+
+  <div class="settings-card">
+    <h2 class="settings-heading">Change Password</h2>
+    <form id="password-form">
+      <div class="form-group">
+        <label for="current_password">Current password</label>
+        <input type="password" id="current_password" name="current_password"
+               class="form-input" placeholder="Your current password">
+      </div>
+      <div class="form-group">
+        <label for="new_password">New password <span class="label-hint">(min. 8 characters)</span></label>
+        <input type="password" id="new_password" name="new_password"
+               class="form-input" placeholder="New password" minlength="8">
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Update Password</button>
+    </form>
+  </div>
+
+  <div class="settings-card settings-card--danger">
+    <h2 class="settings-heading">Session</h2>
+    <p class="text-muted">Signing out will end your current session on this device.</p>
+    <a href="{{ url_for('logout') }}" class="btn btn-ghost btn-sm">Sign out</a>
+  </div>
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
+<script>initSettings();</script>
+{% endblock %}

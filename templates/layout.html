@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}CognaSync{% endblock %}</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  {% block head %}{% endblock %}
+</head>
+<body class="{% block body_class %}{% endblock %}">
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+  {% if messages %}
+    <div class="flash-container">
+      {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    </div>
+  {% endif %}
+{% endwith %}
+
+{% block full_page %}
+<div class="app-shell">
+
+  {% block sidebar %}
+  {% if user is defined and user %}
+  <nav class="sidebar">
+    <div class="sidebar-brand">
+      <span class="brand-mark">CS</span>
+      <span class="brand-name">CognaSync</span>
+    </div>
+
+    {% if user.role == 'patient' %}
+    <ul class="nav-links">
+      <li><a href="{{ url_for('home') }}" class="nav-link {% if request.endpoint == 'home' %}active{% endif %}">
+        <span class="nav-icon">⌂</span> Home
+      </a></li>
+      <li><a href="{{ url_for('checkin_page') }}" class="nav-link {% if request.endpoint == 'checkin_page' %}active{% endif %}">
+        <span class="nav-icon">✓</span> Daily Check-In
+      </a></li>
+      <li><a href="{{ url_for('journal_page') }}" class="nav-link {% if request.endpoint == 'journal_page' %}active{% endif %}">
+        <span class="nav-icon">✎</span> Journal
+      </a></li>
+      <li><a href="{{ url_for('medication_page') }}" class="nav-link {% if request.endpoint == 'medication_page' %}active{% endif %}">
+        <span class="nav-icon">⊕</span> Medications
+      </a></li>
+      <li><a href="{{ url_for('summary_page') }}" class="nav-link {% if request.endpoint == 'summary_page' %}active{% endif %}">
+        <span class="nav-icon">◈</span> Pre-Appt Summary
+      </a></li>
+      <li><a href="{{ url_for('trends_page') }}" class="nav-link {% if request.endpoint == 'trends_page' %}active{% endif %}">
+        <span class="nav-icon">↗</span> Trends
+      </a></li>
+      <li><a href="{{ url_for('settings_page') }}" class="nav-link {% if request.endpoint == 'settings_page' %}active{% endif %}">
+        <span class="nav-icon">⚙</span> Settings
+      </a></li>
+    </ul>
+    {% else %}
+    <ul class="nav-links">
+      <li><a href="{{ url_for('provider_dashboard') }}" class="nav-link {% if request.endpoint == 'provider_dashboard' %}active{% endif %}">
+        <span class="nav-icon">⌂</span> Dashboard
+      </a></li>
+    </ul>
+    {% endif %}
+
+    <div class="sidebar-footer">
+      <div class="sidebar-user">{{ user.full_name }}</div>
+      <a href="{{ url_for('logout') }}" class="logout-link">Sign out</a>
+    </div>
+  </nav>
+  {% endif %}
+  {% endblock %}
+
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+</div>
+{% endblock %}
+
+<script src="{{ url_for('static', filename='js/common.js') }}"></script>
+{% block scripts %}{% endblock %}
+</body>
+</html>

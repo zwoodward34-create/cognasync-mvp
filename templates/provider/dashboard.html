@@ -1,0 +1,67 @@
+{% extends "layout.html" %}
+{% block title %}Provider Dashboard — CognaSync{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Patient Dashboard</h1>
+    <p class="page-sub">{{ user.full_name }} — {{ patients|length }} patient{{ 's' if patients|length != 1 }}</p>
+  </div>
+</div>
+
+{% if patients %}
+<div class="provider-table-wrap">
+  <table class="data-table provider-table">
+    <thead>
+      <tr>
+        <th>Patient</th>
+        <th>Email</th>
+        <th>Last Check-In</th>
+        <th>Latest Summary</th>
+        <th></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for p in patients %}
+      <tr class="patient-row" onclick="window.location='/provider/patient/{{ p.patient_id }}'">
+        <td class="patient-name">{{ p.full_name }}</td>
+        <td class="text-muted">{{ p.email }}</td>
+        <td>
+          {% if p.last_checkin %}
+            <span class="{% if p.last_checkin >= today_str %}text-green{% endif %}">
+              {{ p.last_checkin }}
+            </span>
+          {% else %}
+            <span class="text-muted">No check-ins</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if p.latest_summary %}
+            {{ p.latest_summary.date_range_start }} – {{ p.latest_summary.date_range_end }}
+          {% else %}
+            <span class="text-muted">None</span>
+          {% endif %}
+        </td>
+        <td><a href="/provider/patient/{{ p.patient_id }}" class="btn btn-ghost btn-sm">View →</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% else %}
+<div class="empty-state-panel">
+  <div class="empty-icon">◈</div>
+  <p>No patients assigned yet.</p>
+  <p class="text-muted">Patients can be assigned to your provider account via their profile settings.</p>
+</div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+const today = new Date().toISOString().slice(0, 10);
+document.querySelectorAll('.patient-row td:nth-child(3)').forEach(td => {
+  if (td.textContent.trim() === today) td.classList.add('text-green');
+});
+</script>
+{% endblock %}
