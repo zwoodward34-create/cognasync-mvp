@@ -350,7 +350,35 @@ def api_create_checkin():
         extended_data=data.get('extended_data'),
         checkin_type=checkin_type,
     )
-    @app.route('/api/medications', methods=['GET', 'POST'])
+    
+    if not checkin_id:
+        return jsonify({'error': 'Failed to create check-in'}), 500
+    
+    # Generate AI insight for this check-in
+    ai_insight = None
+    try:
+        baseline = db.get_checkin_baseline(user['id'], days=7)
+        checkin_snapshot = {
+            'mood_score': mood, 'stress_score': stress, 'sleep_hours': sleep,
+            'notes': data.get('notes', ''),
+            'extended_data': data.get('extended_data'),
+        }
+        result = claude_api.analyze_checkin(checkin_snapshot, checkin_type, baseline)
+        if result.get('status') == 'safe' and result.get('text'):
+            ai_insight = result['text']
+            db.update_checkin_insights(checkin_id, ai_insight)
+    except Exception:
+        pass  # AI insight is non-blocking
+
+    return jsonify({
+        'checkin_id': checkin_id,
+        'patient_id': user['id'],
+        'message': 'Check-in recorded successfully',
+        'ai_insight': ai_insight,
+    }), 201
+
+
+@app.route('/api/medications', methods=['GET', 'POST'])
 def api_medications():
     """GET: List user's medications. POST: Create new medication."""
     user, err = _api_user('patient')
@@ -372,6 +400,7 @@ def api_medications():
     
     meds = db.get_user_medications(user['id'])
     return jsonify(meds), 200
+
 
 @app.route('/api/medications/<med_id>/events', methods=['GET', 'POST'])
 def api_medication_events(med_id):
@@ -396,6 +425,7 @@ def api_medication_events(med_id):
     events = db.get_medication_events(user['id'], medication_id=med_id)
     return jsonify(events), 200
 
+
 @app.route('/api/medications/search', methods=['GET'])
 def api_medication_search():
     """Search global medication reference database."""
@@ -405,29 +435,6 @@ def api_medication_search():
     
     results = db.search_medication_reference(query)
     return jsonify(results), 200
-
-    # Generate AI insight for this check-in
-    ai_insight = None
-    try:
-        baseline = db.get_checkin_baseline(user['id'], days=7)
-        checkin_snapshot = {
-            'mood_score': mood, 'stress_score': stress, 'sleep_hours': sleep,
-            'notes': data.get('notes', ''),
-            'extended_data': data.get('extended_data'),
-        }
-        result = claude_api.analyze_checkin(checkin_snapshot, checkin_type, baseline)
-        if result.get('status') == 'safe' and result.get('text'):
-            ai_insight = result['text']
-            db.update_checkin_insights(checkin_id, ai_insight)
-    except Exception:
-        pass  # AI insight is non-blocking
-
-    return jsonify({
-        'checkin_id': checkin_id,
-        'patient_id': user['id'],
-        'message': 'Check-in recorded successfully',
-        'ai_insight': ai_insight,
-    }), 201
 
 
 @app.route('/api/checkins/today', methods=['GET'])
