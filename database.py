@@ -307,30 +307,73 @@ def get_latest_summary(patient_id):
 # MEDICATIONS
 # ═══════════════════════════════════════════════════════════════════════════
 
-def get_medication_names():
-    """Get all medication names from reference table."""
+def create_medication(user_id: str, name: str, category: str, standard_dose: float, dose_unit: str = 'mg', scheduled_times: list = None, date_started: str = None):
+    """Create a medication record for the user."""
     try:
-        return []
+        result = supabase_admin.table('medications').insert({
+            'user_id': user_id,
+            'name': name,
+            'category': category,
+            'standard_dose': standard_dose,
+            'dose_unit': dose_unit,
+            'scheduled_times': scheduled_times or [],
+            'date_started': date_started or date.today().isoformat(),
+            'is_active': True
+        }).execute()
+        return result.data[0] if result.data else None
     except Exception as e:
-        print(f"Error getting medication names: {e}")
-        return []
-
-
-def get_medication_info(name):
-    """Get medication info by name."""
-    try:
+        print(f"Error creating medication: {e}")
         return None
+
+def get_user_medications(user_id: str, active_only: bool = True):
+    """Get all medications for a user."""
+    try:
+        query = supabase_admin.table('medications').select('*').eq('user_id', user_id)
+        if active_only:
+            query = query.eq('is_active', True)
+        result = query.execute()
+        return result.data or []
     except Exception as e:
-        print(f"Error getting medication info: {e}")
+        print(f"Error fetching medications: {e}")
+        return []
+
+def log_medication_event(user_id: str, medication_id: str, event_date: str, actual_time: str, dose: float, status: str = 'TAKEN', notes: str = None):
+    """Log a medication event (when user took their medication)."""
+    try:
+        result = supabase_admin.table('medication_events').insert({
+            'user_id': user_id,
+            'medication_id': medication_id,
+            'event_date': event_date,
+            'actual_time': actual_time,
+            'dose': dose,
+            'status': status,
+            'custom_note': notes
+        }).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"Error logging medication event: {e}")
         return None
 
-
-def check_medication_interactions(user_id):
-    """Check for medication interactions."""
+def get_medication_events(user_id: str, medication_id: str = None, days: int = 30):
+    """Get medication events for a user."""
     try:
-        return []
+        start_date = (date.today() - timedelta(days=days)).isoformat()
+        query = supabase_admin.table('medication_events').select('*').eq('user_id', user_id).gte('event_date', start_date)
+        if medication_id:
+            query = query.eq('medication_id', medication_id)
+        result = query.execute()
+        return result.data or []
     except Exception as e:
-        print(f"Error checking medication interactions: {e}")
+        print(f"Error fetching medication events: {e}")
+        return []
+
+def search_medication_reference(search_term: str):
+    """Search the global medication reference database."""
+    try:
+        result = supabase_admin.table('medication_reference').select('*').ilike('name', f'%{search_term}%').execute()
+        return result.data or []
+    except Exception as e:
+        print(f"Error searching medication reference: {e}")
         return []
 
 
@@ -391,33 +434,40 @@ def _linear_regression(values):
     return round(slope, 3)
 
 
-def get_trends_data(patient_id, days=30):
-    """Get trend analysis for a patient."""
+def get_trends_data(user_id: str, days: int = 30):
+    """Get aggregated trend data for a user."""
     try:
-        checkins = get_checkins(patient_id, days)
+        start_date = (date.today() - timedelta(days=days)).isoformat()
+        checkins = supabase_admin.table('checkins').select('*').eq('user_id', user_id).gte('checkin_date', start_date).execute()
         
-        if not checkins:
-            return None
-        
-        def avg(pairs):
-            return round(sum(p[1] for p in pairs if p[1]) / len([p for p in pairs if p[1]]), 2) if pairs else None
-        
-        def build_metric(pairs, key='daily_scores'):
+        if not checkins.data:
             return {
-                'values': [p[1] for p in pairs if p[1]],
-                'dates': [p[0] for p in pairs],
-                'average': avg(pairs),
-                'trend': _linear_regression([p[1] for p in pairs if p[1]])
+                'user_id': user_id,
+                'date_range': {'start': start_date, 'end': date.today().isoformat()},
+                'total_checkins': 0,
+                'average_stability': None,
+                'average_dopamine': None,
+                'average_nervous_system': None,
+                'trend_direction': 'insufficient_data'
             }
         
-        stability_pairs = [(c['checkin_date'], c['stability_score']) for c in checkins]
+        # Aggregate scores
+        data = checkins.data
+        avg_stability = sum([c.get('stability_score', 0) for c in data]) / len(data) if data else 0
+        avg_dopamine = sum([c.get('dopamine_efficiency', 0) for c in data]) / len(data) if data else 0
+        avg_nervous = sum([c.get('nervous_system_load', 0) for c in data]) / len(data) if data else 0
         
         return {
-            'stability': build_metric(stability_pairs),
-            'data_points': len(checkins)
+            'user_id': user_id,
+            'date_range': {'start': start_date, 'end': date.today().isoformat()},
+            'total_checkins': len(data),
+            'average_stability': round(avg_stability, 2),
+            'average_dopamine': round(avg_dopamine, 2),
+            'average_nervous_system': round(avg_nervous, 2),
+            'trend_direction': 'up' if data[-1].get('stability_score', 0) > avg_stability else 'down'
         }
     except Exception as e:
-        print(f"Error getting trends data: {e}")
+        print(f"Error getting trends: {e}")
         return None
 
 

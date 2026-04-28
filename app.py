@@ -350,6 +350,61 @@ def api_create_checkin():
         extended_data=data.get('extended_data'),
         checkin_type=checkin_type,
     )
+    @app.route('/api/medications', methods=['GET', 'POST'])
+def api_medications():
+    """GET: List user's medications. POST: Create new medication."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    
+    if request.method == 'POST':
+        data = request.json
+        med = db.create_medication(
+            user_id=user['id'],
+            name=data.get('name'),
+            category=data.get('category'),
+            standard_dose=data.get('standard_dose'),
+            dose_unit=data.get('dose_unit', 'mg'),
+            scheduled_times=data.get('scheduled_times', []),
+            date_started=data.get('date_started')
+        )
+        return jsonify(med), 201 if med else 400
+    
+    meds = db.get_user_medications(user['id'])
+    return jsonify(meds), 200
+
+@app.route('/api/medications/<med_id>/events', methods=['GET', 'POST'])
+def api_medication_events(med_id):
+    """GET: Medication events for a specific medication. POST: Log an event."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    
+    if request.method == 'POST':
+        data = request.json
+        event = db.log_medication_event(
+            user_id=user['id'],
+            medication_id=med_id,
+            event_date=data.get('event_date', date.today().isoformat()),
+            actual_time=data.get('actual_time'),
+            dose=data.get('dose'),
+            status=data.get('status', 'TAKEN'),
+            notes=data.get('notes')
+        )
+        return jsonify(event), 201 if event else 400
+    
+    events = db.get_medication_events(user['id'], medication_id=med_id)
+    return jsonify(events), 200
+
+@app.route('/api/medications/search', methods=['GET'])
+def api_medication_search():
+    """Search global medication reference database."""
+    query = request.args.get('q', '')
+    if not query or len(query) < 2:
+        return jsonify({'error': 'Query too short'}), 400
+    
+    results = db.search_medication_reference(query)
+    return jsonify(results), 200
 
     # Generate AI insight for this check-in
     ai_insight = None
@@ -531,20 +586,25 @@ def api_get_summaries(patient_id):
 
 @app.route('/api/trends', methods=['GET'])
 def api_get_trends():
-    user, err = _api_user()
+    """Get trend data for the logged-in user."""
+    user, err = _api_user('patient')
     if err:
         return err
-    days = int(request.args.get('days', 30))
-    patient_id = user['id']
-    if user['role'] == 'provider':
-        patient_id = int(request.args.get('patient_id', 0))
-        if not patient_id:
-            return jsonify({'error': 'patient_id required for provider'}), 400
-    trends = db.get_trends_data(patient_id, days=days)
-    profile = db.get_patient_profile(patient_id)
-    trends['current_medications'] = profile.get('current_medications', []) if profile else []
+    
+    days = request.args.get('days', 30, type=int)
+    trends = db.get_trends_data(user['id'], days=days)
+    
+    if not trends:
+        return jsonify({'error': 'Unable to fetch trends'}), 500
+    
+    # Add current medications to the response
+    try:
+        meds = db.get_user_medications(user['id'], active_only=True)
+        trends['current_medications'] = [{'id': m.get('id'), 'name': m.get('name')} for m in meds] if meds else []
+    except:
+        trends['current_medications'] = []
+    
     return jsonify(trends), 200
-
 
 # ── Provider API ──────────────────────────────────────────────────────────────
 
