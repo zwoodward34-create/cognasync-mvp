@@ -10,9 +10,15 @@
 </div>
 
 <div class="journal-modes">
-  <button class="mode-tab active" data-mode="free_flow">Free Flow</button>
-  <button class="mode-tab" data-mode="prompt">Journal Prompt</button>
-  <button class="mode-tab" data-mode="guided">Guided Journal</button>
+  <button class="mode-tab active" data-mode="free_flow">
+    <span class="mode-icon">✍️</span> Free Flow
+  </button>
+  <button class="mode-tab" data-mode="prompt">
+    <span class="mode-icon">💡</span> Journal Prompt
+  </button>
+  <button class="mode-tab" data-mode="guided">
+    <span class="mode-icon">🧭</span> Guided Journal
+  </button>
 </div>
 
 <!-- Free Flow -->
@@ -99,10 +105,11 @@
 
 {% if journals %}
 <div class="past-section">
-  <button class="collapsible-toggle" onclick="toggleSection('past-journals')">
-    Past Entries <span class="toggle-arrow">▼</span>
-  </button>
-  <div id="past-journals" class="collapsible-body">
+  <div class="past-section-header">
+    <span class="past-section-title">Past Entries</span>
+    <span class="past-section-count">{{ journals|length }}</span>
+  </div>
+  <div class="entries-stack">
     {% for j in journals %}
     <div class="journal-entry-card">
       <div class="journal-entry-meta">

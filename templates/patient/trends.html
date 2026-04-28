@@ -47,6 +47,11 @@
       <div class="stat-sub">this period</div>
     </div>
     <div class="stat-card">
+      <div class="stat-label">Avg Energy</div>
+      <div class="stat-value" id="stat-energy">—</div>
+      <div class="stat-sub">/10</div>
+    </div>
+    <div class="stat-card">
       <div class="stat-label">Med Adherence</div>
       <div class="stat-value" id="stat-adherence">—</div>
       <div class="stat-sub">%</div>
@@ -56,6 +61,51 @@
   <div id="insights-panel" class="insights-panel hidden">
     <h2 class="section-title">Key Insights</h2>
     <ul id="insights-list" class="insights-list"></ul>
+  </div>
+
+  <!-- Unexpected discovery (surfaced weekly) -->
+  <div id="unexpected-panel"></div>
+
+  <!-- Hypothesis tester -->
+  <div class="insights-panel" style="margin-bottom:24px;">
+    <h2 class="section-title">Test a Hypothesis</h2>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">
+      State a belief about your data — we'll test it against all three possible outcomes simultaneously.
+    </p>
+
+    <div id="hyp-error" class="alert alert-error hidden" style="margin-bottom:10px;"></div>
+
+    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;">
+      <span style="font-size:13px;">I think</span>
+      <select id="hyp-var-a" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
+        <option value="mood">Mood</option>
+        <option value="stress">Stress</option>
+        <option value="sleep">Sleep</option>
+        <option value="energy">Energy</option>
+        <option value="focus">Focus</option>
+      </select>
+      <select id="hyp-direction" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
+        <option value="positive">helps / increases</option>
+        <option value="negative">hurts / decreases</option>
+        <option value="null">has no effect on</option>
+      </select>
+      <select id="hyp-var-b" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
+        <option value="mood">Mood</option>
+        <option value="stress">Stress</option>
+        <option value="sleep">Sleep</option>
+        <option value="energy">Energy</option>
+        <option value="focus">Focus</option>
+      </select>
+      <button class="btn btn-primary btn-sm" id="hyp-btn" onclick="runHypothesisTest()">
+        Test Hypothesis
+      </button>
+    </div>
+
+    <div id="hyp-loading" class="hidden" style="font-size:12px;color:var(--text-muted);padding:8px 0;">
+      Testing all three directions…
+    </div>
+    <div id="hyp-result"></div>
+    <div id="hyp-history"></div>
   </div>
 
   <div class="charts-grid">
@@ -71,14 +121,20 @@
       <h3 class="chart-title">Stress</h3>
       <canvas id="stress-chart" height="200"></canvas>
     </div>
+    <div class="chart-card">
+      <h3 class="chart-title">Energy</h3>
+      <canvas id="energy-chart" height="200"></canvas>
+    </div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
+<script src="{{ url_for('static', filename='js/insight-engine.js') }}"></script>
+<script src="{{ url_for('static', filename='js/hypothesis-tester.js') }}"></script>
 <script>
-let moodChart, sleepChart, stressChart;
+let moodChart, sleepChart, stressChart, energyChart;
 
 function loadTrends(days, btn) {
   document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
@@ -93,6 +149,7 @@ function loadTrends(days, btn) {
     .then(data => {
       loading.classList.add('hidden');
       renderTrends(data);
+      loadTimingInsights(days);
     })
     .catch(err => {
       loading.classList.add('hidden');
@@ -105,23 +162,81 @@ function renderTrends(data) {
   document.getElementById('stat-mood').textContent = data.mood.average || '—';
   document.getElementById('stat-sleep').textContent = data.sleep.average || '—';
   document.getElementById('stat-stress').textContent = data.stress.average || '—';
+  document.getElementById('stat-energy').textContent = (data.energy && data.energy.average) || '—';
   document.getElementById('stat-checkins').textContent = data.checkins_this_period;
   document.getElementById('stat-adherence').textContent =
     data.medication_adherence > 0 ? data.medication_adherence : '—';
 
-  // Insights
-  const insights = [];
-  if (data.mood.average) insights.push('Your mood averages ' + data.mood.average + '/10 this period.');
-  if (data.sleep.average) insights.push('Average sleep: ' + data.sleep.average + ' hours per night.');
-  if (data.stress.trend === 'increasing') insights.push('Stress appears to be trending upward — worth discussing with your provider.');
-  if (data.mood.trend === 'increasing') insights.push('Your mood has been improving.');
-  if (data.mood.trend === 'decreasing') insights.push('Mood has trended down — consider bringing this up with your provider.');
-  if (data.medication_adherence >= 90) insights.push('Excellent medication adherence at ' + data.medication_adherence + '%.');
-  if (data.medication_adherence > 0 && data.medication_adherence < 80) insights.push('Medication adherence is below 80% — your provider may want to know.');
+  // ── Build insights via Insight class ─────────────────────────────
+  const insightCandidates = [
+    { key: 'mood',   dir: 'increasing', text: 'Mood trending upward.' },
+    { key: 'mood',   dir: 'decreasing', text: 'Mood trending downward — worth discussing with your provider.' },
+    { key: 'stress', dir: 'increasing', text: 'Stress trending upward — consider raising this with your provider.' },
+    { key: 'stress', dir: 'decreasing', text: 'Stress has been declining.' },
+    { key: 'sleep',  dir: 'increasing', text: 'Sleep duration trending upward.' },
+    { key: 'sleep',  dir: 'decreasing', text: 'Sleep duration is declining — your provider may want to know.' },
+    { key: 'energy', dir: 'increasing', text: 'Energy trending upward.' },
+    { key: 'energy', dir: 'decreasing', text: 'Energy has been declining.' },
+  ];
+
+  const patientInsights = [];
+  let suppressedCount = 0;
+  let firstSuppressReason = '';
+
+  for (const c of insightCandidates) {
+    const metric = data[c.key];
+    if (!metric || metric.trend !== c.dir) continue;
+    const scores = metric.daily_scores || metric.daily_hours || [];
+    if (!scores.length) continue;
+
+    // Gate: same preconditions as before
+    const n = scores.length;
+    const freq = data.checkin_count / data.period_days;
+    const maxGap = Math.max(...(metric.dates && metric.dates.length > 1
+      ? metric.dates.slice(1).map((d, i) => (new Date(d) - new Date(metric.dates[i])) / 3600000)
+      : [0]));
+
+    if (n < 21)      { suppressedCount++; firstSuppressReason = firstSuppressReason || `Only ${n} observations; need 21`; continue; }
+    if (freq < 1.5)  { suppressedCount++; firstSuppressReason = firstSuppressReason || `Check-in frequency ${freq.toFixed(1)}/day below 1.5/day minimum`; continue; }
+    if (maxGap > 72) { suppressedCount++; firstSuppressReason = firstSuppressReason || `Data gap of ${Math.round(maxGap)}h detected`; continue; }
+    if (metric.r_squared < 0.64) { suppressedCount++; firstSuppressReason = firstSuppressReason || `R²=${metric.r_squared} — need R²≥0.64 (|r|≥0.8) for 80% confidence threshold`; continue; }
+    if (metric.p_value > 0.05)   { suppressedCount++; firstSuppressReason = firstSuppressReason || `p=${metric.p_value} — not statistically significant`; continue; }
+
+    const insight = buildInsightFromMetric(data, c.key, c.text);
+    if (insight) patientInsights.push(insight.toPatientDisplay());
+  }
+
+  // Adherence insight — no correlation required, just observation count
+  if (data.checkin_count >= 21) {
+    if (data.medication_adherence >= 90)
+      patientInsights.push({ pattern: `Excellent medication adherence at ${data.medication_adherence}%.`, confidence: null, limitations: [], contextProblems: [] });
+    else if (data.medication_adherence > 0 && data.medication_adherence < 80)
+      patientInsights.push({ pattern: `Medication adherence at ${data.medication_adherence}% — below 80% threshold. Your provider may want to discuss this.`, confidence: null, limitations: [], contextProblems: [] });
+  }
 
   const insightList = document.getElementById('insights-list');
-  insightList.innerHTML = insights.map(i => '<li>' + i + '</li>').join('');
-  document.getElementById('insights-panel').classList.toggle('hidden', insights.length === 0);
+  if (patientInsights.length) {
+    insightList.innerHTML = patientInsights.map(i => {
+      const confTag = i.confidence !== null
+        ? ` <span style="font-size:11px;opacity:.55;">(${i.confidence}% adjusted confidence)</span>` : '';
+      const warningTag = i.contextProblems.length
+        ? `<div style="font-size:11px;color:#7a5800;margin-top:3px;">⚠ ${i.contextProblems[0]}</div>` : '';
+      const limTag = i.limitations.length
+        ? `<details style="margin-top:4px;"><summary style="font-size:11px;color:var(--text-muted);cursor:pointer;">Limitations</summary>
+             <ul style="font-size:11px;color:var(--text-muted);margin:4px 0 0 0;padding-left:16px;">
+               ${i.limitations.map(l => `<li>${l}</li>`).join('')}
+             </ul></details>` : '';
+      return `<li style="margin-bottom:10px;">${i.pattern}${confTag}${warningTag}${limTag}</li>`;
+    }).join('');
+    document.getElementById('insights-panel').classList.remove('hidden');
+  } else {
+    const msg = suppressedCount > 0
+      ? `<li style="color:var(--text-muted);list-style:none;">Not enough data to surface statistically valid insights yet.
+           <span style="display:block;font-size:11px;margin-top:4px;opacity:.7;">${firstSuppressReason || 'Keep checking in daily.'}</span>
+         </li>` : '';
+    insightList.innerHTML = msg;
+    document.getElementById('insights-panel').classList.toggle('hidden', !suppressedCount);
+  }
 
   const labels = data.mood.daily_scores.map((_, i) => 'Day ' + (i + 1));
 
@@ -179,6 +294,23 @@ function renderTrends(data) {
     },
     options: chartOptions(1, 10),
   });
+
+  if (energyChart) energyChart.destroy();
+  const energyScores = (data.energy && data.energy.daily_scores) || [];
+  energyChart = new Chart(document.getElementById('energy-chart'), {
+    type: 'line',
+    data: {
+      labels: energyScores.map((_, i) => 'Day ' + (i + 1)),
+      datasets: [{
+        ...chartDefaults,
+        label: 'Energy',
+        data: energyScores,
+        borderColor: '#e6a817',
+        backgroundColor: 'rgba(230,168,23,0.12)',
+      }]
+    },
+    options: chartOptions(1, 10),
+  });
 }
 
 function chartOptions(min, max) {
@@ -200,5 +332,124 @@ function chartOptions(min, max) {
 }
 
 loadTrends(7, null);
+
+// ── Hypothesis tester ─────────────────────────────────────────────────────────
+const hypTester = new HypothesisTester();
+
+// Default var-b to something different from var-a
+document.getElementById('hyp-var-b').value = 'stress';
+
+async function runHypothesisTest() {
+  const varA = document.getElementById('hyp-var-a').value;
+  const varB = document.getElementById('hyp-var-b').value;
+  const dir  = document.getElementById('hyp-direction').value;
+  const errEl = document.getElementById('hyp-error');
+  const btn   = document.getElementById('hyp-btn');
+  const loading = document.getElementById('hyp-loading');
+
+  errEl.classList.add('hidden');
+
+  if (varA === varB) {
+    errEl.textContent = 'Choose two different variables.';
+    errEl.classList.remove('hidden');
+    return;
+  }
+
+  btn.disabled = true;
+  loading.classList.remove('hidden');
+  document.getElementById('hyp-result').innerHTML = '';
+
+  try {
+    const result = await hypTester.testUserHypothesis(varA, varB, dir, 60);
+    loading.classList.add('hidden');
+    hypTester.renderResult('hyp-result', varA, varB, dir, result);
+    // Reload history
+    await hypTester.loadHistory();
+    hypTester.renderHistory('hyp-history');
+  } catch (err) {
+    loading.classList.add('hidden');
+    errEl.textContent = err.message || 'Could not run hypothesis test.';
+    errEl.classList.remove('hidden');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+function prefillHypothesis(varA, varB, dir) {
+  document.getElementById('hyp-var-a').value = varA;
+  document.getElementById('hyp-var-b').value = varB;
+  document.getElementById('hyp-direction').value = dir;
+  document.getElementById('hyp-btn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function dismissUnexpected() {
+  localStorage.setItem('hyp_unexpected_result', 'null');
+  document.getElementById('unexpected-panel').innerHTML = '';
+}
+
+// ── Medication timing insights ────────────────────────────────────────────────
+async function loadTimingInsights(days) {
+  try {
+    const t = await apiGet('/api/trends/medication-timing?days=' + days);
+    const list = document.getElementById('insights-list');
+    const panel = document.getElementById('insights-panel');
+    const items = [];
+
+    // Consistency warnings
+    for (const med of (t.medications || [])) {
+      if (med.n_timed < 3) continue;
+      if (med.consistency === 'poor' || med.consistency === 'fair') {
+        items.push(
+          `Timing for ${med.name}${med.dose ? ' (' + med.dose + ')' : ''} varies by ±${med.std_dev_hours}h ` +
+          `(average: ${med.avg_time}) — more consistent dosing may improve predictability of effects.`
+        );
+      }
+    }
+
+    // Significant timing-outcome correlations
+    const hm = t.hours_since_dose_vs_mood;
+    if (hm && hm.p_value <= 0.05 && Math.abs(hm.r) >= 0.6) {
+      const dir = hm.r > 0
+        ? 'improves as more time passes since your dose'
+        : 'tends to peak closer to your dose time';
+      items.push(`Mood ${dir} (r=${hm.r}, p=${hm.p_value}, ${hm.n} check-ins).`);
+    }
+
+    const he = t.hours_since_dose_vs_energy;
+    if (he && he.p_value <= 0.05 && Math.abs(he.r) >= 0.6) {
+      const dir = he.r > 0
+        ? 'builds as more time passes since your dose'
+        : 'tends to peak closer to your dose time';
+      items.push(`Energy ${dir} (r=${he.r}, p=${he.p_value}, ${he.n} check-ins).`);
+    }
+
+    const dm = t.dose_time_vs_mood;
+    if (dm && dm.p_value <= 0.05 && Math.abs(dm.r) >= 0.6) {
+      const dir = dm.r < 0 ? 'Earlier dosing correlates with higher afternoon/evening mood.'
+                           : 'Later dosing correlates with higher afternoon/evening mood.';
+      items.push(`${dir} (r=${dm.r}, p=${dm.p_value}, ${dm.n} check-ins).`);
+    }
+
+    if (items.length) {
+      const existing = list.innerHTML;
+      list.innerHTML = existing +
+        items.map(i => `<li><strong style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;opacity:.6;">Timing · </strong>${i}</li>`).join('');
+      panel.classList.remove('hidden');
+    }
+  } catch (_) {}
+}
+
+// Load history and check for unexpected pattern on page load
+(async () => {
+  try {
+    await hypTester.loadHistory();
+    hypTester.renderHistory('hyp-history');
+  } catch (_) {}
+
+  try {
+    const pattern = await hypTester.surfaceUnexpectedPatterns(30);
+    if (pattern) hypTester.renderUnexpected('unexpected-panel', pattern);
+  } catch (_) {}
+})();
 </script>
 {% endblock %}

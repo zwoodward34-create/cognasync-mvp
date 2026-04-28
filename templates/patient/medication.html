@@ -33,7 +33,7 @@
           <span class="med-dose-badge">{{ med.dose }}</span>
           {% if med.frequency %}<span class="med-freq-tag">{{ med.frequency }}</span>{% endif %}
         </div>
-        <button class="btn-remove-card" onclick="removeMedication('{{ med.name }}')" title="Remove medication">×</button>
+        <button class="btn-remove-card" onclick="removeMedication('{{ med.name }}', '{{ med.dose }}')" title="Remove medication">×</button>
       </div>
 
       <div class="med-info-tabs">
@@ -165,11 +165,61 @@ function switchMedTab(btn, paneid) {
   document.getElementById(paneid).classList.remove('hidden');
 }
 
-// Load medication info for each card on page load
-document.querySelectorAll('.med-detail-card').forEach((card, i) => {
-  const idx = i + 1;
-  const name = card.querySelector('.med-detail-name').textContent.trim().toLowerCase();
-  loadMedInfo(name, idx);
+// Load cross-medication interaction alerts first, then populate each card
+let allInteractionAlerts = [];
+
+function injectCardInteractions(name, idx) {
+  const relevant = allInteractionAlerts.filter(ia =>
+    ia.drug_a.toLowerCase() === name || ia.drug_b.toLowerCase() === name
+  );
+  const intEl   = document.getElementById('content-int-' + idx);
+  const intLoad = document.getElementById('loading-int-' + idx);
+  if (!intEl) return;
+
+  let crossHtml = '';
+  if (relevant.length > 0) {
+    crossHtml = `<div style="margin-bottom:12px">
+      <div style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#b94a48;margin-bottom:6px">⚠ Active Interactions With Your Medications</div>
+      ${relevant.map(ia => `
+        <div class="interaction-alert interaction-alert--${ia.severity}" style="margin-bottom:6px">
+          <div class="ia-drugs">${ia.drug_a} + ${ia.drug_b}</div>
+          <div class="ia-warning">${ia.warning}</div>
+          <div class="ia-note">Discuss with your prescribing provider.</div>
+        </div>`).join('')}
+    </div>`;
+  }
+  intEl.dataset.crossHtml = crossHtml;
+  // Merge with reference text if already loaded
+  if (!intEl.classList.contains('hidden')) {
+    intEl.innerHTML = crossHtml + (intEl.dataset.refHtml || '');
+  }
+}
+
+Promise.resolve(
+  currentMedNames.length >= 2
+    ? apiGet('/api/medications/interactions').then(d => { allInteractionAlerts = d.interactions || []; })
+    : Promise.resolve()
+).then(() => {
+  document.querySelectorAll('.med-detail-card').forEach((card, i) => {
+    const idx  = i + 1;
+    const name = card.querySelector('.med-detail-name').textContent.trim().toLowerCase();
+    injectCardInteractions(name, idx);
+    loadMedInfo(name, idx);
+  });
+
+  // Also populate the top interactions panel
+  const panel = document.getElementById('interactions-panel');
+  const list  = document.getElementById('interactions-list');
+  if (panel && list && allInteractionAlerts.length > 0) {
+    list.innerHTML = allInteractionAlerts.map(ia => `
+      <div class="interaction-alert interaction-alert--${ia.severity}">
+        <div class="ia-drugs">${ia.drug_a} + ${ia.drug_b}</div>
+        <div class="ia-warning">${ia.warning}</div>
+        <div class="ia-note">Discuss with your prescribing provider.</div>
+      </div>
+    `).join('');
+    panel.classList.remove('hidden');
+  }
 });
 
 function loadMedInfo(name, idx) {
@@ -189,12 +239,14 @@ function loadMedInfo(name, idx) {
         efLoad.classList.add('hidden');
       }
 
-      // Interactions tab
+      // Interactions tab — merge reference text with any cross-med alerts
       const intEl = document.getElementById('content-int-' + idx);
       const intLoad = document.getElementById('loading-int-' + idx);
       if (intEl) {
         const warns = data.interaction_warnings || 'No major interactions in our database.';
-        intEl.innerHTML = `<div class="interaction-warn-text">${warns}</div>`;
+        const refHtml = `<div class="interaction-warn-text"><strong style="font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Reference Interactions</strong><br>${warns}</div>`;
+        intEl.dataset.refHtml = refHtml;
+        intEl.innerHTML = (intEl.dataset.crossHtml || '') + refHtml;
         intEl.classList.remove('hidden');
         intLoad.classList.add('hidden');
       }
@@ -228,32 +280,12 @@ function loadMedInfo(name, idx) {
     });
 }
 
-// Load interaction warnings between all current medications
-if (currentMedNames.length >= 2) {
-  apiGet('/api/medications/interactions')
-    .then(data => {
-      const panel = document.getElementById('interactions-panel');
-      const list = document.getElementById('interactions-list');
-      if (!panel || !list) return;
-      if (data.interactions && data.interactions.length > 0) {
-        list.innerHTML = data.interactions.map(ia => `
-          <div class="interaction-alert interaction-alert--${ia.severity}">
-            <div class="ia-drugs">${ia.drug_a} + ${ia.drug_b}</div>
-            <div class="ia-warning">${ia.warning}</div>
-            <div class="ia-note">Discuss with your prescribing provider.</div>
-          </div>
-        `).join('');
-        panel.classList.remove('hidden');
-      }
-    })
-    .catch(() => {});
-}
-
-function removeMedication(name) {
-  if (!confirm(`Remove ${name} from your medication list?`)) return;
-  apiPost('/api/settings/profile/remove-medication', { name })
+function removeMedication(name, dose) {
+  const label = dose ? `${name} ${dose}` : name;
+  if (!confirm(`Remove ${label} from your medication list?`)) return;
+  apiPost('/api/settings/profile/remove-medication', { name, dose })
     .then(() => {
-      showAlert('med-success', `${name.charAt(0).toUpperCase()+name.slice(1)} removed from your list.`, true);
+      showAlert('med-success', `${label.charAt(0).toUpperCase()+label.slice(1)} removed from your list.`, true);
       setTimeout(() => location.reload(), 1000);
     })
     .catch(err => {

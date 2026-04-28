@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import database as db
-import auth as auth_module
+import supabase_auth as auth_module
 import claude_api
 
 app = Flask(__name__)
@@ -142,8 +142,7 @@ def journal_page():
     user, redir = _require_patient()
     if redir:
         return redir
-    journals = db.get_journals(user['id'], limit=10)
-    return render_template('patient/journal.html', user=user, journals=journals)
+    return render_template('patient/journal_react.html', user=user)
 
 
 @app.route('/medication')
@@ -181,7 +180,11 @@ def settings_page():
     if redir:
         return redir
     profile = db.get_patient_profile(user['id'])
-    return render_template('patient/settings.html', user=user, profile=profile)
+    linked_provider = None
+    if profile and profile.get('provider_id'):
+        linked_provider = db.get_user_by_id(profile['provider_id'])
+    return render_template('patient/settings.html', user=user, profile=profile,
+                           linked_provider=linked_provider)
 
 
 @app.route('/provider')
@@ -204,11 +207,47 @@ def provider_patient_detail(patient_id):
     if not patient:
         flash('Patient not found', 'error')
         return redirect(url_for('provider_dashboard'))
-    summaries = db.get_summaries(patient_id)
-    trends = db.get_trends_data(patient_id, days=days)
+
+    patients      = db.get_provider_patients(user['id'])
+    summaries     = db.get_summaries(patient_id)
+    trends        = db.get_trends_data(patient_id, days=days)
+    interactions  = db.check_medication_interactions(patient_id)
+    journals      = db.get_journals(patient_id, limit=10, shared_only=True)
+    timing_stats  = db.get_medication_timing_stats(patient_id, days=days)
+
+    MIN_OBS = 21
+    alerts = []
+    n = trends.get('checkin_count', 0)
+    # Only fire trend alerts when there's enough statistically valid data
+    mood_t = trends['mood']
+    if (mood_t['trend'] == 'decreasing' and n >= MIN_OBS
+            and mood_t.get('p_value', 1) <= 0.05
+            and mood_t.get('r_squared', 0) >= 0.25):
+        alerts.append({'level': 'urgent', 'title': 'Mood Declining',
+            'desc': f"Mood trending downward — average {mood_t['average']}/10 over {days} days "
+                    f"(R²={mood_t['r_squared']}, p={mood_t['p_value']})."})
+    if 0 < trends.get('medication_adherence', 0) < 80 and n >= MIN_OBS:
+        alerts.append({'level': 'warning', 'title': 'Low Medication Adherence',
+            'desc': f"Adherence at {trends['medication_adherence']}% — below the 80% threshold."})
+    stress_t = trends['stress']
+    if (stress_t['trend'] == 'increasing' and stress_t['average'] > 6
+            and n >= MIN_OBS
+            and stress_t.get('p_value', 1) <= 0.05
+            and stress_t.get('r_squared', 0) >= 0.25):
+        alerts.append({'level': 'warning', 'title': 'Elevated Stress Trend',
+            'desc': f"Stress trending upward — average {stress_t['average']}/10 over {days} days "
+                    f"(R²={stress_t['r_squared']}, p={stress_t['p_value']})."})
+
+    for ta in timing_stats.get('timing_alerts', []):
+        alerts.append({'level': 'warning', 'title': 'Inconsistent Medication Timing',
+            'desc': ta['message']})
+
     return render_template('provider/patient_detail.html',
                            user=user, patient=patient,
+                           patients=patients,
                            summaries=summaries, trends=trends,
+                           alerts=alerts, interactions=interactions,
+                           journals=journals, timing_stats=timing_stats,
                            selected_days=days)
 
 
@@ -287,12 +326,16 @@ def api_create_checkin():
     except (ValueError, TypeError):
         return jsonify({'error': 'mood_score, stress_score, and sleep_hours must be numeric'}), 400
 
-    if not (1 <= mood <= 10):
-        return jsonify({'error': 'mood_score must be 1-10'}), 400
-    if not (1 <= stress <= 10):
-        return jsonify({'error': 'stress_score must be 1-10'}), 400
+    if not (0 <= mood <= 10):
+        return jsonify({'error': 'mood_score must be 0-10'}), 400
+    if not (0 <= stress <= 10):
+        return jsonify({'error': 'stress_score must be 0-10'}), 400
     if not (0 <= sleep <= 24):
         return jsonify({'error': 'sleep_hours must be 0-24'}), 400
+
+    checkin_type = data.get('checkin_type', 'on_demand')
+    if checkin_type not in ('morning', 'afternoon', 'evening', 'on_demand'):
+        checkin_type = 'on_demand'
 
     checkin_id = db.create_checkin(
         patient_id=user['id'],
@@ -305,12 +348,48 @@ def api_create_checkin():
         symptoms=data.get('symptoms', ''),
         notes=data.get('notes', ''),
         extended_data=data.get('extended_data'),
+        checkin_type=checkin_type,
     )
+
+    # Generate AI insight for this check-in
+    ai_insight = None
+    try:
+        baseline = db.get_checkin_baseline(user['id'], days=7)
+        checkin_snapshot = {
+            'mood_score': mood, 'stress_score': stress, 'sleep_hours': sleep,
+            'notes': data.get('notes', ''),
+            'extended_data': data.get('extended_data'),
+        }
+        result = claude_api.analyze_checkin(checkin_snapshot, checkin_type, baseline)
+        if result.get('status') == 'safe' and result.get('text'):
+            ai_insight = result['text']
+            db.update_checkin_insights(checkin_id, ai_insight)
+    except Exception:
+        pass  # AI insight is non-blocking
+
     return jsonify({
         'checkin_id': checkin_id,
         'patient_id': user['id'],
         'message': 'Check-in recorded successfully',
+        'ai_insight': ai_insight,
     }), 201
+
+
+@app.route('/api/checkins/today', methods=['GET'])
+def api_checkins_today():
+    """Return which scheduled check-in types have been completed today."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    today = date.today().isoformat()
+    checkins = db.get_checkins(user['id'], days=1)
+    done = set()
+    for c in checkins:
+        ct = c.get('checkin_type') or ''
+        cd = (c.get('checkin_date') or '')[:10]
+        if cd == today and ct in ('morning', 'afternoon', 'evening'):
+            done.add(ct)
+    return jsonify({'completed': list(done), 'date': today}), 200
 
 
 @app.route('/api/checkins/baseline', methods=['GET'])
@@ -352,10 +431,12 @@ def api_create_journal():
     user, err = _api_user('patient')
     if err:
         return err
-    data = request.json or {}
+    data = request.get_json(silent=True) or {}
     raw_entry = data.get('raw_entry', '').strip()
     if not raw_entry:
         return jsonify({'error': 'raw_entry is required'}), 400
+
+    share_with_provider = int(data.get('share_with_provider', 1))
 
     try:
         result = claude_api.analyze_journal(raw_entry)
@@ -368,6 +449,7 @@ def api_create_journal():
         entry_type=data.get('entry_type', 'free_flow'),
         raw_entry=raw_entry,
         ai_analysis=ai_text,
+        share_with_provider=share_with_provider,
     )
     response = {
         'journal_id': journal_id,
@@ -402,7 +484,7 @@ def api_create_summary():
     days = int(data.get('days', 14))
 
     checkins = db.get_checkins(user['id'], days=days)
-    journals = db.get_journals(user['id'], limit=20)
+    journals = db.get_journals(user['id'], limit=20, shared_only=True)
 
     if not checkins and not journals:
         return jsonify({'error': 'No data found for the requested period'}), 400
@@ -458,6 +540,8 @@ def api_get_trends():
         if not patient_id:
             return jsonify({'error': 'patient_id required for provider'}), 400
     trends = db.get_trends_data(patient_id, days=days)
+    profile = db.get_patient_profile(patient_id)
+    trends['current_medications'] = profile.get('current_medications', []) if profile else []
     return jsonify(trends), 200
 
 
@@ -493,7 +577,7 @@ def api_provider_generate_summary(patient_id):
     days = int(data.get('days', 14))
 
     checkins = db.get_checkins(patient_id, days=days)
-    journals = db.get_journals(patient_id, limit=20)
+    journals = db.get_journals(patient_id, limit=20, shared_only=True)
 
     if not checkins and not journals:
         return jsonify({'error': 'No data found for this patient'}), 400
@@ -546,10 +630,13 @@ def api_update_profile():
         new_meds = data['current_medications']
         if not isinstance(new_meds, list):
             new_meds = [new_meds]
-        # Append if name not already present
-        existing_names = {m.get('name', '').lower() for m in existing}
+        # Append if (name, dose) combo not already present — allows same med at different doses
+        existing_keys = {(m.get('name', '').lower(), m.get('dose', '').lower()) for m in existing}
         for m in new_meds:
-            if m.get('name', '').lower() not in existing_names:
+            key = (m.get('name', '').lower(), m.get('dose', '').lower())
+            if key not in existing_keys:
+                if 'start_date' not in m:
+                    m['start_date'] = date.today().isoformat()
                 existing.append(m)
         updates['current_medications'] = existing
 
@@ -605,6 +692,33 @@ def api_medication_interactions():
     return jsonify({'interactions': alerts}), 200
 
 
+@app.route('/api/settings/link-provider', methods=['POST'])
+def api_link_provider():
+    user, err = _api_user('patient')
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    email = data.get('email', '').strip().lower()
+    if not email:
+        return jsonify({'error': 'Provider email required'}), 400
+    provider = db.get_user_by_email(email)
+    if not provider or provider['role'] != 'provider':
+        return jsonify({'error': 'No provider account found with that email'}), 404
+    db.assign_patient_to_provider(user['id'], provider['id'])
+    return jsonify({'message': f'Linked to {provider["full_name"]}',
+                    'provider_name': provider['full_name'],
+                    'provider_email': provider['email']}), 200
+
+
+@app.route('/api/settings/unlink-provider', methods=['POST'])
+def api_unlink_provider():
+    user, err = _api_user('patient')
+    if err:
+        return err
+    db.assign_patient_to_provider(user['id'], None)
+    return jsonify({'message': 'Provider unlinked'}), 200
+
+
 @app.route('/api/settings/profile/remove-medication', methods=['POST'])
 def api_remove_medication():
     user, err = _api_user('patient')
@@ -612,18 +726,89 @@ def api_remove_medication():
         return err
     data = request.get_json(silent=True) or {}
     name = data.get('name', '').strip().lower()
+    dose = data.get('dose', '').strip().lower()
     if not name:
         return jsonify({'error': 'Medication name required'}), 400
     profile = db.get_patient_profile(user['id'])
     existing = profile.get('current_medications', []) if profile else []
     if not isinstance(existing, list):
         existing = []
-    updated = [m for m in existing if m.get('name', '').lower() != name]
+    if dose:
+        updated = [m for m in existing if not (
+            m.get('name', '').lower() == name and m.get('dose', '').lower() == dose
+        )]
+    else:
+        updated = [m for m in existing if m.get('name', '').lower() != name]
     db.update_patient_profile(user['id'], current_medications=updated)
     return jsonify({'message': f'{name.title()} removed', 'medications': updated}), 200
 
 
+@app.route('/api/trends/medication-timing', methods=['GET'])
+def api_medication_timing():
+    user, err = _api_user()
+    if err:
+        return err
+    days = min(int(request.args.get('days', 30)), 180)
+    patient_id = user['id']
+    if user['role'] == 'provider':
+        patient_id = int(request.args.get('patient_id', 0))
+        if not patient_id:
+            return jsonify({'error': 'patient_id required'}), 400
+    stats = db.get_medication_timing_stats(patient_id, days=days)
+    return jsonify(stats), 200
+
+
+# ── Hypothesis Testing API ────────────────────────────────────────────────────
+
+@app.route('/api/hypotheses/test', methods=['POST'])
+def api_test_hypothesis():
+    user, err = _api_user('patient')
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    var_a = data.get('variable_a', '').strip().lower()
+    var_b = data.get('variable_b', '').strip().lower()
+    user_dir = data.get('user_direction', 'positive')
+    days = min(int(data.get('days', 60)), 180)
+
+    if var_a not in db.VALID_HYPOTHESIS_VARS or var_b not in db.VALID_HYPOTHESIS_VARS:
+        return jsonify({'error': 'Invalid variable name'}), 400
+    if var_a == var_b:
+        return jsonify({'error': 'Variables must be different'}), 400
+    if user_dir not in {'positive', 'null', 'negative'}:
+        return jsonify({'error': 'Direction must be positive, null, or negative'}), 400
+
+    pairs = db.get_paired_values(user['id'], var_a, var_b, days)
+    if len(pairs) < 5:
+        return jsonify({
+            'error': f'Not enough matched data ({len(pairs)} check-ins have both {var_a} and {var_b}; need at least 5)'
+        }), 400
+
+    result = db.compute_correlation_evidence(pairs, user_dir)
+    db.save_hypothesis_result(user['id'], var_a, var_b, user_dir, result)
+    return jsonify(result), 200
+
+
+@app.route('/api/hypotheses', methods=['GET'])
+def api_hypothesis_history():
+    user, err = _api_user('patient')
+    if err:
+        return err
+    history = db.get_hypothesis_history(user['id'])
+    return jsonify({'history': history}), 200
+
+
+@app.route('/api/hypotheses/unexpected', methods=['GET'])
+def api_unexpected_pattern():
+    user, err = _api_user('patient')
+    if err:
+        return err
+    days = min(int(request.args.get('days', 30)), 180)
+    pattern = db.find_unexpected_pattern(user['id'], days)
+    return jsonify({'pattern': pattern}), 200
+
+
 if __name__ == '__main__':
-    port = int(os.environ.get('FLASK_PORT', 5000))
+    port = int(os.environ.get('FLASK_PORT', 5002))
     debug = os.environ.get('FLASK_ENV', 'development') == 'development'
     app.run(host='0.0.0.0', port=port, debug=debug)

@@ -13,3 +13,4 @@ dist/
 build/
 .replit
 replit.nix
+.env

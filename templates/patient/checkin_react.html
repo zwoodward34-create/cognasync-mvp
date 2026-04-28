@@ -1,16 +1,42 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Daily Check-In — CognaSync</title>
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="{{ url_for('static', filename='dist/assets/index.css') }}">
-</head>
-<body style="margin:0;background:#0e0e1a;">
-  <div id="checkin-root"></div>
-  <script type="module" src="{{ url_for('static', filename='dist/assets/index.js') }}"></script>
-</body>
-</html>
+{% extends "layout.html" %}
+{% block title %}Daily Check-In — CognaSync{% endblock %}
+
+{% block head %}
+<link rel="stylesheet" href="{{ url_for('static', filename='dist/assets/index.css') }}">
+{% endblock %}
+
+{% block full_page %}
+{% if user is defined and user %}
+<header class="top-nav">
+  <div class="top-nav-brand">
+    <span class="brand-mark">CS</span>
+    <span class="brand-name">CognaSync</span>
+  </div>
+  <nav class="top-nav-links">
+    {% if user.role == 'patient' %}
+      <a href="{{ url_for('home') }}"           class="top-nav-item {% if request.endpoint == 'home' %}active{% endif %}">Home</a>
+      <a href="{{ url_for('checkin_page') }}"   class="top-nav-item {% if request.endpoint == 'checkin_page' %}active{% endif %}">Check-In</a>
+      <a href="{{ url_for('journal_page') }}"   class="top-nav-item {% if request.endpoint == 'journal_page' %}active{% endif %}">Journal</a>
+      <a href="{{ url_for('medication_page') }}" class="top-nav-item {% if request.endpoint == 'medication_page' %}active{% endif %}">Medications</a>
+      <a href="{{ url_for('summary_page') }}"   class="top-nav-item {% if request.endpoint == 'summary_page' %}active{% endif %}">Pre-Appt Summary</a>
+      <a href="{{ url_for('trends_page') }}"    class="top-nav-item {% if request.endpoint == 'trends_page' %}active{% endif %}">Trends</a>
+      <a href="{{ url_for('settings_page') }}"  class="top-nav-item {% if request.endpoint == 'settings_page' %}active{% endif %}">Settings</a>
+    {% else %}
+      <a href="{{ url_for('provider_dashboard') }}" class="top-nav-item {% if request.endpoint == 'provider_dashboard' %}active{% endif %}">Dashboard</a>
+    {% endif %}
+  </nav>
+  <div class="top-nav-end">
+    <span class="top-nav-user">{{ user.full_name }}</span>
+    <a href="{{ url_for('logout') }}" class="top-nav-logout">Sign out</a>
+  </div>
+</header>
+{% endif %}
+
+<div id="checkin-root"></div>
+
+<script src="{{ url_for('static', filename='js/common.js') }}"></script>
+{% endblock %}
+
+{% block scripts %}
+<script type="module" src="{{ url_for('static', filename='dist/assets/index.js') }}"></script>
+{% endblock %}

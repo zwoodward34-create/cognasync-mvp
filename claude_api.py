@@ -2,7 +2,7 @@ import os
 import json
 import anthropic
 
-CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-3-5-sonnet-20241022')
+CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-haiku-4-5-20251001')
 
 _client = None
 
@@ -10,7 +10,10 @@ _client = None
 def get_client():
     global _client
     if _client is None:
-        _client = anthropic.Anthropic(api_key=os.environ.get('ANTHROPIC_API_KEY'))
+        _client = anthropic.Anthropic(
+            api_key=os.environ.get('ANTHROPIC_API_KEY'),
+            max_retries=3,  # retries with exponential backoff on 429 and transient 5xx
+        )
     return _client
 
 
@@ -103,8 +106,90 @@ ANALYSIS:"""
     return {'status': 'safe', 'text': clean, 'raw': raw}
 
 
+def analyze_checkin(checkin_data, checkin_type, baseline=None):
+    notes = checkin_data.get('notes', '')
+    if notes and _check_crisis(notes):
+        return {'status': 'crisis', 'text': CRISIS_RESPONSE}
+
+    type_labels = {
+        'morning': 'morning', 'afternoon': 'afternoon',
+        'evening': 'evening', 'on_demand': 'on-demand',
+    }
+    label = type_labels.get(checkin_type, 'check-in')
+    ext = checkin_data.get('extended_data', {}) or {}
+
+    summary_lines = [
+        f"Check-in type: {label}",
+        f"Mood: {checkin_data.get('mood_score')}/10",
+        f"Anxiety/stress: {checkin_data.get('stress_score')}/10",
+        f"Energy: {ext.get('energy', 'not recorded')}/10",
+        f"Focus: {ext.get('focus', 'not recorded')}/10",
+    ]
+    if checkin_type == 'morning':
+        summary_lines += [
+            f"Sleep hours: {checkin_data.get('sleep_hours')}",
+            f"Sleep quality: {ext.get('sleep_quality', 'not recorded')}/10",
+        ]
+    if ext.get('caffeine_mg') is not None:
+        summary_lines.append(f"Caffeine: {ext.get('caffeine_mg')}mg")
+    if notes:
+        summary_lines.append(f"Notes: {notes[:200]}")
+    if baseline:
+        summary_lines.append(f"7-day avg mood: {baseline.get('avgMood', 'n/a')}, avg anxiety: {baseline.get('avgAnxiety', 'n/a')}")
+
+    data_str = '\n'.join(summary_lines)
+
+    prompt = f"""You are a supportive mental health tracking assistant. A patient just completed a {label} check-in.
+Generate a brief, warm, data-grounded observation (2-3 sentences max) about their current state based on this data.
+
+RULES:
+- Describe patterns and comparisons to their baseline — never diagnose
+- Do NOT say "you have", "you are [disorder]", "you should [medication]"
+- If notes mention a crisis, do not analyze — that is handled separately
+- Be warm, specific, and clinically neutral
+- Reference specific numbers when they tell a meaningful story
+
+CHECK-IN DATA:
+{data_str}
+
+OBSERVATION:"""
+
+    try:
+        raw = _call_claude(prompt, max_tokens=200)
+        clean = _sanitize_output(raw)
+        if not clean:
+            clean = "Check-in recorded. Your data has been saved and will inform your next summary."
+        if _check_crisis(raw):
+            return {'status': 'crisis', 'text': CRISIS_RESPONSE}
+        return {'status': 'safe', 'text': clean}
+    except RuntimeError:
+        return {'status': 'safe', 'text': 'Check-in recorded successfully.'}
+
+
 def generate_appointment_summary(checkin_data, journal_data, days=14):
-    checkin_json = json.dumps(checkin_data, indent=2, default=str)
+    checkin_rows = []
+    for c in checkin_data:
+        row = {
+            'date': c.get('date', ''),
+            'type': c.get('checkin_type', 'on_demand'),
+            'mood': c.get('mood_score'),
+            'anxiety': c.get('stress_score'),
+            'sleep_hours': c.get('sleep_hours'),
+        }
+        ext = {}
+        if c.get('extended_data'):
+            try:
+                ext = json.loads(c['extended_data']) if isinstance(c['extended_data'], str) else c.get('extended_data', {})
+            except Exception:
+                pass
+        if ext.get('energy') is not None:
+            row['energy'] = ext['energy']
+        if ext.get('sleep_quality') is not None:
+            row['sleep_quality'] = ext['sleep_quality']
+        if c.get('ai_insights'):
+            row['ai_observation'] = c['ai_insights'][:200]
+        checkin_rows.append(row)
+    checkin_json = json.dumps(checkin_rows, indent=2, default=str)
     journal_json = json.dumps(
         [{'date': j.get('created_at', '')[:10],
           'entry': j.get('raw_entry', '')[:300],

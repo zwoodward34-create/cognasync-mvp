@@ -64,6 +64,53 @@
     </form>
   </div>
 
+  <div class="settings-card" id="provider-card">
+    <h2 class="settings-heading">Your Provider</h2>
+    {% if linked_provider %}
+    <div id="provider-linked-view">
+      <div class="settings-row">
+        <span class="settings-label">Name</span>
+        <span class="settings-value">{{ linked_provider.full_name }}</span>
+      </div>
+      <div class="settings-row">
+        <span class="settings-label">Email</span>
+        <span class="settings-value">{{ linked_provider.email }}</span>
+      </div>
+      <p class="text-muted" style="margin-top:10px;font-size:13px;">
+        Your check-in trends and shared journal entries are visible to this provider.
+      </p>
+      <button class="btn btn-ghost btn-sm" style="margin-top:10px;" onclick="unlinkProvider()">
+        Unlink Provider
+      </button>
+    </div>
+    <div id="provider-link-form" style="display:none;">
+      <div class="form-group">
+        <label for="provider_email">Provider email address</label>
+        <input type="email" id="provider_email" name="provider_email"
+               class="form-input" placeholder="provider@clinic.com">
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary btn-sm" onclick="linkProvider()">Link Provider</button>
+        <button class="btn btn-ghost btn-sm" onclick="toggleLinkForm(false)">Cancel</button>
+      </div>
+    </div>
+    {% else %}
+    <p class="text-muted" style="margin-bottom:14px;font-size:13px;">
+      Link your account to a provider so they can view your check-in data and shared journal entries before appointments.
+    </p>
+    <div id="provider-linked-view" style="display:none;"></div>
+    <div id="provider-link-form">
+      <div class="form-group">
+        <label for="provider_email">Provider email address</label>
+        <input type="email" id="provider_email" name="provider_email"
+               class="form-input" placeholder="provider@clinic.com">
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="linkProvider()">Link Provider</button>
+    </div>
+    {% endif %}
+    <div id="provider-msg" class="hidden" style="margin-top:10px;font-size:13px;"></div>
+  </div>
+
   <div class="settings-card settings-card--danger">
     <h2 class="settings-heading">Session</h2>
     <p class="text-muted">Signing out will end your current session on this device.</p>
@@ -76,4 +123,53 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
 <script>initSettings();</script>
+<script>
+function linkProvider() {
+  const email = document.getElementById('provider_email').value.trim();
+  const msg = document.getElementById('provider-msg');
+  if (!email) return;
+  apiPost('/api/settings/link-provider', { email })
+    .then(data => {
+      msg.textContent = 'Linked to ' + data.provider_name;
+      msg.style.color = 'var(--green, #2a7a2a)';
+      msg.classList.remove('hidden');
+      document.getElementById('provider-link-form').style.display = 'none';
+      const view = document.getElementById('provider-linked-view');
+      view.style.display = '';
+      view.innerHTML = `
+        <div class="settings-row"><span class="settings-label">Name</span><span class="settings-value">${data.provider_name}</span></div>
+        <div class="settings-row"><span class="settings-label">Email</span><span class="settings-value">${data.provider_email}</span></div>
+        <p class="text-muted" style="margin-top:10px;font-size:13px;">Your check-in trends and shared journal entries are visible to this provider.</p>
+        <button class="btn btn-ghost btn-sm" style="margin-top:10px;" onclick="unlinkProvider()">Unlink Provider</button>`;
+    })
+    .catch(err => {
+      msg.textContent = err.message || 'Could not link provider.';
+      msg.style.color = 'var(--red, #8B1A1A)';
+      msg.classList.remove('hidden');
+    });
+}
+
+function unlinkProvider() {
+  if (!confirm('Unlink your provider? They will no longer have access to your data.')) return;
+  const msg = document.getElementById('provider-msg');
+  apiPost('/api/settings/unlink-provider', {})
+    .then(() => {
+      document.getElementById('provider-linked-view').style.display = 'none';
+      document.getElementById('provider-linked-view').innerHTML = '';
+      document.getElementById('provider-link-form').style.display = '';
+      msg.textContent = 'Provider unlinked.';
+      msg.style.color = 'var(--text-muted)';
+      msg.classList.remove('hidden');
+    })
+    .catch(err => {
+      msg.textContent = err.message || 'Failed to unlink.';
+      msg.style.color = 'var(--red, #8B1A1A)';
+      msg.classList.remove('hidden');
+    });
+}
+
+function toggleLinkForm(show) {
+  document.getElementById('provider-link-form').style.display = show ? '' : 'none';
+}
+</script>
 {% endblock %}

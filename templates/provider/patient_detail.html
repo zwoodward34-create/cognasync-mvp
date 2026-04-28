@@ -1,244 +1,541 @@
 {% extends "layout.html" %}
-{% block title %}{{ patient.full_name }} — CognaSync{% endblock %}
+{% block title %}{{ patient.full_name }} — CognaSync Provider{% endblock %}
+
+{% block body_class %}pv-body{% endblock %}
 
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/insight-engine.js') }}"></script>
 {% endblock %}
 
 {% block content %}
-<div class="page-header">
-  <div>
-    <a href="{{ url_for('provider_dashboard') }}" class="back-link">← All Patients</a>
-    <h1 class="page-title">{{ patient.full_name }}</h1>
-    <p class="page-sub">{{ patient.email }}</p>
-  </div>
-  <div class="period-selector">
-    <a href="?days=7" class="period-btn {% if selected_days == 7 %}active{% endif %}">7d</a>
-    <a href="?days=14" class="period-btn {% if selected_days == 14 %}active{% endif %}">14d</a>
-    <a href="?days=30" class="period-btn {% if selected_days == 30 %}active{% endif %}">30d</a>
-  </div>
-</div>
+<!-- Provider shell -->
+<div class="pv-shell">
 
-<div class="patient-overview">
-  <div class="overview-card">
-    <div class="overview-label">Check-ins ({{ selected_days }}d)</div>
-    <div class="overview-value">{{ patient.checkins_last_period }}</div>
-  </div>
-  <div class="overview-card">
-    <div class="overview-label">Avg Mood</div>
-    <div class="overview-value">{{ trends.mood.average }}/10</div>
-  </div>
-  <div class="overview-card">
-    <div class="overview-label">Avg Sleep</div>
-    <div class="overview-value">{{ trends.sleep.average }}h</div>
-  </div>
-  <div class="overview-card">
-    <div class="overview-label">Avg Stress</div>
-    <div class="overview-value">{{ trends.stress.average }}/10</div>
-  </div>
-  <div class="overview-card">
-    <div class="overview-label">Med Adherence</div>
-    <div class="overview-value">{{ trends.medication_adherence }}%</div>
-  </div>
-</div>
-
-{% if patient.current_medications %}
-<div class="detail-section">
-  <h2 class="section-title">Current Medications</h2>
-  <div class="med-tags">
-    {% for med in patient.current_medications %}
-    <span class="med-tag">{{ med.name }} {{ med.dose }}</span>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-<!-- Charts -->
-{% if trends.mood.daily_scores %}
-<div class="detail-section">
-  <h2 class="section-title">Trends</h2>
-  <div class="charts-grid">
-    <div class="chart-card">
-      <h3 class="chart-title">Mood</h3>
-      <canvas id="mood-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Sleep</h3>
-      <canvas id="sleep-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Stress</h3>
-      <canvas id="stress-chart" height="200"></canvas>
-    </div>
-  </div>
-</div>
-{% endif %}
-
-<!-- AI Summary -->
-<div class="detail-section">
-  <div class="section-header">
-    <h2 class="section-title">AI Summary</h2>
-    <button class="btn btn-primary btn-sm" id="gen-summary-btn" onclick="generateSummary({{ patient.patient_id }})">
-      Generate New Summary
-    </button>
-  </div>
-  <div id="summary-loading" class="loading-panel hidden"><div class="spinner"></div><p>Generating…</p></div>
-  <div id="summary-error" class="alert alert-error hidden"></div>
-  <div id="new-summary" class="hidden">
-    <div class="summary-card summary-card--new">
-      <div class="summary-card-header">
-        <div class="summary-badge">New</div>
-        <div id="new-summary-dates" class="summary-dates"></div>
+  <!-- ── Sidebar: patient list ──────────────────────────────────── -->
+  <div class="pv-sidebar">
+    <div class="pv-sidebar-head">
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:700;margin-bottom:10px;">
+        {{ patients|length }} Patient{{ 's' if patients|length != 1 }}
       </div>
-      <div id="new-summary-text" class="summary-body"></div>
+      <input type="text" class="pv-search" placeholder="Search patients…"
+             oninput="filterPatients(this.value)">
+    </div>
+    <div class="pv-patient-list" id="patient-list">
+      {% for p in patients %}
+      <a href="/provider/patient/{{ p.patient_id }}?days={{ selected_days }}"
+         class="pv-patient-item {% if p.patient_id == patient.patient_id %}active{% endif %}"
+         data-name="{{ p.full_name | lower }}">
+        <div class="pv-patient-name">{{ p.full_name }}</div>
+        <div class="pv-patient-sub">
+          <span>{% if p.last_checkin %}{{ p.last_checkin }}{% else %}No check-ins{% endif %}</span>
+          {% if p.latest_summary %}
+          <span style="font-size:10px;border:1px solid var(--border-light);padding:1px 5px;color:var(--text-muted);">summ.</span>
+          {% endif %}
+        </div>
+      </a>
+      {% endfor %}
     </div>
   </div>
 
-  {% if summaries %}
-    {% for s in summaries %}
-    <div class="summary-card">
-      <div class="summary-card-header">
-        <div class="summary-dates">{{ s.date_range_start }} – {{ s.date_range_end }}</div>
-        <div class="text-muted">{{ s.created_at[:10] }}</div>
+  <!-- ── Main content ───────────────────────────────────────────── -->
+  <div class="pv-main">
+
+    <!-- Patient header -->
+    <div class="pv-patient-hdr">
+      <div class="pv-hdr-top">
+        <div>
+          <h1 class="pv-hdr-name">{{ patient.full_name }}</h1>
+          <div class="pv-hdr-sub">{{ patient.email }}</div>
+        </div>
+        <div class="pv-hdr-actions">
+          <button class="btn btn-primary btn-sm" id="gen-btn-top"
+                  onclick="generateSummary({{ patient.patient_id }}, {{ selected_days }})">
+            Generate Pre-Appt Summary
+          </button>
+        </div>
       </div>
-      <div class="summary-body">{{ s.summary_text }}</div>
+
+      <div class="pv-hdr-meta">
+        <div>
+          <span class="pv-meta-label">Current Medications</span>
+          {% if patient.current_medications %}
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;">
+            {% for med in patient.current_medications %}
+            <span style="font-size:11px;border:1px solid var(--border-light);padding:2px 8px;background:var(--bg);">
+              {{ med.name | title }} {{ med.dose }}
+            </span>
+            {% endfor %}
+          </div>
+          {% else %}
+          <div class="pv-meta-value" style="font-size:13px;">None recorded</div>
+          {% endif %}
+        </div>
+        <div>
+          <span class="pv-meta-label">Avg Mood ({{ selected_days }}d)</span>
+          <div class="pv-meta-value">
+            {{ trends.mood.average }}<span style="font-size:12px;font-weight:400;color:var(--text-muted);">/10</span>
+            <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:4px;">{{ trends.mood.trend }}</span>
+          </div>
+        </div>
+        <div>
+          <span class="pv-meta-label">Check-ins This Period</span>
+          <div class="pv-meta-value">{{ patient.checkins_last_period }}</div>
+        </div>
+        <div>
+          <span class="pv-meta-label">Med Adherence</span>
+          <div class="pv-meta-value">
+            {% if trends.medication_adherence > 0 %}
+              {{ trends.medication_adherence }}<span style="font-size:12px;font-weight:400;color:var(--text-muted);">%</span>
+            {% else %}—{% endif %}
+          </div>
+        </div>
+      </div>
     </div>
-    {% endfor %}
-  {% else %}
-  <p class="text-muted">No summaries yet for this patient.</p>
-  {% endif %}
-</div>
 
-<!-- Check-in Table -->
-{% if patient.recent_checkins %}
-<div class="detail-section">
-  <button class="collapsible-toggle" onclick="toggleSection('checkin-table')">
-    Recent Check-ins <span class="toggle-arrow">▼</span>
-  </button>
-  <div id="checkin-table" class="collapsible-body">
-    <table class="data-table">
-      <thead>
-        <tr><th>Date</th><th>Time</th><th>Mood</th><th>Sleep</th><th>Stress</th><th>Symptoms</th><th>Notes</th></tr>
-      </thead>
-      <tbody>
-        {% for c in patient.recent_checkins %}
-        <tr>
-          <td>{{ c.date }}</td>
-          <td class="capitalize">{{ c.time_of_day or '—' }}</td>
-          <td><span class="score-badge score-mood">{{ c.mood_score }}/10</span></td>
-          <td>{{ c.sleep_hours }}h</td>
-          <td><span class="score-badge score-stress">{{ c.stress_score }}/10</span></td>
-          <td class="text-muted">{{ c.symptoms or '—' }}</td>
-          <td class="text-muted">{{ (c.notes or '')[:60] }}{% if c.notes and c.notes|length > 60 %}…{% endif %}</td>
-        </tr>
-        {% endfor %}
-      </tbody>
-    </table>
-  </div>
-</div>
-{% endif %}
-
-<!-- Journal Entries -->
-{% if patient.journal_entries %}
-<div class="detail-section">
-  <button class="collapsible-toggle" onclick="toggleSection('journal-table')">
-    Recent Journal Entries <span class="toggle-arrow">▼</span>
-  </button>
-  <div id="journal-table" class="collapsible-body">
-    {% for j in patient.journal_entries %}
-    <div class="journal-entry-card">
-      <div class="journal-entry-meta">
-        <span class="entry-date">{{ j.created_at[:10] }}</span>
-        <span class="entry-type-badge">{{ j.entry_type or 'free_flow' }}</span>
+    <!-- Controls -->
+    <div class="pv-controls">
+      <div class="pv-control-group">
+        <span class="pv-control-label">View Period</span>
+        <div class="pv-period-btns">
+          <a href="?days=7"  class="pv-period-btn {% if selected_days == 7  %}active{% endif %}">7d</a>
+          <a href="?days=14" class="pv-period-btn {% if selected_days == 14 %}active{% endif %}">14d</a>
+          <a href="?days=30" class="pv-period-btn {% if selected_days == 30 %}active{% endif %}">30d</a>
+          <a href="?days=60" class="pv-period-btn {% if selected_days == 60 %}active{% endif %}">60d</a>
+        </div>
       </div>
-      <div class="journal-entry-preview">{{ j.raw_entry[:300] }}{% if j.raw_entry|length > 300 %}…{% endif %}</div>
-      {% if j.ai_analysis %}
-      <details class="analysis-details">
-        <summary>AI Reflection</summary>
-        <div class="analysis-content">{{ j.ai_analysis }}</div>
-      </details>
+      <div class="pv-control-group">
+        <span class="pv-control-label">Insight Confidence Threshold</span>
+        <div class="pv-confidence-row">
+          <input type="range" min="50" max="95" step="5" value="80" id="conf-slider"
+                 style="width:120px;"
+                 oninput="onConfidenceSlider(this.value)">
+          <span class="pv-confidence-val" id="conf-val">80%</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Alerts: clinical flags -->
+    {% if alerts %}
+    <div class="pv-alert-banner">
+      {% for a in alerts %}
+      <div class="pv-alert-item {{ a.level }}">
+        <span class="pv-alert-label {{ a.level }}">{{ a.level | upper }}</span>
+        <div>
+          <div style="font-weight:600;font-size:13px;margin-bottom:2px;">{{ a.title }}</div>
+          <div style="font-size:12px;color:var(--text-muted);">{{ a.desc }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Drug interactions -->
+    {% if interactions %}
+    <div class="pv-alert-banner">
+      {% for ia in interactions %}
+      <div class="pv-alert-item {{ 'urgent' if ia.severity == 'serious' else 'warning' }}">
+        <span class="pv-alert-label {{ 'urgent' if ia.severity == 'serious' else 'warning' }}">INTERACTION</span>
+        <div>
+          <div style="font-weight:600;font-size:13px;margin-bottom:2px;">{{ ia.drug_a }} + {{ ia.drug_b }}</div>
+          <div style="font-size:12px;color:var(--text-muted);">{{ ia.warning }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Insight analysis panel -->
+    <div class="pv-panel-full">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+        <div class="pv-panel-title">Insight Analysis</div>
+        <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border-light);padding:2px 7px;">
+          statistically validated · with audit trail
+        </span>
+      </div>
+      <div class="pv-panel-sub">
+        Confidence is adjusted for data density, gaps, and recent medication changes —
+        not just raw p-value.
+      </div>
+      <div id="pv-insights-container" style="margin-top:12px;"></div>
+    </div>
+
+    <!-- Stats row -->
+    <div class="stats-row" style="margin-bottom:20px;">
+      <div class="stat-card">
+        <div class="stat-label">Avg Mood</div>
+        <div class="stat-value">{{ trends.mood.average }}</div>
+        <div class="stat-sub">{{ trends.mood.trend }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Sleep</div>
+        <div class="stat-value">{{ trends.sleep.average }}</div>
+        <div class="stat-sub">hrs/night</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Stress</div>
+        <div class="stat-value">{{ trends.stress.average }}</div>
+        <div class="stat-sub">{{ trends.stress.trend }}</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Energy</div>
+        <div class="stat-value">{{ trends.energy.average if trends.energy and trends.energy.average else '—' }}</div>
+        <div class="stat-sub">/10</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Adherence</div>
+        <div class="stat-value">{{ trends.medication_adherence if trends.medication_adherence > 0 else '—' }}</div>
+        <div class="stat-sub">%</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Check-ins</div>
+        <div class="stat-value">{{ patient.checkins_last_period }}</div>
+        <div class="stat-sub">this period</div>
+      </div>
+    </div>
+
+    <!-- Charts 2×2 -->
+    <div class="pv-grid-2">
+      <div class="pv-panel">
+        <div class="pv-panel-title">Mood</div>
+        <div class="pv-panel-sub">Daily scores — {{ selected_days }}-day window</div>
+        {% if trends.mood.daily_scores %}
+        <canvas id="mood-chart" height="160"></canvas>
+        {% else %}
+        <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No data for this period</div>
+        {% endif %}
+      </div>
+      <div class="pv-panel">
+        <div class="pv-panel-title">Sleep</div>
+        <div class="pv-panel-sub">Hours per night — {{ selected_days }}-day window</div>
+        {% if trends.sleep.daily_hours %}
+        <canvas id="sleep-chart" height="160"></canvas>
+        {% else %}
+        <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No data for this period</div>
+        {% endif %}
+      </div>
+      <div class="pv-panel">
+        <div class="pv-panel-title">Stress</div>
+        <div class="pv-panel-sub">Daily scores — {{ selected_days }}-day window</div>
+        {% if trends.stress.daily_scores %}
+        <canvas id="stress-chart" height="160"></canvas>
+        {% else %}
+        <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No data for this period</div>
+        {% endif %}
+      </div>
+      <div class="pv-panel">
+        <div class="pv-panel-title">Energy</div>
+        <div class="pv-panel-sub">Daily scores — {{ selected_days }}-day window</div>
+        {% if trends.energy and trends.energy.daily_scores %}
+        <canvas id="energy-chart" height="160"></canvas>
+        {% else %}
+        <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No energy data for this period</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- Medications + adherence + timing -->
+    {% if patient.current_medications %}
+    <div class="pv-panel-full">
+      <div class="pv-panel-title">Medications</div>
+      <div class="pv-panel-sub">Current prescriptions · adherence &amp; timing from check-in logs</div>
+
+      {# Build a lookup of timing stats by med name+dose #}
+      {% set timing_map = {} %}
+      {% for ts in timing_stats.medications %}
+        {% set _ = timing_map.update({(ts.name | lower) + '|||' + (ts.dose | lower): ts}) %}
+      {% endfor %}
+
+      {% for med in patient.current_medications %}
+      {% set tk = (med.name | lower) + '|||' + (med.dose | lower | default('')) %}
+      {% set ts = timing_map.get(tk) %}
+      <div class="pv-med-row" style="align-items:flex-start;padding:12px 0;">
+        <div style="min-width:200px;">
+          <div class="pv-med-name">{{ med.name | title }}</div>
+          <div class="pv-med-dose">{{ med.dose }}{% if med.frequency %} · {{ med.frequency }}{% endif %}</div>
+          {% if ts and ts.avg_time %}
+          <div style="margin-top:6px;font-size:11px;color:var(--text-muted);">
+            Avg taken <strong>{{ ts.avg_time }}</strong>
+            &nbsp;·&nbsp;
+            <span style="border:1px solid {% if ts.consistency == 'excellent' %}#90c890{% elif ts.consistency == 'good' %}#90c890{% elif ts.consistency == 'fair' %}#f0c040{% else %}#d4856a{% endif %};
+                         color:{% if ts.consistency in ('excellent','good') %}#1a5c1a{% elif ts.consistency == 'fair' %}#7a5800{% else %}#8B1A1A{% endif %};
+                         padding:1px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;">
+              {{ ts.consistency }} timing
+            </span>
+            {% if ts.std_dev_hours is not none and ts.n_timed >= 2 %}
+            <span style="margin-left:4px;font-size:10px;color:var(--text-muted);">±{{ ts.std_dev_hours }}h</span>
+            {% endif %}
+          </div>
+          {% elif ts %}
+          <div style="margin-top:6px;font-size:11px;color:var(--text-muted);">
+            {{ ts.n_taken }} dose{{ 's' if ts.n_taken != 1 }} logged · no times recorded
+          </div>
+          {% endif %}
+        </div>
+        <div class="pv-adherence-bar">
+          {% set adh = trends.medication_adherence %}
+          <div class="pv-adherence-fill {% if adh < 60 %}low{% elif adh < 80 %}mid{% endif %}"
+               style="width:{{ adh if adh > 0 else 0 }}%"></div>
+        </div>
+        <div class="pv-adherence-pct">
+          {% if trends.medication_adherence > 0 %}{{ trends.medication_adherence }}%{% else %}—{% endif %}
+        </div>
+      </div>
+      {% endfor %}
+
+      {# Timing-outcome correlations #}
+      {% if timing_stats.n_timing_records >= 5 %}
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-light);">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px;">
+          Timing × Outcome Correlations
+          <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px;">
+            ({{ timing_stats.n_timing_records }} afternoon/evening check-ins with prior dose recorded)
+          </span>
+        </div>
+
+        {% macro corr_row(label, c) %}
+          {% if c %}
+          <div style="display:flex;align-items:center;gap:12px;font-size:12px;margin-bottom:7px;">
+            <span style="min-width:220px;color:var(--text-muted);">{{ label }}</span>
+            <span style="font-family:monospace;font-size:11px;">r={{ c.r }}</span>
+            <span style="font-family:monospace;font-size:11px;">p={{ c.p_value }}</span>
+            <span style="font-size:11px;
+                         {% if c.p_value <= 0.05 %}font-weight:600;
+                         {% else %}color:var(--text-muted);{% endif %}">
+              {% if c.p_value <= 0.05 %}
+                {% if c.r > 0 %}↑ significant positive{% else %}↓ significant negative{% endif %}
+              {% else %}
+                not significant
+              {% endif %}
+            </span>
+          </div>
+          {% endif %}
+        {% endmacro %}
+
+        {{ corr_row('Dose time → afternoon/evening mood', timing_stats.dose_time_vs_mood) }}
+        {{ corr_row('Hours since dose → mood at check-in', timing_stats.hours_since_dose_vs_mood) }}
+        {{ corr_row('Hours since dose → energy at check-in', timing_stats.hours_since_dose_vs_energy) }}
+      </div>
+      {% else %}
+      <div style="margin-top:10px;font-size:12px;color:var(--text-muted);">
+        Not enough timing data yet ({{ timing_stats.n_timing_records }}/5 check-ins with dose times recorded).
+        Timing coverage: {{ timing_stats.coverage_pct }}% of logged doses have a time.
+      </div>
       {% endif %}
     </div>
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-{% endblock %}
+    {% endif %}
 
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/common.js') }}"></script>
-<script src="{{ url_for('static', filename='js/provider-dashboard.js') }}"></script>
+    <!-- Pre-appointment summary -->
+    <div class="pv-panel-full">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+        <div class="pv-panel-title">Pre-Appointment Summary</div>
+        <button class="btn btn-primary btn-sm" id="gen-btn-main"
+                onclick="generateSummary({{ patient.patient_id }}, {{ selected_days }})">
+          Generate New
+        </button>
+      </div>
+      <div class="pv-panel-sub">
+        AI analysis of patient data for appointment preparation ·
+        journals marked private are excluded from analysis
+      </div>
+
+      <div id="summary-loading" class="hidden"
+           style="padding:24px;text-align:center;font-size:12px;color:var(--text-muted);">
+        <div class="spinner" style="margin:0 auto 10px;"></div>
+        Analyzing {{ selected_days }} days of patient data…
+      </div>
+      <div id="summary-error" class="alert alert-error hidden" style="margin-bottom:10px;"></div>
+      <div id="new-summary"></div>
+
+      {% if summaries %}
+        {% for s in summaries %}
+        <div class="pv-summary-card {% if loop.first %}new{% endif %}">
+          <div class="pv-summary-meta">
+            <span>{{ s.date_range_start }} – {{ s.date_range_end }}</span>
+            <span>{{ s.created_at[:10] }} · {{ s.generated_by }}</span>
+          </div>
+          {{ s.summary_text }}
+        </div>
+        {% endfor %}
+      {% else %}
+      <div style="font-size:13px;color:var(--text-muted);padding:8px 0;">
+        No summaries yet. Click "Generate New" above to create the first one.
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Journal entries (shared with provider only) -->
+    {% if journals %}
+    <div class="pv-panel-full">
+      <div class="pv-panel-title">Journal Entries</div>
+      <div class="pv-panel-sub">Patient-shared entries only · entries marked private are not visible here</div>
+      {% for j in journals %}
+      <div class="journal-entry-card">
+        <div class="journal-entry-meta">
+          <span class="entry-date">{{ j.created_at[:10] }}</span>
+          <span class="entry-type-badge">{{ (j.entry_type or 'free_flow') | replace('_', ' ') }}</span>
+          <span style="font-size:10px;color:var(--green);border:1px solid var(--green-light);padding:1px 6px;">shared</span>
+        </div>
+        <div class="journal-entry-preview">{{ j.raw_entry[:400] }}{% if j.raw_entry|length > 400 %}…{% endif %}</div>
+        {% if j.ai_analysis %}
+        <details class="analysis-details">
+          <summary>AI Reflection</summary>
+          <div class="analysis-content">{{ j.ai_analysis }}</div>
+        </details>
+        {% endif %}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Recent check-ins table -->
+    {% if patient.recent_checkins %}
+    <div class="pv-panel-full">
+      <div class="pv-panel-title">Recent Check-ins</div>
+      <div class="pv-panel-sub">Last {{ patient.recent_checkins|length }} check-ins logged by patient</div>
+      <div style="overflow-x:auto;">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Type</th>
+              <th>Mood</th>
+              <th>Sleep</th>
+              <th>Stress</th>
+              <th>Notes</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for c in patient.recent_checkins %}
+            <tr>
+              <td>{{ c.date }}</td>
+              <td style="text-transform:capitalize;font-size:11px;color:var(--text-muted);">
+                {{ (c.checkin_type or c.time_of_day or '—') | replace('_', ' ') }}
+              </td>
+              <td><span class="score-badge score-mood">{{ c.mood_score }}/10</span></td>
+              <td>{{ c.sleep_hours }}h</td>
+              <td><span class="score-badge score-stress">{{ c.stress_score }}/10</span></td>
+              <td style="font-size:12px;color:var(--text-muted);max-width:220px;">
+                {{ (c.notes or '')[:80] }}{% if c.notes and c.notes|length > 80 %}…{% endif %}
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Footer -->
+    <div style="padding-top:16px;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-muted);">
+      All patient data access is logged for HIPAA compliance ·
+      Only journals marked "Share with provider" are visible above
+    </div>
+
+  </div><!-- /pv-main -->
+</div><!-- /pv-shell -->
+
 <script>
 const trendsData = {{ trends | tojson }};
+trendsData.current_medications = {{ patient.current_medications | tojson if patient.current_medications else '[]' }};
+trendsData.period_days = {{ selected_days }};
+trendsData.checkin_count = trendsData.checkins_this_period || 0;
 
-function renderCharts() {
-  const defaults = { fill: true, tension: 0.4, pointRadius: 4 };
-  const opts = (min, max) => ({
-    responsive: true,
-    plugins: { legend: { display: false } },
-    scales: {
-      y: { min, max, grid: { color: 'rgba(0,0,0,0.05)' } },
-      x: { grid: { display: false }, ticks: { maxTicksLimit: 8 } },
-    }
+// ── Charts ─────────────────────────────────────────────────────────
+const chartDefs = { fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 5 };
+const chartOpts = (min, max) => ({
+  responsive: true, maintainAspectRatio: true,
+  plugins: { legend: { display: false } },
+  scales: {
+    y: { min, max,
+      grid: { color: 'rgba(0,0,0,0.04)' },
+      ticks: { font: { family: 'DM Sans', size: 11 } } },
+    x: { grid: { display: false },
+      ticks: { font: { family: 'DM Sans', size: 11 }, maxTicksLimit: 8 } },
+  },
+});
+const mkLabels = arr => arr.map((_, i) => 'Day ' + (i + 1));
+
+if (trendsData.mood.daily_scores?.length)
+  new Chart(document.getElementById('mood-chart'), {
+    type: 'line',
+    data: { labels: mkLabels(trendsData.mood.daily_scores),
+      datasets: [{ ...chartDefs, data: trendsData.mood.daily_scores,
+        borderColor: '#000', backgroundColor: 'rgba(0,0,0,0.05)' }] },
+    options: chartOpts(0, 10),
   });
-  const mkLabels = arr => arr.map((_, i) => 'Day ' + (i + 1));
 
-  if (trendsData.mood.daily_scores.length) {
-    new Chart(document.getElementById('mood-chart'), {
-      type: 'line',
-      data: { labels: mkLabels(trendsData.mood.daily_scores),
-        datasets: [{ ...defaults, data: trendsData.mood.daily_scores,
-          borderColor: '#7c6fcd', backgroundColor: 'rgba(124,111,205,0.12)' }] },
-      options: opts(1, 10),
-    });
-  }
-  if (trendsData.sleep.daily_hours.length) {
-    new Chart(document.getElementById('sleep-chart'), {
-      type: 'line',
-      data: { labels: mkLabels(trendsData.sleep.daily_hours),
-        datasets: [{ ...defaults, data: trendsData.sleep.daily_hours,
-          borderColor: '#5aa9a3', backgroundColor: 'rgba(90,169,163,0.12)' }] },
-      options: opts(0, 12),
-    });
-  }
-  if (trendsData.stress.daily_scores.length) {
-    new Chart(document.getElementById('stress-chart'), {
-      type: 'line',
-      data: { labels: mkLabels(trendsData.stress.daily_scores),
-        datasets: [{ ...defaults, data: trendsData.stress.daily_scores,
-          borderColor: '#d4856a', backgroundColor: 'rgba(212,133,106,0.12)' }] },
-      options: opts(1, 10),
-    });
-  }
+if (trendsData.sleep.daily_hours?.length)
+  new Chart(document.getElementById('sleep-chart'), {
+    type: 'line',
+    data: { labels: mkLabels(trendsData.sleep.daily_hours),
+      datasets: [{ ...chartDefs, data: trendsData.sleep.daily_hours,
+        borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.04)' }] },
+    options: chartOpts(0, 12),
+  });
+
+if (trendsData.stress.daily_scores?.length)
+  new Chart(document.getElementById('stress-chart'), {
+    type: 'line',
+    data: { labels: mkLabels(trendsData.stress.daily_scores),
+      datasets: [{ ...chartDefs, data: trendsData.stress.daily_scores,
+        borderColor: '#8B1A1A', backgroundColor: 'rgba(139,26,26,0.05)' }] },
+    options: chartOpts(0, 10),
+  });
+
+if (trendsData.energy?.daily_scores?.length)
+  new Chart(document.getElementById('energy-chart'), {
+    type: 'line',
+    data: { labels: mkLabels(trendsData.energy.daily_scores),
+      datasets: [{ ...chartDefs, data: trendsData.energy.daily_scores,
+        borderColor: '#6B4A00', backgroundColor: 'rgba(107,74,0,0.05)' }] },
+    options: chartOpts(0, 10),
+  });
+
+// ── Insight panel ───────────────────────────────────────────────────
+renderProviderInsights(trendsData, 'pv-insights-container', 80);
+
+function onConfidenceSlider(val) {
+  document.getElementById('conf-val').textContent = val + '%';
+  renderProviderInsights(trendsData, 'pv-insights-container', parseInt(val, 10));
 }
 
-renderCharts();
+// ── Sidebar search ──────────────────────────────────────────────────
+function filterPatients(q) {
+  document.querySelectorAll('.pv-patient-item').forEach(item => {
+    item.style.display = item.dataset.name?.includes(q.toLowerCase()) ? '' : 'none';
+  });
+}
 
-function generateSummary(patientId) {
-  const btn = document.getElementById('gen-summary-btn');
+// ── Generate summary ────────────────────────────────────────────────
+function generateSummary(patientId, days) {
+  const btns    = document.querySelectorAll('#gen-btn-top, #gen-btn-main');
   const loading = document.getElementById('summary-loading');
-  const error = document.getElementById('summary-error');
-  const panel = document.getElementById('new-summary');
+  const error   = document.getElementById('summary-error');
+  const panel   = document.getElementById('new-summary');
 
-  btn.disabled = true;
+  btns.forEach(b => b.disabled = true);
   loading.classList.remove('hidden');
   error.classList.add('hidden');
-  panel.classList.add('hidden');
+  panel.innerHTML = '';
 
-  apiPost('/api/provider/generate-summary/' + patientId, { days: 14 })
+  apiPost('/api/provider/generate-summary/' + patientId, { days })
     .then(data => {
-      document.getElementById('new-summary-dates').textContent =
-        data.date_range_start + ' – ' + data.date_range_end;
-      document.getElementById('new-summary-text').textContent = data.summary_text;
-      panel.classList.remove('hidden');
+      panel.innerHTML = `
+        <div class="pv-summary-card new">
+          <div class="pv-summary-meta">
+            <span>${data.date_range_start} – ${data.date_range_end}</span>
+            <span>Just generated</span>
+          </div>${data.summary_text}
+        </div>`;
       loading.classList.add('hidden');
-      btn.disabled = false;
+      btns.forEach(b => b.disabled = false);
     })
     .catch(err => {
       error.textContent = err.message || 'Failed to generate summary.';
       error.classList.remove('hidden');
       loading.classList.add('hidden');
-      btn.disabled = false;
+      btns.forEach(b => b.disabled = false);
     });
 }
 </script>
