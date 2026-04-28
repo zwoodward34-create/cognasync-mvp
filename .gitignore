@@ -9,7 +9,9 @@ __pycache__/
 venv/
 .venv/
 *.egg-info/
-dist/
+/dist/
+node_modules/
+!static/dist/
 build/
 .replit
 replit.nix
