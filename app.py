@@ -377,19 +377,20 @@ def api_create_checkin():
 
 @app.route('/api/checkins/today', methods=['GET'])
 def api_checkins_today():
-    """Return which scheduled check-in types have been completed today."""
+    """Return which check-in types have been completed today."""
     user, err = _api_user('patient')
     if err:
         return err
     today = date.today().isoformat()
     checkins = db.get_checkins(user['id'], days=1)
-    done = set()
+    done = []
     for c in checkins:
-        ct = c.get('checkin_type') or ''
         cd = (c.get('checkin_date') or '')[:10]
-        if cd == today and ct in ('morning', 'afternoon', 'evening'):
-            done.add(ct)
-    return jsonify({'completed': list(done), 'date': today}), 200
+        if cd == today:
+            # Return 'stability' as the completed type (or use any fixed name)
+            done.append('stability')
+            break  # Only count one per day for now
+    return jsonify({'completed': done, 'date': today}), 200
 
 
 @app.route('/api/checkins/baseline', methods=['GET'])
