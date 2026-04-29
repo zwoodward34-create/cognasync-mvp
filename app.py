@@ -262,7 +262,11 @@ def _api_user(required_role=None):
         or request.headers.get('X-Session-Token')
         or session.get('session_token')
     )
-    user = auth_module.get_current_user(token)
+    try:
+        user = auth_module.get_current_user(token)
+    except Exception as e:
+        print(f"_api_user auth error: {e}")
+        return None, (jsonify({'error': 'Authentication error'}), 500)
     if not user:
         return None, (jsonify({'error': 'Authentication required'}), 401)
     if required_role and user['role'] != required_role:
@@ -386,20 +390,26 @@ def api_medications():
         return err
     
     if request.method == 'POST':
-        data = request.json
-        med = db.create_medication(
-            user_id=user['id'],
-            name=data.get('name'),
-            category=data.get('category'),
-            standard_dose=data.get('standard_dose'),
-            dose_unit=data.get('dose_unit', 'mg'),
-            scheduled_times=data.get('scheduled_times', []),
-            date_started=data.get('date_started')
-        )
-        return jsonify(med), 201 if med else 400
-    
+        try:
+            data = request.get_json(silent=True) or {}
+            med = db.create_medication(
+                user_id=user['id'],
+                name=data.get('name'),
+                category=data.get('category'),
+                standard_dose=data.get('standard_dose'),
+                dose_unit=data.get('dose_unit', 'mg'),
+                scheduled_times=data.get('scheduled_times', []),
+                date_started=data.get('date_started')
+            )
+            if not med:
+                return jsonify({'error': 'Failed to create medication'}), 400
+            return jsonify(med), 201
+        except Exception as e:
+            print(f"create_medication error: {e}")
+            return jsonify({'error': str(e)}), 500
+
     meds = db.get_user_medications(user['id'])
-    return jsonify(meds), 200
+    return jsonify(meds or []), 200
 
 
 @app.route('/api/medications/<med_id>/events', methods=['GET', 'POST'])
@@ -410,20 +420,26 @@ def api_medication_events(med_id):
         return err
     
     if request.method == 'POST':
-        data = request.json
-        event = db.log_medication_event(
-            user_id=user['id'],
-            medication_id=med_id,
-            event_date=data.get('event_date', date.today().isoformat()),
-            actual_time=data.get('actual_time'),
-            dose=data.get('dose'),
-            status=data.get('status', 'TAKEN'),
-            notes=data.get('notes')
-        )
-        return jsonify(event), 201 if event else 400
+        try:
+            data = request.get_json(silent=True) or {}
+            event = db.log_medication_event(
+                user_id=user['id'],
+                medication_id=med_id,
+                event_date=data.get('event_date', date.today().isoformat()),
+                actual_time=data.get('actual_time'),
+                dose=data.get('dose'),
+                status=data.get('status', 'TAKEN'),
+                notes=data.get('notes')
+            )
+            if not event:
+                return jsonify({'error': 'Failed to log medication event'}), 400
+            return jsonify(event), 201
+        except Exception as e:
+            print(f"log_medication_event error: {e}")
+            return jsonify({'error': str(e)}), 500
     
     events = db.get_medication_events(user['id'], medication_id=med_id)
-    return jsonify(events), 200
+    return jsonify(events or []), 200
 
 
 @app.route('/api/medications/search', methods=['GET'])
