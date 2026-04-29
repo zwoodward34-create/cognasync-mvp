@@ -729,15 +729,6 @@ def api_change_password():
     return jsonify({'message': msg}), 200
 
 
-@app.route('/api/medications/search', methods=['GET'])
-def api_medication_search():
-    names = db.get_medication_names()
-    q = request.args.get('q', '').lower()
-    if q:
-        names = [n for n in names if q in n.lower()]
-    return jsonify({'medications': names}), 200
-
-
 @app.route('/api/medications/info/<name>', methods=['GET'])
 def api_medication_info(name):
     info = db.get_medication_info(name)
