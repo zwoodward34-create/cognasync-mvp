@@ -367,6 +367,15 @@ def get_medication_events(user_id: str, medication_id: str = None, days: int = 3
         print(f"Error fetching medication events: {e}")
         return []
 
+def get_medication_names() -> list:
+    """Return a sorted list of all medication names from the reference table."""
+    try:
+        result = supabase_admin.table('medication_reference').select('name').execute()
+        return sorted({row['name'] for row in result.data}) if result.data else []
+    except Exception as e:
+        print(f"Error fetching medication names: {e}")
+        return []
+
 def search_medication_reference(search_term: str):
     """Search the global medication reference database."""
     try:
