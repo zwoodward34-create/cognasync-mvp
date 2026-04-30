@@ -72,9 +72,9 @@
 <div class="home-summary-preview">
   <div class="section-header">
     <h2 class="section-title">Latest Summary</h2>
-    <span class="section-meta">{{ latest_summary.date_range_start }} – {{ latest_summary.date_range_end }}</span>
+    <span class="section-meta">{{ latest_summary.summary_date }}</span>
   </div>
-  <div class="summary-excerpt">{{ latest_summary.summary_text[:400] }}{% if latest_summary.summary_text|length > 400 %}…{% endif %}</div>
+  <div class="summary-excerpt">{{ latest_summary.content[:400] }}{% if latest_summary.content|length > 400 %}…{% endif %}</div>
   <a href="{{ url_for('summary_page') }}" class="btn btn-ghost">View full summary →</a>
 </div>
 {% endif %}

@@ -35,10 +35,8 @@ db.init_db()
 
 @app.errorhandler(500)
 def internal_error(e):
-    import traceback
-    tb = traceback.format_exc()
     app.logger.exception("Unhandled error")
-    return jsonify({'error': 'An internal error occurred', 'detail': tb}), 500
+    return jsonify({'error': 'An internal error occurred'}), 500
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
