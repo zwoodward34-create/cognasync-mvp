@@ -14,24 +14,31 @@ supabase_admin = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 
 
 def verify_jwt(token):
-    """Verify JWT token signature and return user profile."""
+    """Verify a Supabase JWT and return the user profile.
+
+    If SUPABASE_JWT_SECRET is configured the signature is verified locally
+    (fast, no network call).  If the secret is absent we fall back to
+    Supabase's get_user API, which validates the token server-side.
+    """
     if not token:
         return None
 
-    if not SUPABASE_JWT_SECRET:
-        # Refuse all tokens rather than silently skipping verification
-        import logging
-        logging.error("SUPABASE_JWT_SECRET is not set — all authentication refused")
-        return None
-
     try:
-        decoded = jwt.decode(
-            token,
-            SUPABASE_JWT_SECRET,
-            algorithms=["HS256"],
-            audience="authenticated",
-        )
-        user_id = decoded.get('sub')
+        if SUPABASE_JWT_SECRET:
+            decoded = jwt.decode(
+                token,
+                SUPABASE_JWT_SECRET,
+                algorithms=["HS256"],
+                audience="authenticated",
+            )
+            user_id = decoded.get('sub')
+        else:
+            # Fall back to Supabase API validation (slightly slower but no secret needed)
+            resp = supabase_admin.auth.get_user(token)
+            if not resp or not resp.user:
+                return None
+            user_id = resp.user.id
+
         if not user_id:
             return None
 
@@ -49,9 +56,9 @@ def verify_jwt(token):
         return None
     except jwt.InvalidTokenError:
         return None
-    except Exception as e:
+    except Exception:
         import logging
-        logging.error(f"JWT verification error: {type(e).__name__}")
+        logging.exception("JWT verification error")
         return None
 
 

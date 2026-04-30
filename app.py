@@ -107,7 +107,7 @@ def login_page():
 
 
 @app.route('/login', methods=['POST'])
-@limiter.limit("10/minute;30/hour")
+@limiter.limit("10 per minute")
 def login_post():
     email = request.form.get('email', '').strip()
     password = request.form.get('password', '')
@@ -309,7 +309,7 @@ def _api_user(required_role=None):
 # ── Auth API ──────────────────────────────────────────────────────────────────
 
 @app.route('/api/auth/register', methods=['POST'])
-@limiter.limit("5/minute;20/hour")
+@limiter.limit("5 per minute")
 def api_register():
     data = request.json or {}
     result, error = auth_module.register_user(
@@ -330,7 +330,7 @@ def api_register():
 
 
 @app.route('/api/auth/login', methods=['POST'])
-@limiter.limit("10/minute;30/hour")
+@limiter.limit("10 per minute")
 def api_login():
     data = request.json or {}
     result, error = auth_module.login_user(
