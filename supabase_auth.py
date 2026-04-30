@@ -23,8 +23,11 @@ def verify_jwt(token):
     if not token:
         return None
 
-    try:
-        if SUPABASE_JWT_SECRET:
+    user_id = None
+
+    # Try fast local verification first when the secret is configured
+    if SUPABASE_JWT_SECRET:
+        try:
             decoded = jwt.decode(
                 token,
                 SUPABASE_JWT_SECRET,
@@ -32,16 +35,25 @@ def verify_jwt(token):
                 audience="authenticated",
             )
             user_id = decoded.get('sub')
-        else:
-            # Fall back to Supabase API validation (slightly slower but no secret needed)
+        except jwt.ExpiredSignatureError:
+            return None  # Expired — don't bother with API fallback
+        except jwt.InvalidTokenError:
+            pass  # Wrong secret or malformed — fall through to API check
+
+    # Fall back to Supabase API validation (authoritative, slightly slower)
+    if not user_id:
+        try:
             resp = supabase_admin.auth.get_user(token)
             if not resp or not resp.user:
                 return None
             user_id = resp.user.id
-
-        if not user_id:
+        except Exception:
             return None
 
+    if not user_id:
+        return None
+
+    try:
         response = supabase_admin.table('profiles').select('*').eq('id', user_id).execute()
         if response.data:
             user_data = response.data[0]
@@ -51,15 +63,9 @@ def verify_jwt(token):
                 'full_name': user_data['full_name'],
                 'role': user_data['role'],
             }
-        return None
-    except jwt.ExpiredSignatureError:
-        return None
-    except jwt.InvalidTokenError:
-        return None
     except Exception:
-        import logging
-        logging.exception("JWT verification error")
-        return None
+        pass
+    return None
 
 
 def get_current_user(token):
