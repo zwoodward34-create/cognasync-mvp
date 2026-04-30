@@ -108,9 +108,10 @@ def get_patient_profile(user_id):
 
 
 def update_patient_profile(user_id, **kwargs):
-    """Update patient profile."""
+    """Upsert patient profile (creates row if none exists yet)."""
     try:
-        supabase_admin.table('patient_profiles').update(kwargs).eq('user_id', str(user_id)).execute()
+        data = {**kwargs, 'user_id': str(user_id)}
+        supabase_admin.table('patient_profiles').upsert(data, on_conflict='user_id').execute()
         return True
     except Exception as e:
         print(f"Error updating patient profile: {e}")
