@@ -750,7 +750,20 @@ def api_medication_info(name):
     info = db.get_medication_info(name)
     if not info:
         return jsonify({'error': 'Medication not found'}), 404
-    return jsonify(info), 200
+
+    dose = info.get('common_dose')
+    unit = info.get('dose_unit', 'mg')
+    onset_h = info.get('typical_onset_hours')
+    sides_raw = info.get('common_side_effects', [])
+
+    return jsonify({
+        'name': info.get('name'),
+        'category': info.get('category'),
+        'common_doses': [f"{dose} {unit}"] if dose is not None else [],
+        'typical_onset': f"~{onset_h} hour{'s' if onset_h != 1 else ''}" if onset_h else 'Varies',
+        'common_side_effects': ', '.join(s.replace('_', ' ') for s in sides_raw) if isinstance(sides_raw, list) else str(sides_raw),
+        'interaction_warnings': info.get('notes') or None,
+    }), 200
 
 
 @app.route('/api/medications/interactions', methods=['GET'])

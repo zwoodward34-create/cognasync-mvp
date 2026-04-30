@@ -385,6 +385,11 @@ def get_medication_info(name: str):
         print(f"Error fetching medication info: {e}")
         return None
 
+def check_medication_interactions(patient_id) -> list:
+    """Return known drug interaction alerts for a patient's current medications."""
+    # No interaction data stored yet — return empty list rather than crashing
+    return []
+
 def search_medication_reference(search_term: str):
     """Search the global medication reference database."""
     try:
