@@ -521,13 +521,16 @@ function generateSummary(patientId, days) {
 
   apiPost('/api/provider/generate-summary/' + patientId, { days })
     .then(data => {
-      panel.innerHTML = `
-        <div class="pv-summary-card new">
-          <div class="pv-summary-meta">
-            <span>${data.date_range_start} – ${data.date_range_end}</span>
-            <span>Just generated</span>
-          </div>${data.summary_text}
-        </div>`;
+      const card = document.createElement('div');
+      card.className = 'pv-summary-card new';
+      const meta = document.createElement('div');
+      meta.className = 'pv-summary-meta';
+      meta.innerHTML = `<span>${data.date_range_start} – ${data.date_range_end}</span><span>Just generated</span>`;
+      const body = document.createElement('div');
+      body.textContent = data.summary_text;
+      card.appendChild(meta);
+      card.appendChild(body);
+      panel.appendChild(card);
       loading.classList.add('hidden');
       btns.forEach(b => b.disabled = false);
     })

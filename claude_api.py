@@ -57,24 +57,21 @@ def _sanitize_output(text):
     return text
 
 
-def _call_claude(prompt, max_tokens=600):
+def _call_claude(system_prompt, user_content, max_tokens=600):
     try:
         client = get_client()
         message = client.messages.create(
             model=CLAUDE_MODEL,
             max_tokens=max_tokens,
-            messages=[{'role': 'user', 'content': prompt}],
+            system=system_prompt,
+            messages=[{'role': 'user', 'content': user_content}],
         )
         return message.content[0].text
     except Exception as e:
         raise RuntimeError(f'Claude API error: {str(e)}')
 
 
-def analyze_journal(entry_text):
-    if _check_crisis(entry_text):
-        return {'status': 'crisis', 'text': CRISIS_RESPONSE}
-
-    prompt = f"""You are a supportive reflection tool. Analyze this journal entry for patterns, themes, and distortions.
+_JOURNAL_SYSTEM = """You are a supportive reflection tool. Analyze the journal entry provided by the user.
 
 INSTRUCTIONS:
 - Identify 1-2 key patterns or themes
@@ -84,14 +81,14 @@ INSTRUCTIONS:
 - DO NOT diagnose, prescribe, or replace clinical judgment
 - DO NOT say "you have" or "you suffer from" or name any disorder
 - Keep response to 150-200 words
-- Use warm, supportive language
+- Use warm, supportive language"""
 
-JOURNAL ENTRY:
-{entry_text}
 
-ANALYSIS:"""
+def analyze_journal(entry_text):
+    if _check_crisis(entry_text):
+        return {'status': 'crisis', 'text': CRISIS_RESPONSE}
 
-    raw = _call_claude(prompt, max_tokens=400)
+    raw = _call_claude(_JOURNAL_SYSTEM, entry_text, max_tokens=400)
     clean = _sanitize_output(raw)
     if clean is None:
         clean = (
@@ -139,23 +136,16 @@ def analyze_checkin(checkin_data, checkin_type, baseline=None):
 
     data_str = '\n'.join(summary_lines)
 
-    prompt = f"""You are a supportive mental health tracking assistant. A patient just completed a {label} check-in.
-Generate a brief, warm, data-grounded observation (2-3 sentences max) about their current state based on this data.
-
-RULES:
-- Describe patterns and comparisons to their baseline — never diagnose
-- Do NOT say "you have", "you are [disorder]", "you should [medication]"
-- If notes mention a crisis, do not analyze — that is handled separately
-- Be warm, specific, and clinically neutral
-- Reference specific numbers when they tell a meaningful story
-
-CHECK-IN DATA:
-{data_str}
-
-OBSERVATION:"""
+    checkin_system = (
+        f"You are a supportive mental health tracking assistant. A patient just completed a {label} check-in. "
+        "Generate a brief, warm, data-grounded observation (2-3 sentences max) about their current state. "
+        "RULES: Describe patterns and comparisons to their baseline — never diagnose. "
+        "Do NOT say 'you have', 'you are [disorder]', or 'you should [medication]'. "
+        "Be warm, specific, and clinically neutral. Reference specific numbers when meaningful."
+    )
 
     try:
-        raw = _call_claude(prompt, max_tokens=200)
+        raw = _call_claude(checkin_system, data_str, max_tokens=200)
         clean = _sanitize_output(raw)
         if not clean:
             clean = "Check-in recorded. Your data has been saved and will inform your next summary."
@@ -197,26 +187,20 @@ def generate_appointment_summary(checkin_data, journal_data, days=14):
         indent=2
     )
 
-    prompt = f"""You are a clinical reflection assistant. Synthesize this patient's data into a brief summary for their psychiatrist.
+    summary_system = (
+        "You are a clinical reflection assistant. Synthesize patient data into a brief summary for their psychiatrist. "
+        "INSTRUCTIONS: Identify 2-3 key patterns (mood, medication, sleep, stress, triggers). "
+        "Note correlations. Flag concerning trends. Suggest 2-3 topics for discussion. "
+        "Format: 3-4 paragraphs, plain language. DO NOT diagnose or prescribe. "
+        "DO NOT say 'you have' or name specific disorders. Make it clinically useful without being alarmist."
+    )
+    user_content = (
+        f"PATIENT DATA (past {days} days):\n"
+        f"Check-ins: {checkin_json}\n\n"
+        f"Journal entries: {journal_json}"
+    )
 
-INSTRUCTIONS:
-- Identify 2-3 key patterns (mood, medication, sleep, stress, triggers)
-- Note correlations (e.g., "mood improved on days with 7+ sleep")
-- Flag any concerning trends (e.g., sustained mood decline, missed meds)
-- Suggest 2-3 topics for discussion
-- Format: 3-4 paragraphs, plain language
-- DO NOT diagnose or prescribe
-- DO NOT say "you have" or name specific disorders
-- Make it clinically useful without being alarmist
-
-PATIENT DATA (past {days} days):
-Check-ins: {checkin_json}
-
-Journal entries: {journal_json}
-
-SUMMARY:"""
-
-    raw = _call_claude(prompt, max_tokens=700)
+    raw = _call_claude(summary_system, user_content, max_tokens=700)
     clean = _sanitize_output(raw)
     if clean is None:
         clean = (

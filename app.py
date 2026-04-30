@@ -1,8 +1,11 @@
 import os
 import json
+import re
 from datetime import date, timedelta
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -12,16 +15,41 @@ import supabase_auth as auth_module
 import claude_api
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
-app.secret_key = os.environ.get('SECRET_KEY', 'dev-secret-change-in-production')
-CORS(app)
+
+_secret_key = os.environ.get('SECRET_KEY')
+if not _secret_key:
+    raise RuntimeError('SECRET_KEY environment variable must be set')
+app.secret_key = _secret_key
+
+app.config['SESSION_COOKIE_SAMESITE'] = 'Lax'
+app.config['SESSION_COOKIE_HTTPONLY'] = True
+app.config['SESSION_COOKIE_SECURE'] = os.environ.get('FLASK_ENV') != 'development'
+
+_allowed_origin = os.environ.get('ALLOWED_ORIGIN', '*')
+CORS(app, resources={r"/api/*": {"origins": _allowed_origin}})
+
+limiter = Limiter(app=app, key_func=get_remote_address, default_limits=["1000/day"])
 
 db.init_db()
+
+
+@app.errorhandler(500)
+def internal_error(e):
+    app.logger.exception("Unhandled error")
+    return jsonify({'error': 'An internal error occurred'}), 500
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _session_token():
-    return session.get('session_token') or request.args.get('session_token')
+    # Never accept tokens from URL query parameters — they end up in logs
+    return session.get('session_token')
+
+
+def _provider_owns_patient(provider_id, patient_id):
+    """Return True if patient_id is in the provider's assigned patient list."""
+    assigned = db.get_provider_patients(provider_id)
+    return str(patient_id) in [str(p) for p in assigned]
 
 
 def _current_user():
@@ -79,6 +107,7 @@ def login_page():
 
 
 @app.route('/login', methods=['POST'])
+@limiter.limit("10/minute;30/hour")
 def login_post():
     email = request.form.get('email', '').strip()
     password = request.form.get('password', '')
@@ -197,12 +226,15 @@ def provider_dashboard():
                            today_str=date.today().isoformat())
 
 
-@app.route('/provider/patient/<int:patient_id>')
+@app.route('/provider/patient/<patient_id>')
 def provider_patient_detail(patient_id):
     user, redir = _require_provider()
     if redir:
         return redir
-    days = int(request.args.get('days', 30))
+    if not _provider_owns_patient(user['id'], patient_id):
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+    days = min(int(request.args.get('days', 30)), 365)
     patient = db.get_patient_detail(patient_id, days=days)
     if not patient:
         flash('Patient not found', 'error')
@@ -215,12 +247,12 @@ def provider_patient_detail(patient_id):
     journals      = db.get_journals(patient_id, limit=10, shared_only=True)
     timing_stats  = db.get_medication_timing_stats(patient_id, days=days)
 
+    trends = trends or {}
     MIN_OBS = 21
     alerts = []
-    n = trends.get('checkin_count', 0)
-    # Only fire trend alerts when there's enough statistically valid data
-    mood_t = trends['mood']
-    if (mood_t['trend'] == 'decreasing' and n >= MIN_OBS
+    n = trends.get('checkin_count', trends.get('total_checkins', 0))
+    mood_t = trends.get('mood', {})
+    if (mood_t.get('trend') == 'decreasing' and n >= MIN_OBS
             and mood_t.get('p_value', 1) <= 0.05
             and mood_t.get('r_squared', 0) >= 0.25):
         alerts.append({'level': 'urgent', 'title': 'Mood Declining',
@@ -229,8 +261,8 @@ def provider_patient_detail(patient_id):
     if 0 < trends.get('medication_adherence', 0) < 80 and n >= MIN_OBS:
         alerts.append({'level': 'warning', 'title': 'Low Medication Adherence',
             'desc': f"Adherence at {trends['medication_adherence']}% — below the 80% threshold."})
-    stress_t = trends['stress']
-    if (stress_t['trend'] == 'increasing' and stress_t['average'] > 6
+    stress_t = trends.get('stress', {})
+    if (stress_t.get('trend') == 'increasing' and stress_t.get('average', 0) > 6
             and n >= MIN_OBS
             and stress_t.get('p_value', 1) <= 0.05
             and stress_t.get('r_squared', 0) >= 0.25):
@@ -238,7 +270,7 @@ def provider_patient_detail(patient_id):
             'desc': f"Stress trending upward — average {stress_t['average']}/10 over {days} days "
                     f"(R²={stress_t['r_squared']}, p={stress_t['p_value']})."})
 
-    for ta in timing_stats.get('timing_alerts', []):
+    for ta in (timing_stats or {}).get('timing_alerts', []):
         alerts.append({'level': 'warning', 'title': 'Inconsistent Medication Timing',
             'desc': ta['message']})
 
@@ -277,6 +309,7 @@ def _api_user(required_role=None):
 # ── Auth API ──────────────────────────────────────────────────────────────────
 
 @app.route('/api/auth/register', methods=['POST'])
+@limiter.limit("5/minute;20/hour")
 def api_register():
     data = request.json or {}
     result, error = auth_module.register_user(
@@ -297,6 +330,7 @@ def api_register():
 
 
 @app.route('/api/auth/login', methods=['POST'])
+@limiter.limit("10/minute;30/hour")
 def api_login():
     data = request.json or {}
     result, error = auth_module.login_user(
@@ -341,9 +375,13 @@ def api_create_checkin():
     if checkin_type not in ('morning', 'afternoon', 'evening', 'on_demand'):
         checkin_type = 'on_demand'
 
+    raw_date = data.get('date', date.today().isoformat())
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', raw_date):
+        raw_date = date.today().isoformat()
+
     checkin_id = db.create_checkin(
         patient_id=user['id'],
-        date_str=data.get('date', date.today().isoformat()),
+        date_str=raw_date,
         time_of_day=data.get('time_of_day', 'self-prompted'),
         mood_score=mood,
         medications=data.get('medications', []),
@@ -405,8 +443,8 @@ def api_medications():
                 return jsonify({'error': 'Failed to create medication'}), 400
             return jsonify(med), 201
         except Exception as e:
-            print(f"create_medication error: {e}")
-            return jsonify({'error': str(e)}), 500
+            app.logger.exception("create_medication error")
+            return jsonify({'error': 'Failed to create medication'}), 500
 
     meds = db.get_user_medications(user['id'])
     return jsonify(meds or []), 200
@@ -419,25 +457,33 @@ def api_medication_events(med_id):
     if err:
         return err
     
+    # Verify med belongs to this user
+    user_meds = db.get_user_medications(user['id'])
+    if not any(str(m.get('id')) == str(med_id) for m in user_meds):
+        return jsonify({'error': 'Medication not found'}), 404
+
     if request.method == 'POST':
         try:
             data = request.get_json(silent=True) or {}
+            status = data.get('status', 'TAKEN')
+            if status not in {'TAKEN', 'MISSED', 'SKIPPED', 'LATE'}:
+                return jsonify({'error': 'Invalid status'}), 400
             event = db.log_medication_event(
                 user_id=user['id'],
                 medication_id=med_id,
                 event_date=data.get('event_date', date.today().isoformat()),
                 actual_time=data.get('actual_time'),
                 dose=data.get('dose'),
-                status=data.get('status', 'TAKEN'),
+                status=status,
                 notes=data.get('notes')
             )
             if not event:
                 return jsonify({'error': 'Failed to log medication event'}), 400
             return jsonify(event), 201
         except Exception as e:
-            print(f"log_medication_event error: {e}")
-            return jsonify({'error': str(e)}), 500
-    
+            app.logger.exception("log_medication_event error")
+            return jsonify({'error': 'Failed to log medication event'}), 500
+
     events = db.get_medication_events(user['id'], medication_id=med_id)
     return jsonify(events or []), 200
 
@@ -445,6 +491,9 @@ def api_medication_events(med_id):
 @app.route('/api/medications/search', methods=['GET'])
 def api_medication_search():
     """Search global medication reference database."""
+    _, err = _api_user()
+    if err:
+        return err
     query = request.args.get('q', '')
     if not query or len(query) < 2:
         return jsonify({'error': 'Query too short'}), 400
@@ -476,7 +525,7 @@ def api_checkin_baseline():
     user, err = _api_user()
     if err:
         return err
-    days = int(request.args.get('days', 7))
+    days = min(int(request.args.get('days', 7)), 90)
     baseline = db.get_checkin_baseline(user['id'], days=days)
     return jsonify(baseline), 200
 
@@ -498,7 +547,7 @@ def api_get_checkins():
     user, err = _api_user()
     if err:
         return err
-    days = int(request.args.get('days', 30))
+    days = min(int(request.args.get('days', 30)), 365)
     checkins = db.get_checkins(user['id'], days=days)
     return jsonify({'patient_id': user['id'], 'checkins': checkins}), 200
 
@@ -506,6 +555,7 @@ def api_get_checkins():
 # ── Journal API ───────────────────────────────────────────────────────────────
 
 @app.route('/api/journals', methods=['POST'])
+@limiter.limit("30/hour")
 def api_create_journal():
     user, err = _api_user('patient')
     if err:
@@ -555,6 +605,7 @@ def api_get_journals():
 # ── Summary API ───────────────────────────────────────────────────────────────
 
 @app.route('/api/summaries', methods=['POST'])
+@limiter.limit("10/hour")
 def api_create_summary():
     user, err = _api_user('patient')
     if err:
@@ -640,25 +691,30 @@ def api_provider_patients():
     return jsonify({'provider_id': user['id'], 'patients': patients}), 200
 
 
-@app.route('/api/provider/patient/<int:patient_id>', methods=['GET'])
+@app.route('/api/provider/patient/<patient_id>', methods=['GET'])
 def api_provider_patient(patient_id):
     user, err = _api_user('provider')
     if err:
         return err
-    days = int(request.args.get('days', 30))
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+    days = min(int(request.args.get('days', 30)), 365)
     detail = db.get_patient_detail(patient_id, days=days)
     if not detail:
         return jsonify({'error': 'Patient not found'}), 404
     return jsonify(detail), 200
 
 
-@app.route('/api/provider/generate-summary/<int:patient_id>', methods=['POST'])
+@app.route('/api/provider/generate-summary/<patient_id>', methods=['POST'])
+@limiter.limit("10/hour")
 def api_provider_generate_summary(patient_id):
     user, err = _api_user('provider')
     if err:
         return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
     data = request.json or {}
-    days = int(data.get('days', 14))
+    days = min(int(data.get('days', 14)), 365)
 
     checkins = db.get_checkins(patient_id, days=days)
     journals = db.get_journals(patient_id, limit=20, shared_only=True)
@@ -678,8 +734,7 @@ def api_provider_generate_summary(patient_id):
         summary_text=result['text'],
         date_range_start=start_date.isoformat(),
         date_range_end=end_date.isoformat(),
-        raw_response=result.get('raw'),
-        generated_by='provider',
+        raw_claude_response=result.get('raw'),
     )
     return jsonify({
         'summary_id': summary_id,
@@ -747,6 +802,9 @@ def api_change_password():
 
 @app.route('/api/medications/info/<name>', methods=['GET'])
 def api_medication_info(name):
+    _, err = _api_user()
+    if err:
+        return err
     info = db.get_medication_info(name)
     if not info:
         return jsonify({'error': 'Medication not found'}), 404
@@ -898,5 +956,5 @@ def api_unexpected_pattern():
 
 if __name__ == '__main__':
     port = int(os.environ.get('FLASK_PORT', 5002))
-    debug = os.environ.get('FLASK_ENV', 'development') == 'development'
+    debug = os.environ.get('FLASK_ENV') == 'development'
     app.run(host='0.0.0.0', port=port, debug=debug)

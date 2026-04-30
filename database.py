@@ -14,6 +14,9 @@ supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
+VALID_HYPOTHESIS_VARS = {'mood', 'stress', 'sleep', 'energy', 'focus'}
+
+
 def init_db():
     """Initialize database schema in Supabase. Runs once on startup."""
     # Supabase schema is created manually via SQL Editor
