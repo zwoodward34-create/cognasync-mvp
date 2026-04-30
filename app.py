@@ -580,7 +580,7 @@ def api_create_summary():
         summary_text=result['text'],
         date_range_start=start_date.isoformat(),
         date_range_end=end_date.isoformat(),
-        raw_response=result.get('raw'),
+        raw_claude_response=result.get('raw'),
     )
     return jsonify({
         'summary_id': summary_id,
