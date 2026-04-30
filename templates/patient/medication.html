@@ -78,13 +78,12 @@
     <div class="form-row">
       <div class="form-group">
         <label for="med-name-input">Medication name</label>
-        <input type="text" id="med-name-input" list="med-suggestions"
-               placeholder="e.g. sertraline" class="form-input" autocomplete="off">
-        <datalist id="med-suggestions">
+        <select id="med-name-input" class="form-input" onchange="lookupAddMed(this.value)">
+          <option value="">— Select a medication —</option>
           {% for name in med_names %}
-          <option value="{{ name }}">
+          <option value="{{ name }}">{{ name | title }}</option>
           {% endfor %}
-        </datalist>
+        </select>
       </div>
       <div class="form-group">
         <label for="med-dose-input">Dose</label>
@@ -100,6 +99,7 @@
         </select>
       </div>
     </div>
+    <div id="add-med-info-panel" class="ref-info-panel hidden"></div>
     <button type="submit" class="btn btn-primary">Add Medication</button>
   </form>
 </div>
@@ -291,6 +291,36 @@ function removeMedication(name, dose) {
     .catch(err => {
       showAlert('med-error', err.message || 'Failed to remove medication.');
     });
+}
+
+function lookupAddMed(name) {
+  const panel = document.getElementById('add-med-info-panel');
+  if (!name) { panel.classList.add('hidden'); return; }
+
+  apiGet('/api/medications/info/' + encodeURIComponent(name))
+    .then(data => {
+      let dosesHtml = '';
+      if (data.common_doses && Array.isArray(data.common_doses)) {
+        dosesHtml = `<div class="dose-chips">${data.common_doses.map(d =>
+          `<span class="dose-chip">${d}</span>`).join('')}</div>`;
+        // Pre-fill dose input with first common dose
+        const doseInput = document.getElementById('med-dose-input');
+        if (doseInput && !doseInput.value) doseInput.value = data.common_doses[0] || '';
+      }
+      const sides = (data.common_side_effects || '').split(/,\s*/).filter(Boolean).map(s =>
+        `<div class="effect-item">${s.trim()}</div>`).join('');
+
+      panel.innerHTML = `
+        <div class="ref-card">
+          <div class="ref-card-name">${name.charAt(0).toUpperCase()+name.slice(1)}</div>
+          <div class="ref-card-onset">Onset: ${data.typical_onset || 'Varies'}</div>
+          ${dosesHtml ? `<div class="ref-card-section-title">Common Doses</div>${dosesHtml}` : ''}
+          ${sides ? `<div class="ref-card-section-title">Common Side Effects</div><div class="effects-list">${sides}</div>` : ''}
+          ${data.interaction_warnings ? `<div class="ref-card-section-title">Drug Interactions</div><div class="interaction-warn-text">${data.interaction_warnings}</div>` : ''}
+        </div>`;
+      panel.classList.remove('hidden');
+    })
+    .catch(() => { panel.classList.add('hidden'); });
 }
 
 function lookupRefMed(name) {

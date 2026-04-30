@@ -376,6 +376,15 @@ def get_medication_names() -> list:
         print(f"Error fetching medication names: {e}")
         return []
 
+def get_medication_info(name: str):
+    """Get full reference info for a single medication by name (case-insensitive)."""
+    try:
+        result = supabase_admin.table('medication_reference').select('*').ilike('name', name).limit(1).execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"Error fetching medication info: {e}")
+        return None
+
 def search_medication_reference(search_term: str):
     """Search the global medication reference database."""
     try:
