@@ -353,15 +353,6 @@ def api_logout():
 
 @app.route('/api/checkins', methods=['POST'])
 def api_create_checkin():
-    import traceback as _tb
-    try:
-        return _api_create_checkin_inner()
-    except Exception as e:
-        app.logger.error("api_create_checkin unhandled: %s\n%s", e, _tb.format_exc())
-        return jsonify({'error': 'Failed to create check-in', 'detail': str(e), 'trace': _tb.format_exc().splitlines()[-5:]}), 500
-
-
-def _api_create_checkin_inner():
     user, err = _api_user('patient')
     if err:
         return err
@@ -385,7 +376,7 @@ def _api_create_checkin_inner():
         checkin_type = 'on_demand'
 
     raw_date = data.get('date', date.today().isoformat())
-    if not re.match(r'^\d{4}-\d{2}-\d{2}$', raw_date):
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(raw_date)):
         raw_date = date.today().isoformat()
 
     try:
@@ -403,12 +394,12 @@ def _api_create_checkin_inner():
             checkin_type=checkin_type,
         )
     except Exception as e:
-        return jsonify({'error': 'Failed to create check-in', 'detail': str(e)}), 500
+        app.logger.error("create_checkin failed: %s", e)
+        return jsonify({'error': 'Failed to create check-in'}), 500
 
     if not checkin_id:
-        return jsonify({'error': 'Failed to create check-in', 'detail': 'insert returned no id'}), 500
-    
-    # Generate AI insight for this check-in
+        return jsonify({'error': 'Failed to create check-in'}), 500
+
     ai_insight = None
     try:
         baseline = db.get_checkin_baseline(user['id'], days=7)

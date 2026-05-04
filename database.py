@@ -171,7 +171,7 @@ def create_checkin(patient_id, date_str, time_of_day, mood_score, medications, s
             'created_at':    datetime.utcnow().isoformat(),
         }
 
-        response = supabase_admin.table('checkins').insert(checkin_data).select('id').execute()
+        response = supabase_admin.table('checkins').insert(checkin_data).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]['id']
         print(f"create_checkin: insert returned no data. Response: {response}")
@@ -316,7 +316,7 @@ def create_journal(patient_id, entry_type, raw_entry, ai_analysis=None, share_wi
             'created_at': datetime.utcnow().isoformat()
         }
         
-        response = supabase_admin.table('journal_entries').insert(journal_data).select('id').execute()
+        response = supabase_admin.table('journal_entries').insert(journal_data).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]['id']
         return None
@@ -354,7 +354,7 @@ def create_summary(patient_id, summary_text, date_range_start, date_range_end, r
             'created_at': datetime.utcnow().isoformat()
         }
         
-        response = supabase_admin.table('summaries').insert(summary_data).select('id').execute()
+        response = supabase_admin.table('summaries').insert(summary_data).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]['id']
         return None
@@ -1019,7 +1019,7 @@ def save_hypothesis_result(patient_id, var_a, var_b, user_direction, result):
             'created_at': datetime.utcnow().isoformat()
         }
         
-        response = supabase_admin.table('user_hypotheses').insert(hyp_data).select('id').execute()
+        response = supabase_admin.table('user_hypotheses').insert(hyp_data).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]['id']
         return None
