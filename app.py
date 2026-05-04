@@ -280,7 +280,8 @@ def provider_patient_detail(patient_id):
                            summaries=summaries, trends=trends,
                            alerts=alerts, interactions=interactions,
                            journals=journals, timing_stats=timing_stats,
-                           selected_days=days)
+                           selected_days=days,
+                           today_str=date.today().isoformat())
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -717,34 +718,56 @@ def api_provider_generate_summary(patient_id):
     if not _provider_owns_patient(user['id'], patient_id):
         return jsonify({'error': 'Patient not found'}), 404
     data = request.json or {}
-    days = min(int(data.get('days', 14)), 365)
 
-    checkins = db.get_checkins(patient_id, days=days)
-    journals = db.get_journals(patient_id, limit=20, shared_only=True)
+    # Accept explicit period_start / period_end, or fall back to rolling days
+    period_start = data.get('period_start')
+    period_end   = data.get('period_end')
+    appointment_date = data.get('appointment_date')
+
+    if period_start and period_end:
+        if not (re.match(r'^\d{4}-\d{2}-\d{2}$', str(period_start)) and
+                re.match(r'^\d{4}-\d{2}-\d{2}$', str(period_end))):
+            return jsonify({'error': 'period_start and period_end must be YYYY-MM-DD'}), 400
+        checkins = db.get_checkins_in_range(patient_id, period_start, period_end)
+        journals = db.get_journals_in_range(patient_id, period_start, period_end)
+        days = None
+    else:
+        days = min(int(data.get('days', 14)), 365)
+        end_dt    = date.today()
+        start_dt  = end_dt - timedelta(days=days)
+        period_start = start_dt.isoformat()
+        period_end   = end_dt.isoformat()
+        checkins = db.get_checkins_in_range(patient_id, period_start, period_end)
+        journals = db.get_journals_in_range(patient_id, period_start, period_end)
 
     if not checkins and not journals:
-        return jsonify({'error': 'No data found for this patient'}), 400
+        return jsonify({'error': 'No data found for this patient in the selected period'}), 400
 
     try:
-        result = claude_api.generate_appointment_summary(checkins, journals, days=days)
+        result = claude_api.generate_appointment_summary(
+            checkins, journals,
+            days=days or (date.fromisoformat(period_end) - date.fromisoformat(period_start)).days,
+            period_start=period_start,
+            period_end=period_end,
+            appointment_date=appointment_date,
+        )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
 
-    end_date = date.today()
-    start_date = end_date - timedelta(days=days)
     summary_id = db.create_summary(
         patient_id=patient_id,
         summary_text=result['text'],
-        date_range_start=start_date.isoformat(),
-        date_range_end=end_date.isoformat(),
+        date_range_start=period_start,
+        date_range_end=period_end,
         raw_claude_response=result.get('raw'),
     )
     return jsonify({
-        'summary_id': summary_id,
-        'patient_id': patient_id,
-        'summary_text': result['text'],
-        'date_range_start': start_date.isoformat(),
-        'date_range_end': end_date.isoformat(),
+        'summary_id':       summary_id,
+        'patient_id':       patient_id,
+        'summary_text':     result['text'],
+        'date_range_start': period_start,
+        'date_range_end':   period_end,
+        'appointment_date': appointment_date,
     }), 201
 
 

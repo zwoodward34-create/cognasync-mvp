@@ -50,8 +50,8 @@
         </div>
         <div class="pv-hdr-actions">
           <button class="btn btn-primary btn-sm" id="gen-btn-top"
-                  onclick="generateSummary({{ patient.patient_id }}, {{ selected_days }})">
-            Generate Pre-Appt Summary
+                  onclick="document.getElementById('summary-section').scrollIntoView({behavior:'smooth'})">
+            Pre-Appt Summary ↓
           </button>
         </div>
       </div>
@@ -326,23 +326,47 @@
     {% endif %}
 
     <!-- Pre-appointment summary -->
-    <div class="pv-panel-full">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
-        <div class="pv-panel-title">Pre-Appointment Summary</div>
-        <button class="btn btn-primary btn-sm" id="gen-btn-main"
-                onclick="generateSummary({{ patient.patient_id }}, {{ selected_days }})">
-          Generate New
-        </button>
+    <div class="pv-panel-full" id="summary-section">
+      <div class="pv-panel-title" style="margin-bottom:3px;">Pre-Appointment Summary</div>
+      <div class="pv-panel-sub" style="margin-bottom:14px;">
+        AI synthesis of check-ins and journals for appointment preparation ·
+        journals marked private are excluded
       </div>
-      <div class="pv-panel-sub">
-        AI analysis of patient data for appointment preparation ·
-        journals marked private are excluded from analysis
+
+      <!-- Date range form -->
+      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px;
+                  padding:14px;background:var(--surface-raised);border:1px solid var(--border-light);">
+        <div>
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);
+                        text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">
+            Appointment date
+          </label>
+          <input type="date" id="appt-date" value="{{ today_str }}"
+                 style="font-size:13px;padding:5px 8px;border:1px solid var(--border-light);background:var(--surface);">
+        </div>
+        <div>
+          <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);
+                        text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">
+            Review period
+          </label>
+          <select id="appt-period"
+                  style="font-size:13px;padding:5px 8px;border:1px solid var(--border-light);background:var(--surface);">
+            <option value="7">7 days before</option>
+            <option value="14" selected>14 days before</option>
+            <option value="21">21 days before</option>
+            <option value="30">30 days before</option>
+          </select>
+        </div>
+        <button class="btn btn-primary btn-sm" id="gen-btn-main"
+                onclick="generateSummary('{{ patient.patient_id }}')">
+          Generate Summary
+        </button>
       </div>
 
       <div id="summary-loading" class="hidden"
            style="padding:24px;text-align:center;font-size:12px;color:var(--text-muted);">
         <div class="spinner" style="margin:0 auto 10px;"></div>
-        Analyzing {{ selected_days }} days of patient data…
+        Analyzing patient data…
       </div>
       <div id="summary-error" class="alert alert-error hidden" style="margin-bottom:10px;"></div>
       <div id="new-summary"></div>
@@ -508,7 +532,15 @@ function filterPatients(q) {
 }
 
 // ── Generate summary ────────────────────────────────────────────────
-function generateSummary(patientId, days) {
+function generateSummary(patientId) {
+  const apptDate   = document.getElementById('appt-date').value;
+  const periodDays = parseInt(document.getElementById('appt-period').value, 10);
+
+  // Compute period_start = apptDate minus periodDays
+  const apptMs    = new Date(apptDate).getTime();
+  const startMs   = apptMs - periodDays * 86400000;
+  const periodStart = new Date(startMs).toISOString().slice(0, 10);
+
   const btns    = document.querySelectorAll('#gen-btn-top, #gen-btn-main');
   const loading = document.getElementById('summary-loading');
   const error   = document.getElementById('summary-error');
@@ -519,14 +551,20 @@ function generateSummary(patientId, days) {
   error.classList.add('hidden');
   panel.innerHTML = '';
 
-  apiPost('/api/provider/generate-summary/' + patientId, { days })
+  apiPost('/api/provider/generate-summary/' + patientId, {
+    period_start:     periodStart,
+    period_end:       apptDate,
+    appointment_date: apptDate,
+  })
     .then(data => {
       const card = document.createElement('div');
       card.className = 'pv-summary-card new';
       const meta = document.createElement('div');
       meta.className = 'pv-summary-meta';
-      meta.innerHTML = `<span>${data.date_range_start} – ${data.date_range_end}</span><span>Just generated</span>`;
+      const apptLabel = data.appointment_date ? ` · Appt: ${data.appointment_date}` : '';
+      meta.innerHTML = `<span>${data.date_range_start} – ${data.date_range_end}${apptLabel}</span><span>Just generated</span>`;
       const body = document.createElement('div');
+      body.style.whiteSpace = 'pre-wrap';
       body.textContent = data.summary_text;
       card.appendChild(meta);
       card.appendChild(body);

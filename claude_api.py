@@ -156,51 +156,128 @@ def analyze_checkin(checkin_data, checkin_type, baseline=None):
         return {'status': 'safe', 'text': 'Check-in recorded successfully.'}
 
 
-def generate_appointment_summary(checkin_data, journal_data, days=14):
+def generate_appointment_summary(checkin_data, journal_data, days=14,
+                                  period_start=None, period_end=None,
+                                  appointment_date=None):
+    """Synthesize check-in and journal data into a pre-appointment clinical summary.
+
+    Accepts either rolling `days` from today or an explicit `period_start` / `period_end`.
+    `appointment_date` (YYYY-MM-DD string) tightens the clinical framing when provided.
+    """
+    # ── Build structured checkin rows ────────────────────────────────
     checkin_rows = []
+    mood_vals, stress_vals, sleep_vals, energy_vals = [], [], [], []
+    meds_logged = 0
+
     for c in checkin_data:
-        row = {
-            'date': c.get('date', ''),
-            'type': c.get('checkin_type', 'on_demand'),
-            'mood': c.get('mood_score'),
-            'anxiety': c.get('stress_score'),
-            'sleep_hours': c.get('sleep_hours'),
-        }
         ext = {}
         if c.get('extended_data'):
             try:
                 ext = json.loads(c['extended_data']) if isinstance(c['extended_data'], str) else c.get('extended_data', {})
             except Exception:
                 pass
-        if ext.get('energy') is not None:
-            row['energy'] = ext['energy']
+
+        mood   = c.get('mood_score')
+        stress = c.get('stress_score')
+        sleep  = c.get('sleep_hours')
+        energy = ext.get('energy')
+
+        row = {
+            'date':        c.get('checkin_date', c.get('date', '')),
+            'type':        c.get('checkin_type', 'on_demand'),
+            'mood':        mood,
+            'stress':      stress,
+            'sleep_hours': sleep,
+        }
+        if energy is not None:
+            row['energy'] = energy
         if ext.get('sleep_quality') is not None:
             row['sleep_quality'] = ext['sleep_quality']
+        if ext.get('caffeine_mg') is not None:
+            row['caffeine_mg'] = ext['caffeine_mg']
+
+        meds = c.get('medications') or []
+        if isinstance(meds, str):
+            try:
+                meds = json.loads(meds)
+            except Exception:
+                meds = []
+        if meds:
+            meds_logged += 1
+            row['meds_taken'] = sum(1 for m in meds if isinstance(m, dict) and m.get('taken'))
+
         if c.get('ai_insights'):
             row['ai_observation'] = c['ai_insights'][:200]
+
         checkin_rows.append(row)
-    checkin_json = json.dumps(checkin_rows, indent=2, default=str)
-    journal_json = json.dumps(
-        [{'date': j.get('created_at', '')[:10],
-          'entry': j.get('raw_entry', '')[:300],
-          'analysis': j.get('ai_analysis', '')[:200]} for j in journal_data],
-        indent=2
+
+        if mood   is not None: mood_vals.append(float(mood))
+        if stress is not None: stress_vals.append(float(stress))
+        if sleep  is not None: sleep_vals.append(float(sleep))
+        if energy is not None: energy_vals.append(float(energy))
+
+    def _avg(v): return round(sum(v) / len(v), 1) if v else None
+    def _trend(v):
+        if len(v) < 2: return 'insufficient data'
+        return 'improving' if v[-1] > v[0] else 'declining' if v[-1] < v[0] else 'stable'
+
+    stats = {
+        'total_checkins':    len(checkin_rows),
+        'period_days':       days,
+        'avg_mood':          _avg(mood_vals),
+        'mood_trend':        _trend(mood_vals),
+        'avg_stress':        _avg(stress_vals),
+        'stress_trend':      _trend(stress_vals),
+        'avg_sleep_hours':   _avg(sleep_vals),
+        'avg_energy':        _avg(energy_vals),
+        'checkins_with_meds': meds_logged,
+    }
+
+    # ── Build journal rows ───────────────────────────────────────────
+    journal_rows = []
+    for j in journal_data:
+        entry_date = (j.get('entry_date') or j.get('created_at', ''))[:10]
+        content    = j.get('content') or j.get('raw_entry') or ''
+        journal_rows.append({
+            'date':    entry_date,
+            'excerpt': content[:300] + ('...' if len(content) > 300 else ''),
+        })
+
+    # ── Build prompt ─────────────────────────────────────────────────
+    appt_context = (
+        f"The appointment is scheduled for {appointment_date}. "
+        if appointment_date else ""
+    )
+    period_label = (
+        f"{period_start} to {period_end}"
+        if period_start and period_end
+        else f"past {days} days"
     )
 
     summary_system = (
-        "You are a clinical reflection assistant. Synthesize patient data into a brief summary for their psychiatrist. "
-        "INSTRUCTIONS: Identify 2-3 key patterns (mood, medication, sleep, stress, triggers). "
-        "Note correlations. Flag concerning trends. Suggest 2-3 topics for discussion. "
-        "Format: 3-4 paragraphs, plain language. DO NOT diagnose or prescribe. "
-        "DO NOT say 'you have' or name specific disorders. Make it clinically useful without being alarmist."
-    )
-    user_content = (
-        f"PATIENT DATA (past {days} days):\n"
-        f"Check-ins: {checkin_json}\n\n"
-        f"Journal entries: {journal_json}"
+        "You are a clinical reflection assistant preparing a pre-appointment briefing for a psychiatrist. "
+        f"{appt_context}"
+        "INSTRUCTIONS: "
+        "1) Open with a one-sentence summary of the patient's overall trajectory this period. "
+        "2) Summarise quantitative patterns: mood average and trend, stress/anxiety, sleep, energy. "
+        "3) Note any medication adherence signals from check-in logs. "
+        "4) Draw on journal excerpts to surface qualitative themes — language patterns, recurring stressors, coping style. "
+        "5) Flag any concerning trends or week-over-week changes. "
+        "6) Close with 2-3 specific suggested discussion topics for the appointment. "
+        "Format: 4-5 short paragraphs, plain clinical language. "
+        "DO NOT diagnose, prescribe, or name specific disorders. "
+        "DO NOT use 'you have' or 'you suffer from'. "
+        "Be specific — reference dates and numbers when useful."
     )
 
-    raw = _call_claude(summary_system, user_content, max_tokens=700)
+    user_content = (
+        f"REVIEW PERIOD: {period_label}\n\n"
+        f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}\n\n"
+        f"DAILY CHECK-INS:\n{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
+        f"JOURNAL ENTRIES ({len(journal_rows)} total):\n{json.dumps(journal_rows, indent=2, default=str)}"
+    )
+
+    raw = _call_claude(summary_system, user_content, max_tokens=900)
     clean = _sanitize_output(raw)
     if clean is None:
         clean = (

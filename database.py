@@ -268,10 +268,39 @@ def get_checkins(patient_id, days=30):
     try:
         cutoff_date = (date.today() - timedelta(days=days)).isoformat()
         response = supabase_admin.table('checkins').select('*').gte('checkin_date', cutoff_date).eq('user_id', str(patient_id)).order('checkin_date', desc=True).execute()
-        
         return response.data if response.data else []
     except Exception as e:
         print(f"Error getting checkins: {e}")
+        return []
+
+
+def get_checkins_in_range(patient_id, start_date: str, end_date: str):
+    """Get check-ins for a patient within an explicit date range (inclusive)."""
+    try:
+        response = (supabase_admin.table('checkins').select('*')
+                    .eq('user_id', str(patient_id))
+                    .gte('checkin_date', start_date)
+                    .lte('checkin_date', end_date)
+                    .order('checkin_date', desc=False).execute())
+        return response.data if response.data else []
+    except Exception as e:
+        print(f"Error getting checkins in range: {e}")
+        return []
+
+
+def get_journals_in_range(patient_id, start_date: str, end_date: str, shared_only=False):
+    """Get journal entries within an explicit date range (inclusive)."""
+    try:
+        query = (supabase_admin.table('journal_entries').select('*')
+                 .eq('user_id', str(patient_id))
+                 .gte('entry_date', start_date)
+                 .lte('entry_date', end_date))
+        if shared_only:
+            query = query.eq('share_with_provider', True)
+        response = query.order('entry_date', desc=False).execute()
+        return response.data if response.data else []
+    except Exception as e:
+        print(f"Error getting journals in range: {e}")
         return []
 
 
