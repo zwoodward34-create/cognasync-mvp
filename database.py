@@ -122,9 +122,10 @@ def update_patient_profile(user_id, **kwargs):
 
 
 def assign_patient_to_provider(patient_user_id, provider_id):
-    """Assign patient to provider."""
+    """Assign patient to provider. Pass provider_id=None to unlink."""
     try:
-        supabase_admin.table('patient_profiles').update({'provider_id': str(provider_id)}).eq('user_id', str(patient_user_id)).execute()
+        value = str(provider_id) if provider_id is not None else None
+        supabase_admin.table('patient_profiles').update({'provider_id': value}).eq('user_id', str(patient_user_id)).execute()
         return True
     except Exception as e:
         print(f"Error assigning patient to provider: {e}")
