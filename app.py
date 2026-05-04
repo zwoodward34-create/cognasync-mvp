@@ -49,7 +49,7 @@ def _session_token():
 def _provider_owns_patient(provider_id, patient_id):
     """Return True if patient_id is in the provider's assigned patient list."""
     assigned = db.get_provider_patients(provider_id)
-    return str(patient_id) in [str(p) for p in assigned]
+    return str(patient_id) in [str(p['patient_id']) for p in assigned]
 
 
 def _current_user():
