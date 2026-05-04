@@ -136,16 +136,41 @@ def assign_patient_to_provider(patient_user_id, provider_id):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def create_checkin(patient_id, date_str, time_of_day, mood_score, medications, sleep_hours, stress_score, symptoms, notes, checkin_type='on_demand', extended_data=None, ai_insights=None):
-    """Create a new check-in."""
+    """Create a new check-in, persisting all fields."""
     try:
+        # Normalise extended_data — accept either a dict or a JSON string
+        ext = extended_data or {}
+        if isinstance(ext, str):
+            try:
+                ext = json.loads(ext)
+            except Exception:
+                ext = {}
+
+        # Derive stability_score from the computed scores the React app sends,
+        # falling back to mood_score so old callers still work.
+        scores = ext.get('scores', {}) if isinstance(ext, dict) else {}
+        stability = scores.get('stability', mood_score)
+
         checkin_data = {
-            'user_id': str(patient_id),
-            'checkin_date': date_str,
-            'stability_score': mood_score,
-            'notes': notes,
-            'created_at': datetime.utcnow().isoformat()
+            'user_id':       str(patient_id),
+            'checkin_date':  date_str,
+            # Core numeric fields
+            'mood_score':    mood_score,
+            'stress_score':  stress_score,
+            'sleep_hours':   sleep_hours,
+            # Check-in metadata
+            'checkin_type':  checkin_type,
+            'time_of_day':   time_of_day,
+            # Medication log (JSON array of {name, dose, taken, time_taken})
+            'medications':   medications or [],
+            # Extended data blob (energy, focus, caffeine, computed scores, …)
+            'extended_data': ext,
+            # Backwards-compatible composite score kept for legacy queries
+            'stability_score': round(float(stability), 2) if stability is not None else mood_score,
+            'notes':         notes,
+            'created_at':    datetime.utcnow().isoformat(),
         }
-        
+
         response = supabase_admin.table('checkins').insert(checkin_data).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]['id']
@@ -166,23 +191,75 @@ def update_checkin_insights(checkin_id, insights_text):
 
 
 def get_checkin_baseline(patient_id, days=7):
-    """Get baseline scores for recent check-ins."""
+    """Return per-metric averages over the last N days.
+
+    The React check-in app (App.jsx) uses this as its live baseline object and
+    expects the keys:
+      avgMood, avgEnergy, avgAnxiety, avgSleepHours, avgSleepQuality,
+      avgCaffeineMg, optimalCaffeine
+    Legacy callers receive the additional keys `baseline` and `count`.
+    """
     try:
         cutoff_date = (date.today() - timedelta(days=days)).isoformat()
-        response = supabase_admin.table('checkins').select('stability_score').gte('checkin_date', cutoff_date).eq('user_id', str(patient_id)).execute()
-        
-        scores = [r['stability_score'] for r in response.data if r['stability_score'] is not None]
-        
-        def avg(lst):
-            return round(sum(lst) / len(lst), 2) if lst else None
-        
+        response = supabase_admin.table('checkins').select(
+            'mood_score, stress_score, sleep_hours, stability_score, extended_data'
+        ).gte('checkin_date', cutoff_date).eq('user_id', str(patient_id)).execute()
+
+        rows = response.data or []
+
+        def _avg(vals):
+            v = [x for x in vals if x is not None]
+            return round(sum(v) / len(v), 2) if v else None
+
+        # Pull scalar columns
+        moods    = [r.get('mood_score') or r.get('stability_score') for r in rows]
+        stresses = [r.get('stress_score') for r in rows]
+        sleeps   = [r.get('sleep_hours') for r in rows]
+
+        # Pull extended_data sub-fields
+        energies, sleep_quals, caffeines = [], [], []
+        for r in rows:
+            ext = r.get('extended_data') or {}
+            if isinstance(ext, str):
+                try:
+                    ext = json.loads(ext)
+                except Exception:
+                    ext = {}
+            if ext.get('energy') is not None:
+                energies.append(float(ext['energy']))
+            if ext.get('sleep_quality') is not None:
+                sleep_quals.append(float(ext['sleep_quality']))
+            if ext.get('caffeine_mg') is not None:
+                caffeines.append(float(ext['caffeine_mg']))
+
+        avg_mood       = _avg(moods)   or 6.8
+        avg_energy     = _avg(energies) or 6.5
+        avg_anxiety    = _avg(stresses) or 3.2
+        avg_sleep_hrs  = _avg(sleeps)  or 5.9
+        avg_sleep_qual = _avg(sleep_quals) or 6.2
+        avg_caffeine   = _avg(caffeines) or 0.0
+
         return {
-            'baseline': avg(scores),
-            'count': len(scores)
+            # Keys expected by React
+            'avgMood':         avg_mood,
+            'avgEnergy':       avg_energy,
+            'avgAnxiety':      avg_anxiety,
+            'avgSleepHours':   avg_sleep_hrs,
+            'avgSleepQuality': avg_sleep_qual,
+            'avgCaffeineMg':   avg_caffeine,
+            'optimalCaffeine': {'min': 200, 'max': 300},
+            # Legacy keys (used by claude_api.py)
+            'baseline': avg_mood,
+            'count':    len(rows),
         }
     except Exception as e:
         print(f"Error getting checkin baseline: {e}")
-        return {'baseline': None, 'count': 0}
+        return {
+            'avgMood': 6.8, 'avgEnergy': 6.5, 'avgAnxiety': 3.2,
+            'avgSleepHours': 5.9, 'avgSleepQuality': 6.2, 'avgCaffeineMg': 0.0,
+            'optimalCaffeine': {'min': 200, 'max': 300},
+            'baseline': None, 'count': 0,
+        }
 
 
 def get_checkins(patient_id, days=30):
@@ -390,9 +467,162 @@ def get_medication_info(name: str):
         return None
 
 def check_medication_interactions(patient_id) -> list:
-    """Return known drug interaction alerts for a patient's current medications."""
-    # No interaction data stored yet — return empty list rather than crashing
-    return []
+    """Return known drug interaction alerts for a patient's active medications.
+
+    Checks a curated list of clinically significant psychiatric / neurological
+    drug-drug interactions.  Matching is case-insensitive substring search so
+    it handles brand names and common abbreviations (e.g. "sertraline" matches
+    "sertraline 50mg", "Sertraline (Zoloft)", etc.).
+
+    Returns a list of dicts:  {drug_a, drug_b, severity, warning}
+    severity is 'serious' | 'moderate' | 'caution'.
+    """
+    # ── Interaction table ────────────────────────────────────────────
+    # Each entry: ([drug_a_aliases], [drug_b_aliases], severity, warning)
+    INTERACTIONS = [
+        # ── Serotonin syndrome risk ──────────────────────────────────
+        (['selegiline', 'phenelzine', 'tranylcypromine', 'isocarboxazid', 'rasagiline', 'monoamine oxidase'],
+         ['sertraline', 'fluoxetine', 'paroxetine', 'escitalopram', 'citalopram', 'fluvoxamine',
+          'venlafaxine', 'duloxetine', 'desvenlafaxine', 'levomilnacipran',
+          'bupropion', 'tramadol', 'meperidine', 'dextromethorphan', 'triptans', 'linezolid',
+          'lithium', 'tryptophan', 'st. john'],
+         'serious',
+         'MAOI + serotonergic agent: high risk of serotonin syndrome. Potentially life-threatening.'),
+
+        (['sertraline', 'fluoxetine', 'paroxetine', 'escitalopram', 'citalopram', 'fluvoxamine'],
+         ['tramadol'],
+         'serious',
+         'SSRI + tramadol: elevated serotonin syndrome risk; tramadol also lowers seizure threshold.'),
+
+        (['sertraline', 'fluoxetine', 'paroxetine', 'escitalopram', 'citalopram', 'fluvoxamine',
+          'venlafaxine', 'duloxetine'],
+         ['lithium'],
+         'moderate',
+         'SSRI/SNRI + lithium: additive serotonergic effect; monitor for serotonin toxicity signs.'),
+
+        # ── Lithium toxicity ─────────────────────────────────────────
+        (['lithium'],
+         ['ibuprofen', 'naproxen', 'diclofenac', 'celecoxib', 'nsaid', 'indomethacin',
+          'aspirin'],
+         'serious',
+         'Lithium + NSAID: NSAIDs reduce lithium clearance, raising plasma levels to potentially toxic range. Monitor levels closely.'),
+
+        (['lithium'],
+         ['hydrochlorothiazide', 'furosemide', 'lasix', 'chlorthalidone', 'thiazide', 'diuretic'],
+         'serious',
+         'Lithium + diuretic: sodium depletion increases lithium reabsorption — toxicity risk. Check levels.'),
+
+        (['lithium'],
+         ['ace inhibitor', 'lisinopril', 'enalapril', 'ramipril', 'captopril',
+          'losartan', 'valsartan', 'irbesartan', 'arb'],
+         'serious',
+         'Lithium + ACE inhibitor / ARB: significant lithium retention risk. Requires dose adjustment and close monitoring.'),
+
+        # ── QT prolongation ──────────────────────────────────────────
+        (['citalopram', 'escitalopram'],
+         ['quetiapine', 'haloperidol', 'ziprasidone', 'thioridazine', 'chlorpromazine',
+          'methadone', 'azithromycin', 'clarithromycin', 'ciprofloxacin', 'ondansetron'],
+         'serious',
+         'QT-prolonging combination: additive risk of arrhythmia (torsades de pointes).'),
+
+        # ── CNS / respiratory depression ─────────────────────────────
+        (['alprazolam', 'clonazepam', 'diazepam', 'lorazepam', 'temazepam', 'benzodiazepine',
+          'zolpidem', 'eszopiclone', 'zaleplon'],
+         ['oxycodone', 'hydrocodone', 'codeine', 'morphine', 'fentanyl', 'buprenorphine',
+          'methadone', 'tramadol', 'opioid'],
+         'serious',
+         'Benzodiazepine + opioid: combined CNS/respiratory depression — risk of fatal respiratory arrest. Avoid unless closely monitored.'),
+
+        # ── Antiepileptic interactions ───────────────────────────────
+        (['valproate', 'valproic acid', 'divalproex', 'depakote'],
+         ['lamotrigine', 'lamictal'],
+         'serious',
+         'Valproate + lamotrigine: valproate roughly doubles lamotrigine levels. Dose reduction of lamotrigine required.'),
+
+        (['carbamazepine', 'tegretol'],
+         ['clozapine'],
+         'serious',
+         'Carbamazepine + clozapine: additive risk of bone marrow suppression (agranulocytosis). Avoid combination.'),
+
+        (['carbamazepine', 'tegretol', 'phenytoin', 'dilantin', 'phenobarbital'],
+         ['quetiapine', 'olanzapine', 'risperidone', 'aripiprazole',
+          'sertraline', 'fluoxetine', 'escitalopram', 'citalopram',
+          'venlafaxine', 'duloxetine', 'clonazepam', 'alprazolam'],
+         'moderate',
+         'CYP3A4 inducer + substrate: enzyme-inducing anticonvulsant may significantly reduce plasma levels of co-administered drug.'),
+
+        # ── Bupropion ────────────────────────────────────────────────
+        (['bupropion', 'wellbutrin'],
+         ['tramadol', 'clozapine', 'clomipramine'],
+         'serious',
+         'Bupropion + this agent: substantially lowers seizure threshold. Avoid unless benefit clearly outweighs risk.'),
+
+        # ── Antipsychotic combinations ───────────────────────────────
+        (['clozapine'],
+         ['olanzapine'],
+         'caution',
+         'Two heavily sedating antipsychotics: risk of excessive sedation and metabolic side effects.'),
+
+        # ── Stimulants ───────────────────────────────────────────────
+        (['amphetamine', 'adderall', 'methylphenidate', 'ritalin', 'dexmethylphenidate',
+          'lisdexamfetamine', 'vyvanse'],
+         ['selegiline', 'phenelzine', 'tranylcypromine', 'isocarboxazid', 'monoamine oxidase'],
+         'serious',
+         'Stimulant + MAOI: hypertensive crisis risk. Absolutely contraindicated.'),
+    ]
+
+    try:
+        # Collect active medication names from both the new medications table
+        # and the legacy patient_profiles.current_medications JSONB array.
+        med_names = set()
+
+        active_meds = get_user_medications(patient_id, active_only=True)
+        for m in active_meds:
+            if m.get('name'):
+                med_names.add(m['name'].lower())
+
+        profile = get_patient_profile(patient_id)
+        if profile:
+            legacy = profile.get('current_medications') or []
+            if isinstance(legacy, str):
+                try:
+                    legacy = json.loads(legacy)
+                except Exception:
+                    legacy = []
+            for m in legacy:
+                name = m.get('name', '') if isinstance(m, dict) else str(m)
+                if name:
+                    med_names.add(name.lower())
+
+        if len(med_names) < 2:
+            return []
+
+        # Check every known interaction pair
+        alerts = []
+        seen = set()
+
+        for aliases_a, aliases_b, severity, warning in INTERACTIONS:
+            matched_a = next((n for n in med_names
+                              if any(alias in n or n in alias for alias in aliases_a)), None)
+            matched_b = next((n for n in med_names
+                              if any(alias in n or n in alias for alias in aliases_b)), None)
+
+            if matched_a and matched_b and matched_a != matched_b:
+                key = tuple(sorted([matched_a, matched_b]))
+                if key not in seen:
+                    seen.add(key)
+                    alerts.append({
+                        'drug_a':   matched_a.title(),
+                        'drug_b':   matched_b.title(),
+                        'severity': severity,
+                        'warning':  warning,
+                    })
+
+        return alerts
+
+    except Exception as e:
+        print(f"Error checking medication interactions: {e}")
+        return []
 
 def search_medication_reference(search_term: str):
     """Search the global medication reference database."""
@@ -409,28 +639,98 @@ def search_medication_reference(search_term: str):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_provider_patients(provider_id):
-    """Get all patients assigned to a provider."""
+    """Return a list of patient summary dicts for all patients assigned to this provider.
+
+    Each dict contains the fields the provider sidebar template expects:
+      patient_id, full_name, email, last_checkin, latest_summary,
+      current_medications
+    """
     try:
-        response = supabase_admin.table('patient_profiles').select('user_id').eq('provider_id', str(provider_id)).execute()
-        return [row['user_id'] for row in response.data] if response.data else []
+        # Get profile rows for every patient assigned to this provider
+        prof_resp = supabase_admin.table('patient_profiles').select(
+            'user_id, current_medications'
+        ).eq('provider_id', str(provider_id)).execute()
+
+        if not prof_resp.data:
+            return []
+
+        patients = []
+        for row in prof_resp.data:
+            uid = row['user_id']
+
+            # Fetch identity info from the profiles table
+            user = get_user_by_id(uid)
+            if not user:
+                continue
+
+            # Last check-in date
+            ci_resp = supabase_admin.table('checkins').select('checkin_date').eq(
+                'user_id', uid).order('checkin_date', desc=True).limit(1).execute()
+            last_checkin = (ci_resp.data[0]['checkin_date'][:10]
+                            if ci_resp.data else None)
+
+            # Whether a summary exists
+            sm_resp = supabase_admin.table('summaries').select('id').eq(
+                'user_id', uid).limit(1).execute()
+            has_summary = bool(sm_resp.data)
+
+            meds = row.get('current_medications') or []
+            if isinstance(meds, str):
+                try:
+                    meds = json.loads(meds)
+                except Exception:
+                    meds = []
+
+            patients.append({
+                'patient_id':          uid,
+                'full_name':           user['full_name'],
+                'email':               user['email'],
+                'last_checkin':        last_checkin,
+                'latest_summary':      has_summary,
+                'current_medications': meds,
+            })
+
+        return patients
     except Exception as e:
         print(f"Error getting provider patients: {e}")
         return []
 
 
 def get_patient_detail(patient_id, days=30):
-    """Get comprehensive patient data for provider view."""
+    """Return a flat dict with all data the provider patient-detail template uses.
+
+    Top-level keys the template accesses directly on `patient`:
+      patient_id, full_name, email, current_medications,
+      checkins_last_period, checkins, journals, latest_summary, profile
+    """
     try:
+        user    = get_user_by_id(patient_id)
         profile = get_patient_profile(patient_id)
         checkins = get_checkins(patient_id, days)
         journals = get_journals(patient_id, limit=20, shared_only=True)
         latest_summary = get_latest_summary(patient_id)
-        
+
+        meds = []
+        if profile:
+            meds = profile.get('current_medications') or []
+            if isinstance(meds, str):
+                try:
+                    meds = json.loads(meds)
+                except Exception:
+                    meds = []
+
         return {
-            'profile': profile,
-            'checkins': checkins,
-            'journals': journals,
-            'latest_summary': latest_summary
+            # Flat identity / summary fields
+            'patient_id':          patient_id,
+            'full_name':           user['full_name'] if user else 'Unknown',
+            'email':               user['email']     if user else '',
+            'current_medications': meds,
+            'checkins_last_period': len(checkins),
+            # Nested sub-objects still available for advanced template use
+            'profile':        profile,
+            'checkins':       checkins,
+            'journals':       journals,
+            'latest_summary': latest_summary,
         }
     except Exception as e:
         print(f"Error getting patient detail: {e}")
@@ -442,56 +742,178 @@ def get_patient_detail(patient_id, days=30):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def _linear_regression(values):
-    """Calculate linear regression slope."""
-    if not values or len(values) < 2:
+    """Return slope, R², and an approximate p-value for a value series.
+
+    Returns a dict:
+      slope     – units-per-observation
+      r_squared – coefficient of determination (0–1)
+      p_value   – approximate two-tailed significance (very rough t-table)
+    Returns None when there are fewer than 3 observations.
+    """
+    if not values or len(values) < 3:
         return None
-    
+
     n = len(values)
-    x_vals = list(range(n))
-    x_mean = sum(x_vals) / n
+    xs = list(range(n))
+    x_mean = sum(xs) / n
     y_mean = sum(values) / n
-    
-    numerator = sum((x_vals[i] - x_mean) * (values[i] - y_mean) for i in range(n))
-    denominator = sum((x_vals[i] - x_mean) ** 2 for i in range(n))
-    
-    if denominator == 0:
-        return None
-    
-    slope = numerator / denominator
-    return round(slope, 3)
+
+    ss_xy = sum((xs[i] - x_mean) * (values[i] - y_mean) for i in range(n))
+    ss_xx = sum((xs[i] - x_mean) ** 2 for i in range(n))
+    ss_yy = sum((values[i] - y_mean) ** 2 for i in range(n))
+
+    if ss_xx == 0:
+        return {'slope': 0.0, 'r_squared': 0.0, 'p_value': 1.0}
+
+    slope   = ss_xy / ss_xx
+    r_sq    = (ss_xy ** 2) / (ss_xx * ss_yy) if ss_yy > 0 else 0.0
+
+    # Approximate p-value via t-statistic (df = n-2)
+    if n > 2 and 0 < r_sq < 1:
+        se_slope = ((ss_yy * (1 - r_sq) / ss_xx) / (n - 2)) ** 0.5
+        t_stat   = abs(slope / se_slope) if se_slope > 0 else 0
+    else:
+        t_stat = 0
+    if   t_stat > 3.5: p_val = 0.01
+    elif t_stat > 2.5: p_val = 0.02
+    elif t_stat > 2.0: p_val = 0.05
+    elif t_stat > 1.5: p_val = 0.15
+    else:              p_val = 0.50
+
+    return {
+        'slope':     round(slope, 4),
+        'r_squared': round(r_sq,  3),
+        'p_value':   round(p_val, 3),
+    }
+
+
+def _trend_stats(values):
+    """Return the full trend dict expected by app.py provider alerts.
+
+    Shape:
+      { average, trend, slope, r_squared, p_value, values }
+    """
+    if not values:
+        return {'average': None, 'trend': 'insufficient_data',
+                'slope': None, 'r_squared': 0, 'p_value': 1, 'values': []}
+
+    def _avg(v):
+        return round(sum(v) / len(v), 2) if v else None
+
+    reg = _linear_regression(values)
+    if reg is None:
+        return {'average': _avg(values), 'trend': 'insufficient_data',
+                'slope': None, 'r_squared': 0, 'p_value': 1, 'values': values}
+
+    slope = reg['slope']
+    trend = ('increasing' if slope >  0.05 else
+             'decreasing' if slope < -0.05 else 'stable')
+
+    return {
+        'average':   _avg(values),
+        'trend':     trend,
+        'slope':     slope,
+        'r_squared': reg['r_squared'],
+        'p_value':   reg['p_value'],
+        'values':    values,
+    }
 
 
 def get_trends_data(user_id: str, days: int = 30):
-    """Get aggregated trend data for a user."""
+    """Return aggregated trend data.
+
+    The return shape matches what app.py and the provider template expect:
+      mood        – _trend_stats dict (with average, trend, r_squared, p_value)
+      stress      – _trend_stats dict
+      sleep       – {average, values}
+      energy      – {average, values}
+      medication_adherence – int (0–100 %)
+      checkin_count / total_checkins – int
+    """
+    _empty = {
+        'user_id':       user_id,
+        'date_range':    {'start': (date.today() - timedelta(days=days)).isoformat(),
+                          'end':   date.today().isoformat()},
+        'total_checkins':  0,
+        'checkin_count':   0,
+        'mood':            _trend_stats([]),
+        'stress':          _trend_stats([]),
+        'sleep':           {'average': None, 'values': []},
+        'energy':          {'average': None, 'values': []},
+        'medication_adherence': 0,
+    }
+
     try:
         start_date = (date.today() - timedelta(days=days)).isoformat()
-        checkins = supabase_admin.table('checkins').select('*').eq('user_id', user_id).gte('checkin_date', start_date).execute()
-        
-        if not checkins.data:
-            return {
-                'user_id': user_id,
-                'date_range': {'start': start_date, 'end': date.today().isoformat()},
-                'total_checkins': 0,
-                'average_stability': None,
-                'average_dopamine': None,
-                'average_nervous_system': None,
-                'trend_direction': 'insufficient_data'
-            }
-        
-        # Aggregate scores
-        data = checkins.data
-        avg_stability = sum([c.get('stability_score', 0) for c in data]) / len(data) if data else 0
-        avg_dopamine = sum([c.get('dopamine_efficiency', 0) for c in data]) / len(data) if data else 0
-        avg_nervous = sum([c.get('nervous_system_load', 0) for c in data]) / len(data) if data else 0
-        
+        result = supabase_admin.table('checkins').select('*').eq(
+            'user_id', user_id).gte('checkin_date', start_date).order(
+            'checkin_date', desc=False).execute()
+
+        data = result.data or []
+        if not data:
+            _empty['date_range']['start'] = start_date
+            return _empty
+
+        # ── Extract per-row values ────────────────────────────────────
+        mood_vals, stress_vals, sleep_vals, energy_vals = [], [], [], []
+        meds_with_entries, meds_with_taken = 0, 0
+
+        for row in data:
+            # Mood — prefer explicit mood_score, fall back to stability_score
+            mood = row.get('mood_score') or row.get('stability_score')
+            if mood is not None:
+                mood_vals.append(float(mood))
+
+            stress = row.get('stress_score')
+            if stress is not None:
+                stress_vals.append(float(stress))
+
+            sleep = row.get('sleep_hours')
+            if sleep is not None:
+                sleep_vals.append(float(sleep))
+
+            # Extended fields live in the JSONB column
+            ext = row.get('extended_data') or {}
+            if isinstance(ext, str):
+                try:
+                    ext = json.loads(ext)
+                except Exception:
+                    ext = {}
+
+            if ext.get('energy') is not None:
+                energy_vals.append(float(ext['energy']))
+
+            # Medication adherence: % of check-ins that have a med list and
+            # at least one entry was marked taken.
+            meds = row.get('medications') or []
+            if isinstance(meds, str):
+                try:
+                    meds = json.loads(meds)
+                except Exception:
+                    meds = []
+            if meds:
+                meds_with_entries += 1
+                if any(m.get('taken') for m in meds if isinstance(m, dict)):
+                    meds_with_taken += 1
+
+        adherence = (round((meds_with_taken / meds_with_entries) * 100)
+                     if meds_with_entries > 0 else 0)
+
+        def _avg(v):
+            return round(sum(v) / len(v), 2) if v else None
+
         return {
-            'user_id': user_id,
-            'date_range': {'start': start_date, 'end': date.today().isoformat()},
-            'total_checkins': len(data),
-            'average_stability': round(avg_stability, 2),
-            'average_dopamine': round(avg_dopamine, 2),
-            'average_nervous_system': round(avg_nervous, 2),
-            'trend_direction': 'up' if data[-1].get('stability_score', 0) > avg_stability else 'down'
+            'user_id':      user_id,
+            'date_range':   {'start': start_date, 'end': date.today().isoformat()},
+            'total_checkins':  len(data),
+            'checkin_count':   len(data),
+            'mood':    _trend_stats(mood_vals),
+            'stress':  _trend_stats(stress_vals),
+            'sleep':   {'average': _avg(sleep_vals),  'values': sleep_vals},
+            'energy':  {'average': _avg(energy_vals), 'values': energy_vals},
+            'medication_adherence': adherence,
+            # Legacy flat fields kept for any direct reads elsewhere
+            'average_stability': _avg(mood_vals),
         }
     except Exception as e:
         print(f"Error getting trends: {e}")
@@ -499,18 +921,51 @@ def get_trends_data(user_id: str, days: int = 30):
 
 
 def get_paired_values(patient_id, var_a, var_b, days=60):
-    """Get paired values for correlation testing."""
+    """Return (date, val_a, val_b) triples for two VALID_HYPOTHESIS_VARS.
+
+    Variable → storage location mapping:
+      mood   → mood_score column   (fallback: stability_score)
+      stress → stress_score column
+      sleep  → sleep_hours column
+      energy → extended_data->>'energy'
+      focus  → extended_data->>'focus'
+    """
+    # col = database column; ext = key inside extended_data JSONB (None if not needed)
+    VAR_MAP = {
+        'mood':   ('mood_score',   None),
+        'stress': ('stress_score', None),
+        'sleep':  ('sleep_hours',  None),
+        'energy': (None,           'energy'),
+        'focus':  (None,           'focus'),
+    }
+
+    def _extract(row, var):
+        col, ext_key = VAR_MAP.get(var, (None, None))
+        if col:
+            v = row.get(col)
+            # Backwards-compat: old rows stored mood only in stability_score
+            if v is None and var == 'mood':
+                v = row.get('stability_score')
+            return float(v) if v is not None else None
+        if ext_key:
+            ext = row.get('extended_data') or {}
+            if isinstance(ext, str):
+                try:
+                    ext = json.loads(ext)
+                except Exception:
+                    ext = {}
+            v = ext.get(ext_key)
+            return float(v) if v is not None else None
+        return None
+
     try:
         checkins = get_checkins(patient_id, days)
-        
         pairs = []
         for c in checkins:
-            val_a = c.get(var_a)
-            val_b = c.get(var_b)
-            
+            val_a = _extract(c, var_a)
+            val_b = _extract(c, var_b)
             if val_a is not None and val_b is not None:
-                pairs.append((c['checkin_date'], val_a, val_b))
-        
+                pairs.append((c.get('checkin_date', ''), val_a, val_b))
         return pairs
     except Exception as e:
         print(f"Error getting paired values: {e}")
@@ -605,24 +1060,45 @@ def get_tested_pairs(patient_id):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_medication_timing_stats(patient_id, days=30):
-    """Analyze medication timing correlation with mood/stability."""
+    """Compute basic medication consistency and average mood for check-ins that
+    logged at least one medication, versus check-ins that did not.
+
+    Returns:
+      medication_consistency – average mood score on days meds were logged
+      no_med_avg             – average mood score on days no meds were logged
+      sample_size            – total check-ins examined
+      timing_alerts          – list of alert dicts (currently empty placeholder)
+    """
     try:
         checkins = get_checkins(patient_id, days)
-        
         if not checkins:
             return None
-        
-        def _corr(pairs):
-            if not pairs or len(pairs) < 2:
-                return 0
-            vals = [p[1] for p in pairs if p[1] is not None]
-            if not vals:
-                return 0
-            return round(sum(vals) / len(vals), 2)
-        
+
+        with_med_moods, without_med_moods = [], []
+
+        for c in checkins:
+            mood = c.get('mood_score') or c.get('stability_score')
+            if mood is None:
+                continue
+            meds = c.get('medications') or []
+            if isinstance(meds, str):
+                try:
+                    meds = json.loads(meds)
+                except Exception:
+                    meds = []
+            if any(m.get('taken') for m in meds if isinstance(m, dict)):
+                with_med_moods.append(float(mood))
+            else:
+                without_med_moods.append(float(mood))
+
+        def _avg(v):
+            return round(sum(v) / len(v), 2) if v else None
+
         return {
-            'medication_consistency': _corr([(c['checkin_date'], c['stability_score']) for c in checkins]),
-            'sample_size': len(checkins)
+            'medication_consistency': _avg(with_med_moods),
+            'no_med_avg':             _avg(without_med_moods),
+            'sample_size':            len(checkins),
+            'timing_alerts':          [],
         }
     except Exception as e:
         print(f"Error getting medication timing stats: {e}")
@@ -637,15 +1113,16 @@ def find_unexpected_pattern(patient_id, days=30):
         if not checkins or len(checkins) < 5:
             return None
         
-        stability_scores = [c['stability_score'] for c in checkins if c['stability_score'] is not None]
-        
-        if not stability_scores:
+        mood_scores = [c.get('mood_score') or c.get('stability_score') for c in checkins]
+        mood_scores = [s for s in mood_scores if s is not None]
+
+        if not mood_scores:
             return None
-        
-        avg_score = sum(stability_scores) / len(stability_scores)
-        std_dev = (sum((s - avg_score) ** 2 for s in stability_scores) / len(stability_scores)) ** 0.5
-        
-        outliers = [s for s in stability_scores if abs(s - avg_score) > 2 * std_dev]
+
+        avg_score = sum(mood_scores) / len(mood_scores)
+        std_dev = (sum((s - avg_score) ** 2 for s in mood_scores) / len(mood_scores)) ** 0.5
+
+        outliers = [s for s in mood_scores if abs(s - avg_score) > 2 * std_dev]
         
         if outliers:
             return {
