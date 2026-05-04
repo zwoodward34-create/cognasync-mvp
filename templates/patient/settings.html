@@ -30,7 +30,7 @@
     </div>
     <div class="settings-row">
       <span class="settings-label">Member since</span>
-      <span class="settings-value">{{ user.created_at[:10] }}</span>
+      <span class="settings-value">{{ user.created_at[:10] if user.created_at else 'N/A' }}</span>
     </div>
   </div>
 

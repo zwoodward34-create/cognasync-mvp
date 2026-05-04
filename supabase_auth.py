@@ -58,10 +58,11 @@ def verify_jwt(token):
         if response.data:
             user_data = response.data[0]
             return {
-                'id': user_data['id'],
-                'email': user_data['email'],
-                'full_name': user_data['full_name'],
-                'role': user_data['role'],
+                'id':         user_data['id'],
+                'email':      user_data['email'],
+                'full_name':  user_data['full_name'],
+                'role':       user_data['role'],
+                'created_at': user_data.get('created_at', ''),
             }
     except Exception:
         pass
