@@ -353,6 +353,15 @@ def api_logout():
 
 @app.route('/api/checkins', methods=['POST'])
 def api_create_checkin():
+    import traceback as _tb
+    try:
+        return _api_create_checkin_inner()
+    except Exception as e:
+        app.logger.error("api_create_checkin unhandled: %s\n%s", e, _tb.format_exc())
+        return jsonify({'error': 'Failed to create check-in', 'detail': str(e), 'trace': _tb.format_exc().splitlines()[-5:]}), 500
+
+
+def _api_create_checkin_inner():
     user, err = _api_user('patient')
     if err:
         return err
@@ -379,22 +388,25 @@ def api_create_checkin():
     if not re.match(r'^\d{4}-\d{2}-\d{2}$', raw_date):
         raw_date = date.today().isoformat()
 
-    checkin_id = db.create_checkin(
-        patient_id=user['id'],
-        date_str=raw_date,
-        time_of_day=data.get('time_of_day', 'self-prompted'),
-        mood_score=mood,
-        medications=data.get('medications', []),
-        sleep_hours=sleep,
-        stress_score=stress,
-        symptoms=data.get('symptoms', ''),
-        notes=data.get('notes', ''),
-        extended_data=data.get('extended_data'),
-        checkin_type=checkin_type,
-    )
-    
+    try:
+        checkin_id = db.create_checkin(
+            patient_id=user['id'],
+            date_str=raw_date,
+            time_of_day=data.get('time_of_day', 'self-prompted'),
+            mood_score=mood,
+            medications=data.get('medications', []),
+            sleep_hours=sleep,
+            stress_score=stress,
+            symptoms=data.get('symptoms', ''),
+            notes=data.get('notes', ''),
+            extended_data=data.get('extended_data'),
+            checkin_type=checkin_type,
+        )
+    except Exception as e:
+        return jsonify({'error': 'Failed to create check-in', 'detail': str(e)}), 500
+
     if not checkin_id:
-        return jsonify({'error': 'Failed to create check-in'}), 500
+        return jsonify({'error': 'Failed to create check-in', 'detail': 'insert returned no id'}), 500
     
     # Generate AI insight for this check-in
     ai_insight = None
