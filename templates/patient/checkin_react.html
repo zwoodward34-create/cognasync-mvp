@@ -28,8 +28,25 @@
   <div class="top-nav-end">
     <span class="top-nav-user">{{ user.full_name }}</span>
     <a href="{{ url_for('logout') }}" class="top-nav-logout">Sign out</a>
+    <button class="nav-hamburger" id="nav-hamburger" aria-label="Open menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
   </div>
 </header>
+
+<div class="top-nav-mobile-menu" id="nav-mobile-menu" aria-hidden="true">
+  {% if user is defined and user %}
+    <a href="{{ url_for('home') }}"           class="mobile-nav-link">Home</a>
+    <a href="{{ url_for('checkin_page') }}"   class="mobile-nav-link active">Check-In</a>
+    <a href="{{ url_for('journal_page') }}"   class="mobile-nav-link">Journal</a>
+    <a href="{{ url_for('medication_page') }}" class="mobile-nav-link">Medications</a>
+    <a href="{{ url_for('summary_page') }}"   class="mobile-nav-link">Pre-Appt Summary</a>
+    <a href="{{ url_for('trends_page') }}"    class="mobile-nav-link">Trends</a>
+    <a href="{{ url_for('settings_page') }}"  class="mobile-nav-link">Settings</a>
+    <div class="mobile-nav-divider"></div>
+    <a href="{{ url_for('logout') }}" class="mobile-nav-link">Sign out</a>
+  {% endif %}
+</div>
 {% endif %}
 
 <div id="checkin-root"></div>
@@ -39,4 +56,29 @@
 
 {% block scripts %}
 <script type="module" src="{{ url_for('static', filename='dist/assets/index.js') }}"></script>
+<script>
+  (function () {
+    const btn = document.getElementById('nav-hamburger');
+    const menu = document.getElementById('nav-mobile-menu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function () {
+      const open = menu.classList.toggle('open');
+      btn.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', open);
+      menu.setAttribute('aria-hidden', !open);
+    });
+    menu.querySelectorAll('.mobile-nav-link').forEach(function (a) {
+      a.addEventListener('click', function () {
+        menu.classList.remove('open');
+        btn.classList.remove('open');
+      });
+    });
+    document.addEventListener('click', function (e) {
+      if (!btn.contains(e.target) && !menu.contains(e.target)) {
+        menu.classList.remove('open');
+        btn.classList.remove('open');
+      }
+    });
+  })();
+</script>
 {% endblock %}

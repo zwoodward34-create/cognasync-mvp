@@ -231,6 +231,16 @@ function AdvancedSection({ title, children }) {
 
 const Divider = () => <div style={{ height: 1, background: P.borderLight, margin: '20px 0' }} />;
 
+function useMobile(bp = 768) {
+  const [m, setM] = useState(() => typeof window !== 'undefined' && window.innerWidth <= bp);
+  useEffect(() => {
+    const h = () => setM(window.innerWidth <= bp);
+    window.addEventListener('resize', h);
+    return () => window.removeEventListener('resize', h);
+  }, [bp]);
+  return m;
+}
+
 const CHECKIN_TYPES = [
   { id: 'morning',   label: 'Morning',   desc: 'Full check-in with sleep tracking. Best done before noon.', tag: 'Includes sleep' },
   { id: 'afternoon', label: 'Afternoon', desc: 'Mid-day status — mood, focus, and medications.', tag: 'Quick · 3 min' },
@@ -256,6 +266,7 @@ export default function App() {
   const [entryTime, setEntryTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [completedToday, setCompletedToday] = useState([]);
   const [advancedMode, setAdvancedMode] = useState(false);
+  const isMobile = useMobile();
 
   const [d, setD] = useState({
     timeOfCheckIn: new Date().getHours(),
@@ -685,21 +696,27 @@ export default function App() {
             <p style={{ color: P.inkFaint, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 6px' }}>Taken today</p>
             <p style={{ color: P.inkFaint, fontSize: 11, margin: '0 0 12px', lineHeight: 1.4 }}>Log each medication and the time you took it — timing relative to your check-in helps correlate peak/trough effects with your scores</p>
             {Object.entries(d.meds).map(([key, info]) => (
-              <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
-                border: `1px solid ${P.borderLight}`, background: P.surface, padding: '6px 12px' }}>
+              <div key={key} style={{ display: 'flex', alignItems: isMobile ? 'stretch' : 'center',
+                flexDirection: isMobile ? 'column' : 'row',
+                gap: isMobile ? 6 : 10, marginBottom: 10,
+                border: `1px solid ${P.borderLight}`, background: P.surface,
+                padding: isMobile ? '10px 12px' : '6px 12px' }}>
                 <div style={{ flex: 1 }}>
                   <PaperToggle
                     label={`${(info.name || key).charAt(0).toUpperCase() + (info.name || key).slice(1)} ${info.dose ? `(${info.dose})` : ''}`}
                     checked={info.taken} onChange={v => set('meds', { ...d.meds, [key]: { ...info, taken: v } })} color={clr.fg} />
                 </div>
-                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
-                  <label style={{ fontSize: 10, color: P.inkFaint, textTransform: 'uppercase', letterSpacing: '0.06em' }}>Time Taken</label>
+                <div style={{ display: 'flex', flexDirection: isMobile ? 'row' : 'column',
+                  alignItems: isMobile ? 'center' : 'flex-end', gap: isMobile ? 8 : 2 }}>
+                  <label style={{ fontSize: 10, color: P.inkFaint, textTransform: 'uppercase',
+                    letterSpacing: '0.06em', whiteSpace: 'nowrap' }}>Time Taken</label>
                   <input
                     type="time"
                     value={info.timeTaken || ''}
                     onChange={e => set('meds', { ...d.meds, [key]: { ...info, timeTaken: e.target.value } })}
-                    style={{ fontSize: 13, padding: '3px 7px', border: `1px solid ${info.timeTaken ? P.border : P.borderLight}`,
-                      background: P.bg, color: P.ink, fontFamily: 'inherit', outline: 'none', width: 110 }}
+                    style={{ fontSize: 13, padding: '6px 8px', border: `1px solid ${info.timeTaken ? P.border : P.borderLight}`,
+                      background: P.bg, color: P.ink, fontFamily: 'inherit', outline: 'none',
+                      width: isMobile ? '100%' : 110, flex: isMobile ? 1 : undefined }}
                   />
                 </div>
               </div>
@@ -897,17 +914,17 @@ export default function App() {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+          <button onClick={handleSave} disabled={saving || saved}
+            style={{ padding: '14px 18px', border: `1px solid ${P.border}`, cursor: 'pointer',
+              background: saved ? P.inkMid : P.ink, color: '#fff', fontSize: 14, fontWeight: 600, fontFamily: 'DM Sans',
+              opacity: saving ? 0.65 : 1 }}>
+            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save to Profile'}
+          </button>
           <button onClick={() => { setCheckinType(null); setStepIdx(0); setSaved(false); setSaveErr(''); setAiInsight(''); }}
             style={{ padding: '13px 18px', border: `1px solid ${P.border}`,
               background: P.surface, color: P.inkMid, fontSize: 13, cursor: 'pointer', fontFamily: 'DM Sans' }}>
             New Check-In
-          </button>
-          <button onClick={handleSave} disabled={saving || saved}
-            style={{ padding: '13px 18px', border: `1px solid ${P.border}`, cursor: 'pointer',
-              background: saved ? P.inkMid : P.ink, color: '#fff', fontSize: 13, fontWeight: 600, fontFamily: 'DM Sans',
-              opacity: saving ? 0.65 : 1 }}>
-            {saving ? 'Saving…' : saved ? '✓ Saved' : 'Save to Profile'}
           </button>
         </div>
         <a href="/" style={{ display: 'block', textAlign: 'center', marginTop: 14, color: P.inkFaint, fontSize: 12, textDecoration: 'none' }}>← Back to dashboard</a>
@@ -918,34 +935,41 @@ export default function App() {
   // ── Type selection screen ───────────────────────────────────────────
   if (!checkinType) {
     return (
-      <div style={{ height: 'calc(100vh - 52px)', background: P.bg, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', fontFamily: 'DM Sans', padding: '40px 48px' }}>
-        <h1 style={{ fontFamily: 'DM Serif Display', fontWeight: 400, fontSize: 32, color: P.ink, margin: '0 0 8px', letterSpacing: '-0.02em' }}>Daily Check-In</h1>
-        <p style={{ color: P.inkFaint, fontSize: 14, margin: '0 0 36px' }}>Select the type of check-in for today</p>
-        <div style={{ display: 'flex', width: '100%', maxWidth: 960, border: `1px solid ${P.border}` }}>
+      <div style={{ minHeight: 'calc(100vh - 52px)', background: P.bg, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: isMobile ? 'flex-start' : 'center',
+        fontFamily: 'DM Sans', padding: isMobile ? '24px 16px 40px' : '40px 48px', overflowY: 'auto' }}>
+        <h1 style={{ fontFamily: 'DM Serif Display', fontWeight: 400, fontSize: isMobile ? 26 : 32,
+          color: P.ink, margin: '0 0 6px', letterSpacing: '-0.02em' }}>Daily Check-In</h1>
+        <p style={{ color: P.inkFaint, fontSize: 14, margin: isMobile ? '0 0 20px' : '0 0 36px' }}>Select the type of check-in for today</p>
+        <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row',
+          width: '100%', maxWidth: 960, border: `1px solid ${P.border}` }}>
           {CHECKIN_TYPES.map((t, i) => {
             const done = completedToday.includes(t.id);
             const doneBg = '#f0faf4';
+            const isLast = i === CHECKIN_TYPES.length - 1;
             return (
               <button key={t.id} onClick={() => setCheckinType(t.id)}
-                style={{ flex: 1, padding: '28px 24px', background: done ? doneBg : P.surface,
-                  border: 'none', borderRight: i < 3 ? `1px solid ${P.border}` : 'none',
+                style={{ flex: 1, padding: isMobile ? '18px 16px' : '28px 24px', background: done ? doneBg : P.surface,
+                  border: 'none',
+                  borderRight: isMobile ? 'none' : (i < 3 ? `1px solid ${P.border}` : 'none'),
+                  borderBottom: isMobile ? (isLast ? 'none' : `1px solid ${P.border}`) : 'none',
                   cursor: 'pointer', textAlign: 'left', fontFamily: 'DM Sans',
                   transition: 'background 0.12s', position: 'relative' }}
                 onMouseEnter={e => e.currentTarget.style.background = done ? '#e2f5ea' : P.accentLight}
                 onMouseLeave={e => e.currentTarget.style.background = done ? doneBg : P.surface}>
                 {done && (
                   <div style={{ position: 'absolute', top: 14, right: 16,
-                    width: 36, height: 36, borderRadius: '50%',
+                    width: 28, height: 28, borderRadius: '50%',
                     background: '#22c55e', display: 'flex', alignItems: 'center', justifyContent: 'center',
                     boxShadow: '0 2px 8px rgba(34,197,94,0.35)' }}>
-                    <span style={{ color: '#fff', fontSize: 20, fontWeight: 700, lineHeight: 1 }}>✓</span>
+                    <span style={{ color: '#fff', fontSize: 16, fontWeight: 700, lineHeight: 1 }}>✓</span>
                   </div>
                 )}
                 <div style={{ fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.08em',
-                  color: done ? '#16a34a' : P.inkFaint, marginBottom: 10 }}>
+                  color: done ? '#16a34a' : P.inkFaint, marginBottom: 6 }}>
                   {done ? 'Completed today' : t.tag}
                 </div>
-                <div style={{ fontSize: 16, fontWeight: 600, color: P.ink, marginBottom: 6 }}>{t.label}</div>
+                <div style={{ fontSize: isMobile ? 15 : 16, fontWeight: 600, color: P.ink, marginBottom: 4 }}>{t.label}</div>
                 <div style={{ fontSize: 12, color: P.inkMid, lineHeight: 1.55 }}>{t.desc}</div>
               </button>
             );
@@ -959,11 +983,13 @@ export default function App() {
   const progressSteps = FLOW.slice(1);
 
   return (
-    <div style={{ height: 'calc(100vh - 52px)', background: P.bg, display: 'flex', flexDirection: 'column', fontFamily: 'DM Sans' }}>
+    <div style={{ height: isMobile ? 'auto' : 'calc(100vh - 52px)', minHeight: isMobile ? 'calc(100vh - 52px)' : 'auto',
+      background: P.bg, display: 'flex', flexDirection: 'column', fontFamily: 'DM Sans' }}>
 
       {/* Step progress bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        padding: '0 28px', borderBottom: `1px solid ${P.borderLight}`, background: P.surface, height: 40 }}>
+        padding: isMobile ? '0 14px' : '0 28px', borderBottom: `1px solid ${P.borderLight}`,
+        background: P.surface, height: 40, flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           {progressSteps.map((sid, i) => {
             const realIdx = i + 1;
@@ -994,29 +1020,42 @@ export default function App() {
       </div>
 
       {/* Main split layout */}
-      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '340px 1fr', overflow: 'hidden' }}>
+      <div style={{ flex: 1, display: isMobile ? 'flex' : 'grid',
+        flexDirection: isMobile ? 'column' : undefined,
+        gridTemplateColumns: isMobile ? undefined : '340px 1fr',
+        overflow: isMobile ? 'auto' : 'hidden' }}>
 
-        {/* Left panel — context */}
-        <div style={{ padding: '36px 32px', borderRight: `1px solid ${P.borderLight}`, background: P.surface, overflowY: 'auto' }}>
-          {leftContent[stepId]}
-          {stepIdx > 0 && (
-            <button onClick={back}
-              style={{ marginTop: 28, padding: '9px 16px', border: `1px solid ${P.borderLight}`,
-                background: 'transparent', color: P.inkFaint, fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans' }}>
-              ← Back
-            </button>
-          )}
-        </div>
+        {/* Left panel — context (desktop only) */}
+        {!isMobile && (
+          <div style={{ padding: '36px 32px', borderRight: `1px solid ${P.borderLight}`, background: P.surface, overflowY: 'auto' }}>
+            {leftContent[stepId]}
+            {stepIdx > 0 && (
+              <button onClick={back}
+                style={{ marginTop: 28, padding: '9px 16px', border: `1px solid ${P.borderLight}`,
+                  background: 'transparent', color: P.inkFaint, fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans' }}>
+                ← Back
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Right panel — input */}
-        <div style={{ padding: '36px 36px 36px', overflowY: 'auto', background: P.bg }}>
-          <div style={{ maxWidth: 520 }}>
+        <div style={{ padding: isMobile ? '20px 16px 48px' : '36px 36px 36px',
+          overflowY: isMobile ? 'visible' : 'auto', background: P.bg, flex: isMobile ? 1 : undefined }}>
+          <div style={{ maxWidth: isMobile ? '100%' : 520 }}>
             {rightContent[stepId]}
             {stepIdx < FLOW.length - 1 && (
               <button onClick={next}
                 style={{ marginTop: 24, width: '100%', padding: '14px 20px', border: `1px solid ${P.border}`,
                   background: P.ink, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans' }}>
                 Continue →
+              </button>
+            )}
+            {isMobile && stepIdx > 0 && (
+              <button onClick={back}
+                style={{ marginTop: 10, width: '100%', padding: '12px 20px', border: `1px solid ${P.borderLight}`,
+                  background: 'transparent', color: P.inkFaint, fontSize: 13, cursor: 'pointer', fontFamily: 'DM Sans' }}>
+                ← Back
               </button>
             )}
           </div>
