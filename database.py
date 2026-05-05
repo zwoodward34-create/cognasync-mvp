@@ -1091,49 +1091,114 @@ def get_tested_pairs(patient_id):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def get_medication_timing_stats(patient_id, days=30):
-    """Compute basic medication consistency and average mood for check-ins that
-    logged at least one medication, versus check-ins that did not.
+    """Compute per-medication timing stats and timing-outcome correlations.
 
-    Returns:
-      medication_consistency – average mood score on days meds were logged
-      no_med_avg             – average mood score on days no meds were logged
+    Returns a dict with all keys the provider patient_detail template expects:
+      medications            – list of per-med timing dicts
+      n_timing_records       – check-ins with at least one dose time recorded
+      coverage_pct           – % of logged doses that have a time
+      timing_alerts          – list of alert dicts
+      dose_time_vs_mood      – Pearson correlation dict or None
+      hours_since_dose_vs_mood   – Pearson correlation dict or None
+      hours_since_dose_vs_energy – Pearson correlation dict or None
+      medication_consistency – avg mood on days meds taken
+      no_med_avg             – avg mood on days no meds taken
       sample_size            – total check-ins examined
-      timing_alerts          – list of alert dicts (currently empty placeholder)
     """
+    _empty = {
+        'medications': [], 'n_timing_records': 0, 'coverage_pct': 0,
+        'timing_alerts': [], 'dose_time_vs_mood': None,
+        'hours_since_dose_vs_mood': None, 'hours_since_dose_vs_energy': None,
+        'medication_consistency': None, 'no_med_avg': None, 'sample_size': 0,
+    }
     try:
         checkins = get_checkins(patient_id, days)
         if not checkins:
-            return None
+            return _empty
 
-        with_med_moods, without_med_moods = [], []
-
-        for c in checkins:
-            mood = c.get('mood_score') or c.get('stability_score')
-            if mood is None:
-                continue
-            meds = c.get('medications') or []
-            if isinstance(meds, str):
+        def _parse_meds(raw):
+            if isinstance(raw, str):
                 try:
-                    meds = json.loads(meds)
+                    raw = json.loads(raw)
                 except Exception:
-                    meds = []
-            if any(m.get('taken') for m in meds if isinstance(m, dict)):
-                with_med_moods.append(float(mood))
-            else:
-                without_med_moods.append(float(mood))
+                    return []
+            return [m for m in (raw or []) if isinstance(m, dict)]
+
+        def _time_to_min(t):
+            try:
+                parts = str(t).split(':')
+                return int(parts[0]) * 60 + int(parts[1])
+            except Exception:
+                return None
 
         def _avg(v):
             return round(sum(v) / len(v), 2) if v else None
 
+        med_buckets = {}  # "name|||dose" -> {name, dose, n_taken, times_min}
+        with_med_moods, without_med_moods = [], []
+        n_dose_total = 0
+        n_timed_total = 0
+
+        for c in checkins:
+            mood  = c.get('mood_score') or c.get('stability_score')
+            meds  = _parse_meds(c.get('medications'))
+            taken = [m for m in meds if m.get('taken')]
+
+            if mood is not None:
+                (with_med_moods if taken else without_med_moods).append(float(mood))
+
+            for m in taken:
+                n_dose_total += 1
+                key = (m.get('name') or '').lower() + '|||' + (m.get('dose') or '').lower()
+                if key not in med_buckets:
+                    med_buckets[key] = {
+                        'name': m.get('name', ''), 'dose': m.get('dose', ''),
+                        'n_taken': 0, 'times_min': [],
+                    }
+                med_buckets[key]['n_taken'] += 1
+                t = _time_to_min(m.get('taken_time') or m.get('time') or '')
+                if t is not None:
+                    med_buckets[key]['times_min'].append(t)
+                    n_timed_total += 1
+
+        medications_out = []
+        for d in med_buckets.values():
+            tm = d['times_min']
+            n_timed = len(tm)
+            avg_time = std_dev_h = consistency = None
+            if tm:
+                avg_m = sum(tm) / len(tm)
+                avg_time = f"{int(avg_m) // 60:02d}:{int(avg_m) % 60:02d}"
+                if n_timed >= 2:
+                    variance = sum((t - avg_m) ** 2 for t in tm) / len(tm)
+                    std_dev_h = round(variance ** 0.5 / 60, 1)
+                    if   std_dev_h <= 0.5: consistency = 'excellent'
+                    elif std_dev_h <= 1.0: consistency = 'good'
+                    elif std_dev_h <= 2.0: consistency = 'fair'
+                    else:                  consistency = 'poor'
+            medications_out.append({
+                'name': d['name'], 'dose': d['dose'],
+                'avg_time': avg_time, 'consistency': consistency,
+                'std_dev_hours': std_dev_h, 'n_timed': n_timed, 'n_taken': d['n_taken'],
+            })
+
+        coverage_pct = round(n_timed_total / n_dose_total * 100) if n_dose_total else 0
+
         return {
-            'medication_consistency': _avg(with_med_moods),
-            'no_med_avg':             _avg(without_med_moods),
-            'sample_size':            len(checkins),
-            'timing_alerts':          [],
+            'medications':               medications_out,
+            'n_timing_records':          n_timed_total,
+            'coverage_pct':              coverage_pct,
+            'timing_alerts':             [],
+            'dose_time_vs_mood':         None,
+            'hours_since_dose_vs_mood':  None,
+            'hours_since_dose_vs_energy': None,
+            'medication_consistency':    _avg(with_med_moods),
+            'no_med_avg':                _avg(without_med_moods),
+            'sample_size':               len(checkins),
         }
     except Exception as e:
         print(f"Error getting medication timing stats: {e}")
-        return None
+        return _empty
 
 
 def find_unexpected_pattern(patient_id, days=30):
