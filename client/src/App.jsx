@@ -13,6 +13,8 @@ const P = {
   accent:      '#000000',
   accentHover: '#333333',
   accentLight: '#ECECEC',
+  advBg:       '#F5F3FF',   // subtle lavender tint for advanced sections
+  advBorder:   '#C4B5FD',
 };
 
 const STEP_COLORS = {
@@ -59,8 +61,16 @@ function calcScores(d, bl) {
 
   const crashRisk   = sleepDis * 0.5 + nsLoad * 0.5;
   const moodDistort = Math.abs(d.mood - stability);
-  return { stability, dopamine, nsLoad, sleepDis, caffeineMg, crashRisk, moodDistort,
-    moodDev: d.mood - bl.avgMood, anxietyDev: d.anxiety - bl.avgAnxiety };
+
+  // Advanced composite — motivation and irritability modulate the stability reading
+  const advancedStability = d.irritability !== undefined
+    ? (stability + (10 - d.irritability) / 2 + d.motivation / 2) / 2
+    : stability;
+
+  return {
+    stability, advancedStability, dopamine, nsLoad, sleepDis, caffeineMg, crashRisk, moodDistort,
+    moodDev: d.mood - bl.avgMood, anxietyDev: d.anxiety - bl.avgAnxiety,
+  };
 }
 
 function calcInsights(d, bl, sc) {
@@ -110,15 +120,16 @@ function ScoreRing({ value, max = 10, label, sub, danger }) {
   );
 }
 
-function InkSlider({ label, value, onChange, min = 0, max = 10, step = 1, lo, hi, color }) {
+function InkSlider({ label, hint, value, onChange, min = 0, max = 10, step = 1, lo, hi, color }) {
   const c = color || P.accent;
   const pct = ((value - min) / (max - min)) * 100;
   return (
     <div style={{ marginBottom: 28 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: hint ? 2 : 10 }}>
         <label style={{ color: P.inkMid, fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</label>
         <span style={{ color: c, fontSize: 26, fontWeight: 700, fontFamily: 'DM Serif Display', lineHeight: 1 }}>{step < 1 ? value.toFixed(1) : value}</span>
       </div>
+      {hint && <p style={{ color: P.inkFaint, fontSize: 11, margin: '0 0 8px', lineHeight: 1.4 }}>{hint}</p>}
       <div style={{ position: 'relative', height: 6, borderRadius: 2, background: P.borderLight, cursor: 'pointer' }}>
         <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', width: `${pct}%`,
           borderRadius: 2, background: c, transition: 'width 0.08s' }} />
@@ -140,7 +151,7 @@ function InkSlider({ label, value, onChange, min = 0, max = 10, step = 1, lo, hi
   );
 }
 
-function PaperToggle({ label, checked, onChange, color }) {
+function PaperToggle({ label, hint, checked, onChange, color }) {
   const c = color || P.accent;
   return (
     <button onClick={() => onChange(!checked)}
@@ -154,7 +165,10 @@ function PaperToggle({ label, checked, onChange, color }) {
         display: 'flex', alignItems: 'center', justifyContent: 'center', transition: 'all 0.15s' }}>
         {checked && <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 5l2.5 2.5 3.5-4" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>}
       </div>
-      <span style={{ color: P.ink, fontSize: 14, fontWeight: 500 }}>{label}</span>
+      <div>
+        <div style={{ color: P.ink, fontSize: 14, fontWeight: 500 }}>{label}</div>
+        {hint && <div style={{ color: P.inkFaint, fontSize: 11, marginTop: 2 }}>{hint}</div>}
+      </div>
     </button>
   );
 }
@@ -173,19 +187,44 @@ function PaperSelect({ label, value, onChange, options }) {
   );
 }
 
-function PaperNumInput({ label, value, onChange, min, max, step = 1, unit, hint, color }) {
+function PaperNumInput({ label, hint, value, onChange, min, max, step = 1, unit, color }) {
   const c = color || P.accent;
   return (
     <div style={{ marginBottom: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 7 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: hint ? 2 : 7 }}>
         <label style={{ color: P.inkMid, fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>{label}</label>
         <span style={{ color: c, fontSize: 16, fontWeight: 700 }}>{value}{unit}</span>
       </div>
+      {hint && <p style={{ color: P.inkFaint, fontSize: 11, margin: '0 0 6px', lineHeight: 1.4 }}>{hint}</p>}
       <input type="number" min={min} max={max} step={step} value={value}
         onChange={e => onChange(parseFloat(e.target.value) || 0)}
         style={{ width: '100%', padding: '10px 14px', borderRadius: 2, border: `1px solid ${P.border}`,
           background: P.surface, color: P.ink, fontSize: 14, outline: 'none', fontFamily: 'DM Sans' }} />
-      {hint && <p style={{ color: P.inkFaint, fontSize: 11, marginTop: 5 }}>{hint}</p>}
+    </div>
+  );
+}
+
+// Advanced section wrapper — subtle lavender tint to visually separate
+function AdvancedSection({ title, children }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div style={{ marginTop: 8, border: `1px solid ${P.advBorder}`, borderRadius: 2 }}>
+      <button onClick={() => setOpen(o => !o)}
+        style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          padding: '10px 14px', background: P.advBg, border: 'none', cursor: 'pointer',
+          borderBottom: open ? `1px solid ${P.advBorder}` : 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 10, background: '#7C3AED', color: '#fff', padding: '2px 7px',
+            borderRadius: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Advanced</span>
+          <span style={{ color: '#5B21B6', fontSize: 12, fontWeight: 600 }}>{title}</span>
+        </div>
+        <span style={{ color: '#7C3AED', fontSize: 14 }}>{open ? '▾' : '▸'}</span>
+      </button>
+      {open && (
+        <div style={{ padding: '18px 16px', background: P.advBg }}>
+          {children}
+        </div>
+      )}
     </div>
   );
 }
@@ -216,14 +255,36 @@ export default function App() {
   const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [entryTime, setEntryTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [completedToday, setCompletedToday] = useState([]);
+  const [advancedMode, setAdvancedMode] = useState(false);
 
   const [d, setD] = useState({
     timeOfCheckIn: new Date().getHours(),
+    // ── Core ──────────────────────────────────────────────
     mood: 6, energy: 6, dissociation: 1, anxiety: 3, focus: 6,
+    // ── Core advanced ─────────────────────────────────────
+    irritability: 3,     // 1–10, early burnout indicator
+    motivation: 6,       // 1–10, anhedonia / executive function
+    perceivedStress: 3,  // 1–10, external pressure load
+    // ── Sleep ─────────────────────────────────────────────
     sleepHours: 6, sleepQuality: 6, timeAwakeMinutes: 0,
     sleepLatencyMinutes: 0, nightAwakenings: 0,
+    // ── Sleep advanced ────────────────────────────────────
+    wakeUpTime: '',
+    // ── Medications & caffeine ────────────────────────────
     caffeine: { coffee: 0, tea: 0, soda: 0, energy: 0 },
     meds: {}, notes: '',
+    // ── Substances & lifestyle (advanced) ─────────────────
+    alcoholUnits: 0,        // drinks today
+    hydrated: true,         // self-assessed hydration
+    exerciseMinutes: 0,     // physical activity
+    sunlightHours: 1,       // outdoor/sunlight exposure
+    screenTimeHours: 4,     // total screen time
+    socialQuality: 3,       // 1–5, connection quality
+    workloadFriction: 3,    // 1–5, task/work pressure
+    // ── Coping & interventions (advanced) ─────────────────
+    didBreathing: false,
+    didMeditation: false,
+    didMovement: false,
   });
 
   useEffect(() => {
@@ -257,6 +318,32 @@ export default function App() {
     setSaving(true); setSaveErr('');
     try {
       const medList = Object.entries(d.meds).map(([,i]) => ({ name: i.name, dose: i.dose, taken: i.taken, time_taken: i.timeTaken || null }));
+
+      const extendedData = {
+        energy: d.energy, focus: d.focus, dissociation: d.dissociation,
+        sleep_quality: d.sleepQuality, time_awake_minutes: d.timeAwakeMinutes,
+        night_awakenings: d.nightAwakenings, sleep_latency_minutes: d.sleepLatencyMinutes,
+        caffeine_mg: sc.caffeineMg, caffeine_breakdown: d.caffeine,
+        scores: { stability: sc.stability, crash_risk: sc.crashRisk, nervous_system_load: sc.nsLoad, dopamine_efficiency: sc.dopamine },
+      };
+
+      if (advancedMode) {
+        Object.assign(extendedData, {
+          irritability: d.irritability,
+          motivation: d.motivation,
+          perceived_stress: d.perceivedStress,
+          wake_up_time: d.wakeUpTime,
+          alcohol_units: d.alcoholUnits,
+          hydrated: d.hydrated,
+          exercise_minutes: d.exerciseMinutes,
+          sunlight_hours: d.sunlightHours,
+          screen_time_hours: d.screenTimeHours,
+          social_quality: d.socialQuality,
+          workload_friction: d.workloadFriction,
+          coping: { breathing: d.didBreathing, meditation: d.didMeditation, movement: d.didMovement },
+        });
+      }
+
       const res = await fetch('/api/checkins', {
         method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
@@ -265,12 +352,7 @@ export default function App() {
           medications: medList, notes: d.notes,
           date: entryDate, time_of_day: entryTime,
           checkin_type: checkinType,
-          extended_data: { energy: d.energy, focus: d.focus, dissociation: d.dissociation,
-            sleep_quality: d.sleepQuality, time_awake_minutes: d.timeAwakeMinutes,
-            night_awakenings: d.nightAwakenings,
-            caffeine_mg: sc.caffeineMg,
-            caffeine_breakdown: d.caffeine,
-            scores: { stability: sc.stability, crash_risk: sc.crashRisk, nervous_system_load: sc.nsLoad, dopamine_efficiency: sc.dopamine } },
+          extended_data: extendedData,
         }),
       });
       if (res.ok) {
@@ -281,7 +363,7 @@ export default function App() {
         if (checkinType !== 'on_demand') {
           setCompletedToday(prev => prev.includes(checkinType) ? prev : [...prev, checkinType]);
         }
-      } else { const e = await res.json().catch(() => ({})); setSaveErr(e.error || 'Save failed.'); }
+      } else { const e = await res.json().catch(() => ({})); setSaveErr(e.error || e.detail || 'Save failed.'); }
     } catch { setSaveErr('Network error.'); }
     finally { setSaving(false); }
   };
@@ -292,10 +374,16 @@ export default function App() {
       <h1 style={{ fontFamily: 'DM Serif Display', fontWeight: 400, fontSize: 36, color: P.ink, margin: '0 0 14px', lineHeight: 1.2, letterSpacing: '-0.02em' }}>Daily<br/>Check-In</h1>
       <p style={{ color: P.inkMid, fontSize: 15, lineHeight: 1.7, margin: '0 0 28px' }}>Five minutes. Real patterns. Personalized to you.</p>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        {[['Mental state'],['Sleep quality'],['Medications & caffeine'],['Live scores + insights']].map(([l]) => (
+        {[
+          ['Mental state'],
+          ['Sleep quality'],
+          ['Medications & caffeine'],
+          ['Live scores + insights'],
+          ...(advancedMode ? [['+ Mood nuance (irritability, motivation)'], ['+ Lifestyle (exercise, sunlight, hydration)'], ['+ Coping & social quality']] : []),
+        ].map(([l]) => (
           <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <div style={{ width: 4, height: 4, borderRadius: '50%', background: P.border, flexShrink: 0 }} />
-            <span style={{ color: P.inkMid, fontSize: 14 }}>{l}</span>
+            <div style={{ width: 4, height: 4, borderRadius: '50%', background: l.startsWith('+') ? '#7C3AED' : P.border, flexShrink: 0 }} />
+            <span style={{ color: l.startsWith('+') ? '#5B21B6' : P.inkMid, fontSize: 14 }}>{l}</span>
           </div>
         ))}
       </div>
@@ -312,6 +400,12 @@ export default function App() {
         </div>
         <p style={{ color: P.inkFaint, fontSize: 11, margin: '6px 0 0' }}>Your baseline: {bl.avgMood.toFixed(1)}</p>
       </div>
+      {advancedMode && (
+        <div style={{ marginTop: 12, padding: '12px 14px', background: P.advBg, border: `1px solid ${P.advBorder}` }}>
+          <p style={{ color: '#5B21B6', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 4px', fontWeight: 700 }}>Advanced mode on</p>
+          <p style={{ color: '#7C3AED', fontSize: 12, margin: 0, lineHeight: 1.5 }}>Tracking irritability, motivation, and perceived stress in addition to core signals.</p>
+        </div>
+      )}
     </>,
 
     sleep: <>
@@ -324,6 +418,11 @@ export default function App() {
           <span style={{ color: P.inkFaint, fontSize: 14 }}>pts</span>
         </div>
         <p style={{ color: P.inkFaint, fontSize: 11, margin: '6px 0 0' }}>{sc.sleepDis < 3 ? 'Restful night' : sc.sleepDis < 6 ? 'Some disruption' : 'Significant disruption'}</p>
+      </div>
+      <div style={{ marginTop: 14, padding: '12px 14px', background: P.accentLight, border: `1px solid ${P.borderLight}` }}>
+        <p style={{ color: P.inkFaint, fontSize: 11, margin: 0, lineHeight: 1.55 }}>
+          <strong>Sleep latency</strong> (time to fall asleep) is factored into your crash-risk score. Enter it below if you remember.
+        </p>
       </div>
     </>,
 
@@ -340,6 +439,12 @@ export default function App() {
           <p style={{ color: P.inkFaint, fontSize: 11, margin: '6px 0 0' }}>Your typical: {bl.avgCaffeineMg}mg</p>
         )}
       </div>
+      {advancedMode && (
+        <div style={{ marginTop: 12, padding: '12px 14px', background: P.advBg, border: `1px solid ${P.advBorder}` }}>
+          <p style={{ color: '#5B21B6', fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 4px', fontWeight: 700 }}>Advanced mode on</p>
+          <p style={{ color: '#7C3AED', fontSize: 12, margin: 0, lineHeight: 1.5 }}>Also tracking substances, hydration, exercise, sunlight, and coping strategies.</p>
+        </div>
+      )}
     </>,
 
     summary: ins.crisis ? <>
@@ -397,6 +502,45 @@ export default function App() {
           </div>
         </div>
 
+        {/* Advanced mode toggle */}
+        <div style={{ border: `1px solid ${advancedMode ? P.advBorder : P.borderLight}`, background: advancedMode ? P.advBg : P.surface, transition: 'all 0.2s' }}>
+          <button onClick={() => setAdvancedMode(m => !m)}
+            style={{ width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              padding: '14px 16px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left' }}>
+            <div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+                <span style={{ fontSize: 10, background: advancedMode ? '#7C3AED' : P.inkFaint, color: '#fff',
+                  padding: '2px 7px', borderRadius: 10, fontWeight: 700, letterSpacing: '0.06em', textTransform: 'uppercase',
+                  transition: 'background 0.2s' }}>Advanced</span>
+                <span style={{ color: advancedMode ? '#5B21B6' : P.ink, fontSize: 14, fontWeight: 600 }}>Expanded Check-In</span>
+              </div>
+              <p style={{ color: P.inkFaint, fontSize: 12, margin: 0, lineHeight: 1.5 }}>
+                Adds mood nuance, lifestyle factors, substances, and coping strategies. Takes ~3 extra minutes.
+              </p>
+            </div>
+            <div style={{ width: 40, height: 22, borderRadius: 11, background: advancedMode ? '#7C3AED' : P.borderLight,
+              position: 'relative', flexShrink: 0, marginLeft: 12, transition: 'background 0.2s' }}>
+              <div style={{ position: 'absolute', top: 3, left: advancedMode ? 21 : 3, width: 16, height: 16,
+                borderRadius: '50%', background: '#fff', transition: 'left 0.2s',
+                boxShadow: '0 1px 3px rgba(0,0,0,0.2)' }} />
+            </div>
+          </button>
+
+          {advancedMode && (
+            <div style={{ borderTop: `1px solid ${P.advBorder}`, padding: '12px 16px' }}>
+              <p style={{ color: '#5B21B6', fontSize: 11, margin: '0 0 8px', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em' }}>What's added</p>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 4 }}>
+                {['Irritability & motivation','Perceived stress level','Sleep latency tracking','Alcohol & substance log','Hydration status','Exercise & movement','Sunlight exposure','Screen time','Social quality','Workload pressure','Coping strategies'].map(item => (
+                  <div key={item} style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '3px 0' }}>
+                    <div style={{ width: 4, height: 4, borderRadius: '50%', background: '#7C3AED', flexShrink: 0 }} />
+                    <span style={{ color: '#5B21B6', fontSize: 11 }}>{item}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
         <button onClick={next}
           style={{ padding: '16px 28px', border: `2px solid ${P.border}`, cursor: 'pointer',
             background: P.border, color: '#fff', fontSize: 16, fontWeight: 600, fontFamily: 'DM Sans',
@@ -409,21 +553,71 @@ export default function App() {
 
     core: (
       <div>
-        <InkSlider label="Mood"                  value={d.mood}        onChange={v => set('mood', v)}        lo="Very Low"   hi="Excellent"    color={clr.fg} />
-        <InkSlider label="Energy"                value={d.energy}      onChange={v => set('energy', v)}      lo="Exhausted"  hi="Energized"    color={clr.fg} />
-        <InkSlider label="Focus / Clarity"       value={d.focus}       onChange={v => set('focus', v)}       lo="Foggy"      hi="Sharp"        color={clr.fg} />
-        <InkSlider label="Dissociation"          value={d.dissociation}onChange={v => set('dissociation', v)}lo="Grounded"   hi="Detached"     color={clr.fg} />
-        <InkSlider label="Anxiety"               value={d.anxiety}     onChange={v => set('anxiety', v)}     lo="Calm"       hi="Overwhelmed"  color={clr.fg} />
+        <InkSlider
+          label="Mood"
+          hint="Overall emotional state — how good do you feel right now?"
+          value={d.mood} onChange={v => set('mood', v)}
+          lo="Barely functioning" hi="At my best"
+          color={clr.fg} />
+        <InkSlider
+          label="Energy"
+          hint="Physical and mental activation — body and mind combined"
+          value={d.energy} onChange={v => set('energy', v)}
+          lo="Completely depleted" hi="Fully energized"
+          color={clr.fg} />
+        <InkSlider
+          label="Focus & Clarity"
+          hint="Ability to think clearly and hold attention on a single task"
+          value={d.focus} onChange={v => set('focus', v)}
+          lo="Scattered / foggy" hi="Laser-focused, sharp"
+          color={clr.fg} />
+        <InkSlider
+          label="Dissociation"
+          hint="Sense of presence — are you 'in your body' and engaged with reality?"
+          value={d.dissociation} onChange={v => set('dissociation', v)}
+          lo="Fully grounded & present" hi="Detached / zoning out"
+          color={clr.fg} />
+        <InkSlider
+          label="Anxiety"
+          hint="Worry, tension, and nervous system activation right now"
+          value={d.anxiety} onChange={v => set('anxiety', v)}
+          lo="Completely calm" hi="Panicked / overwhelmed"
+          color={clr.fg} />
+
+        {advancedMode && (
+          <AdvancedSection title="Mood nuance">
+            <InkSlider
+              label="Irritability"
+              hint="How quickly are you getting triggered or frustrated? Early burnout indicator."
+              value={d.irritability} onChange={v => set('irritability', v)}
+              lo="Very patient, steady" hi="Hair-trigger reactive"
+              color="#7C3AED" />
+            <InkSlider
+              label="Motivation"
+              hint="Drive to initiate and complete tasks — tracks anhedonia and executive function"
+              value={d.motivation} onChange={v => set('motivation', v)}
+              lo="Can't start anything" hi="Highly driven"
+              color="#7C3AED" />
+            <InkSlider
+              label="Perceived Stress"
+              hint="External pressure you're carrying today, separate from your mood"
+              value={d.perceivedStress} onChange={v => set('perceivedStress', v)}
+              lo="No pressure at all" hi="Crushing load"
+              color="#7C3AED" />
+          </AdvancedSection>
+        )}
       </div>
     ),
 
     sleep: (
       <div>
+        {/* Total hours — custom slider with hours display */}
         <div style={{ marginBottom: 28 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 10 }}>
-            <label style={{ color: P.inkMid, fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Total Hours</label>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: 2 }}>
+            <label style={{ color: P.inkMid, fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase' }}>Total Hours Asleep</label>
             <span style={{ color: clr.fg, fontSize: 26, fontWeight: 700, fontFamily: 'DM Serif Display', lineHeight: 1 }}>{d.sleepHours.toFixed(1)}h</span>
           </div>
+          <p style={{ color: P.inkFaint, fontSize: 11, margin: '0 0 8px', lineHeight: 1.4 }}>Total time actually asleep — directly affects cognitive function and crash risk</p>
           <div style={{ position: 'relative', height: 6, borderRadius: 2, background: P.borderLight }}>
             <div style={{ position: 'absolute', left: 0, top: 0, height: '100%', borderRadius: 2,
               width: `${(d.sleepHours / 12) * 100}%`, background: clr.fg, transition: 'width 0.08s' }} />
@@ -439,10 +633,44 @@ export default function App() {
             <span style={{ color: P.inkFaint, fontSize: 11 }}>12h</span>
           </div>
         </div>
-        <InkSlider label="Sleep Quality"    value={d.sleepQuality}    onChange={v => set('sleepQuality', v)}    lo="Terrible"  hi="Excellent"  color={clr.fg} />
-        <PaperNumInput label="Minutes Awake"  value={d.timeAwakeMinutes}  onChange={v => set('timeAwakeMinutes', v)}  min={0} max={240} step={5}  unit="min" color={clr.fg} />
-        <PaperSelect label="Night Awakenings" value={String(d.nightAwakenings)} onChange={v => set('nightAwakenings', parseInt(v))}
-          options={[{value:'0',label:'None'},{value:'1',label:'Once'},{value:'2',label:'Twice'},{value:'3',label:'3+'}]} />
+
+        <InkSlider
+          label="Sleep Quality"
+          hint="Subjective feel of how restorative the sleep was — the strongest predictor of your stability"
+          value={d.sleepQuality} onChange={v => set('sleepQuality', v)}
+          lo="Terrible — woke exhausted" hi="Excellent — fully rested"
+          color={clr.fg} />
+
+        <PaperNumInput
+          label="Minutes Awake During Night"
+          hint="Total time you were awake between sleep onset and final waking"
+          value={d.timeAwakeMinutes} onChange={v => set('timeAwakeMinutes', v)}
+          min={0} max={240} step={5} unit=" min" color={clr.fg} />
+
+        <PaperSelect
+          label="Night Awakenings"
+          value={String(d.nightAwakenings)}
+          onChange={v => set('nightAwakenings', parseInt(v))}
+          options={[{value:'0',label:'None — slept through'},{value:'1',label:'Once'},{value:'2',label:'Twice'},{value:'3',label:'3 or more times'}]} />
+
+        <PaperNumInput
+          label="Sleep Latency"
+          hint="How long it took you to fall asleep — high latency often signals pre-sleep anxiety or stimulant disruption"
+          value={d.sleepLatencyMinutes} onChange={v => set('sleepLatencyMinutes', v)}
+          min={0} max={180} step={5} unit=" min" color={clr.fg} />
+
+        {advancedMode && (
+          <AdvancedSection title="Sleep detail">
+            <div style={{ marginBottom: 20 }}>
+              <label style={{ color: '#5B21B6', fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Wake-Up Time</label>
+              <p style={{ color: '#7C3AED', fontSize: 11, margin: '0 0 6px', lineHeight: 1.4 }}>Actual time you woke up — tracks circadian rhythm consistency over time</p>
+              <input type="time" value={d.wakeUpTime} onChange={e => set('wakeUpTime', e.target.value)}
+                style={{ width: '100%', padding: '10px 12px', border: `1px solid ${P.advBorder}`,
+                  background: P.surface, color: P.ink, fontSize: 13, fontFamily: 'DM Sans',
+                  outline: 'none', boxSizing: 'border-box' }} />
+            </div>
+          </AdvancedSection>
+        )}
       </div>
     ),
 
@@ -454,12 +682,14 @@ export default function App() {
           </div>
         ) : (
           <div style={{ marginBottom: 24 }}>
-            <p style={{ color: P.inkFaint, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 10px' }}>Taken today</p>
+            <p style={{ color: P.inkFaint, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 6px' }}>Taken today</p>
+            <p style={{ color: P.inkFaint, fontSize: 11, margin: '0 0 12px', lineHeight: 1.4 }}>Log each medication and the time you took it — timing relative to your check-in helps correlate peak/trough effects with your scores</p>
             {Object.entries(d.meds).map(([key, info]) => (
               <div key={key} style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8,
                 border: `1px solid ${P.borderLight}`, background: P.surface, padding: '6px 12px' }}>
                 <div style={{ flex: 1 }}>
-                  <PaperToggle label={`${(info.name || key).charAt(0).toUpperCase() + (info.name || key).slice(1)} ${info.dose ? `(${info.dose})` : ''}`}
+                  <PaperToggle
+                    label={`${(info.name || key).charAt(0).toUpperCase() + (info.name || key).slice(1)} ${info.dose ? `(${info.dose})` : ''}`}
                     checked={info.taken} onChange={v => set('meds', { ...d.meds, [key]: { ...info, taken: v } })} color={clr.fg} />
                 </div>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2 }}>
@@ -477,20 +707,21 @@ export default function App() {
           </div>
         )}
 
-        <p style={{ color: P.inkFaint, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 12px' }}>Caffeine today</p>
+        <p style={{ color: P.inkFaint, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 6px' }}>Caffeine today</p>
+        <p style={{ color: P.inkFaint, fontSize: 11, margin: '0 0 12px', lineHeight: 1.4 }}>Caffeine directly affects sleep latency, anxiety, and your nervous system load score</p>
         {[
-          { key: 'coffee', label: 'Coffee',       unit: 'cups', mg: 95 },
-          { key: 'tea',    label: 'Tea',           unit: 'cups', mg: 47 },
-          { key: 'soda',   label: 'Soda',          unit: 'cans', mg: 35 },
-          { key: 'energy', label: 'Energy Drink',  unit: 'cans', mg: 150 },
+          { key: 'coffee', label: 'Coffee',       unit: 'cups', mg: 95,  note: '~95mg per cup (8oz)' },
+          { key: 'tea',    label: 'Tea',           unit: 'cups', mg: 47,  note: '~47mg per cup' },
+          { key: 'soda',   label: 'Soda',          unit: 'cans', mg: 35,  note: '~35mg per can' },
+          { key: 'energy', label: 'Energy Drink',  unit: 'cans', mg: 150, note: '~150mg per can' },
         ].map(bev => {
           const val = d.caffeine[bev.key] || 0;
           return (
-            <div key={bev.key} style={{ display: 'flex', alignItems: 'center', marginBottom: 12,
+            <div key={bev.key} style={{ display: 'flex', alignItems: 'center', marginBottom: 10,
               border: `1px solid ${P.borderLight}`, background: P.surface }}>
               <div style={{ flex: 1, padding: '10px 14px', borderRight: `1px solid ${P.borderLight}` }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: P.ink }}>{bev.label}</div>
-                <div style={{ fontSize: 11, color: P.inkFaint }}>{bev.mg}mg per {bev.unit.slice(0,-1)}</div>
+                <div style={{ fontSize: 11, color: P.inkFaint }}>{bev.note}</div>
               </div>
               <button onClick={() => set('caffeine', { ...d.caffeine, [bev.key]: Math.max(0, val - 1) })}
                 style={{ width: 40, height: 52, border: 'none', borderRight: `1px solid ${P.borderLight}`,
@@ -503,9 +734,99 @@ export default function App() {
           );
         })}
 
+        {advancedMode && (
+          <AdvancedSection title="Substances & hydration">
+            <div style={{ marginBottom: 20 }}>
+              <p style={{ color: '#5B21B6', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>Alcohol / Substances</p>
+              <p style={{ color: '#7C3AED', fontSize: 11, margin: '0 0 12px', lineHeight: 1.4 }}>Alcohol disrupts sleep architecture and amplifies depressive slumps the next day. Log standard drinks.</p>
+              <div style={{ display: 'flex', alignItems: 'center', border: `1px solid ${P.advBorder}`, background: P.surface, marginBottom: 10 }}>
+                <div style={{ flex: 1, padding: '10px 14px', borderRight: `1px solid ${P.advBorder}` }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: P.ink }}>Standard Drinks</div>
+                  <div style={{ fontSize: 11, color: P.inkFaint }}>Beer (12oz), wine (5oz), or 1.5oz spirit</div>
+                </div>
+                <button onClick={() => set('alcoholUnits', Math.max(0, d.alcoholUnits - 1))}
+                  style={{ width: 40, height: 52, border: 'none', borderRight: `1px solid ${P.advBorder}`,
+                    background: 'transparent', fontSize: 18, cursor: 'pointer', color: P.inkMid }}>−</button>
+                <div style={{ width: 44, textAlign: 'center', fontSize: 16, fontWeight: 700, color: P.ink }}>{d.alcoholUnits}</div>
+                <button onClick={() => set('alcoholUnits', d.alcoholUnits + 1)}
+                  style={{ width: 40, height: 52, border: 'none', borderLeft: `1px solid ${P.advBorder}`,
+                    background: 'transparent', fontSize: 18, cursor: 'pointer', color: P.inkMid }}>+</button>
+              </div>
+            </div>
+
+            <PaperToggle
+              label="Well hydrated today"
+              hint="Dehydration causes immediate cognitive fog and fatigue — even mild dehydration impacts focus"
+              checked={d.hydrated}
+              onChange={v => set('hydrated', v)}
+              color="#7C3AED" />
+          </AdvancedSection>
+        )}
+
+        {advancedMode && (
+          <AdvancedSection title="Lifestyle factors">
+            <InkSlider
+              label="Physical Activity"
+              hint="Total exercise or intentional movement today — endorphin and cortisol effects are tracked"
+              value={d.exerciseMinutes} onChange={v => set('exerciseMinutes', v)}
+              min={0} max={120} step={5}
+              lo="None" hi="2+ hours"
+              color="#7C3AED" />
+            <InkSlider
+              label="Sunlight Exposure"
+              hint="Time outdoors in daylight — tracks circadian alignment and vitamin D impact on mood"
+              value={d.sunlightHours} onChange={v => set('sunlightHours', v)}
+              min={0} max={8} step={0.5}
+              lo="None" hi="8 hours"
+              color="#7C3AED" />
+            <InkSlider
+              label="Screen Time"
+              hint="Total hours on screens today — high usage correlates with disrupted sleep and cognitive strain"
+              value={d.screenTimeHours} onChange={v => set('screenTimeHours', v)}
+              min={0} max={16} step={0.5}
+              lo="0h" hi="16h"
+              color="#7C3AED" />
+            <InkSlider
+              label="Social Connection Quality"
+              hint="How meaningful and positive were your social interactions today?"
+              value={d.socialQuality} onChange={v => set('socialQuality', v)}
+              min={1} max={5} step={1}
+              lo="Isolated / negative" hi="Deeply connected"
+              color="#7C3AED" />
+            <InkSlider
+              label="Workload / Task Friction"
+              hint="How much operational pressure or friction did you experience today?"
+              value={d.workloadFriction} onChange={v => set('workloadFriction', v)}
+              min={1} max={5} step={1}
+              lo="Smooth, low pressure" hi="Overwhelming friction"
+              color="#7C3AED" />
+          </AdvancedSection>
+        )}
+
+        {advancedMode && (
+          <AdvancedSection title="Coping & interventions">
+            <p style={{ color: '#7C3AED', fontSize: 12, margin: '0 0 12px', lineHeight: 1.5 }}>
+              Tracking coping strategies over time helps identify what actually works for your nervous system.
+            </p>
+            <PaperToggle
+              label="Breathing exercises"
+              hint="Box breathing, 4-7-8, diaphragmatic — any intentional breathwork"
+              checked={d.didBreathing} onChange={v => set('didBreathing', v)} color="#7C3AED" />
+            <PaperToggle
+              label="Meditation or mindfulness"
+              hint="Formal sitting practice, guided meditation, or mindful awareness periods"
+              checked={d.didMeditation} onChange={v => set('didMeditation', v)} color="#7C3AED" />
+            <PaperToggle
+              label="Physical movement or stretching"
+              hint="Light walks, yoga, stretching — physical release of tension beyond formal exercise"
+              checked={d.didMovement} onChange={v => set('didMovement', v)} color="#7C3AED" />
+          </AdvancedSection>
+        )}
+
         <Divider />
         <div>
-          <label style={{ color: P.inkMid, fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 7 }}>Anything else?</label>
+          <label style={{ color: P.inkMid, fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Anything else?</label>
+          <p style={{ color: P.inkFaint, fontSize: 11, margin: '0 0 7px', lineHeight: 1.4 }}>Life events, unexpected stressors, or anything that felt different about today</p>
           <textarea value={d.notes} onChange={e => set('notes', e.target.value)}
             placeholder="Life events, stress, unexpected changes…"
             style={{ width: '100%', padding: '10px 14px', borderRadius: 2, border: `1px solid ${P.border}`,
@@ -559,6 +880,16 @@ export default function App() {
             <p style={{ color: P.inkMid, fontSize: 13, margin: 0, lineHeight: 1.65 }}>{aiInsight}</p>
           </div>
         )}
+
+        {advancedMode && (
+          <div style={{ marginBottom: 16, padding: '12px 14px', background: P.advBg, border: `1px solid ${P.advBorder}` }}>
+            <p style={{ color: '#5B21B6', fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 4px' }}>Advanced data recorded</p>
+            <p style={{ color: '#7C3AED', fontSize: 12, margin: 0, lineHeight: 1.5 }}>
+              Mood nuance, lifestyle factors, and coping strategies saved. These build your longitudinal profile over time.
+            </p>
+          </div>
+        )}
+
         {saveErr && <p style={{ color: P.ink, fontSize: 13, marginBottom: 10, border: `1px solid ${P.border}`, padding: '8px 12px' }}>{saveErr}</p>}
         {saved && (
           <div style={{ padding: '10px 14px', background: P.accentLight, border: `1px solid ${P.border}`, marginBottom: 12 }}>
@@ -630,7 +961,7 @@ export default function App() {
   return (
     <div style={{ height: 'calc(100vh - 52px)', background: P.bg, display: 'flex', flexDirection: 'column', fontFamily: 'DM Sans' }}>
 
-      {/* Step progress bar + caffeine running total */}
+      {/* Step progress bar */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         padding: '0 28px', borderBottom: `1px solid ${P.borderLight}`, background: P.surface, height: 40 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -649,6 +980,7 @@ export default function App() {
           })}
           <span style={{ color: P.inkFaint, fontSize: 11, marginLeft: 8 }}>
             {CHECKIN_TYPES.find(t => t.id === checkinType)?.label} Check-In
+            {advancedMode && <span style={{ color: '#7C3AED', marginLeft: 6 }}>· Advanced</span>}
             {stepIdx > 0 && stepIdx < FLOW.length - 1 ? ` · ${stepIdx} of ${FLOW.length - 2}` : ''}
           </span>
         </div>
@@ -657,56 +989,38 @@ export default function App() {
           border: `1px solid ${sc.caffeineMg > 400 ? P.border : P.borderLight}`,
           background: sc.caffeineMg > 400 ? P.accentLight : 'transparent' }}>
           <span style={{ fontSize: 11, color: P.inkFaint, textTransform: 'uppercase', letterSpacing: '0.05em' }}>Caffeine</span>
-          <span style={{ fontSize: 13, fontWeight: 700, color: P.ink }}>{sc.caffeineMg}mg</span>
-          {d.caffeine.coffee > 0 && <span style={{ fontSize: 10, color: P.inkFaint }}>☕ {d.caffeine.coffee}</span>}
-          {d.caffeine.tea > 0    && <span style={{ fontSize: 10, color: P.inkFaint }}>🍵 {d.caffeine.tea}</span>}
-          {d.caffeine.soda > 0   && <span style={{ fontSize: 10, color: P.inkFaint }}>🥤 {d.caffeine.soda}</span>}
-          {d.caffeine.energy > 0 && <span style={{ fontSize: 10, color: P.inkFaint }}>⚡ {d.caffeine.energy}</span>}
+          <span style={{ fontSize: 13, fontWeight: 700, color: sc.caffeineMg > 400 ? P.ink : P.inkMid }}>{sc.caffeineMg}mg</span>
         </div>
       </div>
 
-      {/* Split body */}
-      <div style={{ flex: 1, display: 'flex', overflow: 'hidden' }}>
+      {/* Main split layout */}
+      <div style={{ flex: 1, display: 'grid', gridTemplateColumns: '340px 1fr', overflow: 'hidden' }}>
 
-        {/* Left — context panel */}
-        <div style={{ width: '38%', minWidth: 280, padding: '48px 44px',
-          background: P.surface, borderRight: `1px solid ${P.border}`,
-          display: 'flex', flexDirection: 'column', justifyContent: 'center', overflow: 'hidden' }}>
-          {leftContent[stepId] || leftContent.intro}
+        {/* Left panel — context */}
+        <div style={{ padding: '36px 32px', borderRight: `1px solid ${P.borderLight}`, background: P.surface, overflowY: 'auto' }}>
+          {leftContent[stepId]}
+          {stepIdx > 0 && (
+            <button onClick={back}
+              style={{ marginTop: 28, padding: '9px 16px', border: `1px solid ${P.borderLight}`,
+                background: 'transparent', color: P.inkFaint, fontSize: 12, cursor: 'pointer', fontFamily: 'DM Sans' }}>
+              ← Back
+            </button>
+          )}
         </div>
 
-        {/* Right — input panel */}
-        <div style={{ flex: 1, padding: '48px 48px', overflowY: 'auto',
-          display: 'flex', flexDirection: 'column' }}>
-          <div style={{ maxWidth: 480 }}>
-            {rightContent[stepId] || rightContent.intro}
-
-            {stepId !== 'intro' && stepId !== 'summary' && (
-              <div style={{ display: 'flex', gap: 10, marginTop: 32, paddingTop: 24, borderTop: `1px solid ${P.borderLight}` }}>
-                {stepIdx > 1 && (
-                  <button onClick={back}
-                    style={{ padding: '13px 20px', border: `1px solid ${P.border}`,
-                      background: P.surface, color: P.inkMid, fontSize: 14, cursor: 'pointer', fontFamily: 'DM Sans' }}>
-                    ← Back
-                  </button>
-                )}
-                <button onClick={next}
-                  style={{ flex: 1, padding: '13px 20px', border: `2px solid ${P.border}`,
-                    background: P.ink, color: '#fff', fontSize: 14, fontWeight: 600,
-                    fontFamily: 'DM Sans', cursor: 'pointer' }}>
-                  Continue →
-                </button>
-              </div>
+        {/* Right panel — input */}
+        <div style={{ padding: '36px 36px 36px', overflowY: 'auto', background: P.bg }}>
+          <div style={{ maxWidth: 520 }}>
+            {rightContent[stepId]}
+            {stepIdx < FLOW.length - 1 && (
+              <button onClick={next}
+                style={{ marginTop: 24, width: '100%', padding: '14px 20px', border: `1px solid ${P.border}`,
+                  background: P.ink, color: '#fff', fontSize: 14, fontWeight: 600, cursor: 'pointer', fontFamily: 'DM Sans' }}>
+                Continue →
+              </button>
             )}
           </div>
         </div>
-      </div>
-
-      {/* Footer */}
-      <div style={{ padding: '8px 36px', borderTop: `1px solid ${P.borderLight}`, background: P.surface }}>
-        <p style={{ color: P.inkFaint, fontSize: 11, margin: 0, textAlign: 'center' }}>
-          HIPAA-compliant · The system learns from your patterns, never diagnoses
-        </p>
       </div>
     </div>
   );

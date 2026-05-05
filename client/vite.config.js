@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react(), tailwindcss()],
   build: {
     outDir: '../static/dist',
-    emptyOutDir: true,
+    emptyOutDir: false,
     rollupOptions: {
       output: {
         entryFileNames: 'assets/index.js',
