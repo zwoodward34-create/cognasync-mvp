@@ -48,8 +48,30 @@
   <div class="top-nav-end">
     <span class="top-nav-user">{{ user.full_name }}</span>
     <a href="{{ url_for('logout') }}" class="top-nav-logout">Sign out</a>
+    <button class="nav-hamburger" id="nav-hamburger" aria-label="Open menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
   </div>
 </header>
+
+<!-- Mobile dropdown menu -->
+<div class="top-nav-mobile-menu" id="nav-mobile-menu" aria-hidden="true">
+  {% if user is defined and user %}
+    {% if user.role == 'patient' %}
+      <a href="{{ url_for('home') }}"           class="mobile-nav-link {% if request.endpoint == 'home' %}active{% endif %}">Home</a>
+      <a href="{{ url_for('checkin_page') }}"   class="mobile-nav-link {% if request.endpoint == 'checkin_page' %}active{% endif %}">Check-In</a>
+      <a href="{{ url_for('journal_page') }}"   class="mobile-nav-link {% if request.endpoint == 'journal_page' %}active{% endif %}">Journal</a>
+      <a href="{{ url_for('medication_page') }}" class="mobile-nav-link {% if request.endpoint == 'medication_page' %}active{% endif %}">Medications</a>
+      <a href="{{ url_for('summary_page') }}"   class="mobile-nav-link {% if request.endpoint == 'summary_page' %}active{% endif %}">Pre-Appt Summary</a>
+      <a href="{{ url_for('trends_page') }}"    class="mobile-nav-link {% if request.endpoint == 'trends_page' %}active{% endif %}">Trends</a>
+      <a href="{{ url_for('settings_page') }}"  class="mobile-nav-link {% if request.endpoint == 'settings_page' %}active{% endif %}">Settings</a>
+    {% else %}
+      <a href="{{ url_for('provider_dashboard') }}" class="mobile-nav-link {% if request.endpoint == 'provider_dashboard' %}active{% endif %}">Dashboard</a>
+    {% endif %}
+    <div class="mobile-nav-divider"></div>
+    <a href="{{ url_for('logout') }}" class="mobile-nav-link">Sign out</a>
+  {% endif %}
+</div>
 {% endif %}
 
 <main class="main-content {% if user is defined and user %}with-nav{% endif %}">
@@ -60,5 +82,32 @@
 
 <script src="{{ url_for('static', filename='js/common.js') }}"></script>
 {% block scripts %}{% endblock %}
+<script>
+  (function () {
+    const btn = document.getElementById('nav-hamburger');
+    const menu = document.getElementById('nav-mobile-menu');
+    if (!btn || !menu) return;
+    btn.addEventListener('click', function () {
+      const open = menu.classList.toggle('open');
+      btn.classList.toggle('open', open);
+      btn.setAttribute('aria-expanded', open);
+      menu.setAttribute('aria-hidden', !open);
+    });
+    // Close menu when a link is tapped
+    menu.querySelectorAll('.mobile-nav-link').forEach(function (a) {
+      a.addEventListener('click', function () {
+        menu.classList.remove('open');
+        btn.classList.remove('open');
+      });
+    });
+    // Close on outside tap
+    document.addEventListener('click', function (e) {
+      if (!btn.contains(e.target) && !menu.contains(e.target)) {
+        menu.classList.remove('open');
+        btn.classList.remove('open');
+      }
+    });
+  })();
+</script>
 </body>
 </html>

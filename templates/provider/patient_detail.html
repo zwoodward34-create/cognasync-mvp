@@ -12,8 +12,15 @@
 <!-- Provider shell -->
 <div class="pv-shell">
 
+  <!-- ── Mobile patient selector toggle (hidden on desktop) ─────── -->
+  <button class="pv-sidebar-toggle" id="pv-sidebar-toggle" aria-expanded="false">
+    <span>☰</span>
+    <span id="pv-toggle-label">{{ patient.full_name }}</span>
+    <span class="pv-toggle-arrow">▾</span>
+  </button>
+
   <!-- ── Sidebar: patient list ──────────────────────────────────── -->
-  <div class="pv-sidebar">
+  <div class="pv-sidebar" id="pv-sidebar">
     <div class="pv-sidebar-head">
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:700;margin-bottom:10px;">
         {{ patients|length }} Patient{{ 's' if patients|length != 1 }}
@@ -579,5 +586,24 @@ function generateSummary(patientId) {
       btns.forEach(b => b.disabled = false);
     });
 }
+
+// ── Mobile sidebar toggle ───────────────────────────────────────────
+(function () {
+  const toggleBtn = document.getElementById('pv-sidebar-toggle');
+  const sidebar   = document.getElementById('pv-sidebar');
+  if (!toggleBtn || !sidebar) return;
+  toggleBtn.addEventListener('click', function () {
+    const open = sidebar.classList.toggle('open');
+    toggleBtn.setAttribute('aria-expanded', open);
+    toggleBtn.querySelector('.pv-toggle-arrow').textContent = open ? '▴' : '▾';
+  });
+  // Close sidebar when a patient link is tapped on mobile
+  sidebar.querySelectorAll('.pv-patient-item').forEach(function (a) {
+    a.addEventListener('click', function () {
+      sidebar.classList.remove('open');
+      toggleBtn.querySelector('.pv-toggle-arrow').textContent = '▾';
+    });
+  });
+})();
 </script>
 {% endblock %}
