@@ -853,24 +853,30 @@ def _trend_stats(values):
 def get_trends_data(user_id: str, days: int = 30):
     """Return aggregated trend data.
 
-    The return shape matches what app.py and the provider template expect:
-      mood        – _trend_stats dict (with average, trend, r_squared, p_value)
-      stress      – _trend_stats dict
-      sleep       – {average, values}
-      energy      – {average, values}
-      medication_adherence – int (0–100 %)
-      checkin_count / total_checkins – int
+    Keys consumed by the patient trends JS and provider template:
+      mood        – _trend_stats dict + daily_scores + dates
+      stress      – _trend_stats dict + daily_scores + dates
+      sleep       – {average, values, daily_hours, dates}
+      energy      – {average, values, daily_scores, dates}
+      medication_adherence  – int 0–100
+      checkin_count / total_checkins / checkins_this_period – int
+      period_days – int (the requested window)
     """
+    def _empty_metric_ts():
+        return {**_trend_stats([]), 'daily_scores': [], 'dates': []}
+
     _empty = {
-        'user_id':       user_id,
-        'date_range':    {'start': (date.today() - timedelta(days=days)).isoformat(),
-                          'end':   date.today().isoformat()},
-        'total_checkins':  0,
-        'checkin_count':   0,
-        'mood':            _trend_stats([]),
-        'stress':          _trend_stats([]),
-        'sleep':           {'average': None, 'values': []},
-        'energy':          {'average': None, 'values': []},
+        'user_id':              user_id,
+        'date_range':           {'start': (date.today() - timedelta(days=days)).isoformat(),
+                                 'end':   date.today().isoformat()},
+        'total_checkins':       0,
+        'checkin_count':        0,
+        'checkins_this_period': 0,
+        'period_days':          days,
+        'mood':                 _empty_metric_ts(),
+        'stress':               _empty_metric_ts(),
+        'sleep':                {'average': None, 'values': [], 'daily_hours': [], 'dates': []},
+        'energy':               {'average': None, 'values': [], 'daily_scores': [], 'dates': []},
         'medication_adherence': 0,
     }
 
@@ -885,37 +891,34 @@ def get_trends_data(user_id: str, days: int = 30):
             _empty['date_range']['start'] = start_date
             return _empty
 
-        # ── Extract per-row values ────────────────────────────────────
-        mood_vals, stress_vals, sleep_vals, energy_vals = [], [], [], []
+        # ── Extract per-row values, tracking dates per metric ─────────
+        mood_pairs, stress_pairs, sleep_pairs, energy_pairs = [], [], [], []
         meds_with_entries, meds_with_taken = 0, 0
 
         for row in data:
-            # Mood — prefer explicit mood_score, fall back to stability_score
+            d = row.get('checkin_date', '')
+
             mood = row.get('mood_score') or row.get('stability_score')
             if mood is not None:
-                mood_vals.append(float(mood))
+                mood_pairs.append((d, float(mood)))
 
             stress = row.get('stress_score')
             if stress is not None:
-                stress_vals.append(float(stress))
+                stress_pairs.append((d, float(stress)))
 
             sleep = row.get('sleep_hours')
             if sleep is not None:
-                sleep_vals.append(float(sleep))
+                sleep_pairs.append((d, float(sleep)))
 
-            # Extended fields live in the JSONB column
             ext = row.get('extended_data') or {}
             if isinstance(ext, str):
                 try:
                     ext = json.loads(ext)
                 except Exception:
                     ext = {}
-
             if ext.get('energy') is not None:
-                energy_vals.append(float(ext['energy']))
+                energy_pairs.append((d, float(ext['energy'])))
 
-            # Medication adherence: % of check-ins that have a med list and
-            # at least one entry was marked taken.
             meds = row.get('medications') or []
             if isinstance(meds, str):
                 try:
@@ -933,18 +936,35 @@ def get_trends_data(user_id: str, days: int = 30):
         def _avg(v):
             return round(sum(v) / len(v), 2) if v else None
 
+        def _unzip(pairs):
+            if not pairs:
+                return [], []
+            dates, vals = zip(*pairs)
+            return list(dates), list(vals)
+
+        mood_dates,   mood_vals   = _unzip(mood_pairs)
+        stress_dates, stress_vals = _unzip(stress_pairs)
+        sleep_dates,  sleep_vals  = _unzip(sleep_pairs)
+        energy_dates, energy_vals = _unzip(energy_pairs)
+
+        mood_ts   = {**_trend_stats(mood_vals),   'daily_scores': mood_vals,   'dates': mood_dates}
+        stress_ts = {**_trend_stats(stress_vals), 'daily_scores': stress_vals, 'dates': stress_dates}
+
         return {
-            'user_id':      user_id,
-            'date_range':   {'start': start_date, 'end': date.today().isoformat()},
-            'total_checkins':  len(data),
-            'checkin_count':   len(data),
-            'mood':    _trend_stats(mood_vals),
-            'stress':  _trend_stats(stress_vals),
-            'sleep':   {'average': _avg(sleep_vals),  'values': sleep_vals},
-            'energy':  {'average': _avg(energy_vals), 'values': energy_vals},
+            'user_id':              user_id,
+            'date_range':           {'start': start_date, 'end': date.today().isoformat()},
+            'total_checkins':       len(data),
+            'checkin_count':        len(data),
+            'checkins_this_period': len(data),
+            'period_days':          days,
+            'mood':                 mood_ts,
+            'stress':               stress_ts,
+            'sleep':  {'average': _avg(sleep_vals),  'values': sleep_vals,
+                       'daily_hours': sleep_vals,    'dates': sleep_dates},
+            'energy': {'average': _avg(energy_vals), 'values': energy_vals,
+                       'daily_scores': energy_vals,  'dates': energy_dates},
             'medication_adherence': adherence,
-            # Legacy flat fields kept for any direct reads elsewhere
-            'average_stability': _avg(mood_vals),
+            'average_stability':    _avg(mood_vals),
         }
     except Exception as e:
         print(f"Error getting trends: {e}")
