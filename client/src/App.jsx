@@ -266,6 +266,7 @@ export default function App() {
   const [entryTime, setEntryTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [completedToday, setCompletedToday] = useState([]);
   const [advancedMode, setAdvancedMode] = useState(false);
+  const [todayCheckinCount, setTodayCheckinCount] = useState(0);
   const isMobile = useMobile();
 
   const [d, setD] = useState({
@@ -299,20 +300,43 @@ export default function App() {
   });
 
   useEffect(() => {
-    fetch('/api/checkins/baseline', { credentials: 'same-origin' })
-      .then(r => r.ok ? r.json() : null).then(v => { if (v && Object.keys(v).length) setBl(p => ({ ...p, ...v })); }).catch(() => {});
-    fetch('/api/patient/profile', { credentials: 'same-origin' })
-      .then(r => r.ok ? r.json() : null).then(v => {
-        if (!v) return;
-        const meds = {};
-        (v.current_medications || []).forEach(m => {
-          const key = m.dose ? `${m.name}|||${m.dose}` : m.name;
-          meds[key] = { name: m.name, taken: false, dose: m.dose || '', timeTaken: '' };
+    Promise.all([
+      fetch('/api/checkins/baseline',     { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/patient/profile',       { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/checkins/today',        { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/checkins/today-summary',{ credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
+    ]).then(([baseline, profile, todayCompletion, todaySummary]) => {
+      if (baseline && Object.keys(baseline).length) setBl(p => ({ ...p, ...baseline }));
+      if (todayCompletion) setCompletedToday(todayCompletion.completed || []);
+
+      // Build meds map from profile
+      const meds = {};
+      (profile?.current_medications || []).forEach(m => {
+        const key = m.dose ? `${m.name}|||${m.dose}` : m.name;
+        meds[key] = { name: m.name, taken: false, dose: m.dose || '', timeTaken: '' };
+      });
+
+      const updates = { meds };
+
+      // Pre-populate caffeine and taken-status from earlier check-ins today
+      if (todaySummary?.checkin_count > 0) {
+        setTodayCheckinCount(todaySummary.checkin_count);
+        const bd = todaySummary.caffeine_breakdown || {};
+        updates.caffeine = {
+          coffee: bd.coffee || 0,
+          tea:    bd.tea    || 0,
+          soda:   bd.soda   || 0,
+          energy: bd.energy || 0,
+        };
+        // Mark meds that were already taken today
+        (todaySummary.medications || []).forEach(logged => {
+          const key = logged.dose ? `${logged.name}|||${logged.dose}` : logged.name;
+          if (meds[key]) meds[key] = { ...meds[key], taken: !!logged.taken, timeTaken: logged.time_taken || '' };
         });
-        setD(p => ({ ...p, meds }));
-      }).catch(() => {});
-    fetch('/api/checkins/today', { credentials: 'same-origin' })
-      .then(r => r.ok ? r.json() : null).then(v => { if (v) setCompletedToday(v.completed || []); }).catch(() => {});
+      }
+
+      setD(p => ({ ...p, ...updates }));
+    });
   }, []);
 
   const sc = useMemo(() => calcScores(d, bl), [d, bl]);
@@ -440,6 +464,14 @@ export default function App() {
     meds: <>
       <h2 style={{ fontFamily: 'DM Serif Display', fontWeight: 400, fontSize: 30, color: P.ink, margin: '0 0 10px' }}>Medications & Caffeine</h2>
       <p style={{ color: P.inkMid, fontSize: 14, lineHeight: 1.65, margin: '0 0 28px' }}>Log what you took and your caffeine intake today.</p>
+      {todayCheckinCount > 0 && (
+        <div style={{ padding: '10px 14px', background: P.accentLight, border: `1px solid ${P.borderLight}`, marginBottom: 16, display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 13 }}>↑</span>
+          <p style={{ color: P.inkMid, fontSize: 12, margin: 0, lineHeight: 1.4 }}>
+            Continued from earlier today — add anything since your last check-in.
+          </p>
+        </div>
+      )}
       <div style={{ padding: 18, background: clr.bg, border: `1px solid ${P.border}` }}>
         <p style={{ color: P.inkFaint, fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>Total caffeine today</p>
         <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>

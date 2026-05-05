@@ -526,6 +526,61 @@ def api_checkins_today():
     return jsonify({'completed': done, 'date': today}), 200
 
 
+@app.route('/api/checkins/today-summary', methods=['GET'])
+def api_checkins_today_summary():
+    """Return cumulative caffeine breakdown and taken medications from today's check-ins.
+
+    Used to pre-populate the check-in form so afternoon/evening check-ins carry
+    forward what was logged earlier in the day.
+    """
+    user, err = _api_user('patient')
+    if err:
+        return err
+    today = date.today().isoformat()
+    checkins = db.get_checkins(user['id'], days=1)
+
+    today_checkins = [c for c in (checkins or []) if (c.get('checkin_date') or '')[:10] == today]
+    if not today_checkins:
+        return jsonify({
+            'checkin_count': 0,
+            'caffeine_breakdown': {'coffee': 0, 'tea': 0, 'soda': 0, 'energy': 0},
+            'medications': [],
+            'date': today,
+        }), 200
+
+    # Most-recent check-in's caffeine breakdown is the authoritative cumulative total
+    sorted_today = sorted(today_checkins, key=lambda c: c.get('created_at', ''), reverse=True)
+    latest_ext = sorted_today[0].get('extended_data') or {}
+    if isinstance(latest_ext, str):
+        try:
+            latest_ext = json.loads(latest_ext)
+        except Exception:
+            latest_ext = {}
+    raw_bd = latest_ext.get('caffeine_breakdown') or {}
+    caffeine_breakdown = {
+        'coffee': int(raw_bd.get('coffee') or 0),
+        'tea':    int(raw_bd.get('tea')    or 0),
+        'soda':   int(raw_bd.get('soda')   or 0),
+        'energy': int(raw_bd.get('energy') or 0),
+    }
+
+    # Union of taken medications across all of today's check-ins (newest wins on duplicate name)
+    seen, medications = set(), []
+    for c in sorted_today:
+        for med in (c.get('medications') or []):
+            name = med.get('name')
+            if name and name not in seen:
+                seen.add(name)
+                medications.append(med)
+
+    return jsonify({
+        'checkin_count': len(today_checkins),
+        'caffeine_breakdown': caffeine_breakdown,
+        'medications': medications,
+        'date': today,
+    }), 200
+
+
 @app.route('/api/checkins/baseline', methods=['GET'])
 def api_checkin_baseline():
     user, err = _api_user()
