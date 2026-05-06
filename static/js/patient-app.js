@@ -138,6 +138,10 @@ function initJournal() {
         document.getElementById('display-entry').textContent = data.raw_entry;
         document.getElementById('display-analysis').textContent = data.ai_analysis;
         document.getElementById('analysis-result').classList.remove('hidden');
+        if (data.journal_id) {
+          const fbContainer = document.getElementById('journal-feedback');
+          if (fbContainer) { fbContainer.innerHTML = ''; renderAiFeedback('journal', data.journal_id, fbContainer); }
+        }
         if (data.alert === 'crisis') {
           showAlert('journal-crisis', data.ai_analysis);
         }
@@ -168,6 +172,10 @@ function initJournal() {
         document.getElementById('prompt-display-entry').textContent = entry;
         document.getElementById('prompt-display-analysis').textContent = data.ai_analysis;
         document.getElementById('prompt-analysis-result').classList.remove('hidden');
+        if (data.journal_id) {
+          const fbContainer = document.getElementById('prompt-journal-feedback');
+          if (fbContainer) { fbContainer.innerHTML = ''; renderAiFeedback('journal', data.journal_id, fbContainer); }
+        }
         promptForm.reset();
       } catch (err) {
         alert(err.message || 'Failed to save entry.');

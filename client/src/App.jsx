@@ -262,6 +262,8 @@ export default function App() {
   const [saved, setSaved] = useState(false);
   const [saveErr, setSaveErr] = useState('');
   const [aiInsight, setAiInsight] = useState('');
+  const [checkinId, setCheckinId] = useState(null);
+  const [insightFeedback, setInsightFeedback] = useState(null); // 'up' | 'down' | null
   const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [entryTime, setEntryTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [completedToday, setCompletedToday] = useState([]);
@@ -393,6 +395,7 @@ export default function App() {
       if (res.ok) {
         const body = await res.json().catch(() => ({}));
         if (body.ai_insight) setAiInsight(body.ai_insight);
+        if (body.checkin_id) { setCheckinId(body.checkin_id); setInsightFeedback(null); }
         setSaved(true);
         setTimeout(() => setSaved(false), 4000);
         if (checkinType !== 'on_demand') {
@@ -926,7 +929,28 @@ export default function App() {
         {aiInsight && (
           <div style={{ marginBottom: 16, padding: '13px 15px', background: P.accentLight, border: `1px solid ${P.border}` }}>
             <p style={{ color: P.inkFaint, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 5px' }}>AI Observation</p>
-            <p style={{ color: P.inkMid, fontSize: 13, margin: 0, lineHeight: 1.65 }}>{aiInsight}</p>
+            <p style={{ color: P.inkMid, fontSize: 13, margin: '0 0 10px', lineHeight: 1.65 }}>{aiInsight}</p>
+            {checkinId && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: P.inkFaint, fontSize: 11, letterSpacing: '0.04em' }}>Helpful?</span>
+                {['up', 'down'].map(r => (
+                  <button key={r} onClick={() => {
+                    const next = insightFeedback === r ? null : r;
+                    setInsightFeedback(next);
+                    if (next) fetch('/api/feedback', {
+                      method: 'POST', credentials: 'same-origin',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ content_type: 'checkin', content_id: String(checkinId), rating: r }),
+                    }).catch(() => {});
+                  }} style={{
+                    background: insightFeedback === r ? (r === 'up' ? '#dcfce7' : '#fee2e2') : 'none',
+                    border: `1px solid ${insightFeedback === r ? (r === 'up' ? '#86efac' : '#fca5a5') : P.borderLight}`,
+                    borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 15,
+                    transition: 'background .15s, border-color .15s',
+                  }}>{r === 'up' ? '👍' : '👎'}</button>
+                ))}
+              </div>
+            )}
           </div>
         )}
 

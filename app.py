@@ -1049,6 +1049,27 @@ def api_unexpected_pattern():
     return jsonify({'pattern': pattern}), 200
 
 
+# ── AI Feedback ───────────────────────────────────────────────────────────────
+
+@app.route('/api/feedback', methods=['POST'])
+def api_log_feedback():
+    """Record a thumbs-up or thumbs-down on any AI-generated output."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    content_type = data.get('content_type', '')
+    content_id   = data.get('content_id', '')
+    rating        = data.get('rating', '')
+    if not content_type or not content_id or not rating:
+        return jsonify({'error': 'content_type, content_id, and rating are required'}), 400
+    try:
+        db.log_ai_feedback(user['id'], content_type, content_id, rating)
+    except ValueError as e:
+        return jsonify({'error': str(e)}), 400
+    return jsonify({'message': 'Feedback recorded'}), 200
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('FLASK_PORT', 5002))
     debug = os.environ.get('FLASK_ENV') == 'development'

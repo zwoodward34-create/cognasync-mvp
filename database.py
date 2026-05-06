@@ -1306,3 +1306,36 @@ def find_unexpected_pattern(patient_id, days=30):
     except Exception as e:
         print(f"Error finding unexpected pattern: {e}")
         return None
+
+# ═══════════════════════════════════════════════════════════════════════════
+# AI FEEDBACK
+# ═══════════════════════════════════════════════════════════════════════════
+
+def log_ai_feedback(user_id: str, content_type: str, content_id: str, rating: str):
+    """Upsert a thumbs-up/thumbs-down rating on an AI-generated output.
+
+    content_type: 'checkin' | 'journal' | 'summary'
+    rating:       'up' | 'down'
+
+    The unique constraint on (user_id, content_type, content_id) means repeated
+    calls update the existing row, so users can change their vote.
+    """
+    if content_type not in ('checkin', 'journal', 'summary'):
+        raise ValueError(f"Invalid content_type: {content_type}")
+    if rating not in ('up', 'down'):
+        raise ValueError(f"Invalid rating: {rating}")
+    try:
+        supabase_admin.table('ai_feedback').upsert(
+            {
+                'user_id':      str(user_id),
+                'content_type': content_type,
+                'content_id':   str(content_id),
+                'rating':       rating,
+                'created_at':   datetime.utcnow().isoformat(),
+            },
+            on_conflict='user_id,content_type,content_id',
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"Error logging AI feedback: {e}")
+        return False

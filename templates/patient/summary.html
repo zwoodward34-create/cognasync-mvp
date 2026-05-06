@@ -25,6 +25,7 @@
       <div id="new-summary-dates" class="summary-dates"></div>
     </div>
     <div id="new-summary-text" class="summary-body"></div>
+    <div id="summary-feedback"></div>
   </div>
 </div>
 
@@ -91,6 +92,10 @@ function generateSummary() {
       panel.classList.remove('hidden');
       loading.classList.add('hidden');
       btn.disabled = false;
+      if (data.summary_id) {
+        const fb = document.getElementById('summary-feedback');
+        if (fb) { fb.innerHTML = ''; renderAiFeedback('summary', data.summary_id, fb); }
+      }
     })
     .catch(err => {
       error.textContent = err.message || 'Failed to generate summary. Please try again.';
