@@ -32,12 +32,18 @@
 <div class="past-section">
   <h2 class="section-title">Past Summaries</h2>
   {% for s in summaries %}
-  <div class="summary-card">
-    <div class="summary-card-header">
-      <div class="summary-dates">{{ s.date_range_start }} – {{ s.date_range_end }}</div>
-      <div class="summary-meta text-muted">Generated {{ s.created_at[:10] }}</div>
+  <div class="summary-card summary-card--past" id="past-summary-{{ s.id }}">
+    <div class="summary-card-header summary-card-header--clickable" onclick="toggleSummary('{{ s.id }}')">
+      <div style="flex:1">
+        <div class="summary-dates">{{ s.date_range_start }} – {{ s.date_range_end }}</div>
+        <div class="summary-meta text-muted">Generated {{ (s.created_at or '')[:10] }}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span class="summary-toggle-icon" id="toggle-icon-{{ s.id }}">▼</span>
+        <button class="btn-delete-summary" onclick="deleteSummary(event, '{{ s.id }}')" title="Delete this summary">×</button>
+      </div>
     </div>
-    <div class="summary-body">{{ s.summary_text }}</div>
+    <div class="summary-body summary-body--collapsed" id="summary-body-{{ s.id }}">{{ s.summary_text }}</div>
   </div>
   {% endfor %}
 </div>
@@ -52,6 +58,19 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
+<style>
+  .summary-card-header--clickable { cursor: pointer; display: flex; align-items: flex-start; }
+  .summary-card-header--clickable:hover { opacity: 0.85; }
+  .summary-body--collapsed { display: none; }
+  .summary-body--expanded  { display: block; }
+  .summary-toggle-icon { font-size: 11px; color: var(--text-muted); user-select: none; margin-top: 2px; }
+  .btn-delete-summary {
+    background: none; border: 1px solid var(--border-color); color: var(--text-muted);
+    width: 26px; height: 26px; border-radius: 4px; cursor: pointer; font-size: 16px;
+    line-height: 1; display: flex; align-items: center; justify-content: center;
+  }
+  .btn-delete-summary:hover { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
+</style>
 <script>
 function generateSummary() {
   const btn = document.getElementById('generate-btn');
@@ -79,6 +98,31 @@ function generateSummary() {
       loading.classList.add('hidden');
       btn.disabled = false;
     });
+}
+
+function toggleSummary(id) {
+  const body = document.getElementById('summary-body-' + id);
+  const icon = document.getElementById('toggle-icon-' + id);
+  if (!body) return;
+  const collapsed = body.classList.contains('summary-body--collapsed');
+  body.classList.toggle('summary-body--collapsed', !collapsed);
+  body.classList.toggle('summary-body--expanded', collapsed);
+  if (icon) icon.textContent = collapsed ? '▲' : '▼';
+}
+
+function deleteSummary(event, id) {
+  event.stopPropagation();
+  if (!confirm('Delete this summary? This cannot be undone.')) return;
+  fetch('/api/summaries/' + id, { method: 'DELETE', credentials: 'same-origin' })
+    .then(r => {
+      if (r.ok) {
+        const card = document.getElementById('past-summary-' + id);
+        if (card) card.remove();
+      } else {
+        alert('Failed to delete summary. Please try again.');
+      }
+    })
+    .catch(() => alert('Network error — please try again.'));
 }
 </script>
 {% endblock %}

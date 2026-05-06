@@ -548,27 +548,30 @@ def api_checkins_today_summary():
             'date': today,
         }), 200
 
-    # Most-recent check-in's caffeine breakdown is the authoritative cumulative total
-    sorted_today = sorted(today_checkins, key=lambda c: c.get('created_at', ''), reverse=True)
-    latest_ext = sorted_today[0].get('extended_data') or {}
-    if isinstance(latest_ext, str):
-        try:
-            latest_ext = json.loads(latest_ext)
-        except Exception:
-            latest_ext = {}
-    raw_bd = latest_ext.get('caffeine_breakdown') or {}
-    caffeine_breakdown = {
-        'coffee': int(raw_bd.get('coffee') or 0),
-        'tea':    int(raw_bd.get('tea')    or 0),
-        'soda':   int(raw_bd.get('soda')   or 0),
-        'energy': int(raw_bd.get('energy') or 0),
-    }
+    # Take the per-beverage maximum across ALL of today's check-ins.
+    # This is more robust than using only the latest check-in: if a morning
+    # check-in logged coffee but the afternoon check-in had caffeine_breakdown
+    # missing (e.g., submitted before the feature shipped), we still carry
+    # forward the highest observed count for each beverage type.
+    caffeine_breakdown = {'coffee': 0, 'tea': 0, 'soda': 0, 'energy': 0}
+    for c in today_checkins:
+        ext = c.get('extended_data') or {}
+        if isinstance(ext, str):
+            try:
+                ext = json.loads(ext)
+            except Exception:
+                ext = {}
+        bd = ext.get('caffeine_breakdown') or {}
+        for key in caffeine_breakdown:
+            caffeine_breakdown[key] = max(caffeine_breakdown[key], int(bd.get(key) or 0))
 
-    # Union of taken medications across all of today's check-ins (newest wins on duplicate name)
+    # Union of medications across today's check-ins; most-recent check-in wins
+    # on duplicate name so taken/time_taken reflects the latest logged state.
+    sorted_today = sorted(today_checkins, key=lambda c: c.get('created_at', ''), reverse=True)
     seen, medications = set(), []
     for c in sorted_today:
         for med in (c.get('medications') or []):
-            name = med.get('name')
+            name = (med.get('name') or '').lower()
             if name and name not in seen:
                 seen.add(name)
                 medications.append(med)
@@ -715,6 +718,15 @@ def api_get_summaries(patient_id):
 
     summaries = db.get_summaries(patient_id)
     return jsonify({'patient_id': patient_id, 'summaries': summaries}), 200
+
+
+@app.route('/api/summaries/<summary_id>', methods=['DELETE'])
+def api_delete_summary(summary_id):
+    user, err = _api_user('patient')
+    if err:
+        return err
+    db.delete_summary(user['id'], summary_id)
+    return jsonify({'message': 'Summary deleted'}), 200
 
 
 # ── Trends API ────────────────────────────────────────────────────────────────

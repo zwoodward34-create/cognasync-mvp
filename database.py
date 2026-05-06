@@ -306,25 +306,38 @@ def get_journals_in_range(patient_id, start_date: str, end_date: str, shared_onl
 
 
 def get_checkin_streak(patient_id):
-    """Get current check-in streak."""
+    """Get current check-in streak.
+
+    Multiple check-ins on the same day count as one — dates are deduplicated
+    before the sequential comparison so morning/afternoon/evening check-ins
+    don't reset the streak counter.
+    """
     try:
-        response = supabase_admin.table('checkins').select('checkin_date').eq('user_id', str(patient_id)).order('checkin_date', desc=True).limit(10).execute()
-        
+        response = (supabase_admin.table('checkins')
+                    .select('checkin_date')
+                    .eq('user_id', str(patient_id))
+                    .order('checkin_date', desc=True)
+                    .limit(90)
+                    .execute())
+
         if not response.data:
             return 0
-        
+
+        # Deduplicate: one entry per calendar date, preserve desc order
+        seen, unique_dates = set(), []
+        for row in response.data:
+            d = (row.get('checkin_date') or '')[:10]
+            if d and d not in seen:
+                seen.add(d)
+                unique_dates.append(d)
+
         streak = 0
         today = date.today()
-        
-        for i, row in enumerate(response.data):
-            checkin_date = datetime.fromisoformat(row['checkin_date']).date() if isinstance(row['checkin_date'], str) else row['checkin_date']
-            expected_date = today - timedelta(days=i)
-            
-            if checkin_date == expected_date:
+        for i, date_str in enumerate(unique_dates):
+            if date.fromisoformat(date_str) == today - timedelta(days=i):
                 streak += 1
             else:
                 break
-        
         return streak
     except Exception as e:
         print(f"Error getting checkin streak: {e}")
@@ -375,18 +388,36 @@ def get_journals(patient_id, limit=20, shared_only=False):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def create_summary(patient_id, summary_text, date_range_start, date_range_end, raw_claude_response=None):
-    """Create a summary."""
+    """Create a summary.
+
+    Attempts to store all structured fields; falls back to minimal insert if the
+    Supabase table only has the legacy 'content' column.
+    """
     try:
-        summary_data = {
-            'user_id': str(patient_id),
-            'summary_date': date.today().isoformat(),
-            'content': summary_text,
-            'created_at': datetime.utcnow().isoformat()
+        full_data = {
+            'user_id':          str(patient_id),
+            'summary_date':     date.today().isoformat(),
+            'content':          summary_text,   # legacy column kept for compatibility
+            'summary_text':     summary_text,   # preferred column
+            'date_range_start': date_range_start,
+            'date_range_end':   date_range_end,
+            'created_at':       datetime.utcnow().isoformat(),
         }
-        
-        response = supabase_admin.table('summaries').insert(summary_data).execute()
-        if response.data and len(response.data) > 0:
-            return response.data[0]['id']
+        try:
+            response = supabase_admin.table('summaries').insert(full_data).execute()
+            if response.data:
+                return response.data[0]['id']
+        except Exception:
+            # Table may not have the newer columns yet — fall back to minimal set
+            minimal = {
+                'user_id':      str(patient_id),
+                'summary_date': date.today().isoformat(),
+                'content':      summary_text,
+                'created_at':   datetime.utcnow().isoformat(),
+            }
+            response = supabase_admin.table('summaries').insert(minimal).execute()
+            if response.data:
+                return response.data[0]['id']
         return None
     except Exception as e:
         print(f"Error creating summary: {e}")
@@ -394,13 +425,36 @@ def create_summary(patient_id, summary_text, date_range_start, date_range_end, r
 
 
 def get_summaries(patient_id):
-    """Get all summaries for a patient."""
+    """Get all summaries for a patient, normalising field names for template compatibility."""
     try:
         response = supabase_admin.table('summaries').select('*').eq('user_id', str(patient_id)).order('summary_date', desc=True).execute()
-        return response.data if response.data else []
+        rows = response.data or []
+        for r in rows:
+            # Normalise text — prefer summary_text column, fall back to content
+            if not r.get('summary_text'):
+                r['summary_text'] = r.get('content', '')
+            # Derive date range from summary_date if not stored
+            if not r.get('date_range_end'):
+                d = (r.get('summary_date') or '')[:10]
+                r['date_range_end'] = d
+                try:
+                    r['date_range_start'] = (date.fromisoformat(d) - timedelta(days=14)).isoformat() if d else ''
+                except Exception:
+                    r['date_range_start'] = ''
+        return rows
     except Exception as e:
         print(f"Error getting summaries: {e}")
         return []
+
+
+def delete_summary(patient_id, summary_id):
+    """Delete a summary, enforcing ownership so patients can only delete their own."""
+    try:
+        supabase_admin.table('summaries').delete().eq('id', str(summary_id)).eq('user_id', str(patient_id)).execute()
+        return True
+    except Exception as e:
+        print(f"Error deleting summary: {e}")
+        return False
 
 
 def get_latest_summary(patient_id):
