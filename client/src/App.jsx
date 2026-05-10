@@ -320,7 +320,7 @@ export default function App() {
 
       const updates = { meds };
 
-      // Pre-populate caffeine and taken-status from earlier check-ins today
+      // Pre-populate caffeine, alcohol, and taken-status from earlier check-ins today
       if (todaySummary?.checkin_count > 0) {
         setTodayCheckinCount(todaySummary.checkin_count);
         const bd = todaySummary.caffeine_breakdown || {};
@@ -330,6 +330,9 @@ export default function App() {
           soda:   bd.soda   || 0,
           energy: bd.energy || 0,
         };
+        if (todaySummary.alcohol_units > 0) {
+          updates.alcoholUnits = todaySummary.alcohol_units;
+        }
         // Mark meds that were already taken today
         (todaySummary.medications || []).forEach(logged => {
           const key = logged.dose ? `${logged.name}|||${logged.dose}` : logged.name;
@@ -361,6 +364,7 @@ export default function App() {
         sleep_quality: d.sleepQuality, time_awake_minutes: d.timeAwakeMinutes,
         night_awakenings: d.nightAwakenings, sleep_latency_minutes: d.sleepLatencyMinutes,
         caffeine_mg: sc.caffeineMg, caffeine_breakdown: d.caffeine,
+        alcohol_units: d.alcoholUnits,
         scores: { stability: sc.stability, crash_risk: sc.crashRisk, nervous_system_load: sc.nsLoad, dopamine_efficiency: sc.dopamine },
       };
 
@@ -370,7 +374,6 @@ export default function App() {
           motivation: d.motivation,
           perceived_stress: d.perceivedStress,
           wake_up_time: d.wakeUpTime,
-          alcohol_units: d.alcoholUnits,
           hydrated: d.hydrated,
           exercise_minutes: d.exerciseMinutes,
           sunlight_hours: d.sunlightHours,

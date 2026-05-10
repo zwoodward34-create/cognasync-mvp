@@ -554,6 +554,7 @@ def api_checkins_today_summary():
     # missing (e.g., submitted before the feature shipped), we still carry
     # forward the highest observed count for each beverage type.
     caffeine_breakdown = {'coffee': 0, 'tea': 0, 'soda': 0, 'energy': 0}
+    alcohol_units = 0
     for c in today_checkins:
         ext = c.get('extended_data') or {}
         if isinstance(ext, str):
@@ -564,6 +565,7 @@ def api_checkins_today_summary():
         bd = ext.get('caffeine_breakdown') or {}
         for key in caffeine_breakdown:
             caffeine_breakdown[key] = max(caffeine_breakdown[key], int(bd.get(key) or 0))
+        alcohol_units = max(alcohol_units, int(ext.get('alcohol_units') or 0))
 
     # Union of medications across today's check-ins; most-recent check-in wins
     # on duplicate name so taken/time_taken reflects the latest logged state.
@@ -580,6 +582,7 @@ def api_checkins_today_summary():
         'checkin_count': len(today_checkins),
         'caffeine_breakdown': caffeine_breakdown,
         'medications': medications,
+        'alcohol_units': alcohol_units,
         'date': today,
     }), 200
 
