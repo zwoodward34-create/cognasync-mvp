@@ -919,6 +919,7 @@ def get_trends_data(user_id: str, days: int = 30):
     def _empty_metric_ts():
         return {**_trend_stats([]), 'daily_scores': [], 'dates': []}
 
+    _empty_adv = lambda: {'average': None, 'daily_scores': [], 'dates': []}
     _empty = {
         'user_id':              user_id,
         'date_range':           {'start': (date.today() - timedelta(days=days)).isoformat(),
@@ -932,6 +933,21 @@ def get_trends_data(user_id: str, days: int = 30):
         'sleep':                {'average': None, 'values': [], 'daily_hours': [], 'dates': []},
         'energy':               {'average': None, 'values': [], 'daily_scores': [], 'dates': []},
         'medication_adherence': 0,
+        # Extended base metrics
+        'focus':            _empty_adv(),
+        'dissociation':     _empty_adv(),
+        'sleep_quality':    _empty_adv(),
+        'caffeine':         _empty_adv(),
+        # Advanced mode metrics
+        'irritability':     _empty_adv(),
+        'motivation':       _empty_adv(),
+        'perceived_stress': _empty_adv(),
+        'alcohol':          _empty_adv(),
+        'exercise':         _empty_adv(),
+        'sunlight':         _empty_adv(),
+        'screen_time':      _empty_adv(),
+        'social_quality':   _empty_adv(),
+        'workload_friction': _empty_adv(),
     }
 
     try:
@@ -947,7 +963,31 @@ def get_trends_data(user_id: str, days: int = 30):
 
         # ── Extract per-row values, tracking dates per metric ─────────
         mood_pairs, stress_pairs, sleep_pairs, energy_pairs = [], [], [], []
+        # extended base
+        focus_pairs, dissociation_pairs, sleep_quality_pairs, caffeine_pairs = [], [], [], []
+        # advanced mode
+        irritability_pairs, motivation_pairs, perceived_stress_pairs = [], [], []
+        alcohol_pairs, exercise_pairs, sunlight_pairs, screen_time_pairs = [], [], [], []
+        social_quality_pairs, workload_pairs = [], []
+
         meds_with_entries, meds_with_taken = 0, 0
+
+        _EXT_FIELDS = [
+            ('energy',            energy_pairs),
+            ('focus',             focus_pairs),
+            ('dissociation',      dissociation_pairs),
+            ('sleep_quality',     sleep_quality_pairs),
+            ('caffeine_mg',       caffeine_pairs),
+            ('irritability',      irritability_pairs),
+            ('motivation',        motivation_pairs),
+            ('perceived_stress',  perceived_stress_pairs),
+            ('alcohol_units',     alcohol_pairs),
+            ('exercise_minutes',  exercise_pairs),
+            ('sunlight_hours',    sunlight_pairs),
+            ('screen_time_hours', screen_time_pairs),
+            ('social_quality',    social_quality_pairs),
+            ('workload_friction', workload_pairs),
+        ]
 
         for row in data:
             d = row.get('checkin_date', '')
@@ -970,8 +1010,14 @@ def get_trends_data(user_id: str, days: int = 30):
                     ext = json.loads(ext)
                 except Exception:
                     ext = {}
-            if ext.get('energy') is not None:
-                energy_pairs.append((d, float(ext['energy'])))
+
+            for key, pairs in _EXT_FIELDS:
+                val = ext.get(key)
+                if val is not None:
+                    try:
+                        pairs.append((d, float(val)))
+                    except (ValueError, TypeError):
+                        pass
 
             meds = row.get('medications') or []
             if isinstance(meds, str):
@@ -996,13 +1042,18 @@ def get_trends_data(user_id: str, days: int = 30):
             dates, vals = zip(*pairs)
             return list(dates), list(vals)
 
+        def _make_ts(pairs):
+            dates, vals = _unzip(pairs)
+            return {'average': _avg(vals), 'daily_scores': vals, 'dates': dates}
+
         mood_dates,   mood_vals   = _unzip(mood_pairs)
         stress_dates, stress_vals = _unzip(stress_pairs)
         sleep_dates,  sleep_vals  = _unzip(sleep_pairs)
-        energy_dates, energy_vals = _unzip(energy_pairs)
 
         mood_ts   = {**_trend_stats(mood_vals),   'daily_scores': mood_vals,   'dates': mood_dates}
         stress_ts = {**_trend_stats(stress_vals), 'daily_scores': stress_vals, 'dates': stress_dates}
+
+        energy_ts = _make_ts(energy_pairs)
 
         return {
             'user_id':              user_id,
@@ -1013,12 +1064,27 @@ def get_trends_data(user_id: str, days: int = 30):
             'period_days':          days,
             'mood':                 mood_ts,
             'stress':               stress_ts,
-            'sleep':  {'average': _avg(sleep_vals),  'values': sleep_vals,
-                       'daily_hours': sleep_vals,    'dates': sleep_dates},
-            'energy': {'average': _avg(energy_vals), 'values': energy_vals,
-                       'daily_scores': energy_vals,  'dates': energy_dates},
+            'sleep':  {'average': _avg(sleep_vals), 'values': sleep_vals,
+                       'daily_hours': sleep_vals,   'dates': sleep_dates},
+            'energy': {'average': energy_ts['average'], 'values': energy_ts['daily_scores'],
+                       'daily_scores': energy_ts['daily_scores'], 'dates': energy_ts['dates']},
             'medication_adherence': adherence,
             'average_stability':    _avg(mood_vals),
+            # Extended base metrics
+            'focus':            _make_ts(focus_pairs),
+            'dissociation':     _make_ts(dissociation_pairs),
+            'sleep_quality':    _make_ts(sleep_quality_pairs),
+            'caffeine':         _make_ts(caffeine_pairs),
+            # Advanced mode metrics
+            'irritability':     _make_ts(irritability_pairs),
+            'motivation':       _make_ts(motivation_pairs),
+            'perceived_stress': _make_ts(perceived_stress_pairs),
+            'alcohol':          _make_ts(alcohol_pairs),
+            'exercise':         _make_ts(exercise_pairs),
+            'sunlight':         _make_ts(sunlight_pairs),
+            'screen_time':      _make_ts(screen_time_pairs),
+            'social_quality':   _make_ts(social_quality_pairs),
+            'workload_friction': _make_ts(workload_pairs),
         }
     except Exception as e:
         print(f"Error getting trends: {e}")
