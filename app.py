@@ -36,9 +36,10 @@ db.init_db()
 @app.errorhandler(500)
 def internal_error(e):
     import traceback
-    tb = traceback.format_exc()
     app.logger.exception("Unhandled error")
-    return jsonify({'error': 'An internal error occurred', 'debug': tb}), 500
+    if os.environ.get('FLASK_ENV') == 'development':
+        return jsonify({'error': 'An internal error occurred', 'debug': traceback.format_exc()}), 500
+    return jsonify({'error': 'An internal error occurred'}), 500
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
