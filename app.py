@@ -526,6 +526,40 @@ def api_checkins_today():
     return jsonify({'completed': done, 'date': today}), 200
 
 
+@app.route('/api/checkins/by-date', methods=['GET'])
+def api_checkins_by_date():
+    """Return all check-ins for a specific calendar date (YYYY-MM-DD)."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    date_str = request.args.get('date', '')
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(date_str)):
+        return jsonify({'error': 'Invalid date. Use YYYY-MM-DD'}), 400
+    rows = db.get_checkins_in_range(user['id'], date_str, date_str)
+    checkins = []
+    for c in (rows or []):
+        ext = c.get('extended_data') or {}
+        if isinstance(ext, str):
+            try:
+                ext = json.loads(ext)
+            except Exception:
+                ext = {}
+        checkins.append({
+            'checkin_type': c.get('checkin_type', 'on_demand'),
+            'time_of_day':  c.get('time_of_day', ''),
+            'mood_score':   c.get('mood_score'),
+            'stress_score': c.get('stress_score'),
+            'sleep_hours':  c.get('sleep_hours'),
+            'notes':        c.get('notes', ''),
+            'medications':  c.get('medications') or [],
+            'energy':       ext.get('energy'),
+            'focus':        ext.get('focus'),
+            'caffeine_mg':  ext.get('caffeine_mg'),
+            'scores':       ext.get('scores') or {},
+        })
+    return jsonify({'date': date_str, 'checkins': checkins}), 200
+
+
 @app.route('/api/checkins/today-summary', methods=['GET'])
 def api_checkins_today_summary():
     """Return cumulative caffeine breakdown and taken medications from today's check-ins.

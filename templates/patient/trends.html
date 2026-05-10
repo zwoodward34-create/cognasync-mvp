@@ -6,6 +6,26 @@
 {% endblock %}
 
 {% block content %}
+<!-- Day detail modal -->
+<div id="day-modal-overlay"
+     onclick="if(event.target===this)closeDayModal()"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;
+            align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--surface);border:1px solid var(--border);
+               width:100%;max-width:520px;max-height:82vh;overflow-y:auto;
+               padding:28px 28px 24px;font-family:'DM Sans',sans-serif;position:relative;">
+    <div id="day-modal-date"
+         style="font-family:'DM Serif Display',serif;font-size:22px;color:var(--text);margin-bottom:3px;"></div>
+    <div id="day-modal-metric"
+         style="font-size:12px;color:var(--text-muted);margin-bottom:0;"></div>
+    <div id="day-modal-body" style="margin-top:0;"></div>
+    <div style="display:flex;gap:10px;margin-top:22px;">
+      <button id="day-expand-btn" class="btn btn-primary btn-sm" onclick="expandDayDetail()">Expand</button>
+      <button class="btn btn-sm" onclick="closeDayModal()">Close</button>
+    </div>
+  </div>
+</div>
+
 <div class="page-header">
   <div>
     <h1 class="page-title">Trends</h1>
@@ -136,6 +156,89 @@
 <script>
 let moodChart, sleepChart, stressChart, energyChart;
 
+// ── Day detail popup ──────────────────────────────────────────────────────────
+const chartDates = {};   // keyed by metric: { mood: [...], sleep: [...], ... }
+let activeModalDate = null;
+
+function formatChartDate(dateStr) {
+  const d = new Date(dateStr + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+function openDayModal(date, metricLabel, displayValue) {
+  activeModalDate = date;
+  const d = new Date(date + 'T12:00:00');
+  const formatted = d.toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  document.getElementById('day-modal-date').textContent = formatted;
+  document.getElementById('day-modal-metric').textContent = metricLabel + ': ' + displayValue;
+  document.getElementById('day-modal-body').innerHTML = '';
+  const btn = document.getElementById('day-expand-btn');
+  btn.textContent = 'Expand';
+  btn.disabled = false;
+  btn.style.display = '';
+  document.getElementById('day-modal-overlay').style.display = 'flex';
+}
+
+function closeDayModal() {
+  document.getElementById('day-modal-overlay').style.display = 'none';
+  activeModalDate = null;
+}
+
+async function expandDayDetail() {
+  if (!activeModalDate) return;
+  const btn = document.getElementById('day-expand-btn');
+  btn.textContent = 'Loading…';
+  btn.disabled = true;
+  try {
+    const data = await apiGet('/api/checkins/by-date?date=' + activeModalDate);
+    renderDayDetail(data.checkins);
+    btn.style.display = 'none';
+  } catch (e) {
+    document.getElementById('day-modal-body').innerHTML =
+      '<p style="font-size:13px;color:#c00;margin-top:12px;">Could not load check-in data.</p>';
+    btn.textContent = 'Expand';
+    btn.disabled = false;
+  }
+}
+
+function renderDayDetail(checkins) {
+  const el = document.getElementById('day-modal-body');
+  if (!checkins || !checkins.length) {
+    el.innerHTML = '<p style="font-size:13px;color:var(--text-muted);margin-top:12px;">No check-ins found for this date.</p>';
+    return;
+  }
+  const typeLabels = { morning: 'Morning', afternoon: 'Afternoon', evening: 'Evening', on_demand: 'On-Demand' };
+  el.innerHTML = '<div style="border-top:1px solid var(--border-light);margin-top:16px;">' +
+    checkins.map(c => {
+      const type = typeLabels[c.checkin_type] || c.checkin_type || 'Check-In';
+      const time = c.time_of_day && c.time_of_day !== 'self-prompted' ? c.time_of_day : '';
+      const scores = [
+        c.mood_score  != null ? 'Mood '   + c.mood_score   + '/10' : null,
+        c.stress_score != null ? 'Stress ' + c.stress_score + '/10' : null,
+        c.energy       != null ? 'Energy ' + c.energy       + '/10' : null,
+        c.sleep_hours  != null && c.sleep_hours > 0 ? 'Sleep ' + c.sleep_hours + 'h' : null,
+      ].filter(Boolean).join(' · ');
+      const takenMeds = (c.medications || []).filter(m => m.taken);
+      const medStr = takenMeds.length
+        ? 'Meds: ' + takenMeds.map(m => m.name + (m.time_taken ? ' @ ' + m.time_taken : '')).join(', ')
+        : '';
+      const cafStr = c.caffeine_mg > 0 ? 'Caffeine: ' + c.caffeine_mg + 'mg' : '';
+      const extras = [medStr, cafStr].filter(Boolean).join(' · ');
+      const notesHtml = c.notes
+        ? '<div style="font-size:12px;color:var(--text-muted);margin-top:5px;font-style:italic;">"' + c.notes + '"</div>'
+        : '';
+      return '<div style="padding:12px 0;border-bottom:1px solid var(--border-light);">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">' +
+          '<span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);">' + type + '</span>' +
+          (time ? '<span style="font-size:11px;color:var(--text-muted);">' + time + '</span>' : '') +
+        '</div>' +
+        (scores ? '<div style="font-size:13px;color:var(--text);font-weight:500;">' + scores + '</div>' : '') +
+        (extras ? '<div style="font-size:12px;color:var(--text-muted);margin-top:3px;">' + extras + '</div>' : '') +
+        notesHtml +
+        '</div>';
+    }).join('') + '</div>';
+}
+
 function loadTrends(days, btn) {
   document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
   if (btn) btn.classList.add('active');
@@ -238,20 +341,25 @@ function renderTrends(data) {
     document.getElementById('insights-panel').classList.toggle('hidden', !suppressedCount);
   }
 
-  const labels = data.mood.daily_scores.map((_, i) => 'Day ' + (i + 1));
-
   const chartDefaults = {
     fill: true,
     tension: 0.4,
-    pointRadius: 4,
-    pointHoverRadius: 6,
+    pointRadius: 5,
+    pointHoverRadius: 8,
+    pointHitRadius: 12,
   };
+
+  // Store dates for click lookups
+  chartDates.mood   = data.mood.dates   || [];
+  chartDates.sleep  = data.sleep.dates  || [];
+  chartDates.stress = data.stress.dates || [];
+  chartDates.energy = (data.energy && data.energy.dates) || [];
 
   if (moodChart) moodChart.destroy();
   moodChart = new Chart(document.getElementById('mood-chart'), {
     type: 'line',
     data: {
-      labels: data.mood.daily_scores.map((_, i) => 'Day ' + (i + 1)),
+      labels: chartDates.mood.map(formatChartDate),
       datasets: [{
         ...chartDefaults,
         label: 'Mood',
@@ -260,14 +368,14 @@ function renderTrends(data) {
         backgroundColor: 'rgba(124,111,205,0.12)',
       }]
     },
-    options: chartOptions(1, 10),
+    options: chartOptions(1, 10, 'mood', 'Mood', data.mood.daily_scores, '/10'),
   });
 
   if (sleepChart) sleepChart.destroy();
   sleepChart = new Chart(document.getElementById('sleep-chart'), {
     type: 'line',
     data: {
-      labels: data.sleep.daily_hours.map((_, i) => 'Day ' + (i + 1)),
+      labels: chartDates.sleep.map(formatChartDate),
       datasets: [{
         ...chartDefaults,
         label: 'Sleep (hrs)',
@@ -276,14 +384,14 @@ function renderTrends(data) {
         backgroundColor: 'rgba(90,169,163,0.12)',
       }]
     },
-    options: chartOptions(0, 12),
+    options: chartOptions(0, 12, 'sleep', 'Sleep', data.sleep.daily_hours, ' hrs'),
   });
 
   if (stressChart) stressChart.destroy();
   stressChart = new Chart(document.getElementById('stress-chart'), {
     type: 'line',
     data: {
-      labels: data.stress.daily_scores.map((_, i) => 'Day ' + (i + 1)),
+      labels: chartDates.stress.map(formatChartDate),
       datasets: [{
         ...chartDefaults,
         label: 'Stress',
@@ -292,7 +400,7 @@ function renderTrends(data) {
         backgroundColor: 'rgba(212,133,106,0.12)',
       }]
     },
-    options: chartOptions(1, 10),
+    options: chartOptions(1, 10, 'stress', 'Stress', data.stress.daily_scores, '/10'),
   });
 
   if (energyChart) energyChart.destroy();
@@ -300,7 +408,7 @@ function renderTrends(data) {
   energyChart = new Chart(document.getElementById('energy-chart'), {
     type: 'line',
     data: {
-      labels: energyScores.map((_, i) => 'Day ' + (i + 1)),
+      labels: chartDates.energy.map(formatChartDate),
       datasets: [{
         ...chartDefaults,
         label: 'Energy',
@@ -309,14 +417,25 @@ function renderTrends(data) {
         backgroundColor: 'rgba(230,168,23,0.12)',
       }]
     },
-    options: chartOptions(1, 10),
+    options: chartOptions(1, 10, 'energy', 'Energy', energyScores, '/10'),
   });
 }
 
-function chartOptions(min, max) {
+function chartOptions(min, max, metricKey, metricLabel, values, unit) {
   return {
     responsive: true,
     plugins: { legend: { display: false } },
+    onHover: (event, activeElements) => {
+      event.native.target.style.cursor = activeElements.length ? 'pointer' : 'default';
+    },
+    onClick: (event, activeElements) => {
+      if (!activeElements.length) return;
+      const idx = activeElements[0].index;
+      const date = (chartDates[metricKey] || [])[idx];
+      if (!date) return;
+      const val = (values || [])[idx];
+      openDayModal(date, metricLabel, val != null ? val + unit : '—');
+    },
     scales: {
       y: {
         min, max,
