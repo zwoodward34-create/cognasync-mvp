@@ -721,7 +721,8 @@ def api_create_summary():
         return jsonify({'error': 'No data found for the requested period'}), 400
 
     try:
-        result = claude_api.generate_appointment_summary(checkins, journals, days=days)
+        result = claude_api.generate_appointment_summary(
+            checkins, journals, days=days, audience='patient')
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
 
@@ -856,6 +857,7 @@ def api_provider_generate_summary(patient_id):
             period_start=period_start,
             period_end=period_end,
             appointment_date=appointment_date,
+            audience='provider',
         )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
