@@ -383,6 +383,36 @@ def api_create_checkin():
     if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(raw_date)):
         raw_date = date.today().isoformat()
 
+    notes = data.get('notes', '')
+
+    # ── Crisis check BEFORE DB write — must not depend on AI availability ────
+    if claude_api.check_crisis(notes):
+        # Still persist the check-in so the provider can see it, but skip AI
+        try:
+            checkin_id = db.create_checkin(
+                patient_id=user['id'],
+                date_str=raw_date,
+                time_of_day=data.get('time_of_day', 'self-prompted'),
+                mood_score=mood,
+                medications=data.get('medications', []),
+                sleep_hours=sleep,
+                stress_score=stress,
+                symptoms=data.get('symptoms', ''),
+                notes=notes,
+                extended_data=data.get('extended_data'),
+                checkin_type=checkin_type,
+            )
+        except Exception as e:
+            app.logger.error("create_checkin (crisis path) failed: %s", e)
+            checkin_id = None
+        return jsonify({
+            'checkin_id': checkin_id,
+            'patient_id': user['id'],
+            'message': 'Check-in recorded',
+            'ai_insight': claude_api.CRISIS_RESPONSE,
+            'alert': 'crisis',
+        }), 201
+
     try:
         checkin_id = db.create_checkin(
             patient_id=user['id'],
@@ -393,7 +423,7 @@ def api_create_checkin():
             sleep_hours=sleep,
             stress_score=stress,
             symptoms=data.get('symptoms', ''),
-            notes=data.get('notes', ''),
+            notes=notes,
             extended_data=data.get('extended_data'),
             checkin_type=checkin_type,
         )
@@ -409,7 +439,7 @@ def api_create_checkin():
         baseline = db.get_checkin_baseline(user['id'], days=7)
         checkin_snapshot = {
             'mood_score': mood, 'stress_score': stress, 'sleep_hours': sleep,
-            'notes': data.get('notes', ''),
+            'notes': notes,
             'extended_data': data.get('extended_data'),
         }
         result = claude_api.analyze_checkin(checkin_snapshot, checkin_type, baseline)
@@ -669,12 +699,33 @@ def api_create_journal():
 
     share_with_provider = int(data.get('share_with_provider', 1))
 
+    # ── Crisis check BEFORE AI call — must not depend on AI availability ─────
+    if claude_api.check_crisis(raw_entry):
+        journal_id = db.create_journal(
+            patient_id=user['id'],
+            entry_type=data.get('entry_type', 'free_flow'),
+            raw_entry=raw_entry,
+            ai_analysis=claude_api.CRISIS_RESPONSE,
+            share_with_provider=share_with_provider,
+        )
+        return jsonify({
+            'journal_id': journal_id,
+            'patient_id': user['id'],
+            'raw_entry': raw_entry,
+            'ai_analysis': claude_api.CRISIS_RESPONSE,
+            'created_at': date.today().isoformat(),
+            'alert': 'crisis',
+        }), 201
+
+    # ── Normal path: AI analysis, with graceful fallback if AI is down ────────
+    ai_text = None
     try:
         result = claude_api.analyze_journal(raw_entry)
+        ai_text = result['text']
     except RuntimeError as e:
-        return jsonify({'error': str(e)}), 503
+        app.logger.warning("analyze_journal failed (AI unavailable): %s", e)
+        ai_text = "Your journal entry has been saved. A reflection will be available once the service is restored."
 
-    ai_text = result['text']
     journal_id = db.create_journal(
         patient_id=user['id'],
         entry_type=data.get('entry_type', 'free_flow'),
@@ -682,16 +733,13 @@ def api_create_journal():
         ai_analysis=ai_text,
         share_with_provider=share_with_provider,
     )
-    response = {
+    return jsonify({
         'journal_id': journal_id,
         'patient_id': user['id'],
         'raw_entry': raw_entry,
         'ai_analysis': ai_text,
         'created_at': date.today().isoformat(),
-    }
-    if result['status'] == 'crisis':
-        response['alert'] = 'crisis'
-    return jsonify(response), 201
+    }), 201
 
 
 @app.route('/api/journals', methods=['GET'])

@@ -49,6 +49,15 @@ def _check_crisis(text):
     return any(kw in lower for kw in CRISIS_KEYWORDS)
 
 
+def check_crisis(text):
+    """Public entry point for crisis detection — safe to call from app.py routes.
+    Returns True if the text contains crisis-level content, False otherwise.
+    Never raises; treats empty/non-string input as safe."""
+    if not text or not isinstance(text, str):
+        return False
+    return _check_crisis(text)
+
+
 def _sanitize_output(text):
     lower = text.lower()
     for forbidden, _ in FORBIDDEN_PATTERNS:
