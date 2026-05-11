@@ -592,6 +592,20 @@ function resolveCrisisRisk() {
         Timing coverage: {{ timing_stats.coverage_pct }}% of logged doses have a time.
       </div>
       {% endif %}
+
+      {% if timing_stats.timing_alerts %}
+      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-light);">
+        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7a5800;margin-bottom:8px;font-weight:700;">
+          Timing Flags
+        </div>
+        {% for ta in timing_stats.timing_alerts %}
+        <div style="background:#fffbf0;border:1px solid #f0c040;padding:9px 12px;font-size:12px;
+                    margin-bottom:6px;line-height:1.55;">
+          {{ ta.message }}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
     </div>
     {% endif %}
 
@@ -648,7 +662,7 @@ function resolveCrisisRisk() {
             <span>{{ s.date_range_start }} – {{ s.date_range_end }}</span>
             <span>{{ s.created_at[:10] }} · {{ s.generated_by }}</span>
           </div>
-          {{ s.summary_text }}
+          <div class="md-summary pv-summary-body" data-raw="{{ s.summary_text | e }}"></div>
         </div>
         {% endfor %}
       {% else %}
@@ -810,6 +824,92 @@ function toggleCrisisEntry(row) {
   chevron.style.transform = open ? '' : 'rotate(90deg)';
 }
 
+// ── Markdown → HTML (lightweight, summary-safe) ─────────────────────
+function mdToHtml(text) {
+  if (!text) return '';
+  const lines = text.split('\n');
+  const out = [];
+  let inUl = false, inOl = false;
+
+  function closeList() {
+    if (inUl) { out.push('</ul>'); inUl = false; }
+    if (inOl) { out.push('</ol>'); inOl = false; }
+  }
+
+  function inlineFormat(s) {
+    // Escape HTML first
+    s = s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    // Bold **text** or __text__
+    s = s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    s = s.replace(/__(.+?)__/g,'<strong>$1</strong>');
+    // Italic *text* or _text_
+    s = s.replace(/\*(.+?)\*/g,'<em>$1</em>');
+    s = s.replace(/_(.+?)_/g,'<em>$1</em>');
+    return s;
+  }
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const line = raw.trimEnd();
+
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) {
+      closeList();
+      out.push('<hr>');
+      continue;
+    }
+
+    // Headings (### or ## treated as section headers)
+    const hm = line.match(/^(#{1,6})\s+(.*)/);
+    if (hm) {
+      closeList();
+      out.push(`<div class="md-summary-header">${inlineFormat(hm[2])}</div>`);
+      continue;
+    }
+
+    // Bold-only line acting as a header (e.g. **What the numbers showed**)
+    const boldHeader = line.match(/^\*\*([^*]+)\*\*\s*$/);
+    if (boldHeader) {
+      closeList();
+      out.push(`<div class="md-summary-header">${inlineFormat(boldHeader[1])}</div>`);
+      continue;
+    }
+
+    // Unordered list item
+    const ulm = line.match(/^[-*]\s+(.*)/);
+    if (ulm) {
+      if (!inUl) { closeList(); out.push('<ul>'); inUl = true; }
+      out.push(`<li>${inlineFormat(ulm[1])}</li>`);
+      continue;
+    }
+
+    // Ordered list item
+    const olm = line.match(/^\d+\.\s+(.*)/);
+    if (olm) {
+      if (!inOl) { closeList(); out.push('<ol>'); inOl = true; }
+      out.push(`<li>${inlineFormat(olm[1])}</li>`);
+      continue;
+    }
+
+    closeList();
+
+    // Blank line → paragraph break (skip)
+    if (line.trim() === '') {
+      continue;
+    }
+
+    out.push(`<p>${inlineFormat(line)}</p>`);
+  }
+
+  closeList();
+  return out.join('');
+}
+
+// Process existing server-rendered summaries
+document.querySelectorAll('.pv-summary-body[data-raw]').forEach(function(el) {
+  el.innerHTML = mdToHtml(el.dataset.raw);
+});
+
 // ── Generate summary ────────────────────────────────────────────────
 function generateSummary(patientId) {
   const apptDate   = document.getElementById('appt-date').value;
@@ -843,8 +943,8 @@ function generateSummary(patientId) {
       const apptLabel = data.appointment_date ? ` · Appt: ${data.appointment_date}` : '';
       meta.innerHTML = `<span>${data.date_range_start} – ${data.date_range_end}${apptLabel}</span><span>Just generated</span>`;
       const body = document.createElement('div');
-      body.style.whiteSpace = 'pre-wrap';
-      body.textContent = data.summary_text;
+      body.className = 'md-summary pv-summary-body';
+      body.innerHTML = mdToHtml(data.summary_text);
       card.appendChild(meta);
       card.appendChild(body);
       panel.appendChild(card);

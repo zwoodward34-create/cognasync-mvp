@@ -273,9 +273,7 @@ def provider_patient_detail(patient_id):
             'desc': f"Stress trending upward — average {stress_t['average']}/10 over {days} days "
                     f"(R²={stress_t['r_squared']}, p={stress_t['p_value']})."})
 
-    for ta in (timing_stats or {}).get('timing_alerts', []):
-        alerts.append({'level': 'warning', 'title': 'Inconsistent Medication Timing',
-            'desc': ta['message']})
+    # timing_alerts are rendered inside the Medications panel, not the global alerts banner
 
     current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
     patient_has_crisis = current_p.get('suicide_risk', False)

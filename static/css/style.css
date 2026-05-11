@@ -1053,8 +1053,15 @@ body.pv-body .main-content {
   font-size: 13px;
   line-height: 1.75;
   color: var(--text-muted);
-  white-space: pre-line;
 }
+.md-summary p { margin: 0 0 8px; font-size: 13px; line-height: 1.7; color: #333; }
+.md-summary p:last-child { margin-bottom: 0; }
+.md-summary ul, .md-summary ol { margin: 0 0 10px; padding-left: 20px; }
+.md-summary li { font-size: 13px; line-height: 1.65; color: #333; margin-bottom: 3px; }
+.md-summary strong { font-weight: 600; color: #111; }
+.md-summary hr { border: none; border-top: 1px solid var(--border-light); margin: 12px 0; }
+.md-summary-header { font-size: 10.5px; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; color: #111; padding: 12px 0 5px; border-bottom: 1px solid var(--border-light); margin-bottom: 8px; }
+.md-summary-header:first-child { padding-top: 0; }
 
 .pv-summary-card.new {
   border-color: var(--border);
