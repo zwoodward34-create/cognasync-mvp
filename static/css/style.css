@@ -692,14 +692,14 @@ input[type="number"], input[type="date"], select, .form-textarea, textarea {
 .stat-card-alert { background: #fff8f8; border-bottom: 2px solid #dc2626; }
 .stat-card-alert .stat-value { color: #dc2626; }
 .stat-card-alert .stat-label { color: #b91c1c; }
-/* Flip cards */
+/* Flip cards — grid stacking lets the taller face drive card height */
 .flip-card { cursor: pointer; perspective: 600px; }
-.flip-card-inner { position: relative; transform-style: preserve-3d; transition: transform 0.38s ease; }
+.flip-card-inner { display: grid; transform-style: preserve-3d; transition: transform 0.38s ease; }
 .flip-card.flipped .flip-card-inner { transform: rotateY(180deg); }
-.flip-card-front { backface-visibility: hidden; -webkit-backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px 10px 10px; min-height: 108px; }
-.flip-card-back { position: absolute; inset: 0; backface-visibility: hidden; -webkit-backface-visibility: hidden; transform: rotateY(180deg); background: var(--surface); display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 10px 12px; overflow-y: auto; font-size: 11px; color: var(--text-muted); line-height: 1.6; text-align: center; }
+.flip-card-front, .flip-card-back { grid-area: 1/1; backface-visibility: hidden; -webkit-backface-visibility: hidden; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 14px 10px 10px; }
+.flip-card-back { transform: rotateY(180deg); background: var(--surface); font-size: 10.5px; color: var(--text-muted); line-height: 1.55; text-align: center; }
 .flip-card-alert .flip-card-back { background: #fff8f8; }
-.flip-card-back strong { display: block; font-size: 11.5px; color: #111; margin-bottom: 5px; font-weight: 700; }
+.flip-card-back strong { display: block; font-size: 11px; color: #111; margin-bottom: 5px; font-weight: 700; }
 .flip-hint { font-size: 9px; color: var(--text-muted); opacity: 0.45; margin-top: 5px; letter-spacing: .03em; }
 .stat-label { font-size: 0.73rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 6px; }
 .stat-value { font-family: 'DM Serif Display', serif; font-size: 1.7rem; }
