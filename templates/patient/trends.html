@@ -82,30 +82,75 @@
     System Scores
   </div>
   <div class="stats-row" id="scores-row">
-    <div class="stat-card">
-      <div class="stat-label">Stability Score</div>
-      <div class="stat-value" id="stat-stability">—</div>
-      <div class="stat-sub">/10 avg</div>
+    <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">
+          <div class="stat-label">Stability Score</div>
+          <div class="stat-value" id="stat-stability">—</div>
+          <div class="stat-sub">/10 avg</div>
+          <div class="flip-hint">tap for info ↻</div>
+        </div>
+        <div class="flip-card-back">
+          <strong>Stability Score</strong>
+          Blends mood, energy, dissociation, and anxiety into one 0–10 number. Below 4 means these signals are pulling against each other — worth discussing with your provider.
+        </div>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Stim Load</div>
-      <div class="stat-value" id="stat-stim">—</div>
-      <div class="stat-sub">/10 avg</div>
+    <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">
+          <div class="stat-label">Stim Load</div>
+          <div class="stat-value" id="stat-stim">—</div>
+          <div class="stat-sub">/10 avg</div>
+          <div class="flip-hint">tap for info ↻</div>
+        </div>
+        <div class="flip-card-back">
+          <strong>Stim Load</strong>
+          Total stimulant burden per day: caffeine tier plus any stimulant medications taken. Above 7 puts significant load on your system, especially alongside poor sleep.
+        </div>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Crash Risk Days</div>
-      <div class="stat-value" id="stat-crash">—</div>
-      <div class="stat-sub">days ≥7/10</div>
+    <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">
+          <div class="stat-label">Crash Risk Days</div>
+          <div class="stat-value" id="stat-crash">—</div>
+          <div class="stat-sub">days ≥7/10</div>
+          <div class="flip-hint">tap for info ↻</div>
+        </div>
+        <div class="flip-card-back">
+          <strong>Crash Risk Days</strong>
+          Days where sleep disruption and nervous system load combined to score 7/10 or higher. These are days your system was under meaningful compounding strain.
+        </div>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Sleep Disruption</div>
-      <div class="stat-value" id="stat-sleepdis">—</div>
-      <div class="stat-sub">/10 avg</div>
+    <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">
+          <div class="stat-label">Sleep Disruption</div>
+          <div class="stat-value" id="stat-sleepdis">—</div>
+          <div class="stat-sub">/10 avg</div>
+          <div class="flip-hint">tap for info ↻</div>
+        </div>
+        <div class="flip-card-back">
+          <strong>Sleep Disruption</strong>
+          Scored from sleep duration, time to fall asleep, and nighttime awakenings. 0 = undisturbed. A consistent average above 6 is worth raising with your provider.
+        </div>
+      </div>
     </div>
-    <div class="stat-card">
-      <div class="stat-label">Mood Distortion</div>
-      <div class="stat-value" id="stat-distortion">—</div>
-      <div class="stat-sub">avg gap</div>
+    <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+      <div class="flip-card-inner">
+        <div class="flip-card-front">
+          <div class="stat-label">Mood Distortion</div>
+          <div class="stat-value" id="stat-distortion">—</div>
+          <div class="stat-sub">avg gap</div>
+          <div class="flip-hint">tap for info ↻</div>
+        </div>
+        <div class="flip-card-back">
+          <strong>Mood Distortion</strong>
+          The gap between how you rated your mood and what your other signals (energy, dissociation, anxiety) suggest. A gap above 2.5 means your self-report and system state may be misaligned.
+        </div>
+      </div>
     </div>
   </div>
 

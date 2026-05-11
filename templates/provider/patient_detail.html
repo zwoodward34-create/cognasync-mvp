@@ -392,30 +392,75 @@ function resolveCrisisRisk() {
       Computed System Scores
     </div>
     <div class="stats-row" style="margin-bottom:20px;">
-      <div class="stat-card {% if ss and ss.average and ss.average < 4 %}stat-card-alert{% endif %}">
-        <div class="stat-label">Stability Score</div>
-        <div class="stat-value">{{ ss.average if ss and ss.average else '—' }}</div>
-        <div class="stat-sub">/10 avg</div>
+      <div class="stat-card flip-card {% if ss and ss.average and ss.average < 4 %}stat-card-alert flip-card-alert{% endif %}" onclick="this.classList.toggle('flipped')">
+        <div class="flip-card-inner">
+          <div class="flip-card-front">
+            <div class="stat-label">Stability Score</div>
+            <div class="stat-value">{{ ss.average if ss and ss.average else '—' }}</div>
+            <div class="stat-sub">/10 avg</div>
+            <div class="flip-hint">click for info ↻</div>
+          </div>
+          <div class="flip-card-back">
+            <strong>Stability Score</strong>
+            (Mood + Energy + (10−Dissociation) + (10−Anxiety)) ÷ 4. Synthesizes four signals into one number. Below 4 = dysregulated; above 7 = stable. Divergence from reported mood is flagged as Mood Distortion.
+          </div>
+        </div>
       </div>
-      <div class="stat-card {% if md and md.average and md.average > 2.5 %}stat-card-alert{% endif %}">
-        <div class="stat-label">Mood Distortion</div>
-        <div class="stat-value">{{ md.average if md and md.average else '—' }}</div>
-        <div class="stat-sub">avg gap</div>
+      <div class="stat-card flip-card {% if md and md.average and md.average > 2.5 %}stat-card-alert flip-card-alert{% endif %}" onclick="this.classList.toggle('flipped')">
+        <div class="flip-card-inner">
+          <div class="flip-card-front">
+            <div class="stat-label">Mood Distortion</div>
+            <div class="stat-value">{{ md.average if md and md.average else '—' }}</div>
+            <div class="stat-sub">avg gap</div>
+            <div class="flip-hint">click for info ↻</div>
+          </div>
+          <div class="flip-card-back">
+            <strong>Mood Distortion</strong>
+            |Reported Mood − Stability Score|. A gap above 2.5 means self-report diverges from system state — possible reporting bias, rapid intra-day change, or dissociation between subjective and physiological experience.
+          </div>
+        </div>
       </div>
-      <div class="stat-card {% if sd and sd.average and sd.average > 6 %}stat-card-alert{% endif %}">
-        <div class="stat-label">Sleep Disruption</div>
-        <div class="stat-value">{{ sd.average if sd and sd.average else '—' }}</div>
-        <div class="stat-sub">/10 avg</div>
+      <div class="stat-card flip-card {% if sd and sd.average and sd.average > 6 %}stat-card-alert flip-card-alert{% endif %}" onclick="this.classList.toggle('flipped')">
+        <div class="flip-card-inner">
+          <div class="flip-card-front">
+            <div class="stat-label">Sleep Disruption</div>
+            <div class="stat-value">{{ sd.average if sd and sd.average else '—' }}</div>
+            <div class="stat-sub">/10 avg</div>
+            <div class="flip-hint">click for info ↻</div>
+          </div>
+          <div class="flip-card-back">
+            <strong>Sleep Disruption</strong>
+            Additive score: +2 if &lt;6 hrs, +3 if sleep latency &gt;45 min, +2 if ≥2 awakenings, +3 if fell asleep with difficulty. Capped at 10. Feeds directly into Crash Risk.
+          </div>
+        </div>
       </div>
-      <div class="stat-card">
-        <div class="stat-label">Avg Stim Load</div>
-        <div class="stat-value">{{ sl.average if sl and sl.average else '—' }}</div>
-        <div class="stat-sub">/10 avg</div>
+      <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+        <div class="flip-card-inner">
+          <div class="flip-card-front">
+            <div class="stat-label">Avg Stim Load</div>
+            <div class="stat-value">{{ sl.average if sl and sl.average else '—' }}</div>
+            <div class="stat-sub">/10 avg</div>
+            <div class="flip-hint">click for info ↻</div>
+          </div>
+          <div class="flip-card-back">
+            <strong>Stim Load</strong>
+            Caffeine tier (0/2/5/7/9) + stimulant medications taken + booster doses, capped at 10. Elevations alongside poor sleep quality drive Nervous System Load and Crash Risk.
+          </div>
+        </div>
       </div>
-      <div class="stat-card {% if cr and cr.high_days and cr.high_days > 0 %}stat-card-alert{% endif %}">
-        <div class="stat-label">Crash Risk Days</div>
-        <div class="stat-value">{{ cr.high_days if cr else '—' }}</div>
-        <div class="stat-sub">days ≥7/10</div>
+      <div class="stat-card flip-card {% if cr and cr.high_days and cr.high_days > 0 %}stat-card-alert flip-card-alert{% endif %}" onclick="this.classList.toggle('flipped')">
+        <div class="flip-card-inner">
+          <div class="flip-card-front">
+            <div class="stat-label">Crash Risk Days</div>
+            <div class="stat-value">{{ cr.high_days if cr else '—' }}</div>
+            <div class="stat-sub">days ≥7/10</div>
+            <div class="flip-hint">click for info ↻</div>
+          </div>
+          <div class="flip-card-back">
+            <strong>Crash Risk Days</strong>
+            Count of days where (Sleep Disruption × 0.5) + (NS Load × 0.5) ≥ 7. Each day represents compounding strain from poor sleep and elevated nervous system load occurring together.
+          </div>
+        </div>
       </div>
     </div>
 

@@ -729,12 +729,20 @@ def get_suicide_risk_context(user_id: str, days: int = 7, since: str = None) -> 
     Each item: {source, date, text}.  Empty list = no risk."""
     from claude_api import check_crisis
     rolling_cutoff = (date.today() - timedelta(days=days)).isoformat()
-    # Use the later of the rolling window and the provider-set resolution timestamp
-    cutoff = max(rolling_cutoff, (since or ''))
+    # Advance resolution date by 1 day so same-day resolved entries don't re-trigger
+    if since:
+        try:
+            from datetime import datetime as _dt
+            since_cutoff = (_dt.fromisoformat(since[:19]).date() + timedelta(days=1)).isoformat()
+        except Exception:
+            since_cutoff = since[:10]
+    else:
+        since_cutoff = ''
+    cutoff = max(rolling_cutoff, since_cutoff)
     results = []
     try:
         ci = supabase_admin.table('checkins').select('notes,checkin_date').eq(
-            'user_id', user_id).gte('checkin_date', cutoff[:10]).execute()
+            'user_id', user_id).gte('checkin_date', cutoff).execute()
         for row in (ci.data or []):
             text = row.get('notes') or ''
             if text and check_crisis(text):
@@ -744,7 +752,7 @@ def get_suicide_risk_context(user_id: str, days: int = 7, since: str = None) -> 
                     'text': text[:600],
                 })
         je = supabase_admin.table('journal_entries').select('content,entry_date').eq(
-            'user_id', user_id).gte('entry_date', cutoff[:10]).execute()
+            'user_id', user_id).gte('entry_date', cutoff).execute()
         for row in (je.data or []):
             text = row.get('content') or ''
             if text and check_crisis(text):
