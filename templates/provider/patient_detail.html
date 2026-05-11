@@ -9,6 +9,43 @@
 {% endblock %}
 
 {% block content %}
+
+{% if patient_has_crisis %}
+<!-- Crisis warning modal — auto-shown, dismissed by provider -->
+<div id="crisis-overlay"
+     style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;
+            display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border:2px solid #dc2626;max-width:520px;width:100%;padding:32px 28px 24px;
+              font-family:'DM Sans',sans-serif;position:relative;">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
+      <span style="font-size:22px;color:#dc2626;line-height:1;">&#9888;</span>
+      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#dc2626;">
+        Urgent Safety Concern
+      </div>
+    </div>
+    <div style="font-family:'DM Serif Display',serif;font-size:20px;color:#111;margin-bottom:12px;font-weight:400;">
+      Crisis-level content detected for {{ patient.full_name }}
+    </div>
+    <p style="font-size:13px;color:#333;line-height:1.65;margin:0 0 10px;">
+      Recent check-in notes or journal entries from this patient contain language
+      associated with suicidal ideation or self-harm. Immediate clinical follow-up
+      is recommended.
+    </p>
+    <p style="font-size:12px;color:#666;line-height:1.6;margin:0 0 24px;">
+      Review the patient's recent check-ins and shared journals below for context.
+      If you cannot reach the patient, follow your practice's crisis protocol.
+    </p>
+    <div style="display:flex;gap:10px;">
+      <button onclick="document.getElementById('crisis-overlay').style.display='none'"
+              style="padding:10px 20px;background:#dc2626;color:#fff;border:none;
+                     font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">
+        Acknowledge &amp; Continue
+      </button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
 <!-- Provider shell -->
 <div class="pv-shell">
 
@@ -33,7 +70,13 @@
       <a href="/provider/patient/{{ p.patient_id }}?days={{ selected_days }}"
          class="pv-patient-item {% if p.patient_id == patient.patient_id %}active{% endif %}"
          data-name="{{ p.full_name | lower }}">
-        <div class="pv-patient-name">{{ p.full_name }}</div>
+        <div class="pv-patient-name">
+          {{ p.full_name }}
+          {% if p.suicide_risk %}
+          <span title="Crisis risk detected in last 7 days"
+                style="color:#dc2626;font-size:13px;margin-left:5px;line-height:1;">&#9888;</span>
+          {% endif %}
+        </div>
         <div class="pv-patient-sub">
           <span>{% if p.last_checkin %}{{ p.last_checkin }}{% else %}No check-ins{% endif %}</span>
           {% if p.latest_summary %}

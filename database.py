@@ -723,6 +723,27 @@ def search_medication_reference(search_term: str):
 # PROVIDER OPERATIONS
 # ═══════════════════════════════════════════════════════════════════════════
 
+def _has_suicide_risk(user_id: str, days: int = 7) -> bool:
+    """Return True if any check-in notes or journal entries in the last N days
+    contain crisis-level language (suicide / self-harm keywords)."""
+    from claude_api import check_crisis
+    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    try:
+        ci = supabase_admin.table('checkins').select('notes').eq(
+            'user_id', user_id).gte('checkin_date', cutoff).execute()
+        for row in (ci.data or []):
+            if check_crisis(row.get('notes') or ''):
+                return True
+        je = supabase_admin.table('journal_entries').select('raw_entry').eq(
+            'user_id', user_id).gte('entry_date', cutoff).execute()
+        for row in (je.data or []):
+            if check_crisis(row.get('raw_entry') or ''):
+                return True
+        return False
+    except Exception:
+        return False
+
+
 def get_provider_patients(provider_id):
     """Return a list of patient summary dicts for all patients assigned to this provider.
 
@@ -773,6 +794,7 @@ def get_provider_patients(provider_id):
                 'last_checkin':        last_checkin,
                 'latest_summary':      has_summary,
                 'current_medications': meds,
+                'suicide_risk':        _has_suicide_risk(uid),
             })
 
         return patients

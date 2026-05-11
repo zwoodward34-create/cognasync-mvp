@@ -277,6 +277,9 @@ def provider_patient_detail(patient_id):
         alerts.append({'level': 'warning', 'title': 'Inconsistent Medication Timing',
             'desc': ta['message']})
 
+    current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
+    patient_has_crisis = current_p.get('suicide_risk', False)
+
     return render_template('provider/patient_detail.html',
                            user=user, patient=patient,
                            patients=patients,
@@ -284,7 +287,8 @@ def provider_patient_detail(patient_id):
                            alerts=alerts, interactions=interactions,
                            journals=journals, timing_stats=timing_stats,
                            selected_days=days,
-                           today_str=date.today().isoformat())
+                           today_str=date.today().isoformat(),
+                           patient_has_crisis=patient_has_crisis)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
