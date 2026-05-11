@@ -917,6 +917,28 @@ def get_patient_detail(patient_id, days=30):
                 except Exception:
                     meds = []
 
+        # Build normalised recent_checkins list (template-friendly)
+        def _norm_checkin(c):
+            ext = c.get('extended_data') or {}
+            if isinstance(ext, str):
+                try:
+                    ext = json.loads(ext)
+                except Exception:
+                    ext = {}
+            return {
+                'date':         (c.get('checkin_date') or '')[:10],
+                'checkin_type': c.get('checkin_type'),
+                'time_of_day':  c.get('time_of_day'),
+                'mood_score':   c.get('mood_score'),
+                'stress_score': c.get('stress_score'),
+                'sleep_hours':  c.get('sleep_hours'),
+                'notes':        c.get('notes'),
+                'extended_data': ext,
+            }
+
+        recent_checkins = [_norm_checkin(c) for c in checkins[:20]]
+        last_checkin_date = recent_checkins[0]['date'] if recent_checkins else None
+
         return {
             # Flat identity / summary fields
             'patient_id':          patient_id,
@@ -924,11 +946,13 @@ def get_patient_detail(patient_id, days=30):
             'email':               user['email']     if user else '',
             'current_medications': meds,
             'checkins_last_period': len(checkins),
+            'last_checkin_date':   last_checkin_date,
             # Nested sub-objects still available for advanced template use
-            'profile':        profile,
-            'checkins':       checkins,
-            'journals':       journals,
-            'latest_summary': latest_summary,
+            'profile':          profile,
+            'checkins':         checkins,
+            'recent_checkins':  recent_checkins,
+            'journals':         journals,
+            'latest_summary':   latest_summary,
         }
     except Exception as e:
         print(f"Error getting patient detail: {e}")

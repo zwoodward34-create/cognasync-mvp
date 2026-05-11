@@ -191,6 +191,11 @@ function resolveCrisisRisk() {
             <span style="font-size:14px;line-height:1;">&#9888;</span> View Crisis Context
           </button>
           {% endif %}
+          <a href="/provider/patient/{{ patient.patient_id }}/trends"
+             class="btn btn-sm"
+             style="text-decoration:none;">
+            View Full Trends →
+          </a>
           <button class="btn btn-primary btn-sm" id="gen-btn-top"
                   onclick="document.getElementById('summary-section').scrollIntoView({behavior:'smooth'})">
             Pre-Appt Summary ↓
@@ -222,7 +227,15 @@ function resolveCrisisRisk() {
         </div>
         <div>
           <span class="pv-meta-label">Check-ins This Period</span>
-          <div class="pv-meta-value">{{ patient.checkins_last_period }}</div>
+          <div class="pv-meta-value" style="display:flex;align-items:center;gap:8px;">
+            {{ patient.checkins_last_period }}
+            {% if days_since_last_checkin is not none and days_since_last_checkin > 7 %}
+            <span style="font-size:11px;background:#fffbf0;border:1px solid #f0c040;color:#7a5800;
+                         padding:2px 7px;font-weight:600;white-space:nowrap;">
+              Last: {{ last_checkin_date }} ({{ days_since_last_checkin }}d ago)
+            </span>
+            {% endif %}
+          </div>
         </div>
         <div>
           <span class="pv-meta-label">Med Adherence</span>
@@ -244,15 +257,21 @@ function resolveCrisisRisk() {
           <a href="?days=14" class="pv-period-btn {% if selected_days == 14 %}active{% endif %}">14d</a>
           <a href="?days=30" class="pv-period-btn {% if selected_days == 30 %}active{% endif %}">30d</a>
           <a href="?days=60" class="pv-period-btn {% if selected_days == 60 %}active{% endif %}">60d</a>
+          <a href="?days=90" class="pv-period-btn {% if selected_days == 90 %}active{% endif %}">90d</a>
         </div>
       </div>
       <div class="pv-control-group">
-        <span class="pv-control-label">Insight Confidence Threshold</span>
+        <span class="pv-control-label" title="Higher values show only the most statistically reliable correlations — lower values surface more patterns with less certainty.">
+          Insight Confidence Threshold &#9432;
+        </span>
         <div class="pv-confidence-row">
           <input type="range" min="50" max="95" step="5" value="80" id="conf-slider"
                  style="width:120px;"
                  oninput="onConfidenceSlider(this.value)">
           <span class="pv-confidence-val" id="conf-val">80%</span>
+        </div>
+        <div style="font-size:10px;color:var(--text-muted);margin-top:3px;max-width:260px;line-height:1.4;">
+          Higher = only strongest correlations shown. Lower = more patterns, less certainty.
         </div>
       </div>
     </div>
@@ -543,12 +562,19 @@ function resolveCrisisRisk() {
           {% endif %}
         </div>
         <div class="pv-adherence-bar">
-          {% set adh = trends.medication_adherence %}
+          {% if ts and ts.n_taken %}
+            {% set adh = [((ts.n_taken / selected_days * 100) | round | int), 100] | min %}
+          {% else %}
+            {% set adh = 0 %}
+          {% endif %}
           <div class="pv-adherence-fill {% if adh < 60 %}low{% elif adh < 80 %}mid{% endif %}"
-               style="width:{{ adh if adh > 0 else 0 }}%"></div>
+               style="width:{{ adh }}%"></div>
         </div>
         <div class="pv-adherence-pct">
-          {% if trends.medication_adherence > 0 %}{{ trends.medication_adherence }}%{% else %}—{% endif %}
+          {% if ts and ts.n_taken %}
+            {{ [((ts.n_taken / selected_days * 100) | round | int), 100] | min }}%
+            <span style="font-size:10px;color:var(--text-muted);display:block;">{{ ts.n_taken }} of {{ selected_days }}d</span>
+          {% else %}—{% endif %}
         </div>
       </div>
       {% endfor %}
@@ -684,7 +710,16 @@ function resolveCrisisRisk() {
           <span class="entry-type-badge">{{ (j.entry_type or 'free_flow') | replace('_', ' ') }}</span>
           <span style="font-size:10px;color:var(--green);border:1px solid var(--green-light);padding:1px 6px;">shared</span>
         </div>
-        <div class="journal-entry-preview">{{ j.raw_entry[:400] }}{% if j.raw_entry|length > 400 %}…{% endif %}</div>
+        {% if j.raw_entry|length > 400 %}
+        <details>
+          <summary class="journal-entry-preview" style="cursor:pointer;list-style:none;">
+            {{ j.raw_entry[:400] }}… <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;">read more ↓</span>
+          </summary>
+          <div class="journal-entry-preview" style="padding-top:6px;border-top:1px solid var(--border-light);margin-top:6px;">{{ j.raw_entry }}</div>
+        </details>
+        {% else %}
+        <div class="journal-entry-preview">{{ j.raw_entry }}</div>
+        {% endif %}
         {% if j.ai_analysis %}
         <details class="analysis-details">
           <summary>AI Reflection</summary>
@@ -700,14 +735,16 @@ function resolveCrisisRisk() {
     {% if patient.recent_checkins %}
     <div class="pv-panel-full">
       <div class="pv-panel-title">Recent Check-ins</div>
-      <div class="pv-panel-sub">Last {{ patient.recent_checkins|length }} check-ins logged by patient</div>
+      <div class="pv-panel-sub">Last {{ patient.recent_checkins|length }} check-ins · click any row to expand advanced data</div>
       <div style="overflow-x:auto;">
         <table class="data-table">
           <thead>
             <tr>
+              <th></th>
               <th>Date</th>
               <th>Type</th>
               <th>Mood</th>
+              <th>Energy</th>
               <th>Sleep</th>
               <th>Stress</th>
               <th>Notes</th>
@@ -715,18 +752,47 @@ function resolveCrisisRisk() {
           </thead>
           <tbody>
             {% for c in patient.recent_checkins %}
-            <tr>
+            {% set ext = c.extended_data or {} %}
+            {% set has_adv = ext.keys() | list | length > 0 %}
+            <tr style="cursor:{% if has_adv %}pointer{% else %}default{% endif %};"
+                onclick="toggleCheckinExpand(this)">
+              <td style="font-size:10px;color:var(--text-muted);padding-right:2px;">{% if has_adv %}▶{% endif %}</td>
               <td>{{ c.date }}</td>
               <td style="text-transform:capitalize;font-size:11px;color:var(--text-muted);">
                 {{ (c.checkin_type or c.time_of_day or '—') | replace('_', ' ') }}
               </td>
-              <td><span class="score-badge score-mood">{{ c.mood_score }}/10</span></td>
-              <td>{{ c.sleep_hours }}h</td>
-              <td><span class="score-badge score-stress">{{ c.stress_score }}/10</span></td>
-              <td style="font-size:12px;color:var(--text-muted);max-width:220px;">
+              <td><span class="score-badge score-mood">{{ c.mood_score or '—' }}/10</span></td>
+              <td style="font-size:12px;">{{ ext.energy or '—' }}{% if ext.energy %}/10{% endif %}</td>
+              <td>{{ c.sleep_hours or '—' }}{% if c.sleep_hours %}h{% endif %}</td>
+              <td><span class="score-badge score-stress">{{ c.stress_score or '—' }}/10</span></td>
+              <td style="font-size:12px;color:var(--text-muted);max-width:200px;">
                 {{ (c.notes or '')[:80] }}{% if c.notes and c.notes|length > 80 %}…{% endif %}
               </td>
             </tr>
+            {% if has_adv %}
+            <tr class="checkin-expand-row" style="display:none;">
+              <td colspan="8" style="background:var(--surface-alt);padding:10px 14px;border-top:none;">
+                <div style="display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;">
+                  {% macro advfield(label, val, unit='') %}
+                    {% if val is not none %}<span style="color:var(--text-muted);">{{ label }}:</span> <strong>{{ val }}{{ unit }}</strong>{% endif %}
+                  {% endmacro %}
+                  {{ advfield('Focus',          ext.focus,           '/10') }}
+                  {{ advfield('Dissociation',   ext.dissociation,    '/10') }}
+                  {{ advfield('Irritability',   ext.irritability,    '/10') }}
+                  {{ advfield('Motivation',     ext.motivation,      '/10') }}
+                  {{ advfield('Perc. Stress',   ext.perceived_stress,'/10') }}
+                  {{ advfield('Social Quality', ext.social_quality,  '/10') }}
+                  {{ advfield('Workload',       ext.workload_friction,'/10') }}
+                  {{ advfield('Exercise',       ext.exercise_minutes,' min') }}
+                  {{ advfield('Sunlight',       ext.sunlight_hours,  ' hrs') }}
+                  {{ advfield('Alcohol',        ext.alcohol_units,   ' units') }}
+                  {{ advfield('Screen Time',    ext.screen_time_hours,' hrs') }}
+                  {{ advfield('Caffeine',       ext.caffeine_mg,     ' mg') }}
+                  {{ advfield('Sleep Quality',  ext.sleep_quality,   '/10') }}
+                </div>
+              </td>
+            </tr>
+            {% endif %}
             {% endfor %}
           </tbody>
         </table>
@@ -813,6 +879,16 @@ function filterPatients(q) {
   document.querySelectorAll('.pv-patient-item').forEach(item => {
     item.style.display = item.dataset.name?.includes(q.toLowerCase()) ? '' : 'none';
   });
+}
+
+// ── Check-in expand row ──────────────────────────────────────────────
+function toggleCheckinExpand(tr) {
+  const next = tr.nextElementSibling;
+  if (!next || !next.classList.contains('checkin-expand-row')) return;
+  const open = next.style.display !== 'none';
+  next.style.display = open ? 'none' : 'table-row';
+  const arrow = tr.querySelector('td:first-child');
+  if (arrow) arrow.textContent = open ? '▶' : '▼';
 }
 
 // ── Crisis log row toggle ────────────────────────────────────────────

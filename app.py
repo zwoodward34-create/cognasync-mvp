@@ -280,6 +280,14 @@ def provider_patient_detail(patient_id):
     patient_crisis_context = current_p.get('suicide_risk_context', [])
     crisis_history = db.get_crisis_history(patient_id)
 
+    last_checkin_date = patient.get('last_checkin_date')
+    days_since_last_checkin = None
+    if last_checkin_date:
+        try:
+            days_since_last_checkin = (date.today() - date.fromisoformat(last_checkin_date)).days
+        except Exception:
+            pass
+
     return render_template('provider/patient_detail.html',
                            user=user, patient=patient,
                            patients=patients,
@@ -290,7 +298,25 @@ def provider_patient_detail(patient_id):
                            today_str=date.today().isoformat(),
                            patient_has_crisis=patient_has_crisis,
                            patient_crisis_context=patient_crisis_context,
-                           crisis_history=crisis_history)
+                           crisis_history=crisis_history,
+                           days_since_last_checkin=days_since_last_checkin,
+                           last_checkin_date=last_checkin_date)
+
+
+@app.route('/provider/patient/<patient_id>/trends')
+def provider_patient_trends(patient_id):
+    user, redir = _require_provider()
+    if redir:
+        return redir
+    if not _provider_owns_patient(user['id'], patient_id):
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+    patient = db.get_patient_detail(patient_id, days=1)
+    patient_name = patient['full_name'] if patient else 'Patient'
+    return render_template('patient/trends.html',
+                           provider_view=True,
+                           provider_patient_id=patient_id,
+                           provider_patient_name=patient_name)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -855,6 +881,25 @@ def api_provider_patients():
         return err
     patients = db.get_provider_patients(user['id'])
     return jsonify({'provider_id': user['id'], 'patients': patients}), 200
+
+
+@app.route('/api/provider/patient/<patient_id>/trends', methods=['GET'])
+def api_provider_patient_trends(patient_id):
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+    days = min(int(request.args.get('days', 30)), 365)
+    trends = db.get_trends_data(patient_id, days=days)
+    if not trends:
+        return jsonify({'error': 'Unable to fetch trends'}), 500
+    try:
+        meds = db.get_user_medications(patient_id, active_only=True)
+        trends['current_medications'] = [{'id': m.get('id'), 'name': m.get('name')} for m in meds] if meds else []
+    except Exception:
+        trends['current_medications'] = []
+    return jsonify(trends), 200
 
 
 @app.route('/api/provider/patient/<patient_id>', methods=['GET'])

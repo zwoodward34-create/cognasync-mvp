@@ -3,6 +3,9 @@
 
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+{% if provider_view %}
+<script>window.PROVIDER_PATIENT_ID = "{{ provider_patient_id }}";</script>
+{% endif %}
 {% endblock %}
 
 {% block content %}
@@ -28,8 +31,14 @@
 
 <div class="page-header">
   <div>
+    {% if provider_view %}
+    <a href="/provider/patient/{{ provider_patient_id }}" style="font-size:12px;color:var(--text-muted);text-decoration:none;display:inline-block;margin-bottom:4px;">← Back to {{ provider_patient_name }}</a>
+    <h1 class="page-title">{{ provider_patient_name }} — Full Trends</h1>
+    <p class="page-sub" style="color:#dc2626;">Provider view — read only</p>
+    {% else %}
     <h1 class="page-title">Trends</h1>
     <p class="page-sub">Your mental health patterns over time.</p>
+    {% endif %}
   </div>
   <div class="period-selector">
     <button class="period-btn active" data-days="7" onclick="loadTrends(7, this)">7d</button>
@@ -418,11 +427,14 @@ function loadTrends(days, btn) {
   loading.classList.remove('hidden');
   error.classList.add('hidden');
 
-  apiGet('/api/trends?days=' + days)
+  const trendsUrl = window.PROVIDER_PATIENT_ID
+    ? '/api/provider/patient/' + window.PROVIDER_PATIENT_ID + '/trends?days=' + days
+    : '/api/trends?days=' + days;
+  apiGet(trendsUrl)
     .then(data => {
       loading.classList.add('hidden');
       renderTrends(data);
-      loadTimingInsights(days);
+      if (!window.PROVIDER_PATIENT_ID) loadTimingInsights(days);
     })
     .catch(err => {
       loading.classList.add('hidden');
