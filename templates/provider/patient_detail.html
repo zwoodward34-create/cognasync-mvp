@@ -402,7 +402,7 @@ function resolveCrisisRisk() {
           </div>
           <div class="flip-card-back">
             <strong>Stability Score</strong>
-            (Mood + Energy + (10−Dissociation) + (10−Anxiety)) ÷ 4. Synthesizes four signals into one number. Below 4 = dysregulated; above 7 = stable. Divergence from reported mood is flagged as Mood Distortion.
+            (Mood + Energy + (10−Dissoc.) + (10−Anxiety)) ÷ 4. Below 4 = dysregulated · Above 7 = stable. Gap from reported mood = Mood Distortion.
           </div>
         </div>
       </div>
@@ -416,7 +416,7 @@ function resolveCrisisRisk() {
           </div>
           <div class="flip-card-back">
             <strong>Mood Distortion</strong>
-            |Reported Mood − Stability Score|. A gap above 2.5 means self-report diverges from system state — possible reporting bias, rapid intra-day change, or dissociation between subjective and physiological experience.
+            |Reported Mood − Stability Score|. Above 2.5 = self-report diverges from system state. Possible reporting bias or rapid intra-day state change.
           </div>
         </div>
       </div>
@@ -430,7 +430,7 @@ function resolveCrisisRisk() {
           </div>
           <div class="flip-card-back">
             <strong>Sleep Disruption</strong>
-            Additive score: +2 if &lt;6 hrs, +3 if sleep latency &gt;45 min, +2 if ≥2 awakenings, +3 if fell asleep with difficulty. Capped at 10. Feeds directly into Crash Risk.
+            +2 if &lt;6 hrs · +3 if latency &gt;45 min · +2 if ≥2 awakenings · +3 if hard to fall asleep. Cap 10. Feeds into Crash Risk.
           </div>
         </div>
       </div>
@@ -444,7 +444,7 @@ function resolveCrisisRisk() {
           </div>
           <div class="flip-card-back">
             <strong>Stim Load</strong>
-            Caffeine tier (0/2/5/7/9) + stimulant medications taken + booster doses, capped at 10. Elevations alongside poor sleep quality drive Nervous System Load and Crash Risk.
+            Caffeine tier (0/2/5/7/9) + stimulant meds taken + booster doses, capped at 10. Drives Nervous System Load and Crash Risk when combined with poor sleep.
           </div>
         </div>
       </div>
@@ -458,7 +458,7 @@ function resolveCrisisRisk() {
           </div>
           <div class="flip-card-back">
             <strong>Crash Risk Days</strong>
-            Count of days where (Sleep Disruption × 0.5) + (NS Load × 0.5) ≥ 7. Each day represents compounding strain from poor sleep and elevated nervous system load occurring together.
+            Days where (Sleep Disruption × 0.5) + (NS Load × 0.5) ≥ 7. Compounding strain from poor sleep and high nervous system load on the same day.
           </div>
         </div>
       </div>
