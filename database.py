@@ -734,13 +734,14 @@ def _has_suicide_risk(user_id: str, days: int = 7) -> bool:
         for row in (ci.data or []):
             if check_crisis(row.get('notes') or ''):
                 return True
-        je = supabase_admin.table('journal_entries').select('raw_entry').eq(
+        je = supabase_admin.table('journal_entries').select('content').eq(
             'user_id', user_id).gte('entry_date', cutoff).execute()
         for row in (je.data or []):
-            if check_crisis(row.get('raw_entry') or ''):
+            if check_crisis(row.get('content') or ''):
                 return True
         return False
-    except Exception:
+    except Exception as e:
+        print(f"_has_suicide_risk error for user {user_id}: {e}")
         return False
 
 
