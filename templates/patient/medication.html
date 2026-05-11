@@ -12,23 +12,30 @@
 <div id="med-success" class="alert alert-success hidden"></div>
 <div id="med-error" class="alert alert-error hidden"></div>
 
-<!-- ── Current Medications ──────────────────────────────────── -->
+<!-- ── Interaction Matrix ────────────────────────────────────────────────────── -->
+{% if medications and medications | length >= 2 %}
+<div class="med-section" id="interaction-matrix-section">
+  <h2 class="section-title">Drug Interaction Overview</h2>
+  <p class="page-sub">Color-coded matrix of known interactions between your current medications.</p>
+  <div id="interaction-matrix-wrap">
+    <div class="matrix-loading"><span class="spinner-sm"></span> Checking interactions…</div>
+  </div>
+</div>
+{% endif %}
+
+<!-- ── Current Medications ────────────────────────────────────────────────────── -->
 <div class="med-section">
   <h2 class="section-title">Your Current Medications</h2>
 
   {% if medications %}
-  <div id="interactions-panel" class="interactions-panel hidden">
-    <div class="interactions-heading">
-      <span class="warn-icon">⚠</span> Drug Interaction Notices
-    </div>
-    <div id="interactions-list"></div>
-  </div>
-
   <div class="med-cards" id="med-cards">
     {% for med in medications %}
     <div class="med-detail-card" id="med-card-{{ loop.index }}">
       <div class="med-detail-header">
-        <div class="med-detail-name">{{ med.name | title }}</div>
+        <div>
+          <div class="med-detail-name">{{ med.name | title }}</div>
+          <div class="med-purpose-line" id="purpose-{{ loop.index }}"></div>
+        </div>
         <div class="med-detail-meta">
           <span class="med-dose-badge">{{ med.dose }}</span>
           {% if med.frequency %}<span class="med-freq-tag">{{ med.frequency }}</span>{% endif %}
@@ -40,6 +47,7 @@
         <button class="med-tab active" onclick="switchMedTab(this, 'effects-{{ loop.index }}')">Side Effects</button>
         <button class="med-tab" onclick="switchMedTab(this, 'interactions-{{ loop.index }}')">Interactions</button>
         <button class="med-tab" onclick="switchMedTab(this, 'dosing-{{ loop.index }}')">Dosing Info</button>
+        <button class="med-tab" onclick="switchMedTab(this, 'withdrawal-{{ loop.index }}')">Stopping / Withdrawal</button>
       </div>
 
       <div id="effects-{{ loop.index }}" class="med-tab-pane">
@@ -62,6 +70,13 @@
         </div>
         <div class="med-dos-content hidden" id="content-dos-{{ loop.index }}"></div>
       </div>
+
+      <div id="withdrawal-{{ loop.index }}" class="med-tab-pane hidden">
+        <div class="med-info-loading" id="loading-wd-{{ loop.index }}">
+          <span class="spinner-sm"></span> Loading…
+        </div>
+        <div class="med-wd-content hidden" id="content-wd-{{ loop.index }}"></div>
+      </div>
     </div>
     {% endfor %}
   </div>
@@ -71,7 +86,7 @@
   {% endif %}
 </div>
 
-<!-- ── Add Medication ───────────────────────────────────────── -->
+<!-- ── Add Medication ──────────────────────────────────────────────────────────── -->
 <div class="med-section">
   <h2 class="section-title">Add Medication</h2>
   <form id="add-med-form" class="med-add-form">
@@ -104,7 +119,7 @@
   </form>
 </div>
 
-<!-- ── Log a Dose ────────────────────────────────────────────── -->
+<!-- ── Log a Dose ──────────────────────────────────────────────────────────────── -->
 <div class="med-section">
   <h2 class="section-title">Log a Dose</h2>
   <p class="page-sub">Record that you took a medication right now.</p>
@@ -130,7 +145,36 @@
   <div id="log-success" class="alert alert-success hidden"></div>
 </div>
 
-<!-- ── Reference Lookup ──────────────────────────────────────── -->
+<!-- ── Medication Comparator ────────────────────────────────────────────────────── -->
+{% if med_names %}
+<div class="med-section" id="comparator-section">
+  <h2 class="section-title">Medication Comparator</h2>
+  <p class="page-sub">Select up to 4 medications to compare side effects, dosing, and interactions side by side.</p>
+
+  <div class="comparator-selectors">
+    {% for i in range(1, 5) %}
+    <div class="comparator-slot">
+      <label class="comparator-slot-label">Medication {{ i }}</label>
+      <select id="compare-slot-{{ i }}" class="form-input comparator-select" onchange="onComparatorChange()">
+        <option value="">— Select —</option>
+        {% for name in med_names %}
+        <option value="{{ name }}">{{ name | title }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="comparator-actions">
+    <button id="btn-compare" class="btn btn-primary" onclick="runComparison()" disabled>Compare Selected</button>
+    <button class="btn btn-ghost" onclick="clearComparison()">Clear</button>
+  </div>
+
+  <div id="compare-results" class="hidden"></div>
+</div>
+{% endif %}
+
+<!-- ── Reference Lookup ──────────────────────────────────────────────────────── -->
 {% if med_names %}
 <div class="med-section">
   <h2 class="section-title">Medication Reference</h2>
@@ -154,7 +198,7 @@
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
 <script>
-// Medication names from server
+// ─── Helpers ────────────────────────────────────────────────────────────────
 const currentMedNames = {{ medications | map(attribute='name') | list | tojson }};
 
 function switchMedTab(btn, paneid) {
@@ -165,9 +209,107 @@ function switchMedTab(btn, paneid) {
   document.getElementById(paneid).classList.remove('hidden');
 }
 
-// Load cross-medication interaction alerts first, then populate each card
+// ─── Severity helpers ────────────────────────────────────────────────────────
+const SEVERITY_LABEL = { serious: '🔴 Serious', moderate: '🟡 Moderate', caution: '🔵 Caution' };
+const SEVERITY_CLASS = { serious: 'sev-serious', moderate: 'sev-moderate', caution: 'sev-caution' };
+
+// ─── Interaction matrix ──────────────────────────────────────────────────────
 let allInteractionAlerts = [];
 
+function buildInteractionMatrix(names, alerts) {
+  const wrap = document.getElementById('interaction-matrix-wrap');
+  if (!wrap) return;
+
+  if (!names || names.length < 2) {
+    wrap.innerHTML = '<p class="text-muted">Add two or more medications to see the interaction matrix.</p>';
+    return;
+  }
+
+  const pairMap = {};
+  alerts.forEach(ia => {
+    const key = [ia.drug_a.toLowerCase(), ia.drug_b.toLowerCase()].sort().join('||');
+    if (!pairMap[key] || ia.severity === 'serious') pairMap[key] = ia;
+  });
+
+  const n = names.length;
+  const titled = names.map(n => n.charAt(0).toUpperCase() + n.slice(1));
+
+  let html = '<div class="interaction-matrix">';
+  html += `<div class="matrix-legend">
+    <span class="matrix-key sev-serious">Serious</span>
+    <span class="matrix-key sev-moderate">Moderate</span>
+    <span class="matrix-key sev-caution">Caution</span>
+    <span class="matrix-key sev-none">No known interaction</span>
+  </div>`;
+
+  html += '<div class="matrix-scroll"><table class="matrix-table"><thead><tr><th></th>';
+  titled.forEach(name => { html += `<th class="matrix-col-head">${name}</th>`; });
+  html += '</tr></thead><tbody>';
+
+  for (let r = 0; r < n; r++) {
+    html += `<tr><th class="matrix-row-head">${titled[r]}</th>`;
+    for (let c = 0; c < n; c++) {
+      if (r === c) {
+        html += '<td class="matrix-cell matrix-self">—</td>';
+      } else {
+        const key = [names[r], names[c]].sort().join('||');
+        const ia = pairMap[key];
+        if (ia) {
+          const cls = SEVERITY_CLASS[ia.severity] || 'sev-caution';
+          const label = SEVERITY_LABEL[ia.severity] || 'Caution';
+          html += `<td class="matrix-cell ${cls} matrix-has-tip"
+                      data-tip="${escHtml(ia.warning)}"
+                      onclick="showInteractionTip(this)"
+                      title="${escHtml(ia.warning)}">
+                    ${label}
+                  </td>`;
+        } else {
+          html += '<td class="matrix-cell sev-none">✓</td>';
+        }
+      }
+    }
+    html += '</tr>';
+  }
+  html += '</tbody></table></div>';
+
+  if (alerts.length > 0) {
+    html += '<div class="matrix-alerts">';
+    html += '<div class="matrix-alerts-title">Interaction Details</div>';
+    alerts.forEach(ia => {
+      const cls = SEVERITY_CLASS[ia.severity] || 'sev-caution';
+      html += `<div class="interaction-alert interaction-alert--${ia.severity}">
+        <div class="ia-drugs">${ia.drug_a} + ${ia.drug_b} <span class="ia-sev-badge ${cls}">${SEVERITY_LABEL[ia.severity] || ia.severity}</span></div>
+        <div class="ia-warning">${ia.warning}</div>
+        <div class="ia-note">Discuss with your prescribing provider.</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  wrap.innerHTML = html;
+}
+
+function showInteractionTip(cell) {
+  document.querySelectorAll('.matrix-tooltip').forEach(t => t.remove());
+  const tip = cell.getAttribute('data-tip');
+  if (!tip) return;
+  const tt = document.createElement('div');
+  tt.className = 'matrix-tooltip';
+  tt.textContent = tip;
+  cell.appendChild(tt);
+  setTimeout(() => {
+    document.addEventListener('click', function dismiss(e) {
+      if (!cell.contains(e.target)) { tt.remove(); document.removeEventListener('click', dismiss); }
+    });
+  }, 50);
+}
+
+function escHtml(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ─── Card interaction injection ───────────────────────────────────────────────
 function injectCardInteractions(name, idx) {
   const relevant = allInteractionAlerts.filter(ia =>
     ia.drug_a.toLowerCase() === name || ia.drug_b.toLowerCase() === name
@@ -189,62 +331,63 @@ function injectCardInteractions(name, idx) {
     </div>`;
   }
   intEl.dataset.crossHtml = crossHtml;
-  // Merge with reference text if already loaded
   if (!intEl.classList.contains('hidden')) {
     intEl.innerHTML = crossHtml + (intEl.dataset.refHtml || '');
   }
 }
 
+// ─── Main load sequence ───────────────────────────────────────────────────────
 Promise.resolve(
   currentMedNames.length >= 2
     ? apiGet('/api/medications/interactions').then(d => { allInteractionAlerts = d.interactions || []; })
     : Promise.resolve()
 ).then(() => {
+  buildInteractionMatrix(currentMedNames, allInteractionAlerts);
   document.querySelectorAll('.med-detail-card').forEach((card, i) => {
     const idx  = i + 1;
     const name = card.querySelector('.med-detail-name').textContent.trim().toLowerCase();
     injectCardInteractions(name, idx);
     loadMedInfo(name, idx);
   });
-
-  // Also populate the top interactions panel
-  const panel = document.getElementById('interactions-panel');
-  const list  = document.getElementById('interactions-list');
-  if (panel && list && allInteractionAlerts.length > 0) {
-    list.innerHTML = allInteractionAlerts.map(ia => `
-      <div class="interaction-alert interaction-alert--${ia.severity}">
-        <div class="ia-drugs">${ia.drug_a} + ${ia.drug_b}</div>
-        <div class="ia-warning">${ia.warning}</div>
-        <div class="ia-note">Discuss with your prescribing provider.</div>
-      </div>
-    `).join('');
-    panel.classList.remove('hidden');
-  }
 });
 
+// ─── Load individual medication info ─────────────────────────────────────────
 function loadMedInfo(name, idx) {
   apiGet('/api/medications/info/' + encodeURIComponent(name))
     .then(data => {
+      // Purpose line
+      const purposeEl = document.getElementById('purpose-' + idx);
+      if (purposeEl && data.purpose) {
+        purposeEl.textContent = data.purpose;
+        purposeEl.style.display = 'block';
+      }
+
       // Side effects tab
-      const efEl = document.getElementById('content-effects-' + idx);
+      const efEl   = document.getElementById('content-effects-' + idx);
       const efLoad = document.getElementById('loading-effects-' + idx);
       if (efEl) {
         const sides = data.common_side_effects || 'No information available.';
         const items = sides.split(/,\s*/).map(s =>
           `<div class="effect-item">${s.trim()}</div>`
         ).join('');
-        efEl.innerHTML = `<div class="effects-list">${items}</div>
+        let html = `<div class="effects-list">${items}</div>
           <p class="onset-note"><strong>Onset:</strong> ${data.typical_onset || 'Varies'}</p>`;
+        if (data.conditions_treated) {
+          html += `<p class="onset-note"><strong>Treats:</strong> ${data.conditions_treated}</p>`;
+        }
+        efEl.innerHTML = html;
         efEl.classList.remove('hidden');
         efLoad.classList.add('hidden');
       }
 
-      // Interactions tab — merge reference text with any cross-med alerts
-      const intEl = document.getElementById('content-int-' + idx);
+      // Interactions tab
+      const intEl   = document.getElementById('content-int-' + idx);
       const intLoad = document.getElementById('loading-int-' + idx);
       if (intEl) {
-        const warns = data.interaction_warnings || 'No major interactions in our database.';
-        const refHtml = `<div class="interaction-warn-text"><strong style="font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Reference Interactions</strong><br>${warns}</div>`;
+        const warns  = data.interaction_warnings || 'No major interactions in our database.';
+        const refHtml = `<div class="interaction-warn-text">
+          <strong style="font-size:0.78rem;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted)">Reference Interactions</strong><br>${warns}
+        </div>`;
         intEl.dataset.refHtml = refHtml;
         intEl.innerHTML = (intEl.dataset.crossHtml || '') + refHtml;
         intEl.classList.remove('hidden');
@@ -252,23 +395,46 @@ function loadMedInfo(name, idx) {
       }
 
       // Dosing tab
-      const dosEl = document.getElementById('content-dos-' + idx);
+      const dosEl   = document.getElementById('content-dos-' + idx);
       const dosLoad = document.getElementById('loading-dos-' + idx);
       if (dosEl) {
         let dosesHtml = '';
-        if (data.common_doses && Array.isArray(data.common_doses)) {
+        if (data.common_doses && Array.isArray(data.common_doses) && data.common_doses.length > 0) {
           dosesHtml = `<div class="dose-chips">${data.common_doses.map(d =>
             `<span class="dose-chip">${d}</span>`).join('')}</div>`;
         }
-        dosEl.innerHTML = `${dosesHtml}
+        let dosHtml = `${dosesHtml}
           <p class="onset-note"><strong>Typical onset:</strong> ${data.typical_onset || 'Varies'}</p>`;
+        if (data.dosage_range) {
+          dosHtml += `<p class="onset-note"><strong>Dosage range:</strong> ${data.dosage_range}</p>`;
+        }
+        dosEl.innerHTML = dosHtml;
         dosEl.classList.remove('hidden');
         dosLoad.classList.add('hidden');
       }
+
+      // Withdrawal tab
+      const wdEl   = document.getElementById('content-wd-' + idx);
+      const wdLoad = document.getElementById('loading-wd-' + idx);
+      if (wdEl) {
+        if (data.discontinuation_notes) {
+          wdEl.innerHTML = `
+            <div class="wd-notice">
+              <div class="wd-icon">⚠</div>
+              <div class="wd-body">
+                <div class="wd-title">Important: Always consult your provider before stopping.</div>
+                <div class="wd-text">${data.discontinuation_notes}</div>
+              </div>
+            </div>`;
+        } else {
+          wdEl.innerHTML = '<p class="text-muted">No discontinuation information available for this medication. Ask your prescriber before stopping.</p>';
+        }
+        wdEl.classList.remove('hidden');
+        wdLoad.classList.add('hidden');
+      }
     })
     .catch(() => {
-      // Medication not in reference DB — show graceful message
-      ['effects','int','dos'].forEach(tab => {
+      ['effects','int','dos','wd'].forEach(tab => {
         const content = document.getElementById(`content-${tab}-${idx}`);
         const loading = document.getElementById(`loading-${tab}-${idx}`);
         if (content && loading) {
@@ -280,6 +446,7 @@ function loadMedInfo(name, idx) {
     });
 }
 
+// ─── Remove medication ────────────────────────────────────────────────────────
 function removeMedication(name, dose) {
   const label = dose ? `${name} ${dose}` : name;
   if (!confirm(`Remove ${label} from your medication list?`)) return;
@@ -293,60 +460,67 @@ function removeMedication(name, dose) {
     });
 }
 
+// ─── Add medication info preview ──────────────────────────────────────────────
 function lookupAddMed(name) {
   const panel = document.getElementById('add-med-info-panel');
   if (!name) { panel.classList.add('hidden'); return; }
-
   apiGet('/api/medications/info/' + encodeURIComponent(name))
     .then(data => {
       let dosesHtml = '';
-      if (data.common_doses && Array.isArray(data.common_doses)) {
+      if (data.common_doses && Array.isArray(data.common_doses) && data.common_doses.length > 0) {
         dosesHtml = `<div class="dose-chips">${data.common_doses.map(d =>
           `<span class="dose-chip">${d}</span>`).join('')}</div>`;
-        // Pre-fill dose input with first common dose
         const doseInput = document.getElementById('med-dose-input');
         if (doseInput && !doseInput.value) doseInput.value = data.common_doses[0] || '';
       }
       const sides = (data.common_side_effects || '').split(/,\s*/).filter(Boolean).map(s =>
         `<div class="effect-item">${s.trim()}</div>`).join('');
-
       panel.innerHTML = `
         <div class="ref-card">
           <div class="ref-card-name">${name.charAt(0).toUpperCase()+name.slice(1)}</div>
+          ${data.purpose ? `<div class="ref-card-purpose">${data.purpose}</div>` : ''}
+          ${data.conditions_treated ? `<div class="ref-card-onset"><strong>Treats:</strong> ${data.conditions_treated}</div>` : ''}
           <div class="ref-card-onset">Onset: ${data.typical_onset || 'Varies'}</div>
           ${dosesHtml ? `<div class="ref-card-section-title">Common Doses</div>${dosesHtml}` : ''}
+          ${data.dosage_range ? `<div class="ref-card-onset"><strong>Range:</strong> ${data.dosage_range}</div>` : ''}
           ${sides ? `<div class="ref-card-section-title">Common Side Effects</div><div class="effects-list">${sides}</div>` : ''}
           ${data.interaction_warnings ? `<div class="ref-card-section-title">Drug Interactions</div><div class="interaction-warn-text">${data.interaction_warnings}</div>` : ''}
+          ${data.discontinuation_notes ? `<div class="ref-card-section-title">Stopping This Medication</div><div class="interaction-warn-text">${data.discontinuation_notes}</div>` : ''}
         </div>`;
       panel.classList.remove('hidden');
     })
     .catch(() => { panel.classList.add('hidden'); });
 }
 
+// ─── Reference lookup ─────────────────────────────────────────────────────────
 function lookupRefMed(name) {
   const panel = document.getElementById('ref-info-panel');
   if (!name) { panel.classList.add('hidden'); return; }
-
   apiGet('/api/medications/info/' + encodeURIComponent(name))
     .then(data => {
       let dosesHtml = '';
-      if (data.common_doses && Array.isArray(data.common_doses)) {
+      if (data.common_doses && Array.isArray(data.common_doses) && data.common_doses.length > 0) {
         dosesHtml = `<div class="dose-chips">${data.common_doses.map(d =>
           `<span class="dose-chip">${d}</span>`).join('')}</div>`;
       }
       const sides = (data.common_side_effects || '').split(/,\s*/).map(s =>
         `<div class="effect-item">${s.trim()}</div>`).join('');
-
       panel.innerHTML = `
         <div class="ref-card">
           <div class="ref-card-name">${name.charAt(0).toUpperCase()+name.slice(1)}</div>
+          ${data.purpose ? `<div class="ref-card-purpose">${data.purpose}</div>` : ''}
+          ${data.conditions_treated ? `<div class="ref-card-onset"><strong>Treats:</strong> ${data.conditions_treated}</div>` : ''}
           <div class="ref-card-onset">Onset: ${data.typical_onset || 'Varies'}</div>
           <div class="ref-card-section-title">Common Doses</div>
           ${dosesHtml || '<p class="text-muted">See prescriber for dosing information.</p>'}
+          ${data.dosage_range ? `<div class="ref-card-onset" style="margin-top:4px"><strong>Dosage range:</strong> ${data.dosage_range}</div>` : ''}
           <div class="ref-card-section-title">Common Side Effects</div>
-          <div class="effects-list">${sides}</div>
+          <div class="effects-list">${sides || '<p class="text-muted">None listed.</p>'}</div>
           <div class="ref-card-section-title">Drug Interactions</div>
           <div class="interaction-warn-text">${data.interaction_warnings || 'No major interactions listed.'}</div>
+          ${data.discontinuation_notes ? `
+            <div class="ref-card-section-title">Stopping This Medication</div>
+            <div class="interaction-warn-text">${data.discontinuation_notes}</div>` : ''}
         </div>`;
       panel.classList.remove('hidden');
     })
@@ -356,6 +530,557 @@ function lookupRefMed(name) {
     });
 }
 
+// ─── Medication Comparator ───────────────────────────────────────────────────
+function onComparatorChange() {
+  const selected = getComparatorSelections();
+  document.getElementById('btn-compare').disabled = selected.length < 1;
+}
+
+function getComparatorSelections() {
+  const vals = [];
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById('compare-slot-' + i);
+    if (el && el.value) vals.push(el.value);
+  }
+  return vals;
+}
+
+function clearComparison() {
+  for (let i = 1; i <= 4; i++) {
+    const el = document.getElementById('compare-slot-' + i);
+    if (el) el.value = '';
+  }
+  const results = document.getElementById('compare-results');
+  if (results) { results.innerHTML = ''; results.classList.add('hidden'); }
+  document.getElementById('btn-compare').disabled = true;
+}
+
+function runComparison() {
+  const names = getComparatorSelections();
+  if (!names.length) return;
+
+  const results = document.getElementById('compare-results');
+  results.classList.remove('hidden');
+  results.innerHTML = '<div class="compare-loading"><span class="spinner-sm"></span> Comparing medications…</div>';
+
+  apiPost('/api/medications/compare', { names })
+    .then(data => renderComparisonResults(data))
+    .catch(err => {
+      results.innerHTML = `<p class="text-muted">Failed to load comparison: ${err.message || 'Unknown error'}</p>`;
+    });
+}
+
+function renderComparisonResults(data) {
+  const meds = data.medications || [];
+  const interactions = data.interactions || [];
+  const results = document.getElementById('compare-results');
+
+  if (!meds.length) {
+    results.innerHTML = '<p class="text-muted">No data found for selected medications.</p>';
+    return;
+  }
+
+  // Collect all unique side effects across all meds for the comparison grid
+  const allEffects = new Map(); // effect → count of meds that have it
+  meds.forEach(m => {
+    (m.common_side_effects || []).forEach(e => {
+      const key = e.toLowerCase().replace(/_/g, ' ');
+      allEffects.set(key, (allEffects.get(key) || 0) + 1);
+    });
+  });
+  // Sort: shared first, then alphabetical
+  const sortedEffects = [...allEffects.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([e]) => e);
+
+  // Build med sets for quick lookup
+  const medEffectSets = meds.map(m =>
+    new Set((m.common_side_effects || []).map(e => e.toLowerCase().replace(/_/g, ' ')))
+  );
+
+  const n = meds.length;
+  const colWidth = `${Math.floor(100 / n)}%`;
+
+  let html = '<div class="compare-wrap">';
+
+  // ── Section 1: Info cards ─────────────────────────────────────────────────
+  html += '<div class="compare-cards-row" style="--med-count:' + n + '">';
+  meds.forEach((m, i) => {
+    const colorClass = `compare-color-${i + 1}`;
+    html += `<div class="compare-card ${colorClass}">
+      <div class="compare-card-header">
+        <div class="compare-card-name">${cap(m.name || m.query_name)}</div>
+        ${m.category ? `<div class="compare-card-cat">${m.category}</div>` : ''}
+      </div>`;
+
+    if (m.not_found) {
+      html += '<p class="text-muted" style="font-size:0.82rem">Not found in reference database.</p>';
+    } else {
+      if (m.purpose) {
+        html += `<div class="compare-card-purpose">${m.purpose}</div>`;
+      }
+      html += `<div class="compare-meta-row"><span class="compare-meta-label">Onset</span><span>${m.typical_onset || 'Varies'}</span></div>`;
+      if (m.dosage_range) {
+        html += `<div class="compare-meta-row"><span class="compare-meta-label">Range</span><span>${m.dosage_range}</span></div>`;
+      }
+      if (m.common_doses && m.common_doses.length) {
+        html += `<div class="compare-meta-row"><span class="compare-meta-label">Doses</span><span class="compare-doses">${m.common_doses.map(d => `<span class="dose-chip">${d}</span>`).join('')}</span></div>`;
+      }
+    }
+    html += '</div>';
+  });
+  html += '</div>';
+
+  // ── Section 2: Side-effect grid ───────────────────────────────────────────
+  if (sortedEffects.length > 0) {
+    html += `<div class="compare-section-title">Side Effect Comparison</div>
+    <div class="compare-grid-note">Highlighted rows are shared by 2+ medications</div>
+    <div class="compare-effects-wrap">
+      <table class="compare-effects-table">
+        <thead><tr>
+          <th class="cet-label-col">Side Effect</th>
+          ${meds.map((m, i) => `<th class="cet-med-col compare-col-head-${i+1}">${cap(m.name || m.query_name)}</th>`).join('')}
+        </tr></thead>
+        <tbody>`;
+
+    sortedEffects.forEach(effect => {
+      const count = allEffects.get(effect) || 0;
+      const isShared = count >= 2;
+      html += `<tr class="${isShared ? 'cet-shared' : ''}">
+        <td class="cet-effect-name">${cap(effect)}</td>`;
+      medEffectSets.forEach((set, i) => {
+        const has = set.has(effect);
+        html += `<td class="cet-cell ${has ? `cet-has compare-dot-${i+1}` : 'cet-missing'}">
+          ${has ? '<span class="cet-dot">●</span>' : '<span class="cet-dash">—</span>'}
+        </td>`;
+      });
+      html += '</tr>';
+    });
+
+    html += `</tbody></table></div>`;
+
+    // Shared effect summary
+    const sharedEffects = sortedEffects.filter(e => (allEffects.get(e) || 0) >= 2);
+    if (sharedEffects.length > 0) {
+      html += `<div class="compare-shared-banner">
+        <span class="compare-shared-icon">⚠</span>
+        <span><strong>Overlapping side effects</strong> (shared by 2+ medications):
+        ${sharedEffects.slice(0, 8).map(e => `<span class="shared-tag">${cap(e)}</span>`).join(' ')}
+        ${sharedEffects.length > 8 ? `<span class="text-muted"> +${sharedEffects.length - 8} more</span>` : ''}
+        </span>
+      </div>`;
+    }
+  }
+
+  // ── Section 3: Interaction matrix ────────────────────────────────────────
+  html += '<div class="compare-section-title" style="margin-top:28px">Interaction Check</div>';
+
+  if (n >= 2) {
+    if (interactions.length === 0) {
+      html += '<div class="compare-no-interactions"><span>✓</span> No known interactions found between these medications.</div>';
+    } else {
+      // Mini interaction matrix
+      const names = meds.map(m => (m.name || m.query_name).toLowerCase());
+      const titled = meds.map(m => cap(m.name || m.query_name));
+      const pairMap = {};
+      interactions.forEach(ia => {
+        const key = [ia.drug_a.toLowerCase(), ia.drug_b.toLowerCase()].sort().join('||');
+        if (!pairMap[key] || ia.severity === 'serious') pairMap[key] = ia;
+      });
+
+      html += `<div class="matrix-legend" style="margin-bottom:12px">
+        <span class="matrix-key sev-serious">Serious</span>
+        <span class="matrix-key sev-moderate">Moderate</span>
+        <span class="matrix-key sev-caution">Caution</span>
+        <span class="matrix-key sev-none">No known interaction</span>
+      </div>`;
+
+      html += '<div class="matrix-scroll"><table class="matrix-table"><thead><tr><th></th>';
+      titled.forEach(t => { html += `<th class="matrix-col-head">${t}</th>`; });
+      html += '</tr></thead><tbody>';
+
+      for (let r = 0; r < n; r++) {
+        html += `<tr><th class="matrix-row-head">${titled[r]}</th>`;
+        for (let c = 0; c < n; c++) {
+          if (r === c) {
+            html += '<td class="matrix-cell matrix-self">—</td>';
+          } else {
+            const key = [names[r], names[c]].sort().join('||');
+            const ia = pairMap[key];
+            if (ia) {
+              const cls = SEVERITY_CLASS[ia.severity] || 'sev-caution';
+              const label = SEVERITY_LABEL[ia.severity] || 'Caution';
+              html += `<td class="matrix-cell ${cls} matrix-has-tip"
+                          data-tip="${escHtml(ia.warning)}"
+                          onclick="showInteractionTip(this)">${label}</td>`;
+            } else {
+              html += '<td class="matrix-cell sev-none">✓</td>';
+            }
+          }
+        }
+        html += '</tr>';
+      }
+      html += '</tbody></table></div>';
+
+      // Alert cards
+      html += '<div class="matrix-alerts" style="margin-top:16px">';
+      html += '<div class="matrix-alerts-title">Interaction Details</div>';
+      interactions.forEach(ia => {
+        const cls = SEVERITY_CLASS[ia.severity] || 'sev-caution';
+        html += `<div class="interaction-alert interaction-alert--${ia.severity}">
+          <div class="ia-drugs">${ia.drug_a} + ${ia.drug_b} <span class="ia-sev-badge ${cls}">${SEVERITY_LABEL[ia.severity] || ia.severity}</span></div>
+          <div class="ia-warning">${ia.warning}</div>
+          <div class="ia-note">Discuss with your prescribing provider.</div>
+        </div>`;
+      });
+      html += '</div>';
+    }
+  } else {
+    html += '<p class="text-muted">Select at least 2 medications to see interaction analysis.</p>';
+  }
+
+  // ── Section 4: Stopping / warnings ───────────────────────────────────────
+  const medsWithDiscontinuation = meds.filter(m => m.discontinuation_notes && !m.not_found);
+  if (medsWithDiscontinuation.length > 0) {
+    html += '<div class="compare-section-title" style="margin-top:28px">Stopping These Medications</div>';
+    html += '<div class="compare-wd-grid">';
+    medsWithDiscontinuation.forEach((m, i) => {
+      html += `<div class="compare-wd-card">
+        <div class="compare-wd-name">${cap(m.name || m.query_name)}</div>
+        <div class="compare-wd-text">${m.discontinuation_notes}</div>
+      </div>`;
+    });
+    html += '</div>';
+  }
+
+  html += '</div>'; // .compare-wrap
+  results.innerHTML = html;
+}
+
+function cap(str) {
+  if (!str) return '';
+  return str.charAt(0).toUpperCase() + str.slice(1);
+}
+
 initMedications();
 </script>
+
+<style>
+/* ── Interaction Matrix ──────────────────────────────────────────────────── */
+.matrix-legend {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+  font-size: 0.8rem;
+}
+.matrix-key {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.sev-serious  { background: #fde8e8; color: #b91c1c; border: 1px solid #fca5a5; }
+.sev-moderate { background: #fef9c3; color: #92400e; border: 1px solid #fde68a; }
+.sev-caution  { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+.sev-none     { background: var(--surface-2, #f3f4f6); color: var(--text-muted, #6b7280); border: 1px solid var(--border, #e5e7eb); }
+
+.matrix-scroll { overflow-x: auto; }
+.matrix-table {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  min-width: 100%;
+}
+.matrix-table th, .matrix-table td {
+  padding: 8px 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  text-align: center;
+  white-space: nowrap;
+}
+.matrix-col-head, .matrix-row-head {
+  background: var(--surface-2, #f9fafb);
+  font-weight: 600;
+  color: var(--text-primary, #111827);
+}
+.matrix-row-head { text-align: left; }
+.matrix-self { color: var(--text-muted, #9ca3af); background: var(--surface-2, #f3f4f6); }
+.matrix-cell.sev-serious  { background: #fde8e8; color: #b91c1c; font-weight: 600; }
+.matrix-cell.sev-moderate { background: #fef9c3; color: #92400e; font-weight: 600; }
+.matrix-cell.sev-caution  { background: #dbeafe; color: #1e40af; font-weight: 600; }
+.matrix-cell.sev-none     { background: #f0fdf4; color: #166534; }
+.matrix-has-tip { cursor: pointer; position: relative; }
+.matrix-has-tip:hover { opacity: 0.85; }
+.matrix-tooltip {
+  position: absolute;
+  z-index: 100;
+  left: 50%;
+  top: calc(100% + 6px);
+  transform: translateX(-50%);
+  background: var(--surface, #fff);
+  border: 1px solid var(--border, #e5e7eb);
+  border-radius: 6px;
+  padding: 10px 14px;
+  font-size: 0.8rem;
+  color: var(--text-primary, #111827);
+  max-width: 280px;
+  white-space: normal;
+  text-align: left;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  pointer-events: none;
+  font-weight: 400;
+}
+.matrix-alerts { margin-top: 20px; }
+.matrix-alerts-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 10px;
+}
+.matrix-loading { padding: 20px 0; color: var(--text-muted); font-size: 0.9rem; }
+
+.ia-sev-badge {
+  display: inline-block;
+  padding: 1px 7px;
+  border-radius: 3px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+/* ── Purpose line in card header ──────────────────────────────────────────── */
+.med-purpose-line {
+  font-size: 0.82rem;
+  color: var(--text-muted, #6b7280);
+  margin-top: 2px;
+  display: none;
+}
+
+/* ── Withdrawal tab ────────────────────────────────────────────────────────── */
+.wd-notice {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 14px 16px;
+}
+.wd-icon { font-size: 1.3rem; line-height: 1; flex-shrink: 0; padding-top: 1px; }
+.wd-title { font-size: 0.82rem; font-weight: 700; color: #92400e; margin-bottom: 6px; }
+.wd-text  { font-size: 0.88rem; color: var(--text-primary, #1f2937); line-height: 1.6; }
+
+/* ── ref-card additions ────────────────────────────────────────────────────── */
+.ref-card-purpose { font-size: 0.85rem; color: var(--text-muted, #6b7280); margin-bottom: 6px; }
+
+/* ── Comparator ────────────────────────────────────────────────────────────── */
+.comparator-selectors {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.comparator-slot-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted, #6b7280);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  margin-bottom: 4px;
+}
+.comparator-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 24px;
+}
+.btn-ghost {
+  background: transparent;
+  border: 1px solid var(--border, #e5e7eb);
+  color: var(--text-muted, #6b7280);
+  padding: 8px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.88rem;
+}
+.btn-ghost:hover { background: var(--surface-2, #f3f4f6); }
+
+.compare-loading { padding: 24px 0; color: var(--text-muted); font-size: 0.9rem; }
+.compare-wrap { margin-top: 4px; }
+
+/* Color palette for comparator columns */
+:root {
+  --c1: #6366f1; --c1-bg: #eef2ff; --c1-border: #c7d2fe;
+  --c2: #0891b2; --c2-bg: #ecfeff; --c2-border: #a5f3fc;
+  --c3: #059669; --c3-bg: #ecfdf5; --c3-border: #a7f3d0;
+  --c4: #d97706; --c4-bg: #fffbeb; --c4-border: #fde68a;
+}
+
+/* ── Compare cards ────────────────────────────────────────────────────────── */
+.compare-cards-row {
+  display: grid;
+  grid-template-columns: repeat(var(--med-count, 2), 1fr);
+  gap: 12px;
+  margin-bottom: 24px;
+}
+@media (max-width: 600px) {
+  .compare-cards-row { grid-template-columns: 1fr; }
+}
+
+.compare-card {
+  border-radius: 10px;
+  border: 1.5px solid;
+  padding: 14px 16px;
+  background: var(--surface, #fff);
+}
+.compare-color-1 { border-color: var(--c1-border); background: var(--c1-bg); }
+.compare-color-2 { border-color: var(--c2-border); background: var(--c2-bg); }
+.compare-color-3 { border-color: var(--c3-border); background: var(--c3-bg); }
+.compare-color-4 { border-color: var(--c4-border); background: var(--c4-bg); }
+
+.compare-card-header { margin-bottom: 10px; }
+.compare-card-name {
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--text-primary, #111827);
+  margin-bottom: 2px;
+}
+.compare-card-cat {
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #6b7280);
+}
+.compare-card-purpose {
+  font-size: 0.83rem;
+  color: var(--text-secondary, #374151);
+  line-height: 1.5;
+  margin-bottom: 10px;
+}
+.compare-meta-row {
+  display: flex;
+  gap: 8px;
+  font-size: 0.82rem;
+  margin-bottom: 4px;
+  align-items: flex-start;
+}
+.compare-meta-label {
+  font-weight: 600;
+  color: var(--text-muted, #6b7280);
+  flex-shrink: 0;
+  min-width: 46px;
+}
+.compare-doses { display: flex; flex-wrap: wrap; gap: 4px; }
+
+/* ── Side-effect comparison table ─────────────────────────────────────────── */
+.compare-section-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted, #6b7280);
+  margin-bottom: 6px;
+}
+.compare-grid-note { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 10px; }
+
+.compare-effects-wrap { overflow-x: auto; margin-bottom: 12px; }
+.compare-effects-table {
+  border-collapse: collapse;
+  font-size: 0.82rem;
+  width: 100%;
+}
+.compare-effects-table th,
+.compare-effects-table td {
+  padding: 6px 12px;
+  border: 1px solid var(--border, #e5e7eb);
+  text-align: center;
+}
+.cet-label-col { text-align: left; background: var(--surface-2, #f9fafb); font-weight: 600; white-space: nowrap; }
+.cet-med-col { font-weight: 600; font-size: 0.78rem; white-space: nowrap; }
+
+.compare-col-head-1 { background: var(--c1-bg); color: var(--c1); border-bottom: 2px solid var(--c1-border); }
+.compare-col-head-2 { background: var(--c2-bg); color: var(--c2); border-bottom: 2px solid var(--c2-border); }
+.compare-col-head-3 { background: var(--c3-bg); color: var(--c3); border-bottom: 2px solid var(--c3-border); }
+.compare-col-head-4 { background: var(--c4-bg); color: var(--c4); border-bottom: 2px solid var(--c4-border); }
+
+.cet-effect-name { text-align: left; color: var(--text-primary, #111827); }
+.cet-shared { background: #fefce8; }
+.cet-shared .cet-effect-name { font-weight: 600; }
+.cet-cell { position: relative; }
+.cet-dot { font-size: 1.1rem; }
+.cet-dash { color: var(--text-muted, #d1d5db); font-size: 1rem; }
+
+.cet-has.compare-dot-1 .cet-dot { color: var(--c1); }
+.cet-has.compare-dot-2 .cet-dot { color: var(--c2); }
+.cet-has.compare-dot-3 .cet-dot { color: var(--c3); }
+.cet-has.compare-dot-4 .cet-dot { color: var(--c4); }
+
+/* ── Shared effects banner ─────────────────────────────────────────────────── */
+.compare-shared-banner {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  background: #fefce8;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 12px 14px;
+  font-size: 0.84rem;
+  margin-bottom: 6px;
+}
+.compare-shared-icon { font-size: 1rem; flex-shrink: 0; }
+.shared-tag {
+  display: inline-block;
+  background: #fde68a;
+  color: #78350f;
+  border-radius: 4px;
+  padding: 1px 7px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  margin: 1px 2px;
+}
+
+/* ── No interactions ──────────────────────────────────────────────────────── */
+.compare-no-interactions {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  background: #f0fdf4;
+  border: 1px solid #a7f3d0;
+  border-radius: 8px;
+  padding: 12px 16px;
+  font-size: 0.88rem;
+  color: #065f46;
+  font-weight: 500;
+}
+
+/* ── Discontinuation grid ────────────────────────────────────────────────── */
+.compare-wd-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 12px;
+  margin-top: 8px;
+}
+.compare-wd-card {
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 12px 14px;
+}
+.compare-wd-name {
+  font-size: 0.88rem;
+  font-weight: 700;
+  color: #92400e;
+  margin-bottom: 6px;
+}
+.compare-wd-text {
+  font-size: 0.83rem;
+  color: var(--text-primary, #1f2937);
+  line-height: 1.55;
+}
+</style>
 {% endblock %}

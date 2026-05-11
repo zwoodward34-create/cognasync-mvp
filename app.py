@@ -1061,13 +1061,27 @@ def api_medication_info(name):
     onset_h = info.get('typical_onset_hours')
     sides_raw = info.get('common_side_effects', [])
 
+    # Build common_doses list — prefer the new JSONB column, fall back to legacy single-dose field
+    common_doses_list = info.get('common_doses_list')
+    if common_doses_list and isinstance(common_doses_list, list) and len(common_doses_list) > 0:
+        common_doses = common_doses_list
+    elif dose is not None:
+        common_doses = [f"{dose} {unit}"]
+    else:
+        common_doses = []
+
     return jsonify({
         'name': info.get('name'),
         'category': info.get('category'),
-        'common_doses': [f"{dose} {unit}"] if dose is not None else [],
+        'common_doses': common_doses,
         'typical_onset': f"~{onset_h} hour{'s' if onset_h != 1 else ''}" if onset_h else 'Varies',
         'common_side_effects': ', '.join(s.replace('_', ' ') for s in sides_raw) if isinstance(sides_raw, list) else str(sides_raw),
         'interaction_warnings': info.get('notes') or None,
+        # New fields from v2 schema
+        'purpose': info.get('purpose') or None,
+        'conditions_treated': info.get('conditions_treated') or None,
+        'dosage_range': info.get('dosage_range') or None,
+        'discontinuation_notes': info.get('discontinuation_notes') or None,
     }), 200
 
 
@@ -1110,6 +1124,56 @@ def api_unlink_provider():
         return err
     db.assign_patient_to_provider(user['id'], None)
     return jsonify({'message': 'Provider unlinked'}), 200
+
+
+@app.route('/api/medications/compare', methods=['POST'])
+def api_medications_compare():
+    """Compare up to 4 medications: returns per-med info + interactions between them."""
+    _, err = _api_user()
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    names = data.get('names', [])
+    if not names or not isinstance(names, list):
+        return jsonify({'error': 'names array required'}), 400
+    names = [n.strip() for n in names if isinstance(n, str) and n.strip()][:4]
+    if not names:
+        return jsonify({'error': 'At least one medication name required'}), 400
+
+    results = []
+    for name in names:
+        info = db.get_medication_info(name)
+        if info:
+            dose = info.get('common_dose')
+            unit = info.get('dose_unit', 'mg')
+            onset_h = info.get('typical_onset_hours')
+            sides_raw = info.get('common_side_effects', [])
+            common_doses_list = info.get('common_doses_list')
+            if common_doses_list and isinstance(common_doses_list, list) and len(common_doses_list) > 0:
+                common_doses = common_doses_list
+            elif dose is not None:
+                common_doses = [f"{dose} {unit}"]
+            else:
+                common_doses = []
+            results.append({
+                'query_name': name,
+                'name': info.get('name'),
+                'category': info.get('category'),
+                'purpose': info.get('purpose'),
+                'conditions_treated': info.get('conditions_treated'),
+                'dosage_range': info.get('dosage_range'),
+                'typical_onset': f"~{onset_h} hour{'s' if onset_h != 1 else ''}" if onset_h else 'Varies',
+                'common_doses': common_doses,
+                'common_side_effects': sides_raw if isinstance(sides_raw, list) else
+                                       [s.strip() for s in str(sides_raw).split(',') if s.strip()],
+                'interaction_warnings': info.get('notes') or None,
+                'discontinuation_notes': info.get('discontinuation_notes') or None,
+            })
+        else:
+            results.append({'query_name': name, 'name': name, 'not_found': True})
+
+    interactions = db.check_interactions_for_names(names)
+    return jsonify({'medications': results, 'interactions': interactions}), 200
 
 
 @app.route('/api/settings/profile/remove-medication', methods=['POST'])

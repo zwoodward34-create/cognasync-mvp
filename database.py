@@ -548,28 +548,44 @@ def get_medication_names() -> list:
         return []
 
 def get_medication_info(name: str):
-    """Get full reference info for a single medication by name (case-insensitive)."""
+    """Get full reference info for a single medication by name (case-insensitive).
+
+    Prefers enriched records (purpose field populated) over legacy sparse entries.
+    Falls back to partial-word matching to handle brand-name format stored names
+    like 'Sertraline (Zoloft)' → finds the enriched 'sertraline' record.
+    """
     try:
-        result = supabase_admin.table('medication_reference').select('*').ilike('name', name).limit(1).execute()
-        return result.data[0] if result.data else None
+        # Collect all records matching the full name (exact case-insensitive)
+        result = supabase_admin.table('medication_reference').select('*').ilike('name', name).limit(5).execute()
+        if result.data:
+            enriched = [r for r in result.data if r.get('purpose')]
+            if enriched:
+                return enriched[0]
+            # Found records but none are enriched — fall through to partial search
+
+        # Partial-word fallback: handles "sertraline (zoloft)" → searches each word
+        # to find the enriched generic-name entry
+        import re as _re
+        words = [w for w in _re.split(r'[\s()/,]+', name) if len(w) > 3]
+        for word in words:
+            result = supabase_admin.table('medication_reference').select('*') \
+                .ilike('name', f'%{word}%').limit(10).execute()
+            if result.data:
+                enriched = [r for r in result.data if r.get('purpose')]
+                if enriched:
+                    return enriched[0]
+                # Return unenriched only if no better option exists across all words
+                _fallback = result.data[0]
+
+        # Return whatever we found even if unenriched
+        return locals().get('_fallback') or (result.data[0] if result.data else None)
     except Exception as e:
         print(f"Error fetching medication info: {e}")
         return None
 
-def check_medication_interactions(patient_id) -> list:
-    """Return known drug interaction alerts for a patient's active medications.
 
-    Checks a curated list of clinically significant psychiatric / neurological
-    drug-drug interactions.  Matching is case-insensitive substring search so
-    it handles brand names and common abbreviations (e.g. "sertraline" matches
-    "sertraline 50mg", "Sertraline (Zoloft)", etc.).
-
-    Returns a list of dicts:  {drug_a, drug_b, severity, warning}
-    severity is 'serious' | 'moderate' | 'caution'.
-    """
-    # ── Interaction table ────────────────────────────────────────────
-    # Each entry: ([drug_a_aliases], [drug_b_aliases], severity, warning)
-    INTERACTIONS = [
+# ── Module-level interaction table (shared by patient and comparator checks) ──
+_DRUG_INTERACTIONS = [
         # ── Serotonin syndrome risk ──────────────────────────────────
         (['selegiline', 'phenelzine', 'tranylcypromine', 'isocarboxazid', 'rasagiline', 'monoamine oxidase'],
          ['sertraline', 'fluoxetine', 'paroxetine', 'escitalopram', 'citalopram', 'fluvoxamine',
@@ -659,18 +675,88 @@ def check_medication_interactions(patient_id) -> list:
          ['selegiline', 'phenelzine', 'tranylcypromine', 'isocarboxazid', 'monoamine oxidase'],
          'serious',
          'Stimulant + MAOI: hypertensive crisis risk. Absolutely contraindicated.'),
+
+        # ── CYP3A4 inhibition (non-DHP calcium channel blockers) ─────
+        (['verapamil', 'diltiazem'],
+         ['carbamazepine', 'tegretol'],
+         'serious',
+         'Verapamil/diltiazem + carbamazepine: CYP3A4 inhibition by these CCBs raises carbamazepine plasma levels significantly — toxicity risk. Monitor drug levels closely.'),
+
+        (['verapamil', 'diltiazem'],
+         ['simvastatin', 'lovastatin'],
+         'serious',
+         'Verapamil/diltiazem + simvastatin/lovastatin: CYP3A4 inhibition markedly increases statin exposure — myopathy and rhabdomyolysis risk. Switch to pravastatin or rosuvastatin (non-CYP3A4 substrates).'),
+
+        # ── Bradycardia / AV nodal block ─────────────────────────────
+        (['verapamil', 'diltiazem'],
+         ['metoprolol', 'atenolol', 'carvedilol', 'bisoprolol', 'propranolol', 'beta-blocker'],
+         'serious',
+         'Non-DHP calcium channel blocker + beta-blocker: additive AV nodal depression — risk of symptomatic bradycardia, high-degree heart block, or cardiac arrest.'),
+
+        # ── Serotonin syndrome (muscle relaxants / herbals) ──────────
+        (['cyclobenzaprine', 'flexeril'],
+         ['sertraline', 'fluoxetine', 'paroxetine', 'escitalopram', 'citalopram', 'fluvoxamine',
+          'venlafaxine', 'duloxetine', 'desvenlafaxine', 'levomilnacipran',
+          'selegiline', 'phenelzine', 'tranylcypromine', 'isocarboxazid', 'monoamine oxidase',
+          'tramadol', 'linezolid'],
+         'serious',
+         "Cyclobenzaprine + serotonergic agent: cyclobenzaprine has serotonergic activity — combining with SSRIs, SNRIs, MAOIs, or tramadol raises serotonin syndrome risk."),
+
+        (['st. john', 'hypericum'],
+         ['sertraline', 'fluoxetine', 'paroxetine', 'escitalopram', 'citalopram', 'fluvoxamine',
+          'venlafaxine', 'duloxetine', 'desvenlafaxine', 'levomilnacipran',
+          'bupropion', 'tramadol', 'lithium'],
+         'serious',
+         "St. John's Wort + serotonergic agent: herbal serotonin reuptake inhibition combined with SSRI, SNRI, or bupropion significantly raises serotonin syndrome risk. Avoid combination."),
+
+        # ── CNS depression (sedating antihistamines) ─────────────────
+        (['diphenhydramine', 'benadryl'],
+         ['alprazolam', 'clonazepam', 'diazepam', 'lorazepam', 'temazepam', 'zolpidem',
+          'eszopiclone', 'zaleplon', 'oxycodone', 'hydrocodone', 'codeine', 'morphine',
+          'tramadol', 'quetiapine', 'olanzapine', 'risperidone', 'haloperidol', 'gabapentin',
+          'pregabalin'],
+         'moderate',
+         'Diphenhydramine + CNS depressant: additive sedation and anticholinergic effects. Particular caution in elderly patients (Beers Criteria); may impair psychomotor function.'),
+
+        # ── NSAID + antihypertensives / renal risk ───────────────────
+        (['ibuprofen', 'naproxen', 'diclofenac', 'celecoxib', 'nsaid', 'indomethacin'],
+         ['lisinopril', 'enalapril', 'ramipril', 'captopril',
+          'losartan', 'valsartan', 'irbesartan',
+          'hydrochlorothiazide', 'furosemide', 'chlorthalidone'],
+         'moderate',
+         'NSAID + ACE inhibitor/ARB/diuretic: NSAIDs blunt antihypertensive efficacy and increase acute kidney injury risk, particularly when combined with renin-angiotensin system agents or loop/thiazide diuretics.'),
     ]
 
-    try:
-        # Collect active medication names from both the new medications table
-        # and the legacy patient_profiles.current_medications JSONB array.
-        med_names = set()
+def _run_interaction_check(med_names: set) -> list:
+    """Check _DRUG_INTERACTIONS against a set of lowercase medication names."""
+    alerts = []
+    seen = set()
+    for aliases_a, aliases_b, severity, warning in _DRUG_INTERACTIONS:
+        matched_a = next((n for n in med_names
+                          if any(alias in n or n in alias for alias in aliases_a)), None)
+        matched_b = next((n for n in med_names
+                          if any(alias in n or n in alias for alias in aliases_b)), None)
+        if matched_a and matched_b and matched_a != matched_b:
+            key = tuple(sorted([matched_a, matched_b]))
+            if key not in seen:
+                seen.add(key)
+                alerts.append({
+                    'drug_a':   matched_a.title(),
+                    'drug_b':   matched_b.title(),
+                    'severity': severity,
+                    'warning':  warning,
+                })
+    return alerts
 
+
+def check_medication_interactions(patient_id) -> list:
+    """Return interaction alerts for a patient's active medications."""
+    try:
+        med_names = set()
         active_meds = get_user_medications(patient_id, active_only=True)
         for m in active_meds:
             if m.get('name'):
                 med_names.add(m['name'].lower())
-
         profile = get_patient_profile(patient_id)
         if profile:
             legacy = profile.get('current_medications') or []
@@ -683,36 +769,20 @@ def check_medication_interactions(patient_id) -> list:
                 name = m.get('name', '') if isinstance(m, dict) else str(m)
                 if name:
                     med_names.add(name.lower())
-
         if len(med_names) < 2:
             return []
-
-        # Check every known interaction pair
-        alerts = []
-        seen = set()
-
-        for aliases_a, aliases_b, severity, warning in INTERACTIONS:
-            matched_a = next((n for n in med_names
-                              if any(alias in n or n in alias for alias in aliases_a)), None)
-            matched_b = next((n for n in med_names
-                              if any(alias in n or n in alias for alias in aliases_b)), None)
-
-            if matched_a and matched_b and matched_a != matched_b:
-                key = tuple(sorted([matched_a, matched_b]))
-                if key not in seen:
-                    seen.add(key)
-                    alerts.append({
-                        'drug_a':   matched_a.title(),
-                        'drug_b':   matched_b.title(),
-                        'severity': severity,
-                        'warning':  warning,
-                    })
-
-        return alerts
-
+        return _run_interaction_check(med_names)
     except Exception as e:
         print(f"Error checking medication interactions: {e}")
         return []
+
+
+def check_interactions_for_names(names: list) -> list:
+    """Return interaction alerts for an arbitrary list of medication names."""
+    med_names = {n.lower() for n in names if n}
+    if len(med_names) < 2:
+        return []
+    return _run_interaction_check(med_names)
 
 def search_medication_reference(search_term: str):
     """Search the global medication reference database."""
