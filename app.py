@@ -280,6 +280,7 @@ def provider_patient_detail(patient_id):
     current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
     patient_has_crisis = current_p.get('suicide_risk', False)
     patient_crisis_context = current_p.get('suicide_risk_context', [])
+    crisis_history = db.get_crisis_history(patient_id)
 
     return render_template('provider/patient_detail.html',
                            user=user, patient=patient,
@@ -290,7 +291,8 @@ def provider_patient_detail(patient_id):
                            selected_days=days,
                            today_str=date.today().isoformat(),
                            patient_has_crisis=patient_has_crisis,
-                           patient_crisis_context=patient_crisis_context)
+                           patient_crisis_context=patient_crisis_context,
+                           crisis_history=crisis_history)
 
 
 # ══════════════════════════════════════════════════════════════════════════════

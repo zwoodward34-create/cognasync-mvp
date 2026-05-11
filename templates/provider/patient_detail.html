@@ -287,6 +287,52 @@ function resolveCrisisRisk() {
     </div>
     {% endif %}
 
+    <!-- Crisis log -->
+    {% if crisis_history %}
+    <div class="pv-panel-full" id="crisis-log-section">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+        <div class="pv-panel-title" style="margin:0;">Crisis Log</div>
+        <span style="font-size:11px;color:#dc2626;border:1px solid #dc2626;padding:1px 7px;font-weight:600;">
+          {{ crisis_history|length }} flag{{ 's' if crisis_history|length != 1 }}
+        </span>
+      </div>
+      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.6;">
+        All entries containing crisis-level language. Click a row to view the text.
+        Resolved entries were acknowledged by a provider before new content appeared.
+      </div>
+      <div id="crisis-log-list">
+        {% for item in crisis_history %}
+        <div class="crisis-log-row {% if item.resolved %}resolved{% else %}active{% endif %}"
+             onclick="toggleCrisisEntry(this)"
+             style="border-left:3px solid {% if item.resolved %}#6b7280{% else %}#dc2626{% endif %};
+                    padding:10px 14px;margin-bottom:8px;cursor:pointer;
+                    background:{% if item.resolved %}#f9fafb{% else %}#fff8f8{% endif %};">
+          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
+            <div style="display:flex;align-items:center;gap:10px;">
+              <span style="font-size:11px;color:{% if item.resolved %}#6b7280{% else %}#dc2626{% endif %};">
+                {% if item.resolved %}&#10003;{% else %}&#9888;{% endif %}
+              </span>
+              <span style="font-size:13px;font-weight:600;color:#111;">{{ item.date }}</span>
+              <span style="font-size:11px;color:var(--text-muted);border:1px solid var(--border-light);padding:1px 6px;">
+                {{ item.source }}
+              </span>
+              {% if item.resolved %}
+              <span style="font-size:11px;color:#6b7280;">Resolved</span>
+              {% else %}
+              <span style="font-size:11px;color:#dc2626;font-weight:600;">Active</span>
+              {% endif %}
+            </div>
+            <span class="crisis-log-chevron" style="font-size:11px;color:var(--text-muted);transition:transform .15s;">▸</span>
+          </div>
+          <div class="crisis-log-body" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb;">
+            <p style="font-size:13px;color:#222;line-height:1.7;margin:0;white-space:pre-wrap;">{{ item.text }}</p>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+
     <!-- Insight analysis panel -->
     <div class="pv-panel-full">
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
@@ -671,6 +717,15 @@ function filterPatients(q) {
   document.querySelectorAll('.pv-patient-item').forEach(item => {
     item.style.display = item.dataset.name?.includes(q.toLowerCase()) ? '' : 'none';
   });
+}
+
+// ── Crisis log row toggle ────────────────────────────────────────────
+function toggleCrisisEntry(row) {
+  const body = row.querySelector('.crisis-log-body');
+  const chevron = row.querySelector('.crisis-log-chevron');
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : 'block';
+  chevron.style.transform = open ? '' : 'rotate(90deg)';
 }
 
 // ── Generate summary ────────────────────────────────────────────────

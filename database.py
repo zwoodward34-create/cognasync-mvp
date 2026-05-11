@@ -762,6 +762,50 @@ def _has_suicide_risk(user_id: str, days: int = 7, since: str = None) -> bool:
     return bool(get_suicide_risk_context(user_id, days, since=since))
 
 
+def get_crisis_history(user_id: str) -> list:
+    """Return every crisis-flagged entry across all time for a patient, sorted
+    newest-first.  Each item: {source, date, text, resolved}.
+    `resolved` is True when the entry predates the provider's last resolution."""
+    from claude_api import check_crisis
+    results = []
+    try:
+        prof = supabase_admin.table('patient_profiles').select('crisis_resolved_at').eq(
+            'user_id', str(user_id)).limit(1).execute()
+        resolved_at = None
+        if prof.data:
+            resolved_at = (prof.data[0].get('crisis_resolved_at') or '')[:10] or None
+
+        ci = supabase_admin.table('checkins').select('notes,checkin_date').eq(
+            'user_id', str(user_id)).execute()
+        for row in (ci.data or []):
+            text = row.get('notes') or ''
+            if text and check_crisis(text):
+                d = (row.get('checkin_date') or '')[:10]
+                results.append({
+                    'source': 'Check-in note',
+                    'date': d,
+                    'text': text[:800],
+                    'resolved': bool(resolved_at and d <= resolved_at),
+                })
+
+        je = supabase_admin.table('journal_entries').select('content,entry_date').eq(
+            'user_id', str(user_id)).execute()
+        for row in (je.data or []):
+            text = row.get('content') or ''
+            if text and check_crisis(text):
+                d = (row.get('entry_date') or '')[:10]
+                results.append({
+                    'source': 'Journal entry',
+                    'date': d,
+                    'text': text[:800],
+                    'resolved': bool(resolved_at and d <= resolved_at),
+                })
+    except Exception as e:
+        print(f"get_crisis_history error for user {user_id}: {e}")
+    results.sort(key=lambda x: x['date'], reverse=True)
+    return results
+
+
 def resolve_crisis_risk(patient_id: str) -> bool:
     """Record a provider resolution: stamp crisis_resolved_at = now().
     Returns True on success."""
