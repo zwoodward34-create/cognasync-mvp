@@ -711,6 +711,7 @@ input[type="number"], input[type="date"], select, .form-textarea, textarea {
 .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
 .chart-card  { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
 .chart-title { font-size: 0.94rem; margin-bottom: 14px; color: var(--text-muted); font-family: 'DM Sans', sans-serif; font-weight: 600; }
+.chart-density-banner { font-size: 11px; color: var(--amber); background: var(--amber-light); border: 1px solid #e8c96a; border-radius: 2px; padding: 4px 8px; margin-bottom: 10px; letter-spacing: .01em; }
 
 /* ── Settings ────────────────────────────────────────────────────────── */
 
