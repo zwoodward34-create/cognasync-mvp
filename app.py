@@ -871,6 +871,19 @@ def api_provider_patient(patient_id):
     return jsonify(detail), 200
 
 
+@app.route('/api/provider/patient/<patient_id>/resolve-crisis', methods=['POST'])
+def api_resolve_crisis(patient_id):
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+    ok = db.resolve_crisis_risk(patient_id)
+    if not ok:
+        return jsonify({'error': 'Failed to resolve crisis flag'}), 500
+    return jsonify({'status': 'resolved'}), 200
+
+
 @app.route('/api/provider/generate-summary/<patient_id>', methods=['POST'])
 @limiter.limit("10/hour")
 def api_provider_generate_summary(patient_id):

@@ -723,15 +723,18 @@ def search_medication_reference(search_term: str):
 # PROVIDER OPERATIONS
 # ═══════════════════════════════════════════════════════════════════════════
 
-def get_suicide_risk_context(user_id: str, days: int = 7) -> list:
-    """Return a list of crisis-flagged entries (check-ins and journals) for the
-    last N days.  Each item: {source, date, text}.  Empty list = no risk."""
+def get_suicide_risk_context(user_id: str, days: int = 7, since: str = None) -> list:
+    """Return crisis-flagged entries for the last N days (or since a given ISO
+    datetime string, whichever is more recent).
+    Each item: {source, date, text}.  Empty list = no risk."""
     from claude_api import check_crisis
-    cutoff = (date.today() - timedelta(days=days)).isoformat()
+    rolling_cutoff = (date.today() - timedelta(days=days)).isoformat()
+    # Use the later of the rolling window and the provider-set resolution timestamp
+    cutoff = max(rolling_cutoff, (since or ''))
     results = []
     try:
         ci = supabase_admin.table('checkins').select('notes,checkin_date').eq(
-            'user_id', user_id).gte('checkin_date', cutoff).execute()
+            'user_id', user_id).gte('checkin_date', cutoff[:10]).execute()
         for row in (ci.data or []):
             text = row.get('notes') or ''
             if text and check_crisis(text):
@@ -741,7 +744,7 @@ def get_suicide_risk_context(user_id: str, days: int = 7) -> list:
                     'text': text[:600],
                 })
         je = supabase_admin.table('journal_entries').select('content,entry_date').eq(
-            'user_id', user_id).gte('entry_date', cutoff).execute()
+            'user_id', user_id).gte('entry_date', cutoff[:10]).execute()
         for row in (je.data or []):
             text = row.get('content') or ''
             if text and check_crisis(text):
@@ -755,8 +758,21 @@ def get_suicide_risk_context(user_id: str, days: int = 7) -> list:
     return results
 
 
-def _has_suicide_risk(user_id: str, days: int = 7) -> bool:
-    return bool(get_suicide_risk_context(user_id, days))
+def _has_suicide_risk(user_id: str, days: int = 7, since: str = None) -> bool:
+    return bool(get_suicide_risk_context(user_id, days, since=since))
+
+
+def resolve_crisis_risk(patient_id: str) -> bool:
+    """Record a provider resolution: stamp crisis_resolved_at = now().
+    Returns True on success."""
+    try:
+        supabase_admin.table('patient_profiles').update(
+            {'crisis_resolved_at': datetime.utcnow().isoformat()}
+        ).eq('user_id', str(patient_id)).execute()
+        return True
+    except Exception as e:
+        print(f"resolve_crisis_risk error for patient {patient_id}: {e}")
+        return False
 
 
 def get_provider_patients(provider_id):
@@ -769,7 +785,7 @@ def get_provider_patients(provider_id):
     try:
         # Get profile rows for every patient assigned to this provider
         prof_resp = supabase_admin.table('patient_profiles').select(
-            'user_id, current_medications'
+            'user_id, current_medications, crisis_resolved_at'
         ).eq('provider_id', str(provider_id)).execute()
 
         if not prof_resp.data:
@@ -802,7 +818,8 @@ def get_provider_patients(provider_id):
                 except Exception:
                     meds = []
 
-            crisis_context = get_suicide_risk_context(uid)
+            resolved_at = row.get('crisis_resolved_at') or None
+            crisis_context = get_suicide_risk_context(uid, since=resolved_at)
             patients.append({
                 'patient_id':           uid,
                 'full_name':            user['full_name'],
