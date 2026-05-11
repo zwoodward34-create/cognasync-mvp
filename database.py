@@ -14,7 +14,12 @@ supabase_admin: Client = create_client(SUPABASE_URL, SUPABASE_SERVICE_KEY)
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 
-VALID_HYPOTHESIS_VARS = {'mood', 'stress', 'sleep', 'energy', 'focus'}
+VALID_HYPOTHESIS_VARS = {
+    'mood', 'stress', 'sleep', 'energy', 'focus',
+    'irritability', 'motivation', 'perceived_stress',
+    'alcohol', 'exercise', 'sunlight', 'screen_time',
+    'social_quality', 'workload_friction',
+}
 
 
 def init_db():
@@ -1326,11 +1331,20 @@ def get_paired_values(patient_id, var_a, var_b, days=60):
     """
     # col = database column; ext = key inside extended_data JSONB (None if not needed)
     VAR_MAP = {
-        'mood':   ('mood_score',   None),
-        'stress': ('stress_score', None),
-        'sleep':  ('sleep_hours',  None),
-        'energy': (None,           'energy'),
-        'focus':  (None,           'focus'),
+        'mood':              ('mood_score',   None),
+        'stress':            ('stress_score', None),
+        'sleep':             ('sleep_hours',  None),
+        'energy':            (None,           'energy'),
+        'focus':             (None,           'focus'),
+        'irritability':      (None,           'irritability'),
+        'motivation':        (None,           'motivation'),
+        'perceived_stress':  (None,           'perceived_stress'),
+        'alcohol':           (None,           'alcohol_units'),
+        'exercise':          (None,           'exercise_minutes'),
+        'sunlight':          (None,           'sunlight_hours'),
+        'screen_time':       (None,           'screen_time_hours'),
+        'social_quality':    (None,           'social_quality'),
+        'workload_friction': (None,           'workload_friction'),
     }
 
     def _extract(row, var):

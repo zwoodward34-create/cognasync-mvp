@@ -3,11 +3,20 @@
 // Surfaces unexpected patterns in unexamined variable pairs once per week.
 
 const VAR_LABELS = {
-  mood: 'Mood',
-  stress: 'Stress',
-  sleep: 'Sleep',
-  energy: 'Energy',
-  focus: 'Focus',
+  mood:              'Mood',
+  stress:            'Stress',
+  sleep:             'Sleep',
+  energy:            'Energy',
+  focus:             'Focus',
+  irritability:      'Irritability',
+  motivation:        'Motivation',
+  perceived_stress:  'Perceived Stress',
+  alcohol:           'Alcohol',
+  exercise:          'Exercise',
+  sunlight:          'Sunlight',
+  screen_time:       'Screen Time',
+  social_quality:    'Social Quality',
+  workload_friction: 'Workload Friction',
 };
 
 const DIR_LABELS = {

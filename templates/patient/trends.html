@@ -174,11 +174,26 @@
     <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;">
       <span style="font-size:13px;">I think</span>
       <select id="hyp-var-a" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
-        <option value="mood">Mood</option>
-        <option value="stress">Stress</option>
-        <option value="sleep">Sleep</option>
-        <option value="energy">Energy</option>
-        <option value="focus">Focus</option>
+        <optgroup label="Core">
+          <option value="mood">Mood</option>
+          <option value="stress">Stress</option>
+          <option value="sleep">Sleep</option>
+          <option value="energy">Energy</option>
+          <option value="focus">Focus</option>
+        </optgroup>
+        <optgroup label="Cognitive &amp; Emotional">
+          <option value="irritability">Irritability</option>
+          <option value="motivation">Motivation</option>
+          <option value="perceived_stress">Perceived Stress</option>
+          <option value="social_quality">Social Quality</option>
+          <option value="workload_friction">Workload Friction</option>
+        </optgroup>
+        <optgroup label="Lifestyle">
+          <option value="exercise">Exercise</option>
+          <option value="sunlight">Sunlight</option>
+          <option value="alcohol">Alcohol</option>
+          <option value="screen_time">Screen Time</option>
+        </optgroup>
       </select>
       <select id="hyp-direction" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
         <option value="positive">helps / increases</option>
@@ -186,11 +201,26 @@
         <option value="null">has no effect on</option>
       </select>
       <select id="hyp-var-b" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
-        <option value="mood">Mood</option>
-        <option value="stress">Stress</option>
-        <option value="sleep">Sleep</option>
-        <option value="energy">Energy</option>
-        <option value="focus">Focus</option>
+        <optgroup label="Core">
+          <option value="mood">Mood</option>
+          <option value="stress">Stress</option>
+          <option value="sleep">Sleep</option>
+          <option value="energy">Energy</option>
+          <option value="focus">Focus</option>
+        </optgroup>
+        <optgroup label="Cognitive &amp; Emotional">
+          <option value="irritability">Irritability</option>
+          <option value="motivation">Motivation</option>
+          <option value="perceived_stress">Perceived Stress</option>
+          <option value="social_quality">Social Quality</option>
+          <option value="workload_friction">Workload Friction</option>
+        </optgroup>
+        <optgroup label="Lifestyle">
+          <option value="exercise">Exercise</option>
+          <option value="sunlight">Sunlight</option>
+          <option value="alcohol">Alcohol</option>
+          <option value="screen_time">Screen Time</option>
+        </optgroup>
       </select>
       <button class="btn btn-primary btn-sm" id="hyp-btn" onclick="runHypothesisTest()">
         Test Hypothesis
@@ -498,13 +528,50 @@ function renderTrends(data) {
       return `<li style="margin-bottom:10px;">${i.pattern}${confTag}${warningTag}${limTag}</li>`;
     }).join('');
     document.getElementById('insights-panel').classList.remove('hidden');
+  } else if (suppressedCount > 0) {
+    const n = data.checkin_count || 0;
+    const remaining = Math.max(0, 21 - n);
+    const progressPct = Math.min(100, Math.round((n / 21) * 100));
+
+    // Early patterns: soft observations, no statistical gates
+    const earlyItems = [];
+    for (const c of insightCandidates) {
+      const metric = data[c.key];
+      if (!metric || metric.trend !== c.dir) continue;
+      const scores = metric.daily_scores || metric.daily_hours || [];
+      if (scores.length < 3) continue;
+      const avg = (scores.reduce((a, b) => a + b, 0) / scores.length).toFixed(1);
+      const unitMap = { mood: '/10', stress: '/10', sleep: ' hrs', energy: '/10' };
+      const unit = unitMap[c.key] || '';
+      const dirWord = c.dir === 'increasing' ? 'trending up' : 'trending down';
+      earlyItems.push(`${c.key.charAt(0).toUpperCase() + c.key.slice(1)} is ${dirWord} (avg ${avg}${unit} over ${scores.length} check-ins so far).`);
+    }
+
+    let earlyHtml = '';
+    if (earlyItems.length) {
+      earlyHtml = `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-light);">
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:8px;">
+          Early patterns — not yet statistically confirmed
+        </div>
+        <ul style="margin:0;padding-left:18px;">
+          ${earlyItems.map(t => `<li style="font-size:13px;color:var(--text);margin-bottom:6px;line-height:1.55;">${t}</li>`).join('')}
+        </ul>
+      </div>`;
+    }
+
+    insightList.innerHTML = `<li style="list-style:none;">
+      <div style="font-size:13px;color:var(--text);margin-bottom:8px;">
+        Full insights unlock at 21 check-ins. You have <strong>${n}</strong> so far
+        ${remaining > 0 ? `— <strong>${remaining}</strong> more to go.` : '.'}
+      </div>
+      <div style="background:var(--border-light);border-radius:4px;height:6px;overflow:hidden;">
+        <div style="height:100%;width:${progressPct}%;background:var(--accent);border-radius:4px;transition:width .4s;"></div>
+      </div>
+      ${earlyHtml}
+    </li>`;
+    document.getElementById('insights-panel').classList.remove('hidden');
   } else {
-    const msg = suppressedCount > 0
-      ? `<li style="color:var(--text-muted);list-style:none;">Not enough data to surface statistically valid insights yet.
-           <span style="display:block;font-size:11px;margin-top:4px;opacity:.7;">${firstSuppressReason || 'Keep checking in daily.'}</span>
-         </li>` : '';
-    insightList.innerHTML = msg;
-    document.getElementById('insights-panel').classList.toggle('hidden', !suppressedCount);
+    document.getElementById('insights-panel').classList.add('hidden');
   }
 
   const chartDefaults = {
