@@ -77,6 +77,8 @@ def _call_claude(system_prompt, user_content, max_tokens=600):
         )
         return message.content[0].text
     except Exception as e:
+        import logging
+        logging.getLogger(__name__).error("_call_claude failed (model=%s): %s", CLAUDE_MODEL, e, exc_info=True)
         raise RuntimeError(f'Claude API error: {str(e)}')
 
 

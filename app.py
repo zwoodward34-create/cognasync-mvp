@@ -450,8 +450,8 @@ def api_create_checkin():
         if result.get('status') == 'safe' and result.get('text'):
             ai_insight = result['text']
             db.update_checkin_insights(checkin_id, ai_insight)
-    except Exception:
-        pass  # AI insight is non-blocking
+    except Exception as _ai_err:
+        app.logger.error("AI insight generation failed: %s", _ai_err, exc_info=True)
 
     return jsonify({
         'checkin_id': checkin_id,
