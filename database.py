@@ -723,26 +723,40 @@ def search_medication_reference(search_term: str):
 # PROVIDER OPERATIONS
 # ═══════════════════════════════════════════════════════════════════════════
 
-def _has_suicide_risk(user_id: str, days: int = 7) -> bool:
-    """Return True if any check-in notes or journal entries in the last N days
-    contain crisis-level language (suicide / self-harm keywords)."""
+def get_suicide_risk_context(user_id: str, days: int = 7) -> list:
+    """Return a list of crisis-flagged entries (check-ins and journals) for the
+    last N days.  Each item: {source, date, text}.  Empty list = no risk."""
     from claude_api import check_crisis
     cutoff = (date.today() - timedelta(days=days)).isoformat()
+    results = []
     try:
-        ci = supabase_admin.table('checkins').select('notes').eq(
+        ci = supabase_admin.table('checkins').select('notes,checkin_date').eq(
             'user_id', user_id).gte('checkin_date', cutoff).execute()
         for row in (ci.data or []):
-            if check_crisis(row.get('notes') or ''):
-                return True
-        je = supabase_admin.table('journal_entries').select('content').eq(
+            text = row.get('notes') or ''
+            if text and check_crisis(text):
+                results.append({
+                    'source': 'Check-in note',
+                    'date': (row.get('checkin_date') or '')[:10],
+                    'text': text[:600],
+                })
+        je = supabase_admin.table('journal_entries').select('content,entry_date').eq(
             'user_id', user_id).gte('entry_date', cutoff).execute()
         for row in (je.data or []):
-            if check_crisis(row.get('content') or ''):
-                return True
-        return False
+            text = row.get('content') or ''
+            if text and check_crisis(text):
+                results.append({
+                    'source': 'Journal entry',
+                    'date': (row.get('entry_date') or '')[:10],
+                    'text': text[:600],
+                })
     except Exception as e:
-        print(f"_has_suicide_risk error for user {user_id}: {e}")
-        return False
+        print(f"get_suicide_risk_context error for user {user_id}: {e}")
+    return results
+
+
+def _has_suicide_risk(user_id: str, days: int = 7) -> bool:
+    return bool(get_suicide_risk_context(user_id, days))
 
 
 def get_provider_patients(provider_id):
@@ -788,14 +802,16 @@ def get_provider_patients(provider_id):
                 except Exception:
                     meds = []
 
+            crisis_context = get_suicide_risk_context(uid)
             patients.append({
-                'patient_id':          uid,
-                'full_name':           user['full_name'],
-                'email':               user['email'],
-                'last_checkin':        last_checkin,
-                'latest_summary':      has_summary,
-                'current_medications': meds,
-                'suicide_risk':        _has_suicide_risk(uid),
+                'patient_id':           uid,
+                'full_name':            user['full_name'],
+                'email':                user['email'],
+                'last_checkin':         last_checkin,
+                'latest_summary':       has_summary,
+                'current_medications':  meds,
+                'suicide_risk':         bool(crisis_context),
+                'suicide_risk_context': crisis_context,
             })
 
         return patients
