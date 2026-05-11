@@ -382,6 +382,43 @@ function resolveCrisisRisk() {
       </div>
     </div>
 
+    <!-- Computed scores row -->
+    {% set ss = trends.stability_score %}
+    {% set md = trends.mood_distortion %}
+    {% set sd = trends.sleep_disruption %}
+    {% set sl = trends.stim_load %}
+    {% set cr = trends.crash_risk %}
+    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:700;margin:4px 0 8px;">
+      Computed System Scores
+    </div>
+    <div class="stats-row" style="margin-bottom:20px;">
+      <div class="stat-card {% if ss and ss.average and ss.average < 4 %}stat-card-alert{% endif %}">
+        <div class="stat-label">Stability Score</div>
+        <div class="stat-value">{{ ss.average if ss and ss.average else '—' }}</div>
+        <div class="stat-sub">/10 avg</div>
+      </div>
+      <div class="stat-card {% if md and md.average and md.average > 2.5 %}stat-card-alert{% endif %}">
+        <div class="stat-label">Mood Distortion</div>
+        <div class="stat-value">{{ md.average if md and md.average else '—' }}</div>
+        <div class="stat-sub">avg gap</div>
+      </div>
+      <div class="stat-card {% if sd and sd.average and sd.average > 6 %}stat-card-alert{% endif %}">
+        <div class="stat-label">Sleep Disruption</div>
+        <div class="stat-value">{{ sd.average if sd and sd.average else '—' }}</div>
+        <div class="stat-sub">/10 avg</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Stim Load</div>
+        <div class="stat-value">{{ sl.average if sl and sl.average else '—' }}</div>
+        <div class="stat-sub">/10 avg</div>
+      </div>
+      <div class="stat-card {% if cr and cr.high_days and cr.high_days > 0 %}stat-card-alert{% endif %}">
+        <div class="stat-label">Crash Risk Days</div>
+        <div class="stat-value">{{ cr.high_days if cr else '—' }}</div>
+        <div class="stat-sub">days ≥7/10</div>
+      </div>
+    </div>
+
     <!-- Charts 2×2 -->
     <div class="pv-grid-2">
       <div class="pv-panel">

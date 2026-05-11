@@ -1004,6 +1004,86 @@ def _trend_stats(values):
     }
 
 
+def _compute_checkin_scores(mood, stress, sleep_hours, ext, meds):
+    """Compute CLAUDE.md composite scores for a single check-in row.
+    Returns dict; any field that can't be computed is None."""
+    s = {}
+
+    # ── Stim Load ──────────────────────────────────────────────────
+    caffeine = ext.get('caffeine_mg')
+    tier = 0
+    if caffeine is not None:
+        c = float(caffeine)
+        tier = 2 if c < 100 else 5 if c < 250 else 7 if c < 400 else 9
+    stim_meds = 0
+    STIMULANT_CATEGORIES = {'stimulant', 'adhd', 'amphetamine'}
+    STIMULANT_NAMES = {'adderall', 'vyvanse', 'ritalin', 'concerta', 'dexedrine',
+                       'focalin', 'strattera', 'methylphenidate', 'amphetamine'}
+    if isinstance(meds, list):
+        for m in meds:
+            if not isinstance(m, dict) or not m.get('taken'):
+                continue
+            cat = (m.get('category') or '').lower()
+            name = (m.get('name') or '').lower()
+            if cat in STIMULANT_CATEGORIES or any(n in name for n in STIMULANT_NAMES):
+                stim_meds += 1
+    booster = int(ext.get('booster_used') or 0)
+    s['stim_load'] = min(tier + stim_meds + booster, 10) if (caffeine is not None or stim_meds or booster) else None
+
+    # ── Stability Score ────────────────────────────────────────────
+    energy = ext.get('energy')
+    dissoc = ext.get('dissociation')
+    if all(v is not None for v in [mood, energy, dissoc, stress]):
+        stab = (float(mood) + float(energy) + (10 - float(dissoc)) + (10 - float(stress))) / 4
+        s['stability_score'] = round(stab, 2)
+        s['mood_distortion'] = round(abs(float(mood) - stab), 2)
+    else:
+        s['stability_score'] = None
+        s['mood_distortion'] = None
+
+    # ── Sleep Disruption Score ─────────────────────────────────────
+    sd = 0
+    has_sd = False
+    if sleep_hours is not None:
+        has_sd = True
+        if float(sleep_hours) < 6:
+            sd += 2
+    latency = ext.get('sleep_latency_minutes')
+    if latency is not None:
+        has_sd = True
+        if float(latency) > 45:
+            sd += 3
+    awakenings = ext.get('night_awakenings')
+    if awakenings is not None:
+        has_sd = True
+        if float(awakenings) >= 2:
+            sd += 2
+    fae = ext.get('fell_asleep_easily')
+    if fae is not None:
+        has_sd = True
+        if fae is False or str(fae).lower() in ('false', 'no', '0'):
+            sd += 3
+    s['sleep_disruption'] = min(sd, 10) if has_sd else None
+
+    # ── Nervous System Load ────────────────────────────────────────
+    sq = ext.get('sleep_quality')
+    sl = s['stim_load']
+    if stress is not None and sq is not None and sl is not None:
+        s['nervous_system_load'] = round((float(stress) + (10 - float(sq)) + float(sl)) / 3, 2)
+    else:
+        s['nervous_system_load'] = None
+
+    # ── Crash Risk (sleep + NS load; nutrition omitted when absent) ─
+    ns = s['nervous_system_load']
+    sd_val = s['sleep_disruption']
+    if ns is not None and sd_val is not None:
+        s['crash_risk'] = round(min(float(sd_val) * 0.5 + float(ns) * 0.5, 10), 2)
+    else:
+        s['crash_risk'] = None
+
+    return s
+
+
 def get_trends_data(user_id: str, days: int = 30):
     """Return aggregated trend data.
 
@@ -1033,6 +1113,13 @@ def get_trends_data(user_id: str, days: int = 30):
         'sleep':                {'average': None, 'values': [], 'daily_hours': [], 'dates': []},
         'energy':               {'average': None, 'values': [], 'daily_scores': [], 'dates': []},
         'medication_adherence': 0,
+        # Computed composite scores
+        'stability_score':     _empty_adv(),
+        'mood_distortion':     _empty_adv(),
+        'sleep_disruption':    _empty_adv(),
+        'nervous_system_load': _empty_adv(),
+        'stim_load':           _empty_adv(),
+        'crash_risk':          {**_empty_adv(), 'high_days': 0},
         # Extended base metrics
         'focus':            _empty_adv(),
         'dissociation':     _empty_adv(),
@@ -1069,6 +1156,10 @@ def get_trends_data(user_id: str, days: int = 30):
         irritability_pairs, motivation_pairs, perceived_stress_pairs = [], [], []
         alcohol_pairs, exercise_pairs, sunlight_pairs, screen_time_pairs = [], [], [], []
         social_quality_pairs, workload_pairs = [], []
+        # composite computed scores
+        stability_pairs, mood_distortion_pairs = [], []
+        sleep_disruption_pairs, ns_load_pairs = [], []
+        crash_risk_pairs, stim_load_pairs = [], []
 
         meds_with_entries, meds_with_taken = 0, 0
 
@@ -1130,6 +1221,20 @@ def get_trends_data(user_id: str, days: int = 30):
                 if any(m.get('taken') for m in meds if isinstance(m, dict)):
                     meds_with_taken += 1
 
+            # ── Composite scores ──────────────────────────────────────
+            cs = _compute_checkin_scores(mood, stress, sleep, ext, meds)
+            for key, pairs in [
+                ('stability_score',   stability_pairs),
+                ('mood_distortion',   mood_distortion_pairs),
+                ('sleep_disruption',  sleep_disruption_pairs),
+                ('nervous_system_load', ns_load_pairs),
+                ('crash_risk',        crash_risk_pairs),
+                ('stim_load',         stim_load_pairs),
+            ]:
+                v = cs.get(key)
+                if v is not None:
+                    pairs.append((d, v))
+
         adherence = (round((meds_with_taken / meds_with_entries) * 100)
                      if meds_with_entries > 0 else 0)
 
@@ -1170,6 +1275,16 @@ def get_trends_data(user_id: str, days: int = 30):
                        'daily_scores': energy_ts['daily_scores'], 'dates': energy_ts['dates']},
             'medication_adherence': adherence,
             'average_stability':    _avg(mood_vals),
+            # ── Computed composite scores (CLAUDE.md formulas) ──────
+            'stability_score':   _make_ts(stability_pairs),
+            'mood_distortion':   _make_ts(mood_distortion_pairs),
+            'sleep_disruption':  _make_ts(sleep_disruption_pairs),
+            'nervous_system_load': _make_ts(ns_load_pairs),
+            'stim_load':         _make_ts(stim_load_pairs),
+            'crash_risk': {
+                **_make_ts(crash_risk_pairs),
+                'high_days': sum(1 for _, v in crash_risk_pairs if v >= 7),
+            },
             # Extended base metrics
             'focus':            _make_ts(focus_pairs),
             'dissociation':     _make_ts(dissociation_pairs),

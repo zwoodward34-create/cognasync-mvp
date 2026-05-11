@@ -78,6 +78,37 @@
     </div>
   </div>
 
+  <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:700;margin:20px 0 10px;">
+    System Scores
+  </div>
+  <div class="stats-row" id="scores-row">
+    <div class="stat-card">
+      <div class="stat-label">Stability Score</div>
+      <div class="stat-value" id="stat-stability">—</div>
+      <div class="stat-sub">/10 avg</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Stim Load</div>
+      <div class="stat-value" id="stat-stim">—</div>
+      <div class="stat-sub">/10 avg</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Crash Risk Days</div>
+      <div class="stat-value" id="stat-crash">—</div>
+      <div class="stat-sub">days ≥7/10</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Sleep Disruption</div>
+      <div class="stat-value" id="stat-sleepdis">—</div>
+      <div class="stat-sub">/10 avg</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Mood Distortion</div>
+      <div class="stat-value" id="stat-distortion">—</div>
+      <div class="stat-sub">avg gap</div>
+    </div>
+  </div>
+
   <div id="insights-panel" class="insights-panel hidden">
     <h2 class="section-title">Key Insights</h2>
     <ul id="insights-list" class="insights-list"></ul>
@@ -351,6 +382,14 @@ function renderTrends(data) {
   document.getElementById('stat-checkins').textContent = data.checkins_this_period;
   document.getElementById('stat-adherence').textContent =
     data.medication_adherence > 0 ? data.medication_adherence : '—';
+
+  // ── System scores ─────────────────────────────────────────────────
+  const fmt = (v) => v != null ? v : '—';
+  document.getElementById('stat-stability').textContent  = fmt(data.stability_score?.average);
+  document.getElementById('stat-stim').textContent       = fmt(data.stim_load?.average);
+  document.getElementById('stat-crash').textContent      = data.crash_risk?.high_days ?? '—';
+  document.getElementById('stat-sleepdis').textContent   = fmt(data.sleep_disruption?.average);
+  document.getElementById('stat-distortion').textContent = fmt(data.mood_distortion?.average);
 
   // ── Build insights via Insight class ─────────────────────────────
   const insightCandidates = [
