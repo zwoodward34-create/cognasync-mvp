@@ -323,20 +323,43 @@ export default function App() {
 
       const updates = { meds };
 
-      // Pre-populate caffeine, alcohol, and taken-status from earlier check-ins today
+      // Pre-populate cumulative daily fields from earlier check-ins today.
+      // Behavioural/lifestyle data accumulates; subjective state (mood, anxiety…) stays fresh.
       if (todaySummary?.checkin_count > 0) {
         setTodayCheckinCount(todaySummary.checkin_count);
+
+        // Caffeine (running total per beverage)
         const bd = todaySummary.caffeine_breakdown || {};
-        updates.caffeine = {
-          coffee: bd.coffee || 0,
-          tea:    bd.tea    || 0,
-          soda:   bd.soda   || 0,
-          energy: bd.energy || 0,
-        };
-        if (todaySummary.alcohol_units > 0) {
-          updates.alcoholUnits = todaySummary.alcohol_units;
-        }
-        // Mark meds that were already taken today
+        updates.caffeine = { coffee: bd.coffee || 0, tea: bd.tea || 0,
+                             soda: bd.soda || 0, energy: bd.energy || 0 };
+
+        // Alcohol
+        if (todaySummary.alcohol_units > 0) updates.alcoholUnits = todaySummary.alcohol_units;
+
+        // Physical activity, sunlight, screen time (cumulative running totals)
+        if (todaySummary.exercise_minutes  > 0) updates.exerciseMinutes  = todaySummary.exercise_minutes;
+        if (todaySummary.sunlight_hours    > 0) updates.sunlightHours    = todaySummary.sunlight_hours;
+        if (todaySummary.screen_time_hours > 0) updates.screenTimeHours  = todaySummary.screen_time_hours;
+
+        // Coping & hydration (boolean OR — once done it stays done for the day)
+        const coping = todaySummary.coping || {};
+        if (coping.breathing)       updates.didBreathing  = true;
+        if (coping.meditation)      updates.didMeditation = true;
+        if (coping.movement)        updates.didMovement   = true;
+        if (todaySummary.hydrated)  updates.hydrated      = true;
+
+        // Wake-up time (logged once; carry it through all check-ins)
+        if (todaySummary.wake_up_time) updates.wakeUpTime = todaySummary.wake_up_time;
+
+        // Sleep (carry from the morning check-in through the rest of the day)
+        const sl = todaySummary.sleep || {};
+        if (sl.hours               != null) updates.sleepHours             = sl.hours;
+        if (sl.quality             != null) updates.sleepQuality           = sl.quality;
+        if (sl.time_awake_minutes  != null) updates.timeAwakeMinutes       = sl.time_awake_minutes;
+        if (sl.sleep_latency_minutes != null) updates.sleepLatencyMinutes  = sl.sleep_latency_minutes;
+        if (sl.night_awakenings    != null) updates.nightAwakenings        = sl.night_awakenings;
+
+        // Medication taken-status (most-recent check-in wins per med)
         (todaySummary.medications || []).forEach(logged => {
           const key = logged.dose ? `${logged.name}|||${logged.dose}` : logged.name;
           if (meds[key]) meds[key] = { ...meds[key], taken: !!logged.taken, timeTaken: logged.time_taken || '' };

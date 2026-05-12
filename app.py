@@ -647,24 +647,53 @@ def api_checkins_today_summary():
             'date': today,
         }), 200
 
-    # Take the per-beverage maximum across ALL of today's check-ins.
-    # This is more robust than using only the latest check-in: if a morning
-    # check-in logged coffee but the afternoon check-in had caffeine_breakdown
-    # missing (e.g., submitted before the feature shipped), we still carry
-    # forward the highest observed count for each beverage type.
+    # Aggregate across ALL of today's check-ins in chronological order.
+    # Cumulative behavioural fields use MAX (user logs running totals, not per-session deltas).
+    # Boolean coping fields use OR (once done = stays done for the day).
+    # Sleep fields come from the first check-in that recorded them (morning).
     caffeine_breakdown = {'coffee': 0, 'tea': 0, 'soda': 0, 'energy': 0}
     alcohol_units = 0
-    for c in today_checkins:
+    exercise_minutes = 0
+    sunlight_hours   = 0.0
+    screen_time_hours = 0.0
+    did_breathing = did_meditation = did_movement = hydrated = False
+    wake_up_time = ''
+    sleep_agg = {k: None for k in ('hours', 'quality', 'time_awake_minutes',
+                                    'sleep_latency_minutes', 'night_awakenings')}
+
+    sorted_chrono = sorted(today_checkins, key=lambda c: c.get('created_at', ''))
+    for c in sorted_chrono:
         ext = c.get('extended_data') or {}
         if isinstance(ext, str):
             try:
                 ext = json.loads(ext)
             except Exception:
                 ext = {}
+
         bd = ext.get('caffeine_breakdown') or {}
         for key in caffeine_breakdown:
             caffeine_breakdown[key] = max(caffeine_breakdown[key], int(bd.get(key) or 0))
-        alcohol_units = max(alcohol_units, int(ext.get('alcohol_units') or 0))
+
+        alcohol_units   = max(alcohol_units,   int(ext.get('alcohol_units')   or 0))
+        exercise_minutes = max(exercise_minutes, int(ext.get('exercise_minutes') or 0))
+        sunlight_hours  = max(sunlight_hours,  float(ext.get('sunlight_hours') or 0))
+        screen_time_hours = max(screen_time_hours, float(ext.get('screen_time_hours') or 0))
+
+        coping = ext.get('coping') or {}
+        if coping.get('breathing'):  did_breathing  = True
+        if coping.get('meditation'): did_meditation = True
+        if coping.get('movement'):   did_movement   = True
+        if ext.get('hydrated'):      hydrated       = True
+        if not wake_up_time and ext.get('wake_up_time'):
+            wake_up_time = ext['wake_up_time']
+
+        # Sleep — first check-in that has each field wins (logged once, in the morning)
+        if sleep_agg['hours'] is None and c.get('sleep_hours') is not None:
+            sleep_agg['hours'] = c['sleep_hours']
+        for field in ('quality', 'time_awake_minutes', 'sleep_latency_minutes', 'night_awakenings'):
+            db_key = 'sleep_quality' if field == 'quality' else field
+            if sleep_agg[field] is None and ext.get(db_key) is not None:
+                sleep_agg[field] = ext[db_key]
 
     # Union of medications across today's check-ins; most-recent check-in wins
     # on duplicate name so taken/time_taken reflects the latest logged state.
@@ -678,10 +707,17 @@ def api_checkins_today_summary():
                 medications.append(med)
 
     return jsonify({
-        'checkin_count': len(today_checkins),
+        'checkin_count':    len(today_checkins),
         'caffeine_breakdown': caffeine_breakdown,
-        'medications': medications,
-        'alcohol_units': alcohol_units,
+        'medications':      medications,
+        'alcohol_units':    alcohol_units,
+        'exercise_minutes': exercise_minutes,
+        'sunlight_hours':   sunlight_hours,
+        'screen_time_hours': screen_time_hours,
+        'coping': {'breathing': did_breathing, 'meditation': did_meditation, 'movement': did_movement},
+        'hydrated':         hydrated,
+        'wake_up_time':     wake_up_time,
+        'sleep':            sleep_agg,
         'date': today,
     }), 200
 

@@ -670,11 +670,28 @@ _DRUG_INTERACTIONS = [
          'Two heavily sedating antipsychotics: risk of excessive sedation and metabolic side effects.'),
 
         # ── Stimulants ───────────────────────────────────────────────
-        (['amphetamine', 'adderall', 'methylphenidate', 'ritalin', 'dexmethylphenidate',
-          'lisdexamfetamine', 'vyvanse'],
+        (['amphetamine', 'adderall', 'lisdexamfetamine', 'vyvanse', 'dextroamphetamine'],
          ['selegiline', 'phenelzine', 'tranylcypromine', 'isocarboxazid', 'monoamine oxidase'],
          'serious',
-         'Stimulant + MAOI: hypertensive crisis risk. Absolutely contraindicated.'),
+         'Amphetamine + MAOI: hypertensive crisis risk. Absolutely contraindicated.'),
+
+        (['methylphenidate', 'ritalin', 'concerta', 'dexmethylphenidate', 'focalin', 'daytrana'],
+         ['selegiline', 'phenelzine', 'tranylcypromine', 'isocarboxazid', 'monoamine oxidase'],
+         'serious',
+         'Methylphenidate + MAOI: hypertensive crisis risk. Absolutely contraindicated.'),
+
+        # ── Stimulant + stimulant (polypharmacy) ─────────────────────
+        (['amphetamine', 'adderall', 'lisdexamfetamine', 'vyvanse', 'dextroamphetamine'],
+         ['methylphenidate', 'ritalin', 'concerta', 'dexmethylphenidate', 'focalin', 'daytrana'],
+         'moderate',
+         'Amphetamine + methylphenidate: concurrent use of two different stimulant classes increases additive cardiovascular load (elevated heart rate, blood pressure, arrhythmia risk). Combination is rarely indicated; requires explicit clinical justification, baseline ECG, and regular cardiovascular monitoring.'),
+
+        # ── Guanfacine + stimulants ───────────────────────────────────
+        (['guanfacine', 'intuniv', 'tenex'],
+         ['amphetamine', 'adderall', 'lisdexamfetamine', 'vyvanse', 'dextroamphetamine',
+          'methylphenidate', 'ritalin', 'concerta', 'dexmethylphenidate', 'focalin'],
+         'caution',
+         'Guanfacine + stimulant: guanfacine is an alpha-2 agonist that lowers blood pressure and heart rate; stimulants have the opposite cardiovascular effect. While this combination is used in ADHD management, it requires cardiovascular monitoring. Risk is amplified when multiple stimulants are co-prescribed with guanfacine.'),
 
         # ── CYP3A4 inhibition (non-DHP calcium channel blockers) ─────
         (['verapamil', 'diltiazem'],
