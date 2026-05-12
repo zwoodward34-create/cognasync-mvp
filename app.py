@@ -573,6 +573,47 @@ def api_medication_search():
     return jsonify(results), 200
 
 
+@app.route('/api/medications/quick-log', methods=['POST'])
+def api_medications_quick_log():
+    """Fast-log a dose taken outside the full check-in flow."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    if not name:
+        return jsonify({'error': 'name required'}), 400
+    dose = str(data.get('dose') or '').strip()
+    time_taken = str(data.get('time') or '').strip()
+
+    med_id = db.find_or_create_profile_medication(user['id'], name)
+    if not med_id:
+        return jsonify({'error': 'Could not resolve medication'}), 500
+
+    event = db.log_medication_event(
+        user_id=user['id'],
+        medication_id=med_id,
+        event_date=date.today().isoformat(),
+        actual_time=None,
+        dose=float(dose) if dose else None,
+        status='TAKEN',
+        notes=time_taken or None,
+    )
+    if not event:
+        return jsonify({'error': 'Failed to log dose'}), 500
+    return jsonify({'ok': True, 'event_id': event.get('id')}), 200
+
+
+@app.route('/api/medications/today-doses', methods=['GET'])
+def api_medications_today_doses():
+    """Return dose events logged today for the current user."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    logs = db.get_today_dose_logs(user['id'])
+    return jsonify({'doses': logs, 'date': date.today().isoformat()}), 200
+
+
 @app.route('/api/checkins/today', methods=['GET'])
 def api_checkins_today():
     """Return which check-in types have been completed today."""

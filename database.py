@@ -508,6 +508,50 @@ def get_user_medications(user_id: str, active_only: bool = True):
         print(f"Error fetching medications: {e}")
         return []
 
+def find_or_create_profile_medication(user_id: str, name: str) -> str | None:
+    """Return the medications.id for a profile-based current_medication entry,
+    creating a stub row in the medications table if one does not yet exist."""
+    try:
+        result = supabase_admin.table('medications').select('id').eq('user_id', user_id) \
+            .ilike('name', name).limit(1).execute()
+        if result.data:
+            return result.data[0]['id']
+        ins = supabase_admin.table('medications').insert({
+            'user_id': user_id,
+            'name': name,
+            'is_active': True,
+            'date_started': date.today().isoformat(),
+        }).execute()
+        return ins.data[0]['id'] if ins.data else None
+    except Exception as e:
+        print(f"Error finding/creating profile medication: {e}")
+        return None
+
+
+def get_today_dose_logs(user_id: str) -> list:
+    """Return medication events (status=TAKEN) logged today for this user,
+    with the medication name joined from the medications table."""
+    try:
+        today = date.today().isoformat()
+        events = supabase_admin.table('medication_events').select('medication_id, actual_time, dose, custom_note') \
+            .eq('user_id', user_id).eq('event_date', today).eq('status', 'TAKEN').execute()
+        if not events.data:
+            return []
+        med_ids = list({e['medication_id'] for e in events.data})
+        meds_res = supabase_admin.table('medications').select('id, name').in_('id', med_ids).execute()
+        med_map = {m['id']: m['name'] for m in (meds_res.data or [])}
+        logs = []
+        for e in events.data:
+            name = med_map.get(e['medication_id'], '')
+            raw_time = e.get('actual_time') or ''
+            time_str = raw_time[11:16] if len(raw_time) >= 16 else (e.get('custom_note') or '')
+            logs.append({'name': name, 'time': time_str, 'dose': e.get('dose')})
+        return logs
+    except Exception as e:
+        print(f"Error getting today dose logs: {e}")
+        return []
+
+
 def log_medication_event(user_id: str, medication_id: str, event_date: str, actual_time: str, dose: float, status: str = 'TAKEN', notes: str = None):
     """Log a medication event (when user took their medication)."""
     try:

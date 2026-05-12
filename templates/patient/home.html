@@ -68,6 +68,31 @@
   </a>
 </div>
 
+{% set current_meds = profile.current_medications if profile and profile.current_medications else [] %}
+{% if current_meds %}
+<div class="home-med-widget" id="med-widget">
+  <div class="section-header">
+    <h2 class="section-title">Today's Medications</h2>
+    <span class="section-meta" id="med-widget-meta">Loading…</span>
+  </div>
+  <ul class="med-dose-list" id="med-dose-list">
+    {% for med in current_meds %}
+    <li class="med-dose-item" data-med-name="{{ med.name }}" data-med-dose="{{ med.dose or '' }}">
+      <div class="med-dose-info">
+        <span class="med-dose-name">{{ med.name }}</span>
+        {% if med.dose %}<span class="med-dose-amount">{{ med.dose }} {{ med.dose_unit or '' }}</span>{% endif %}
+      </div>
+      <div class="med-dose-status">
+        <span class="med-taken-badge" style="display:none;">✓ Logged</span>
+        <span class="med-taken-time"></span>
+        <button class="btn btn-sm med-log-btn" onclick="quickLogDose(this)">Log Dose</button>
+      </div>
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {% if latest_summary %}
 <div class="home-summary-preview">
   <div class="section-header">
@@ -78,4 +103,72 @@
   <a href="{{ url_for('summary_page') }}" class="btn btn-ghost">View full summary →</a>
 </div>
 {% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+(function () {
+  async function loadTodayDoses() {
+    try {
+      const res = await fetch('/api/medications/today-doses', { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const doses = data.doses || [];
+      const meta = document.getElementById('med-widget-meta');
+      if (meta) meta.textContent = doses.length ? doses.length + ' dose' + (doses.length !== 1 ? 's' : '') + ' logged today' : 'None logged yet';
+      doses.forEach(function (d) {
+        markTaken(d.name, d.time);
+      });
+    } catch (_) {}
+  }
+
+  function markTaken(name, time) {
+    document.querySelectorAll('.med-dose-item').forEach(function (li) {
+      if (li.dataset.medName === name) {
+        li.querySelector('.med-taken-badge').style.display = '';
+        const timeEl = li.querySelector('.med-taken-time');
+        if (time) timeEl.textContent = time;
+        const btn = li.querySelector('.med-log-btn');
+        btn.textContent = 'Log Again';
+        btn.classList.add('btn-ghost');
+      }
+    });
+  }
+
+  window.quickLogDose = async function (btn) {
+    const li = btn.closest('.med-dose-item');
+    const name = li.dataset.medName;
+    const dose = li.dataset.medDose;
+    const now = new Date();
+    const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+    btn.disabled = true;
+    btn.textContent = 'Logging…';
+    try {
+      const res = await fetch('/api/medications/quick-log', {
+        method: 'POST',
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, dose: dose, time: time }),
+      });
+      if (res.ok) {
+        markTaken(name, time);
+        const meta = document.getElementById('med-widget-meta');
+        if (meta) {
+          const cur = parseInt(meta.textContent) || 0;
+          const next = cur + 1;
+          meta.textContent = next + ' dose' + (next !== 1 ? 's' : '') + ' logged today';
+        }
+      } else {
+        btn.textContent = 'Error — retry';
+        btn.disabled = false;
+      }
+    } catch (_) {
+      btn.textContent = 'Error — retry';
+      btn.disabled = false;
+    }
+  };
+
+  document.addEventListener('DOMContentLoaded', loadTodayDoses);
+})();
+</script>
 {% endblock %}
