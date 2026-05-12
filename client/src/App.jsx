@@ -311,9 +311,12 @@ export default function App() {
       if (baseline && Object.keys(baseline).length) setBl(p => ({ ...p, ...baseline }));
       if (todayCompletion) setCompletedToday(todayCompletion.completed || []);
 
-      // Build meds map from profile
+      // Build meds map — prefer server-injected list (window.__medications__) over XHR
+      // so medications are never lost if the profile API call fails silently.
+      const medList = (profile?.current_medications?.length ? profile.current_medications : null)
+        || (window.__medications__?.length ? window.__medications__ : []);
       const meds = {};
-      (profile?.current_medications || []).forEach(m => {
+      medList.forEach(m => {
         const key = m.dose ? `${m.name}|||${m.dose}` : m.name;
         meds[key] = { name: m.name, taken: false, dose: m.dose || '', timeTaken: '' };
       });

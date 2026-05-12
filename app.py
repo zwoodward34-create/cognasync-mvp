@@ -166,7 +166,9 @@ def checkin_page():
     user, redir = _require_patient()
     if redir:
         return redir
-    return render_template('patient/checkin_react.html', user=user)
+    profile = db.get_patient_profile(user['id'])
+    meds = profile.get('current_medications', []) if profile else []
+    return render_template('patient/checkin_react.html', user=user, medications=meds)
 
 
 @app.route('/journal')

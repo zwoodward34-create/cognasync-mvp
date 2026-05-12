@@ -51,6 +51,7 @@
 
 <div id="checkin-root"></div>
 
+<script>window.__medications__ = {{ medications | tojson }};</script>
 <script src="{{ url_for('static', filename='js/common.js') }}"></script>
 {% endblock %}
 
