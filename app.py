@@ -581,14 +581,13 @@ def api_checkins_today():
         return err
     today = date.today().isoformat()
     checkins = db.get_checkins(user['id'], days=1)
-    done = []
+    done = set()
     for c in checkins:
-        cd = (c.get('checkin_date') or '')[:10]
-        if cd == today:
-            # Return 'stability' as the completed type (or use any fixed name)
-            done.append('stability')
-            break  # Only count one per day for now
-    return jsonify({'completed': done, 'date': today}), 200
+        if (c.get('checkin_date') or '')[:10] == today:
+            ct = c.get('checkin_type', '')
+            if ct in ('morning', 'afternoon', 'evening'):
+                done.add(ct)
+    return jsonify({'completed': list(done), 'date': today}), 200
 
 
 @app.route('/api/checkins/by-date', methods=['GET'])
