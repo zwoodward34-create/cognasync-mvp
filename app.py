@@ -583,7 +583,8 @@ def api_medications_quick_log():
     name = (data.get('name') or '').strip()
     if not name:
         return jsonify({'error': 'name required'}), 400
-    dose = str(data.get('dose') or '').strip()
+    dose_raw = str(data.get('dose') or '').strip()
+    dose_num = re.sub(r'[^\d.]', '', dose_raw)  # strip unit letters ("50mg" → "50")
     time_taken = str(data.get('time') or '').strip()
 
     med_id = db.find_or_create_profile_medication(user['id'], name)
@@ -595,7 +596,7 @@ def api_medications_quick_log():
         medication_id=med_id,
         event_date=date.today().isoformat(),
         actual_time=None,
-        dose=float(dose) if dose else None,
+        dose=float(dose_num) if dose_num else None,
         status='TAKEN',
         notes=time_taken or None,
     )
@@ -679,11 +680,17 @@ def api_checkins_today_summary():
     checkins = db.get_checkins(user['id'], days=1)
 
     today_checkins = [c for c in (checkins or []) if (c.get('checkin_date') or '')[:10] == today]
+    quick_doses = db.get_today_dose_logs(user['id'])
+
     if not today_checkins:
+        # No check-ins yet today but quick-logs may exist
+        ql_meds = [{'name': qd['name'], 'dose': '', 'taken': True, 'time_taken': qd.get('time') or ''}
+                   for qd in quick_doses if qd.get('name')]
         return jsonify({
             'checkin_count': 0,
+            'quick_log_count': len(ql_meds),
             'caffeine_breakdown': {'coffee': 0, 'tea': 0, 'soda': 0, 'energy': 0},
-            'medications': [],
+            'medications': ql_meds,
             'date': today,
         }), 200
 
@@ -746,8 +753,25 @@ def api_checkins_today_summary():
                 seen.add(name)
                 medications.append(med)
 
+    # Overlay quick-log data from medication_events — marks meds taken via the homescreen shortcut.
+    for qd in quick_doses:
+        qname = (qd.get('name') or '').lower()
+        if not qname:
+            continue
+        matched = False
+        for med in medications:
+            if (med.get('name') or '').lower() == qname:
+                med['taken'] = True
+                if qd.get('time') and not med.get('time_taken'):
+                    med['time_taken'] = qd['time']
+                matched = True
+                break
+        if not matched:
+            medications.append({'name': qd['name'], 'dose': '', 'taken': True, 'time_taken': qd.get('time') or ''})
+
     return jsonify({
         'checkin_count':    len(today_checkins),
+        'quick_log_count':  len([qd for qd in quick_doses if qd.get('name')]),
         'caffeine_breakdown': caffeine_breakdown,
         'medications':      medications,
         'alcohol_units':    alcohol_units,

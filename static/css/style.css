@@ -493,9 +493,12 @@ input[type="number"], input[type="date"], select, .form-textarea, textarea {
 .med-dose-name { font-weight: 600; font-size: 0.9rem; }
 .med-dose-amount { font-size: 0.78rem; color: var(--text-muted); }
 
-.med-dose-status { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-.med-taken-badge { font-size: 0.78rem; font-weight: 600; color: var(--green); white-space: nowrap; }
-.med-taken-time  { font-size: 0.75rem; color: var(--text-muted); white-space: nowrap; }
+.med-dose-item--taken { border-color: var(--green); background: var(--green-light); }
+
+.med-dose-status { display: flex; align-items: center; gap: 8px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+.med-taken-checkmark { font-size: 1rem; font-weight: 700; color: var(--green); flex-shrink: 0; }
+.med-taken-time  { font-size: 0.75rem; color: var(--green); font-weight: 600; white-space: nowrap; }
+.med-time-input  { width: 90px; padding: 4px 8px; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border); }
 
 /* ── Journal ─────────────────────────────────────────────────────────── */
 

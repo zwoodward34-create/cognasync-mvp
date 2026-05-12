@@ -80,11 +80,12 @@
     <li class="med-dose-item" data-med-name="{{ med.name }}" data-med-dose="{{ med.dose or '' }}">
       <div class="med-dose-info">
         <span class="med-dose-name">{{ med.name }}</span>
-        {% if med.dose %}<span class="med-dose-amount">{{ med.dose }} {{ med.dose_unit or '' }}</span>{% endif %}
+        {% if med.dose %}<span class="med-dose-amount">{{ med.dose }}{% if med.dose_unit %} {{ med.dose_unit }}{% endif %}</span>{% endif %}
       </div>
       <div class="med-dose-status">
-        <span class="med-taken-badge" style="display:none;">✓ Logged</span>
+        <span class="med-taken-checkmark" style="display:none;" aria-label="Taken">✓</span>
         <span class="med-taken-time"></span>
+        <input type="time" class="med-time-input form-input" aria-label="Time taken">
         <button class="btn btn-sm med-log-btn" onclick="quickLogDose(this)">Log Dose</button>
       </div>
     </li>
@@ -108,6 +109,17 @@
 {% block scripts %}
 <script>
 (function () {
+  function nowHHMM() {
+    const now = new Date();
+    return now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+  }
+
+  function initTimeInputs() {
+    document.querySelectorAll('.med-time-input').forEach(function (inp) {
+      if (!inp.value) inp.value = nowHHMM();
+    });
+  }
+
   async function loadTodayDoses() {
     try {
       const res = await fetch('/api/medications/today-doses', { credentials: 'same-origin' });
@@ -125,11 +137,18 @@
   function markTaken(name, time) {
     document.querySelectorAll('.med-dose-item').forEach(function (li) {
       if (li.dataset.medName === name) {
-        li.querySelector('.med-taken-badge').style.display = '';
+        const check = li.querySelector('.med-taken-checkmark');
+        check.style.display = '';
         const timeEl = li.querySelector('.med-taken-time');
-        if (time) timeEl.textContent = time;
+        if (time) {
+          timeEl.textContent = time;
+          const inp = li.querySelector('.med-time-input');
+          if (inp) inp.value = time;
+        }
+        li.classList.add('med-dose-item--taken');
         const btn = li.querySelector('.med-log-btn');
         btn.textContent = 'Log Again';
+        btn.classList.remove('btn-primary');
         btn.classList.add('btn-ghost');
       }
     });
@@ -139,8 +158,8 @@
     const li = btn.closest('.med-dose-item');
     const name = li.dataset.medName;
     const dose = li.dataset.medDose;
-    const now = new Date();
-    const time = now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+    const timeInp = li.querySelector('.med-time-input');
+    const time = (timeInp && timeInp.value) ? timeInp.value : nowHHMM();
     btn.disabled = true;
     btn.textContent = 'Logging…';
     try {
@@ -158,6 +177,7 @@
           const next = cur + 1;
           meta.textContent = next + ' dose' + (next !== 1 ? 's' : '') + ' logged today';
         }
+        btn.disabled = false;
       } else {
         btn.textContent = 'Error — retry';
         btn.disabled = false;
@@ -168,7 +188,10 @@
     }
   };
 
-  document.addEventListener('DOMContentLoaded', loadTodayDoses);
+  document.addEventListener('DOMContentLoaded', function () {
+    initTimeInputs();
+    loadTodayDoses();
+  });
 })();
 </script>
 {% endblock %}

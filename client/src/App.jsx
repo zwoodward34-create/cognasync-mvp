@@ -323,6 +323,16 @@ export default function App() {
 
       const updates = { meds };
 
+      // Always apply medication taken-status — includes both check-in logs and homescreen quick-logs.
+      (todaySummary?.medications || []).forEach(logged => {
+        if (!logged.taken) return;
+        const key = logged.dose ? `${logged.name}|||${logged.dose}` : logged.name;
+        // Also try bare name match (quick-logs don't carry dose context)
+        const bareKey = logged.name;
+        const target = meds[key] || meds[bareKey];
+        if (target) target.taken = true, target.timeTaken = logged.time_taken || '';
+      });
+
       // Pre-populate cumulative daily fields from earlier check-ins today.
       // Behavioural/lifestyle data accumulates; subjective state (mood, anxiety…) stays fresh.
       if (todaySummary?.checkin_count > 0) {
@@ -358,12 +368,6 @@ export default function App() {
         if (sl.time_awake_minutes  != null) updates.timeAwakeMinutes       = sl.time_awake_minutes;
         if (sl.sleep_latency_minutes != null) updates.sleepLatencyMinutes  = sl.sleep_latency_minutes;
         if (sl.night_awakenings    != null) updates.nightAwakenings        = sl.night_awakenings;
-
-        // Medication taken-status (most-recent check-in wins per med)
-        (todaySummary.medications || []).forEach(logged => {
-          const key = logged.dose ? `${logged.name}|||${logged.dose}` : logged.name;
-          if (meds[key]) meds[key] = { ...meds[key], taken: !!logged.taken, timeTaken: logged.time_taken || '' };
-        });
       }
 
       setD(p => ({ ...p, ...updates }));
