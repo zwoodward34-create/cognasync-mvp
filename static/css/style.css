@@ -499,6 +499,7 @@ input[type="number"], input[type="date"], select, .form-textarea, textarea {
 .med-taken-checkmark { font-size: 1rem; font-weight: 700; color: var(--green); flex-shrink: 0; }
 .med-taken-time  { font-size: 0.75rem; color: var(--green); font-weight: 600; white-space: nowrap; }
 .med-time-input  { width: 90px; padding: 4px 8px; font-size: 0.8rem; border-radius: 6px; border: 1px solid var(--border); }
+.med-remove-btn  { color: var(--text-muted); font-size: 0.75rem; }
 
 /* ── Journal ─────────────────────────────────────────────────────────── */
 

@@ -587,7 +587,7 @@ def api_medications_quick_log():
     dose_num = re.sub(r'[^\d.]', '', dose_raw)  # strip unit letters ("50mg" → "50")
     time_taken = str(data.get('time') or '').strip()
 
-    med_id = db.find_or_create_profile_medication(user['id'], name)
+    med_id = db.find_or_create_profile_medication(user['id'], name, dose_raw)
     if not med_id:
         return jsonify({'error': 'Could not resolve medication'}), 500
 
@@ -613,6 +613,18 @@ def api_medications_today_doses():
         return err
     logs = db.get_today_dose_logs(user['id'])
     return jsonify({'doses': logs, 'date': date.today().isoformat()}), 200
+
+
+@app.route('/api/medications/quick-log/<event_id>', methods=['DELETE'])
+def api_medications_quick_log_delete(event_id):
+    """Remove a specific dose event (undo an accidental log)."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    ok = db.delete_medication_event(user['id'], event_id)
+    if not ok:
+        return jsonify({'error': 'Failed to remove dose'}), 500
+    return jsonify({'ok': True}), 200
 
 
 @app.route('/api/checkins/today', methods=['GET'])

@@ -1,4 +1,5 @@
 import os
+import re
 import json
 from datetime import datetime, timedelta, date
 from supabase import create_client, Client
@@ -508,20 +509,30 @@ def get_user_medications(user_id: str, active_only: bool = True):
         print(f"Error fetching medications: {e}")
         return []
 
-def find_or_create_profile_medication(user_id: str, name: str) -> str | None:
-    """Return the medications.id for a profile-based current_medication entry,
-    creating a stub row in the medications table if one does not yet exist."""
+def find_or_create_profile_medication(user_id: str, name: str, dose_str: str = None) -> str | None:
+    """Return the medications.id for a profile-based current_medication entry.
+
+    Matches on (user_id, name, standard_dose) so two prescriptions with the
+    same drug name but different doses get separate rows in the medications table.
+    Creates a stub row if none exists yet.
+    """
     try:
-        result = supabase_admin.table('medications').select('id').eq('user_id', user_id) \
-            .ilike('name', name).limit(1).execute()
+        dose_num = re.sub(r'[^\d.]', '', dose_str or '')
+        dose_float = float(dose_num) if dose_num else None
+
+        query = supabase_admin.table('medications').select('id') \
+            .eq('user_id', user_id).ilike('name', name)
+        if dose_float is not None:
+            query = query.eq('standard_dose', dose_float)
+        result = query.limit(1).execute()
         if result.data:
             return result.data[0]['id']
-        ins = supabase_admin.table('medications').insert({
-            'user_id': user_id,
-            'name': name,
-            'is_active': True,
-            'date_started': date.today().isoformat(),
-        }).execute()
+
+        ins_data = {'user_id': user_id, 'name': name, 'is_active': True,
+                    'date_started': date.today().isoformat()}
+        if dose_float is not None:
+            ins_data['standard_dose'] = dose_float
+        ins = supabase_admin.table('medications').insert(ins_data).execute()
         return ins.data[0]['id'] if ins.data else None
     except Exception as e:
         print(f"Error finding/creating profile medication: {e}")
@@ -529,27 +540,45 @@ def find_or_create_profile_medication(user_id: str, name: str) -> str | None:
 
 
 def get_today_dose_logs(user_id: str) -> list:
-    """Return medication events (status=TAKEN) logged today for this user,
-    with the medication name joined from the medications table."""
+    """Return medication events (status=TAKEN) logged today, with name and event id."""
     try:
         today = date.today().isoformat()
-        events = supabase_admin.table('medication_events').select('medication_id, actual_time, dose, custom_note') \
+        events = supabase_admin.table('medication_events') \
+            .select('id, medication_id, actual_time, dose, custom_note') \
             .eq('user_id', user_id).eq('event_date', today).eq('status', 'TAKEN').execute()
         if not events.data:
             return []
         med_ids = list({e['medication_id'] for e in events.data})
-        meds_res = supabase_admin.table('medications').select('id, name').in_('id', med_ids).execute()
-        med_map = {m['id']: m['name'] for m in (meds_res.data or [])}
+        meds_res = supabase_admin.table('medications') \
+            .select('id, name, standard_dose').in_('id', med_ids).execute()
+        med_map = {m['id']: m for m in (meds_res.data or [])}
         logs = []
         for e in events.data:
-            name = med_map.get(e['medication_id'], '')
+            med = med_map.get(e['medication_id'], {})
+            name = med.get('name', '')
             raw_time = e.get('actual_time') or ''
             time_str = raw_time[11:16] if len(raw_time) >= 16 else (e.get('custom_note') or '')
-            logs.append({'name': name, 'time': time_str, 'dose': e.get('dose')})
+            logs.append({
+                'id':   e['id'],
+                'name': name,
+                'time': time_str,
+                'dose': e.get('dose') if e.get('dose') is not None else med.get('standard_dose'),
+            })
         return logs
     except Exception as e:
         print(f"Error getting today dose logs: {e}")
         return []
+
+
+def delete_medication_event(user_id: str, event_id: str) -> bool:
+    """Delete a specific medication event belonging to this user."""
+    try:
+        supabase_admin.table('medication_events').delete() \
+            .eq('id', event_id).eq('user_id', user_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error deleting medication event: {e}")
+        return False
 
 
 def log_medication_event(user_id: str, medication_id: str, event_date: str, actual_time: str, dose: float, status: str = 'TAKEN', notes: str = None):

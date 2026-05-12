@@ -87,6 +87,7 @@
         <span class="med-taken-time"></span>
         <input type="time" class="med-time-input form-input" aria-label="Time taken">
         <button class="btn btn-sm med-log-btn" onclick="quickLogDose(this)">Log Dose</button>
+        <button class="btn btn-sm btn-ghost med-remove-btn" style="display:none;" onclick="removeDose(this)">Remove</button>
       </div>
     </li>
     {% endfor %}
@@ -110,14 +111,72 @@
 <script>
 (function () {
   function nowHHMM() {
-    const now = new Date();
-    return now.getHours().toString().padStart(2,'0') + ':' + now.getMinutes().toString().padStart(2,'0');
+    const d = new Date();
+    return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
   }
 
-  function initTimeInputs() {
-    document.querySelectorAll('.med-time-input').forEach(function (inp) {
-      if (!inp.value) inp.value = nowHHMM();
+  // Numeric part of a dose string: "20mg" → 20, "0.5" → 0.5, "" → null
+  function parseDoseNum(s) {
+    const n = parseFloat(String(s || '').replace(/[^\d.]/g, ''));
+    return isNaN(n) ? null : n;
+  }
+
+  // Find the ONE row whose name AND dose match (dose-aware to distinguish two Adderall Rx)
+  function findRow(name, dose) {
+    const doseNum = parseDoseNum(dose);
+    const candidates = [];
+    document.querySelectorAll('.med-dose-item').forEach(function (li) {
+      if (li.dataset.medName !== name) return;
+      const liDose = parseDoseNum(li.dataset.medDose);
+      if (doseNum !== null && liDose !== null) {
+        if (Math.abs(liDose - doseNum) < 0.01) candidates.push(li);
+      } else {
+        candidates.push(li);
+      }
     });
+    // If exactly one match, return it; otherwise fall back to first name-only match
+    return candidates.length === 1 ? candidates[0]
+         : candidates[0] || null;
+  }
+
+  function setRowTaken(li, time, eventId) {
+    li.querySelector('.med-taken-checkmark').style.display = '';
+    if (time) {
+      li.querySelector('.med-taken-time').textContent = time;
+      const inp = li.querySelector('.med-time-input');
+      if (inp) inp.value = time;
+    }
+    li.classList.add('med-dose-item--taken');
+    const logBtn = li.querySelector('.med-log-btn');
+    logBtn.textContent = 'Log Again';
+    logBtn.classList.add('btn-ghost');
+    const removeBtn = li.querySelector('.med-remove-btn');
+    if (removeBtn) {
+      removeBtn.style.display = '';
+      if (eventId) removeBtn.dataset.eventId = eventId;
+    }
+  }
+
+  function setRowUntaken(li) {
+    li.querySelector('.med-taken-checkmark').style.display = 'none';
+    li.querySelector('.med-taken-time').textContent = '';
+    li.classList.remove('med-dose-item--taken');
+    const logBtn = li.querySelector('.med-log-btn');
+    logBtn.textContent = 'Log Dose';
+    logBtn.classList.remove('btn-ghost');
+    const removeBtn = li.querySelector('.med-remove-btn');
+    if (removeBtn) {
+      removeBtn.style.display = 'none';
+      delete removeBtn.dataset.eventId;
+    }
+  }
+
+  function updateMeta(delta) {
+    const meta = document.getElementById('med-widget-meta');
+    if (!meta) return;
+    const cur = parseInt(meta.textContent) || 0;
+    const next = Math.max(0, cur + delta);
+    meta.textContent = next ? next + ' dose' + (next !== 1 ? 's' : '') + ' logged today' : 'None logged yet';
   }
 
   async function loadTodayDoses() {
@@ -129,28 +188,15 @@
       const meta = document.getElementById('med-widget-meta');
       if (meta) meta.textContent = doses.length ? doses.length + ' dose' + (doses.length !== 1 ? 's' : '') + ' logged today' : 'None logged yet';
       doses.forEach(function (d) {
-        markTaken(d.name, d.time);
+        const li = findRow(d.name, d.dose);
+        if (li) setRowTaken(li, d.time, d.id);
       });
     } catch (_) {}
   }
 
-  function markTaken(name, time) {
-    document.querySelectorAll('.med-dose-item').forEach(function (li) {
-      if (li.dataset.medName === name) {
-        const check = li.querySelector('.med-taken-checkmark');
-        check.style.display = '';
-        const timeEl = li.querySelector('.med-taken-time');
-        if (time) {
-          timeEl.textContent = time;
-          const inp = li.querySelector('.med-time-input');
-          if (inp) inp.value = time;
-        }
-        li.classList.add('med-dose-item--taken');
-        const btn = li.querySelector('.med-log-btn');
-        btn.textContent = 'Log Again';
-        btn.classList.remove('btn-primary');
-        btn.classList.add('btn-ghost');
-      }
+  function initTimeInputs() {
+    document.querySelectorAll('.med-time-input').forEach(function (inp) {
+      if (!inp.value) inp.value = nowHHMM();
     });
   }
 
@@ -167,23 +213,41 @@
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: name, dose: dose, time: time }),
+        body: JSON.stringify({ name, dose, time }),
       });
-      if (res.ok) {
-        markTaken(name, time);
-        const meta = document.getElementById('med-widget-meta');
-        if (meta) {
-          const cur = parseInt(meta.textContent) || 0;
-          const next = cur + 1;
-          meta.textContent = next + ' dose' + (next !== 1 ? 's' : '') + ' logged today';
-        }
-        btn.disabled = false;
+      const json = res.ok ? await res.json() : null;
+      if (json && json.ok) {
+        setRowTaken(li, time, json.event_id);
+        updateMeta(+1);
       } else {
         btn.textContent = 'Error — retry';
-        btn.disabled = false;
       }
     } catch (_) {
       btn.textContent = 'Error — retry';
+    }
+    btn.disabled = false;
+  };
+
+  window.removeDose = async function (btn) {
+    const eventId = btn.dataset.eventId;
+    if (!eventId) return;
+    btn.disabled = true;
+    btn.textContent = '…';
+    try {
+      const res = await fetch('/api/medications/quick-log/' + eventId, {
+        method: 'DELETE',
+        credentials: 'same-origin',
+      });
+      if (res.ok) {
+        const li = btn.closest('.med-dose-item');
+        setRowUntaken(li);
+        updateMeta(-1);
+      } else {
+        btn.textContent = 'Error';
+        btn.disabled = false;
+      }
+    } catch (_) {
+      btn.textContent = 'Error';
       btn.disabled = false;
     }
   };
