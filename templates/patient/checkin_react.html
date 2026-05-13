@@ -57,29 +57,4 @@
 
 {% block scripts %}
 <script type="module" src="{{ url_for('static', filename='dist/assets/index.js') }}"></script>
-<script>
-  (function () {
-    const btn = document.getElementById('nav-hamburger');
-    const menu = document.getElementById('nav-mobile-menu');
-    if (!btn || !menu) return;
-    btn.addEventListener('click', function () {
-      const open = menu.classList.toggle('open');
-      btn.classList.toggle('open', open);
-      btn.setAttribute('aria-expanded', open);
-      menu.setAttribute('aria-hidden', !open);
-    });
-    menu.querySelectorAll('.mobile-nav-link').forEach(function (a) {
-      a.addEventListener('click', function () {
-        menu.classList.remove('open');
-        btn.classList.remove('open');
-      });
-    });
-    document.addEventListener('click', function (e) {
-      if (!btn.contains(e.target) && !menu.contains(e.target)) {
-        menu.classList.remove('open');
-        btn.classList.remove('open');
-      }
-    });
-  })();
-</script>
 {% endblock %}

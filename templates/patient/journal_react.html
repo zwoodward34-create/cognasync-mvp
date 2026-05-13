@@ -28,8 +28,25 @@
   <div class="top-nav-end">
     <span class="top-nav-user">{{ user.full_name }}</span>
     <a href="{{ url_for('logout') }}" class="top-nav-logout">Sign out</a>
+    <button class="nav-hamburger" id="nav-hamburger" aria-label="Open menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
   </div>
 </header>
+
+<div class="top-nav-mobile-menu" id="nav-mobile-menu" aria-hidden="true">
+  {% if user is defined and user %}
+    <a href="{{ url_for('home') }}"            class="mobile-nav-link {% if request.endpoint == 'home' %}active{% endif %}">Home</a>
+    <a href="{{ url_for('checkin_page') }}"    class="mobile-nav-link {% if request.endpoint == 'checkin_page' %}active{% endif %}">Check-In</a>
+    <a href="{{ url_for('journal_page') }}"    class="mobile-nav-link {% if request.endpoint == 'journal_page' %}active{% endif %}">Journal</a>
+    <a href="{{ url_for('medication_page') }}"  class="mobile-nav-link {% if request.endpoint == 'medication_page' %}active{% endif %}">Medications</a>
+    <a href="{{ url_for('summary_page') }}"    class="mobile-nav-link {% if request.endpoint == 'summary_page' %}active{% endif %}">Pre-Appt Summary</a>
+    <a href="{{ url_for('trends_page') }}"     class="mobile-nav-link {% if request.endpoint == 'trends_page' %}active{% endif %}">Trends</a>
+    <a href="{{ url_for('settings_page') }}"   class="mobile-nav-link {% if request.endpoint == 'settings_page' %}active{% endif %}">Settings</a>
+    <div class="mobile-nav-divider"></div>
+    <a href="{{ url_for('logout') }}" class="mobile-nav-link">Sign out</a>
+  {% endif %}
+</div>
 {% endif %}
 
 <div id="journal-root"></div>
