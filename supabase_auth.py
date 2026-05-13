@@ -1,8 +1,10 @@
 import os
+import uuid
 import jwt
 from supabase import create_client, Client
 from functools import wraps
 from flask import request
+import email_utils
 
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
@@ -104,49 +106,50 @@ def require_provider(f):
 
 
 def register_user(email, password, full_name, role):
-    """Create user in Supabase Auth. Providers cannot self-register."""
+    """Create a pending account. The user must verify email; admin must then approve."""
     if role not in ('patient', 'provider'):
         return None, 'Invalid role'
-    if role == 'provider':
-        return None, 'Provider accounts require administrator approval. Contact support.'
     if not email or not password or not full_name:
         return None, 'All fields required'
     if len(password) < 8:
         return None, 'Password must be at least 8 characters'
 
+    email = email.lower().strip()
+    full_name = full_name.strip()
+    verify_token = str(uuid.uuid4())
+
     try:
         auth_response = supabase_admin.auth.admin.create_user({
-            "email": email.lower().strip(),
+            "email": email,
             "password": password,
-            "email_confirm": True
+            "email_confirm": True,
         })
         user_id = auth_response.user.id
 
         supabase_admin.table('profiles').insert({
             'id': user_id,
-            'email': email.lower().strip(),
-            'full_name': full_name.strip(),
-            'role': 'patient',  # always patient regardless of form input
+            'email': email,
+            'full_name': full_name,
+            'role': role,
+            'status': 'pending_email',
+            'email_verify_token': verify_token,
         }).execute()
 
-        login_response = supabase.auth.sign_in_with_password({
-            "email": email.lower().strip(),
-            "password": password
-        })
+        email_utils.send_verification_email(email, full_name, verify_token)
 
         return {
-            'session_token': login_response.session.access_token,
             'user_id': user_id,
             'email': email,
-            'role': 'patient',
-            'full_name': full_name
+            'role': role,
+            'full_name': full_name,
+            'pending': True,
         }, None
     except Exception as e:
         return None, str(e)
 
 
 def login_user(email, password):
-    """Login user with Supabase."""
+    """Login user with Supabase. Blocked if account is not yet approved."""
     try:
         response = supabase.auth.sign_in_with_password({
             "email": email.lower().strip(),
@@ -155,6 +158,12 @@ def login_user(email, password):
 
         user_data = supabase_admin.table('profiles').select('*').eq('id', response.user.id).execute()
         profile = user_data.data[0] if user_data.data else {}
+
+        status = profile.get('status', 'approved')
+        if status == 'pending_email':
+            return None, 'Please verify your email address before signing in. Check your inbox for the verification link.'
+        if status == 'pending_approval':
+            return None, 'Your account is pending administrator approval. You will receive an email when approved.'
 
         return {
             'session_token': response.session.access_token,

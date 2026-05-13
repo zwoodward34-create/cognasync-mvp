@@ -1,3 +1,4 @@
+import math
 import os
 import re
 import json
@@ -21,6 +22,18 @@ VALID_HYPOTHESIS_VARS = {
     'alcohol', 'exercise', 'sunlight', 'screen_time',
     'social_quality', 'workload_friction',
 }
+
+# Ordered list and labels used by find_unexpected_pattern — defined once at
+# module level so they are not rebuilt on every call.
+_CORRELATION_VAR_LABELS = {
+    'mood': 'Mood', 'stress': 'Stress', 'sleep': 'Sleep',
+    'energy': 'Energy', 'focus': 'Focus', 'irritability': 'Irritability',
+    'motivation': 'Motivation', 'perceived_stress': 'Perceived Stress',
+    'alcohol': 'Alcohol', 'exercise': 'Exercise', 'sunlight': 'Sunlight',
+    'screen_time': 'Screen Time', 'social_quality': 'Social Quality',
+    'workload_friction': 'Workload Friction',
+}
+_CORRELATION_VARS = list(_CORRELATION_VAR_LABELS.keys())
 
 
 def init_db():
@@ -539,10 +552,11 @@ def find_or_create_profile_medication(user_id: str, name: str, dose_str: str = N
         return None
 
 
-def get_today_dose_logs(user_id: str) -> list:
+def get_today_dose_logs(user_id: str, today: str = None) -> list:
     """Return medication events (status=TAKEN) logged today, with name and event id."""
     try:
-        today = date.today().isoformat()
+        if today is None:
+            today = date.today().isoformat()
         events = supabase_admin.table('medication_events') \
             .select('id, medication_id, actual_time, dose, custom_note') \
             .eq('user_id', user_id).eq('event_date', today).eq('status', 'TAKEN').execute()
@@ -1503,8 +1517,11 @@ def get_trends_data(user_id: str, days: int = 30):
         return None
 
 
-def get_paired_values(patient_id, var_a, var_b, days=60):
+def get_paired_values(patient_id, var_a, var_b, days=60, _checkins=None):
     """Return (date, val_a, val_b) triples for two VALID_HYPOTHESIS_VARS.
+
+    Pass ``_checkins`` (a pre-fetched row list) to skip the DB round-trip.
+    This is used by find_unexpected_pattern to avoid N+1 queries.
 
     Variable → storage location mapping:
       mood   → mood_score column   (fallback: stability_score)
@@ -1551,7 +1568,7 @@ def get_paired_values(patient_id, var_a, var_b, days=60):
         return None
 
     try:
-        checkins = get_checkins(patient_id, days)
+        checkins = _checkins if _checkins is not None else get_checkins(patient_id, days)
         pairs = []
         for c in checkins:
             val_a = _extract(c, var_a)
@@ -1568,30 +1585,14 @@ def compute_correlation_evidence(pairs, user_direction):
     """Compute correlation evidence between two variables."""
     if not pairs or len(pairs) < 3:
         return {'r': None, 'p': None, 'evidence': 0.0}
-    
-    values_a = [p[1] for p in pairs]
-    values_b = [p[2] for p in pairs]
-    
-    n = len(values_a)
-    mean_a = sum(values_a) / n
-    mean_b = sum(values_b) / n
-    
-    cov = sum((values_a[i] - mean_a) * (values_b[i] - mean_b) for i in range(n)) / n
-    std_a = (sum((v - mean_a) ** 2 for v in values_a) / n) ** 0.5
-    std_b = (sum((v - mean_b) ** 2 for v in values_b) / n) ** 0.5
-    
-    if std_a == 0 or std_b == 0:
+    r, p = _pearson([pair[1] for pair in pairs], [pair[2] for pair in pairs])
+    if r is None:
         return {'r': 0, 'p': None, 'evidence': 0.0}
-    
-    r = cov / (std_a * std_b)
-    
-    # Simplified evidence calculation
-    evidence = abs(r) * (n / 10.0)
-    
+    evidence = abs(r) * (len(pairs) / 10.0)
     return {
         'r': round(r, 3),
-        'p': None,
-        'evidence': round(min(evidence, 1.0), 3)
+        'p': p,
+        'evidence': round(min(evidence, 1.0), 3),
     }
 
 
@@ -1762,37 +1763,157 @@ def get_medication_timing_stats(patient_id, days=30):
         return _empty
 
 
+def _pearson(vals_a, vals_b):
+    """Pearson r + approximate p-value for two equal-length numeric lists."""
+    n = len(vals_a)
+    if n < 7:
+        return None, None
+    mean_a = sum(vals_a) / n
+    mean_b = sum(vals_b) / n
+    std_a = (sum((v - mean_a) ** 2 for v in vals_a) / n) ** 0.5
+    std_b = (sum((v - mean_b) ** 2 for v in vals_b) / n) ** 0.5
+    if std_a == 0 or std_b == 0:
+        return None, None
+    cov = sum((vals_a[i] - mean_a) * (vals_b[i] - mean_b) for i in range(n)) / n
+    r = max(-1.0, min(1.0, cov / (std_a * std_b)))
+    # Approximate p-value via t-statistic → normal table
+    if abs(r) >= 1.0:
+        return r, 0.001
+    t = r * math.sqrt(n - 2) / math.sqrt(1 - r ** 2)
+    at = abs(t)
+    if at > 3.5:    p = 0.001
+    elif at > 2.58: p = 0.01
+    elif at > 1.96: p = 0.05
+    elif at > 1.64: p = 0.10
+    else:           p = 0.20
+    return r, p
+
+
 def find_unexpected_pattern(patient_id, days=30):
-    """Find unexpected patterns in patient data."""
+    """Find the strongest unexamined correlation among all variable pairs.
+
+    Returns the shape renderUnexpected() in hypothesis-tester.js expects:
+      {var_a, var_b, r, p_value, n, message}
+    """
+    VAR_LABELS = _CORRELATION_VAR_LABELS
+    VARS = _CORRELATION_VARS
+
     try:
-        checkins = get_checkins(patient_id, days)
-        
-        if not checkins or len(checkins) < 5:
-            return None
-        
-        mood_scores = [c.get('mood_score') or c.get('stability_score') for c in checkins]
-        mood_scores = [s for s in mood_scores if s is not None]
+        tested = set()
+        for va, vb in get_tested_pairs(patient_id):
+            tested.add((va, vb))
+            tested.add((vb, va))
 
-        if not mood_scores:
-            return None
+        # Fetch checkins once; pass to get_paired_values to avoid up-to-91
+        # redundant DB round-trips (one per variable pair).
+        all_checkins = get_checkins(patient_id, days)
 
-        avg_score = sum(mood_scores) / len(mood_scores)
-        std_dev = (sum((s - avg_score) ** 2 for s in mood_scores) / len(mood_scores)) ** 0.5
+        best = None
+        best_score = 0.0
 
-        outliers = [s for s in mood_scores if abs(s - avg_score) > 2 * std_dev]
-        
-        if outliers:
-            return {
-                'pattern_type': 'unexpected_volatility',
-                'outlier_count': len(outliers),
-                'average': round(avg_score, 2),
-                'std_dev': round(std_dev, 2)
-            }
-        
-        return None
+        for i, va in enumerate(VARS):
+            for vb in VARS[i + 1:]:
+                if (va, vb) in tested:
+                    continue
+                pairs = get_paired_values(patient_id, va, vb, days, _checkins=all_checkins)
+                if len(pairs) < 7:
+                    continue
+                r, p = _pearson([p[1] for p in pairs], [p[2] for p in pairs])
+                if r is None or abs(r) < 0.3 or p > 0.10:
+                    continue
+                score = abs(r) * (1 - p)
+                if score > best_score:
+                    best_score = score
+                    la, lb = VAR_LABELS[va], VAR_LABELS[vb]
+                    if r > 0:
+                        msg = f"When your {la} is higher, your {lb} tends to be higher too."
+                    else:
+                        msg = f"When your {la} is higher, your {lb} tends to be lower."
+                    best = {
+                        'var_a':   va,
+                        'var_b':   vb,
+                        'r':       round(r, 2),
+                        'p_value': str(p),
+                        'n':       len(pairs),
+                        'message': msg,
+                    }
+
+        return best
     except Exception as e:
         print(f"Error finding unexpected pattern: {e}")
         return None
+
+
+def find_top_patterns(patient_id, days=30, limit=5):
+    """Return the top N significant correlations across all variable pairs.
+
+    Each item: {var_a, var_b, r, p_value, n, message, strength, is_new}
+    is_new = True when the user hasn't run a hypothesis test on this pair yet.
+    Sorted by |r| descending.
+    """
+    VAR_LABELS = _CORRELATION_VAR_LABELS
+    VARS = _CORRELATION_VARS
+
+    try:
+        tested = set()
+        for va, vb in get_tested_pairs(patient_id):
+            tested.add((va, vb))
+            tested.add((vb, va))
+
+        all_checkins = get_checkins(patient_id, days)
+        candidates = []
+
+        for i, va in enumerate(VARS):
+            for vb in VARS[i + 1:]:
+                pairs = get_paired_values(patient_id, va, vb, days, _checkins=all_checkins)
+                if len(pairs) < 7:
+                    continue
+                r, p = _pearson([pair[1] for pair in pairs], [pair[2] for pair in pairs])
+                if r is None or abs(r) < 0.3 or p > 0.10:
+                    continue
+
+                la, lb = VAR_LABELS[va], VAR_LABELS[vb]
+                abs_r = abs(r)
+
+                if abs_r >= 0.6:
+                    strength = 'strong'
+                    msg = (
+                        f"{la} and {lb} move together strongly — when one rises, the other tends to follow."
+                        if r > 0 else
+                        f"{la} and {lb} pull in opposite directions — a consistent inverse relationship."
+                    )
+                elif abs_r >= 0.4:
+                    strength = 'moderate'
+                    msg = (
+                        f"Days with higher {la} tend to bring higher {lb}."
+                        if r > 0 else
+                        f"Higher {la} days tend to see lower {lb}."
+                    )
+                else:
+                    strength = 'notable'
+                    msg = (
+                        f"A subtle link: {la} and {lb} tend to rise together."
+                        if r > 0 else
+                        f"A subtle link: higher {la} tends to coincide with lower {lb}."
+                    )
+
+                candidates.append({
+                    'var_a':    va,
+                    'var_b':    vb,
+                    'r':        round(r, 2),
+                    'p_value':  str(p),
+                    'n':        len(pairs),
+                    'message':  msg,
+                    'strength': strength,
+                    'is_new':   (va, vb) not in tested,
+                })
+
+        candidates.sort(key=lambda x: abs(x['r']), reverse=True)
+        return candidates[:limit]
+    except Exception as e:
+        print(f"Error finding top patterns: {e}")
+        return []
+
 
 # ═══════════════════════════════════════════════════════════════════════════
 # AI FEEDBACK

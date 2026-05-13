@@ -21,7 +21,7 @@
 
   <div class="auth-card">
     <h2 class="auth-card-title">Create your account</h2>
-    <form method="POST" action="{{ url_for('register_post') }}" class="auth-form">
+    <form method="POST" action="{{ url_for('register_post') }}" class="auth-form" id="register-form">
       <div class="form-group">
         <label for="full_name">Full name</label>
         <input type="text" id="full_name" name="full_name" required
@@ -38,15 +38,41 @@
                placeholder="Create a password" minlength="8" autocomplete="new-password">
       </div>
       <div class="form-group">
+        <label for="confirm_password">Confirm password</label>
+        <input type="password" id="confirm_password" name="confirm_password" required
+               placeholder="Re-enter your password" minlength="8" autocomplete="new-password">
+        <span id="pw-match-msg" style="display:none;font-size:13px;margin-top:4px"></span>
+      </div>
+      <div class="form-group">
         <label for="role">I am a</label>
         <select id="role" name="role">
           <option value="patient" {% if role == 'patient' or not role %}selected{% endif %}>Patient</option>
           <option value="provider" {% if role == 'provider' %}selected{% endif %}>Provider (Therapist / Psychiatrist)</option>
         </select>
       </div>
-      <button type="submit" class="btn btn-primary btn-full">Create account</button>
+      <button type="submit" class="btn btn-primary btn-full" id="submit-btn">Create account</button>
     </form>
     <p class="auth-switch">Already have an account? <a href="{{ url_for('login_page') }}">Sign in</a></p>
   </div>
 </div>
+<script>
+(function () {
+  const pw  = document.getElementById('password');
+  const cpw = document.getElementById('confirm_password');
+  const msg = document.getElementById('pw-match-msg');
+  const btn = document.getElementById('submit-btn');
+
+  function check() {
+    if (!cpw.value) { msg.style.display = 'none'; return; }
+    const match = pw.value === cpw.value;
+    msg.style.display = '';
+    msg.style.color = match ? '#16a34a' : '#dc2626';
+    msg.textContent  = match ? 'Passwords match' : 'Passwords do not match';
+    btn.disabled = !match;
+  }
+
+  pw.addEventListener('input', check);
+  cpw.addEventListener('input', check);
+})();
+</script>
 {% endblock %}

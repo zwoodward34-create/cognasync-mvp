@@ -26,6 +26,12 @@ const STEP_COLORS = {
   summary:   { fg: '#000000', bg: '#ECECEC', mid: '#333333' },
 };
 
+// ── Helpers ───────────────────────────────────────────────────────────
+function localDateStr() {
+  const n = new Date();
+  return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0');
+}
+
 // ── Guardrails ────────────────────────────────────────────────────────
 const G = {
   hasDx:  t => ['diagnos','disorder','illness','disease','symptom','syndrome','relapse','episode'].some(w => t.toLowerCase().includes(w)),
@@ -264,7 +270,7 @@ export default function App() {
   const [aiInsight, setAiInsight] = useState('');
   const [checkinId, setCheckinId] = useState(null);
   const [insightFeedback, setInsightFeedback] = useState(null); // 'up' | 'down' | null
-  const [entryDate, setEntryDate] = useState(() => new Date().toISOString().slice(0, 10));
+  const [entryDate, setEntryDate] = useState(() => localDateStr());
   const [entryTime, setEntryTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [completedToday, setCompletedToday] = useState([]);
   const [advancedMode, setAdvancedMode] = useState(false);
@@ -305,8 +311,8 @@ export default function App() {
     Promise.all([
       fetch('/api/checkins/baseline',     { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
       fetch('/api/patient/profile',       { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch('/api/checkins/today',        { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
-      fetch('/api/checkins/today-summary',{ credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/checkins/today?date='        + localDateStr(), { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
+      fetch('/api/checkins/today-summary?date=' + localDateStr(), { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
     ]).then(([baseline, profile, todayCompletion, todaySummary]) => {
       if (baseline && Object.keys(baseline).length) setBl(p => ({ ...p, ...baseline }));
       if (todayCompletion) setCompletedToday(todayCompletion.completed || []);

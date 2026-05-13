@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% block title %}Check your email — CognaSync{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block full_page %}
+<div class="auth-shell">
+  <div class="auth-brand">
+    <div class="auth-logo">CS</div>
+    <h1 class="auth-title">CognaSync</h1>
+  </div>
+  <div class="auth-card" style="text-align:center">
+    <div style="font-size:48px;margin-bottom:16px">✉</div>
+    <h2 class="auth-card-title">Check your email</h2>
+    <p style="color:#555;margin:12px 0 24px">
+      We sent a verification link to <strong>{{ email }}</strong>.
+      Click the link in that email to continue.
+    </p>
+    <p style="color:#888;font-size:13px">
+      Once you verify your email, your account will be reviewed by an administrator.
+      You'll receive another email when it's approved.
+    </p>
+    <p style="margin-top:24px">
+      <a href="{{ url_for('login_page') }}" class="btn btn-ghost">Back to sign in</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

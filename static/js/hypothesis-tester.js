@@ -50,18 +50,23 @@ class HypothesisTester {
   }
 
   async surfaceUnexpectedPatterns(days = 30) {
-    // Once per week: show the strongest pattern the user hasn't examined
     const lastChecked = localStorage.getItem('hyp_unexpected_checked');
     const now = Date.now();
     if (lastChecked && now - parseInt(lastChecked, 10) < 7 * 24 * 3600 * 1000) {
       const cached = localStorage.getItem('hyp_unexpected_result');
-      return cached ? JSON.parse(cached) : null;
+      if (cached) {
+        try {
+          const parsed = JSON.parse(cached);
+          if (Array.isArray(parsed) && parsed.length > 0 && parsed[0].var_a) return parsed;
+        } catch (_) {}
+      }
     }
 
     const result = await apiGet('/api/hypotheses/unexpected?days=' + days);
+    const patterns = result.patterns || [];
     localStorage.setItem('hyp_unexpected_checked', String(now));
-    localStorage.setItem('hyp_unexpected_result', JSON.stringify(result.pattern || null));
-    return result.pattern || null;
+    localStorage.setItem('hyp_unexpected_result', JSON.stringify(patterns));
+    return patterns;
   }
 
   async loadHistory() {
@@ -151,36 +156,66 @@ class HypothesisTester {
       </div>`;
   }
 
-  renderUnexpected(containerId, pattern) {
+  renderDiscovery(containerId, patterns) {
     const el = document.getElementById(containerId);
     if (!el) return;
-    if (!pattern) { el.innerHTML = ''; return; }
 
-    const dir = pattern.r > 0 ? '↑ positive' : '↓ negative';
-    const dirColor = pattern.r > 0 ? '#1a5c1a' : '#8B1A1A';
+    if (!patterns || !patterns.length) {
+      el.innerHTML = `
+        <div style="text-align:center;padding:24px 16px;color:var(--text-muted);font-size:13px;
+                    border:1px dashed var(--border-light);">
+          Not enough data yet. Keep logging — patterns surface after 7+ check-ins.
+        </div>`;
+      return;
+    }
 
-    el.innerHTML = `
-      <div style="border:1px solid var(--border);padding:16px;margin-bottom:20px;background:var(--surface);">
-        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-          <span style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;
-                       border:1px solid var(--border);padding:2px 7px;color:var(--text-muted);">
-            Weekly Discovery
-          </span>
-          <span style="font-size:10px;color:var(--text-muted);">${pattern.n} check-ins · p=${pattern.p_value}</span>
-        </div>
-        <div style="font-size:14px;font-weight:600;margin-bottom:6px;">${pattern.message}</div>
-        <div style="display:flex;align-items:center;gap:10px;font-size:12px;">
-          <span>${VAR_LABELS[pattern.var_a] || pattern.var_a}</span>
-          <span style="color:${dirColor};">⟶ ${dir} correlation (r=${pattern.r})</span>
-          <span>${VAR_LABELS[pattern.var_b] || pattern.var_b}</span>
-        </div>
-        <div style="margin-top:12px;display:flex;gap:8px;">
+    const pLabels = { '0.001': 'p&lt;0.001', '0.01': 'p&lt;0.01', '0.05': 'p&lt;0.05', '0.10': 'p&lt;0.10', '0.20': 'p&lt;0.20' };
+    const strengthMeta = {
+      strong:   { label: 'Strong Signal',      border: '2px solid #000', barColor: '#000' },
+      moderate: { label: 'Moderate Pattern',   border: '1px solid #555', barColor: '#444' },
+      notable:  { label: 'Notable Trend',      border: '1px solid var(--border-light)', barColor: '#888' },
+    };
+
+    el.innerHTML = patterns.map((p, i) => {
+      const meta   = strengthMeta[p.strength] || strengthMeta.notable;
+      const barPct = Math.round(Math.abs(p.r) * 100);
+      const dir    = p.r > 0 ? '↑' : '↓';
+      const dirTxt = p.r > 0 ? 'positive' : 'negative';
+      const pDisp  = pLabels[p.p_value] || `p=${p.p_value}`;
+      const newBadge = p.is_new
+        ? `<span style="font-size:9px;background:#000;color:#fff;padding:2px 7px;letter-spacing:.08em;margin-left:6px;">NEW</span>`
+        : '';
+
+      return `
+        <div style="${meta.border};padding:16px;${i > 0 ? 'margin-top:10px;' : ''}background:var(--surface);">
+          <div style="display:flex;align-items:center;margin-bottom:10px;">
+            <span style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;font-weight:700;color:${meta.barColor};">
+              ${meta.label}
+            </span>
+            ${newBadge}
+            <span style="margin-left:auto;font-size:11px;color:var(--text-muted);">
+              ${p.n} days &middot; r=${p.r} &middot; ${pDisp}
+            </span>
+          </div>
+          <div style="font-size:14px;font-weight:600;line-height:1.45;margin-bottom:10px;">${p.message}</div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">
+            <strong style="color:var(--text);">${VAR_LABELS[p.var_a] || p.var_a}</strong>
+            &nbsp;${dir} ${dirTxt} correlation with&nbsp;
+            <strong style="color:var(--text);">${VAR_LABELS[p.var_b] || p.var_b}</strong>
+          </div>
+          <div style="background:var(--surface-alt);height:5px;margin-bottom:12px;overflow:hidden;">
+            <div style="width:${barPct}%;height:100%;background:${meta.barColor};"></div>
+          </div>
           <button class="btn btn-primary btn-sm"
-                  onclick="prefillHypothesis('${pattern.var_a}', '${pattern.var_b}', '${pattern.r > 0 ? 'positive' : 'negative'}')">
-            Investigate
+                  onclick="prefillHypothesis('${p.var_a}','${p.var_b}','${p.r > 0 ? 'positive' : 'negative'}')">
+            Investigate &rarr;
           </button>
-          <button class="btn btn-ghost btn-sm" onclick="dismissUnexpected()">Dismiss</button>
-        </div>
-      </div>`;
+        </div>`;
+    }).join('');
+  }
+
+  renderUnexpected(containerId, pattern) {
+    // Legacy shim: single pattern → wrap in array and delegate
+    this.renderDiscovery(containerId, pattern ? [pattern] : []);
   }
 }

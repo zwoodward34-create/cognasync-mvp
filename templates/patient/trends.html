@@ -168,8 +168,17 @@
     <ul id="insights-list" class="insights-list"></ul>
   </div>
 
-  <!-- Unexpected discovery (surfaced weekly) -->
-  <div id="unexpected-panel"></div>
+  <!-- Weekly Discovery -->
+  <div id="discovery-section" class="insights-panel" style="margin-bottom:24px;display:none;">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+      <h2 class="section-title" style="margin:0;">Weekly Discovery</h2>
+      <button class="btn btn-ghost btn-sm" onclick="refreshDiscovery()">↻ Refresh</button>
+    </div>
+    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
+      Strongest patterns found in your data — updated weekly
+    </p>
+    <div id="unexpected-panel"></div>
+  </div>
 
   <!-- Hypothesis tester -->
   <div class="insights-panel" style="margin-bottom:24px;">
@@ -788,8 +797,21 @@ function prefillHypothesis(varA, varB, dir) {
 }
 
 function dismissUnexpected() {
-  localStorage.setItem('hyp_unexpected_result', 'null');
-  document.getElementById('unexpected-panel').innerHTML = '';
+  localStorage.removeItem('hyp_unexpected_result');
+  localStorage.removeItem('hyp_unexpected_checked');
+  document.getElementById('discovery-section').style.display = 'none';
+}
+
+async function refreshDiscovery() {
+  localStorage.removeItem('hyp_unexpected_result');
+  localStorage.removeItem('hyp_unexpected_checked');
+  const btn = document.querySelector('[onclick="refreshDiscovery()"]');
+  if (btn) { btn.disabled = true; btn.textContent = '…'; }
+  try {
+    const patterns = await hypTester.surfaceUnexpectedPatterns(30);
+    hypTester.renderDiscovery('unexpected-panel', patterns);
+  } catch (_) {}
+  if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; }
 }
 
 // ── Medication timing insights ────────────────────────────────────────────────
@@ -851,9 +873,22 @@ async function loadTimingInsights(days) {
     hypTester.renderHistory('hyp-history');
   } catch (_) {}
 
+  // Bust stale cache: clear old single-pattern shape (pre-redesign) or corrupted entries
+  const cached = localStorage.getItem('hyp_unexpected_result');
+  if (cached && cached !== 'null') {
+    let parsed = null;
+    try { parsed = JSON.parse(cached); } catch (_) {}
+    const isLegacy = parsed && !Array.isArray(parsed);
+    const isEmpty  = Array.isArray(parsed) && parsed.length > 0 && !parsed[0].var_a;
+    if (isLegacy || isEmpty) {
+      localStorage.removeItem('hyp_unexpected_checked');
+      localStorage.removeItem('hyp_unexpected_result');
+    }
+  }
   try {
-    const pattern = await hypTester.surfaceUnexpectedPatterns(30);
-    if (pattern) hypTester.renderUnexpected('unexpected-panel', pattern);
+    const patterns = await hypTester.surfaceUnexpectedPatterns(30);
+    hypTester.renderDiscovery('unexpected-panel', patterns);
+    document.getElementById('discovery-section').style.display = '';
   } catch (_) {}
 })();
 </script>

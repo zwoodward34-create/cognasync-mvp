@@ -1,0 +1,28 @@
+{% extends "layout.html" %}
+{% block title %}Account pending approval — CognaSync{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block full_page %}
+<div class="auth-shell">
+  <div class="auth-brand">
+    <div class="auth-logo">CS</div>
+    <h1 class="auth-title">CognaSync</h1>
+  </div>
+  <div class="auth-card" style="text-align:center">
+    <div style="font-size:48px;margin-bottom:16px">⏳</div>
+    <h2 class="auth-card-title">Email verified</h2>
+    <p style="color:#555;margin:12px 0 24px">
+      Your email address has been confirmed. Your account is now
+      <strong>pending administrator approval</strong>.
+    </p>
+    <p style="color:#888;font-size:13px">
+      You'll receive an email at <strong>{{ email }}</strong> once your account is approved
+      and you can sign in.
+    </p>
+    <p style="margin-top:24px">
+      <a href="{{ url_for('login_page') }}" class="btn btn-ghost">Back to sign in</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

@@ -115,6 +115,11 @@
     return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
   }
 
+  function localDateStr() {
+    const n = new Date();
+    return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0');
+  }
+
   // Numeric part of a dose string: "20mg" → 20, "0.5" → 0.5, "" → null
   function parseDoseNum(s) {
     const n = parseFloat(String(s || '').replace(/[^\d.]/g, ''));
@@ -181,7 +186,7 @@
 
   async function loadTodayDoses() {
     try {
-      const res = await fetch('/api/medications/today-doses', { credentials: 'same-origin' });
+      const res = await fetch('/api/medications/today-doses?date=' + localDateStr(), { credentials: 'same-origin' });
       if (!res.ok) return;
       const data = await res.json();
       const doses = data.doses || [];
@@ -213,7 +218,7 @@
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, dose, time }),
+        body: JSON.stringify({ name, dose, time, date: localDateStr() }),
       });
       const json = res.ok ? await res.json() : null;
       if (json && json.ok) {

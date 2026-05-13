@@ -1,3 +1,117 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+---
+
+## Development Commands
+
+**Run the Flask server:**
+```bash
+python app.py        # default port 5002 (override with FLASK_PORT env var)
+```
+
+**Build the React SPA** (required after any change to `client/src/`):
+```bash
+cd client && npm run build
+```
+The build output goes to `static/dist/assets/index.js` (fixed filename, no content hash). **This file is committed to git** — always rebuild and commit after React changes, or the deployed app won't reflect them.
+
+**Lint the React code:**
+```bash
+cd client && npm run lint
+```
+
+**Vite dev server** (hot-reload for React in isolation; does not integrate with Flask):
+```bash
+cd client && npm run dev
+```
+
+**Create a provider account:**
+```bash
+python scripts/create_provider.py
+```
+
+**Seed test data:**
+```bash
+python seed_test_data.py
+```
+
+There is no test suite.
+
+---
+
+## Architecture Overview
+
+### Dual rendering model
+
+Most pages are **server-rendered Jinja2** templates (`templates/`), styled by `static/css/style.css`, with vanilla JS in `static/js/`. Two pages break from this:
+
+| Route | Template | Rendering |
+|---|---|---|
+| `/checkin` | `patient/checkin_react.html` | React SPA (`App.jsx`) |
+| `/journal` | `patient/journal_react.html` | React SPA (`App.jsx`) |
+| All others | `patient/*.html`, `provider/*.html` | Jinja2 + vanilla JS |
+
+The React SPA (`client/src/App.jsx`) is a single large multi-step form that calls Flask JSON APIs. The compiled bundle is embedded via a `<script>` tag in the `*_react.html` templates.
+
+### Data layer
+
+`database.py` is the sole data access layer. It creates two Supabase clients:
+- `supabase_admin` — service role key, bypasses RLS; used for all server-side writes
+- `supabase` — anon key, respects RLS; available but rarely used server-side
+
+**There is no ORM and no migration runner.** Schema changes are applied directly via the Supabase SQL Editor or the Supabase MCP tool (`apply_migration`). `init_db()` only verifies the connection; tables must be created manually. When adding new tables, remember to also `GRANT ALL ON TABLE ... TO anon, authenticated, service_role` — RLS policies alone are not enough for the service role.
+
+### Auth
+
+Supabase Auth handles registration and login (`supabase_auth.py`). After login, a hex `session_token` is stored in the Flask session (cookie) and in a `sessions` table in Supabase. All subsequent requests look up the user via `db.get_user_from_token(token)`.
+
+- **Page routes** guard with `_require_patient()` / `_require_provider()` in `app.py`
+- **API routes** guard with `_api_user(role)` — returns `(user, error_response)` tuple
+
+`auth.py` contains deprecated local-auth functions kept for backwards compatibility; prefer `supabase_auth.py` for any new auth work.
+
+### AI layer (`claude_api.py`)
+
+Four functions drive all Claude calls:
+- `analyze_checkin()` — Mode A: brief post-check-in insight
+- `analyze_journal()` — journal reflection
+- `generate_appointment_summary()` — Mode B (patient) or Mode C (provider) depending on caller
+- `_call_claude()` — internal wrapper with retry and `_sanitize_output()`
+
+All computed scores (Stability Score, Stim Load, Crash Risk, etc.) are calculated in `database.py:_compute_checkin_scores()` before any Claude call and passed as structured data. Claude never recomputes them.
+
+Crisis detection (`_check_crisis()`) runs on all user-provided text **before** any API call.
+
+### Scoring and analytics
+
+- `_compute_checkin_scores()` — produces all derived scores for a single check-in
+- `_trend_stats()` — linear regression + p-value + R² over a data series
+- `get_trends_data()` — builds the full trends payload (mood, sleep, stress, medication timing, etc.)
+- `get_medication_timing_stats()` — timing consistency analysis
+- `compute_correlation_evidence()` + `get_paired_values()` — hypothesis tester feature
+- Advanced check-in fields live in the `extended_data` JSONB column on `checkins`
+
+### Medication bridging pattern
+
+`patient_profiles.current_medications` is a JSONB array of `{name, dose, dose_unit}` objects — the user's "medication list." The `medications` table holds formal `medication_id` records. Because `medication_events.medication_id` is a NOT NULL FK, quick-logging from the home widget goes through `find_or_create_profile_medication(user_id, name, dose_str)`, which matches or creates a row in `medications` by name + numeric dose, then returns the UUID to use when inserting into `medication_events`.
+
+### CSS
+
+Single file: `static/css/style.css`. No preprocessor. Breakpoints:
+- `768px` — main mobile breakpoint (nav collapse, single-column grids)
+- `600px` — medication widget stacking
+- `480px` — small phones
+
+Tailwind v4 is loaded **only inside the React SPA** (compiled by Vite). Do not use Tailwind classes in Jinja2 templates.
+
+### Deployment
+
+Render.com auto-deploys on push to `main`. Environment variables are set in the Render dashboard (see `.env.example` for the required keys).
+
+---
+
 # CognaSync — Master Behavioral Specification
 
 This file is the authoritative reference for all AI behavior in CognaSync. It governs:

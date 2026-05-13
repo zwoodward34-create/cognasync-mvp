@@ -46,7 +46,7 @@ function initCheckin() {
     });
 
     const payload = {
-      date: new Date().toISOString().slice(0, 10),
+      date: (() => { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0') + '-' + String(n.getDate()).padStart(2,'0'); })(),
       time_of_day: document.getElementById('time_of_day').value,
       mood_score: parseInt(document.getElementById('mood_score').value),
       sleep_hours: parseFloat(document.getElementById('sleep_hours').value),
@@ -286,7 +286,7 @@ function initMedications() {
 
       try {
         await apiPost('/api/checkins', {
-          date: new Date().toISOString().slice(0, 10),
+          date: (() => { const n = new Date(); return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0') + '-' + String(n.getDate()).padStart(2,'0'); })(),
           time_of_day: 'self-prompted',
           mood_score: 5,
           sleep_hours: 7,

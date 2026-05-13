@@ -1,6 +1,7 @@
 import os
 import json
 import re
+import hmac
 from datetime import date, timedelta
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
 from flask_cors import CORS
@@ -13,6 +14,13 @@ load_dotenv()
 import database as db
 import supabase_auth as auth_module
 import claude_api
+
+_DATE_RE = re.compile(r'^\d{4}-\d{2}-\d{2}$')
+
+def _parse_local_date(raw) -> str:
+    """Return raw if it's a valid YYYY-MM-DD string, otherwise today's server date."""
+    s = str(raw or '').strip()
+    return s if _DATE_RE.match(s) else date.today().isoformat()
 
 app = Flask(__name__, static_folder='static', static_url_path='/static')
 
@@ -93,12 +101,13 @@ def home():
     profile = db.get_patient_profile(user['id'])
     streak = db.get_checkin_streak(user['id'])
     latest_summary = db.get_latest_summary(user['id'])
+    today_str = date.today().isoformat()
     recent_checkins = db.get_checkins(user['id'], days=1)
     first_name = user['full_name'].split()[0]
     return render_template('patient/home.html',
                            user=user, profile=profile, streak=streak,
                            latest_summary=latest_summary,
-                           has_checkin_today=len(recent_checkins) > 0,
+                           has_checkin_today=any((c.get('checkin_date') or '')[:10] == today_str for c in recent_checkins),
                            first_name=first_name)
 
 
@@ -137,19 +146,66 @@ def register_page():
 def register_post():
     email = request.form.get('email', '').strip()
     password = request.form.get('password', '')
+    confirm_password = request.form.get('confirm_password', '')
     full_name = request.form.get('full_name', '').strip()
     role = request.form.get('role', 'patient')
+    if password != confirm_password:
+        flash('Passwords do not match.', 'error')
+        return render_template('auth/register.html', email=email, full_name=full_name, role=role)
     result, error = auth_module.register_user(email, password, full_name, role)
     if error:
         flash(error, 'error')
         return render_template('auth/register.html', email=email, full_name=full_name, role=role)
-    session['session_token'] = result['session_token']
-    session['user_id'] = result['user_id']
-    session['role'] = result['role']
-    flash('Account created! Welcome to CognaSync.', 'success')
-    if result['role'] == 'provider':
-        return redirect(url_for('provider_dashboard'))
-    return redirect(url_for('home'))
+    return render_template('auth/verify_sent.html', email=email)
+
+
+@app.route('/verify-email')
+def verify_email():
+    import email_utils
+    token = request.args.get('token', '').strip()
+    if not token:
+        flash('Invalid verification link.', 'error')
+        return redirect(url_for('login_page'))
+    profile_res = db.supabase_admin.table('profiles').select('id, email, full_name, role, status').eq('email_verify_token', token).execute()
+    if not profile_res.data:
+        flash('Verification link is invalid or has already been used.', 'error')
+        return redirect(url_for('login_page'))
+    profile = profile_res.data[0]
+    if profile['status'] != 'pending_email':
+        flash('This link has already been used.', 'error')
+        return redirect(url_for('login_page'))
+    db.supabase_admin.table('profiles').update({
+        'status': 'pending_approval',
+        'email_verify_token': None,
+    }).eq('id', profile['id']).execute()
+    secret_key = app.config['SECRET_KEY']
+    email_utils.send_admin_notification(
+        profile['email'], profile['full_name'], profile['role'],
+        profile['id'], secret_key,
+    )
+    return render_template('auth/pending_approval.html', email=profile['email'])
+
+
+@app.route('/admin/approve')
+def admin_approve():
+    import email_utils
+    user_id = request.args.get('id', '').strip()
+    sig = request.args.get('sig', '').strip()
+    if not user_id or not sig:
+        return 'Invalid approval link.', 400
+    secret_key = app.config['SECRET_KEY']
+    expected = email_utils.approval_sig(user_id, secret_key)
+    if not hmac.compare_digest(expected, sig):
+        return 'Invalid or tampered approval link.', 403
+    profile_res = db.supabase_admin.table('profiles').select('id, email, full_name, status').eq('id', user_id).execute()
+    if not profile_res.data:
+        return 'User not found.', 404
+    profile = profile_res.data[0]
+    if profile['status'] == 'approved':
+        return render_template('auth/approval_done.html', already=True, email=profile['email'])
+    db.supabase_admin.table('profiles').update({'status': 'approved'}).eq('id', user_id).execute()
+    email_utils.send_account_approved_email(profile['email'], profile['full_name'])
+    return render_template('auth/approval_done.html', already=False, email=profile['email'])
 
 
 @app.route('/logout')
@@ -586,6 +642,7 @@ def api_medications_quick_log():
     dose_raw = str(data.get('dose') or '').strip()
     dose_num = re.sub(r'[^\d.]', '', dose_raw)  # strip unit letters ("50mg" → "50")
     time_taken = str(data.get('time') or '').strip()
+    event_date = _parse_local_date(data.get('date'))
 
     med_id = db.find_or_create_profile_medication(user['id'], name, dose_raw)
     if not med_id:
@@ -594,7 +651,7 @@ def api_medications_quick_log():
     event = db.log_medication_event(
         user_id=user['id'],
         medication_id=med_id,
-        event_date=date.today().isoformat(),
+        event_date=event_date,
         actual_time=None,
         dose=float(dose_num) if dose_num else None,
         status='TAKEN',
@@ -611,8 +668,9 @@ def api_medications_today_doses():
     user, err = _api_user('patient')
     if err:
         return err
-    logs = db.get_today_dose_logs(user['id'])
-    return jsonify({'doses': logs, 'date': date.today().isoformat()}), 200
+    today = _parse_local_date(request.args.get('date'))
+    logs = db.get_today_dose_logs(user['id'], today)
+    return jsonify({'doses': logs, 'date': today}), 200
 
 
 @app.route('/api/medications/quick-log/<event_id>', methods=['DELETE'])
@@ -633,7 +691,7 @@ def api_checkins_today():
     user, err = _api_user('patient')
     if err:
         return err
-    today = date.today().isoformat()
+    today = _parse_local_date(request.args.get('date'))
     checkins = db.get_checkins(user['id'], days=1)
     done = set()
     for c in checkins:
@@ -688,11 +746,11 @@ def api_checkins_today_summary():
     user, err = _api_user('patient')
     if err:
         return err
-    today = date.today().isoformat()
+    today = _parse_local_date(request.args.get('date'))
     checkins = db.get_checkins(user['id'], days=1)
 
     today_checkins = [c for c in (checkins or []) if (c.get('checkin_date') or '')[:10] == today]
-    quick_doses = db.get_today_dose_logs(user['id'])
+    quick_doses = db.get_today_dose_logs(user['id'], today)
 
     if not today_checkins:
         # No check-ins yet today but quick-logs may exist
@@ -1375,8 +1433,8 @@ def api_unexpected_pattern():
     if err:
         return err
     days = min(int(request.args.get('days', 30)), 180)
-    pattern = db.find_unexpected_pattern(user['id'], days)
-    return jsonify({'pattern': pattern}), 200
+    patterns = db.find_top_patterns(user['id'], days)
+    return jsonify({'patterns': patterns}), 200
 
 
 # ── AI Feedback ───────────────────────────────────────────────────────────────
