@@ -101,13 +101,10 @@ def home():
     profile = db.get_patient_profile(user['id'])
     streak = db.get_checkin_streak(user['id'])
     latest_summary = db.get_latest_summary(user['id'])
-    today_str = date.today().isoformat()
-    recent_checkins = db.get_checkins(user['id'], days=1)
     first_name = user['full_name'].split()[0]
     return render_template('patient/home.html',
                            user=user, profile=profile, streak=streak,
                            latest_summary=latest_summary,
-                           has_checkin_today=any((c.get('checkin_date') or '')[:10] == today_str for c in recent_checkins),
                            first_name=first_name)
 
 

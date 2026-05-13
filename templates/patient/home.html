@@ -14,13 +14,11 @@
 </div>
 
 <div class="quick-cards">
-  <a href="{{ url_for('checkin_page') }}" class="quick-card {% if has_checkin_today %}quick-card--done{% endif %}">
+  <a href="{{ url_for('checkin_page') }}" class="quick-card" id="checkin-card">
     <div class="quick-card-icon">✓</div>
     <div class="quick-card-body">
       <div class="quick-card-title">Daily Check-In</div>
-      <div class="quick-card-sub">
-        {% if has_checkin_today %}Logged today{% else %}Not yet logged today{% endif %}
-      </div>
+      <div class="quick-card-sub" id="checkin-card-sub">Loading…</div>
     </div>
     <div class="quick-card-arrow">→</div>
   </a>
@@ -257,9 +255,27 @@
     }
   };
 
+  async function updateCheckinCard() {
+    const sub = document.getElementById('checkin-card-sub');
+    const card = document.getElementById('checkin-card');
+    if (!sub || !card) return;
+    try {
+      const res = await fetch('/api/checkins/today?date=' + localDateStr(), { credentials: 'same-origin' });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const done = (data.completed || []).length > 0;
+      sub.textContent = done ? 'Logged today' : 'Not yet logged today';
+      if (done) card.classList.add('quick-card--done');
+      else card.classList.remove('quick-card--done');
+    } catch (_) {
+      sub.textContent = 'Not yet logged today';
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initTimeInputs();
     loadTodayDoses();
+    updateCheckinCard();
   });
 })();
 </script>
