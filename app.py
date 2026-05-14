@@ -684,19 +684,26 @@ def api_medications_quick_log_delete(event_id):
 
 @app.route('/api/checkins/today', methods=['GET'])
 def api_checkins_today():
-    """Return which check-in types have been completed today."""
+    """Return which check-in types have been completed today, plus their saved details."""
     user, err = _api_user('patient')
     if err:
         return err
     today = _parse_local_date(request.args.get('date'))
     checkins = db.get_checkins(user['id'], days=1)
     done = set()
+    details = {}
     for c in checkins:
         if (c.get('checkin_date') or '')[:10] == today:
             ct = c.get('checkin_type', '')
             if ct in ('morning', 'afternoon', 'evening'):
                 done.add(ct)
-    return jsonify({'completed': list(done), 'date': today}), 200
+                if ct not in details:
+                    details[ct] = {
+                        'id': c.get('id'),
+                        'ai_insight': c.get('ai_insights') or '',
+                        'time_of_day': c.get('time_of_day') or ct,
+                    }
+    return jsonify({'completed': list(done), 'details': details, 'date': today}), 200
 
 
 @app.route('/api/checkins/by-date', methods=['GET'])

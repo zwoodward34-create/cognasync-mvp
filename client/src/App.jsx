@@ -273,6 +273,8 @@ export default function App() {
   const [entryDate, setEntryDate] = useState(() => localDateStr());
   const [entryTime, setEntryTime] = useState(() => new Date().toTimeString().slice(0, 5));
   const [completedToday, setCompletedToday] = useState([]);
+  const [completedDetails, setCompletedDetails] = useState({});
+  const [viewingCompleted, setViewingCompleted] = useState(null);
   const [advancedMode, setAdvancedMode] = useState(false);
   const [todayCheckinCount, setTodayCheckinCount] = useState(0);
   const isMobile = useMobile();
@@ -315,7 +317,10 @@ export default function App() {
       fetch('/api/checkins/today-summary?date=' + localDateStr(), { credentials: 'same-origin' }).then(r => r.ok ? r.json() : null).catch(() => null),
     ]).then(([baseline, profile, todayCompletion, todaySummary]) => {
       if (baseline && Object.keys(baseline).length) setBl(p => ({ ...p, ...baseline }));
-      if (todayCompletion) setCompletedToday(todayCompletion.completed || []);
+      if (todayCompletion) {
+        setCompletedToday(todayCompletion.completed || []);
+        setCompletedDetails(todayCompletion.details || {});
+      }
 
       // Build meds map — prefer server-injected list (window.__medications__) over XHR
       // so medications are never lost if the profile API call fails silently.
@@ -1027,6 +1032,72 @@ export default function App() {
     ),
   };
 
+  // ── View a previously completed check-in ───────────────────────────
+  if (viewingCompleted) {
+    return (
+      <div style={{ minHeight: 'calc(100vh - 52px)', background: P.bg, display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: isMobile ? 'flex-start' : 'center',
+        fontFamily: 'DM Sans', padding: isMobile ? '24px 16px 40px' : '40px 48px', overflowY: 'auto' }}>
+        <div style={{ width: '100%', maxWidth: 560 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 24 }}>
+            <div style={{ width: 32, height: 32, borderRadius: '50%', background: '#22c55e', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              boxShadow: '0 2px 8px rgba(34,197,94,0.35)' }}>
+              <span style={{ color: '#fff', fontSize: 18, fontWeight: 700, lineHeight: 1 }}>✓</span>
+            </div>
+            <div>
+              <div style={{ fontSize: isMobile ? 18 : 22, fontWeight: 400, color: P.ink, fontFamily: 'DM Serif Display', letterSpacing: '-0.01em' }}>
+                {viewingCompleted.label} Check-In
+              </div>
+              <div style={{ fontSize: 12, color: '#16a34a', fontWeight: 600, marginTop: 1 }}>Completed today</div>
+            </div>
+          </div>
+
+          {viewingCompleted.ai_insight ? (
+            <div style={{ padding: '16px 18px', background: P.surface, border: `1px solid ${P.border}`, marginBottom: 16 }}>
+              <p style={{ color: P.inkFaint, fontSize: 10, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.07em', margin: '0 0 8px' }}>AI Observation</p>
+              <p style={{ color: P.inkMid, fontSize: 14, margin: '0 0 12px', lineHeight: 1.7 }}>{viewingCompleted.ai_insight}</p>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ color: P.inkFaint, fontSize: 11, letterSpacing: '0.04em' }}>Helpful?</span>
+                {['up', 'down'].map(r => (
+                  <button key={r} onClick={() => {
+                    const next = insightFeedback === r ? null : r;
+                    setInsightFeedback(next);
+                    if (next && viewingCompleted.id) fetch('/api/feedback', {
+                      method: 'POST', credentials: 'same-origin',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ content_type: 'checkin', content_id: String(viewingCompleted.id), rating: r }),
+                    }).catch(() => {});
+                  }} style={{
+                    background: insightFeedback === r ? (r === 'up' ? '#dcfce7' : '#fee2e2') : 'none',
+                    border: `1px solid ${insightFeedback === r ? (r === 'up' ? '#86efac' : '#fca5a5') : P.borderLight}`,
+                    borderRadius: 4, padding: '2px 8px', cursor: 'pointer', fontSize: 15,
+                    transition: 'background .15s, border-color .15s',
+                  }}>{r === 'up' ? '👍' : '👎'}</button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div style={{ padding: '16px 18px', background: P.surface, border: `1px solid ${P.borderLight}`, marginBottom: 16 }}>
+              <p style={{ color: P.inkFaint, fontSize: 13, margin: 0 }}>No AI observation was recorded for this check-in.</p>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr', gap: 10 }}>
+            <a href="/" style={{ display: 'block', padding: '14px 18px', border: `1px solid ${P.border}`,
+              background: P.ink, color: '#fff', fontSize: 14, fontWeight: 600, textAlign: 'center',
+              textDecoration: 'none', fontFamily: 'DM Sans' }}>← Back to dashboard</a>
+            <button onClick={() => { setViewingCompleted(null); setInsightFeedback(null); }}
+              style={{ padding: '13px 18px', border: `1px solid ${P.border}`,
+                background: P.surface, color: P.inkMid, fontSize: 13, cursor: 'pointer', fontFamily: 'DM Sans' }}>
+              New Check-In
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   // ── Type selection screen ───────────────────────────────────────────
   if (!checkinType) {
     return (
@@ -1043,7 +1114,14 @@ export default function App() {
             const doneBg = '#f0faf4';
             const isLast = i === CHECKIN_TYPES.length - 1;
             return (
-              <button key={t.id} onClick={() => setCheckinType(t.id)}
+              <button key={t.id} onClick={() => {
+                if (done && t.id !== 'on_demand') {
+                  setInsightFeedback(null);
+                  setViewingCompleted({ type: t.id, label: t.label, ...(completedDetails[t.id] || {}) });
+                } else {
+                  setCheckinType(t.id);
+                }
+              }}
                 style={{ flex: 1, padding: isMobile ? '18px 16px' : '28px 24px', background: done ? doneBg : P.surface,
                   border: 'none',
                   borderRight: isMobile ? 'none' : (i < 3 ? `1px solid ${P.border}` : 'none'),
