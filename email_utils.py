@@ -12,11 +12,40 @@ SMTP_PASS = os.environ.get('SMTP_PASS', '')
 FROM_EMAIL = os.environ.get('FROM_EMAIL', SMTP_USER)
 ADMIN_EMAIL = os.environ.get('ADMIN_EMAIL', 'zwoodward@cognasync.com')
 APP_URL = os.environ.get('APP_URL', 'http://localhost:5002')
+RESEND_API_KEY = os.environ.get('RESEND_API_KEY', '')
+# Resend requires a verified sender. Use their shared domain for testing,
+# or set FROM_EMAIL to an address on your verified domain.
+_RESEND_FROM = FROM_EMAIL or 'CognaSync <onboarding@resend.dev>'
+
+
+def _send_via_resend(to: str, subject: str, html: str) -> bool:
+    if not RESEND_API_KEY:
+        return False
+    import httpx
+    try:
+        resp = httpx.post(
+            'https://api.resend.com/emails',
+            headers={
+                'Authorization': f'Bearer {RESEND_API_KEY}',
+                'Content-Type': 'application/json',
+            },
+            json={'from': _RESEND_FROM, 'to': [to], 'subject': subject, 'html': html},
+            timeout=10.0,
+        )
+        if resp.status_code not in (200, 201):
+            print(f"[email] Resend error {resp.status_code}: {resp.text}")
+            return False
+        return True
+    except Exception as e:
+        print(f"[email] Resend exception: {e}")
+        return False
 
 
 def _send(to, subject, html):
+    if _send_via_resend(to, subject, html):
+        return
     if not all([SMTP_HOST, SMTP_USER, SMTP_PASS]):
-        print(f"[email] SMTP not configured — would send to {to}: {subject}")
+        print(f"[email] No email provider configured — would send to {to}: {subject}")
         return
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
