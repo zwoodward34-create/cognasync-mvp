@@ -77,6 +77,22 @@ def send_admin_notification(user_email: str, full_name: str, role: str,
     _send(ADMIN_EMAIL, f"New CognaSync account request — {full_name} ({role})", html)
 
 
+def send_password_reset_email(to_email: str, full_name: str, token: str) -> None:
+    url = f"{APP_URL}/reset-password?token={token}"
+    html = f"""
+    <p>Hi {full_name},</p>
+    <p>We received a request to reset your CognaSync password. Click the button below to set a new one:</p>
+    <p style="margin:24px 0">
+      <a href="{url}" style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">
+        Reset my password
+      </a>
+    </p>
+    <p>Or copy this link:<br><a href="{url}">{url}</a></p>
+    <p>This link expires in 1 hour. If you didn't request a reset, you can safely ignore this email.</p>
+    """
+    _send(to_email, "Reset your CognaSync password", html)
+
+
 def send_account_approved_email(to_email: str, full_name: str) -> None:
     login_url = f"{APP_URL}/login"
     html = f"""

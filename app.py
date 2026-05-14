@@ -196,6 +196,57 @@ def resend_verification():
     return render_template('auth/resend_verification.html')
 
 
+@app.route('/forgot-password', methods=['GET', 'POST'])
+@limiter.limit("5 per hour", methods=['POST'])
+def forgot_password_page():
+    if _current_user():
+        return redirect(url_for('home'))
+    if request.method == 'GET':
+        return render_template('auth/forgot_password.html')
+
+    email = request.form.get('email', '').strip().lower()
+    if not email:
+        flash('Please enter your email address.', 'error')
+        return render_template('auth/forgot_password.html')
+
+    user_id, full_name = auth_module.initiate_password_reset(email)
+    if user_id:
+        token = auth_module.generate_reset_token(user_id, app.secret_key)
+        try:
+            email_utils.send_password_reset_email(email, full_name or 'there', token)
+        except Exception as e:
+            app.logger.error(f"Failed to send reset email to {email}: {e}")
+
+    # Always show success — don't reveal whether the email exists
+    flash('If that email has a CognaSync account, a reset link is on its way. Check your inbox.', 'success')
+    return render_template('auth/forgot_password.html')
+
+
+@app.route('/reset-password', methods=['GET', 'POST'])
+def reset_password_page():
+    if request.method == 'GET':
+        token = request.args.get('token', '').strip()
+        if not token or not auth_module.verify_reset_token(token, app.secret_key):
+            flash('This reset link has expired or is invalid. Please request a new one.', 'error')
+            return redirect(url_for('forgot_password_page'))
+        return render_template('auth/reset_password.html', token=token)
+
+    token = request.form.get('token', '').strip()
+    new_password = request.form.get('password', '')
+    confirm = request.form.get('confirm_password', '')
+    if new_password != confirm:
+        flash('Passwords do not match.', 'error')
+        return render_template('auth/reset_password.html', token=token)
+
+    ok, error = auth_module.reset_password_with_token(token, new_password, app.secret_key)
+    if not ok:
+        flash(error, 'error')
+        return render_template('auth/reset_password.html', token=token)
+
+    flash('Your password has been updated. You can now sign in.', 'success')
+    return redirect(url_for('login_page'))
+
+
 @app.route('/verify-email')
 def verify_email():
     import email_utils
@@ -423,36 +474,41 @@ def provider_patient_detail(patient_id):
         flash('Patient not found', 'error')
         return redirect(url_for('provider_dashboard'))
 
-    patients     = db.get_provider_patients(user['id'])
-    trends       = db.get_trends_data(patient_id, days=30) or {}
-    appointments = db.get_patient_appointments(user['id'], patient_id)
-    interactions = db.check_medication_interactions(patient_id)
+    try:
+        patients     = db.get_provider_patients(user['id'])
+        trends       = db.get_trends_data(patient_id, days=30) or {}
+        appointments = db.get_patient_appointments(user['id'], patient_id)
+        interactions = db.check_medication_interactions(patient_id)
 
-    current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
-    patient_has_crisis = current_p.get('suicide_risk', False)
-    patient_crisis_context = current_p.get('suicide_risk_context', [])
-    crisis_history = db.get_crisis_history(patient_id)
+        current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
+        patient_has_crisis = current_p.get('suicide_risk', False)
+        patient_crisis_context = current_p.get('suicide_risk_context', [])
+        crisis_history = db.get_crisis_history(patient_id)
 
-    last_checkin_date = patient.get('last_checkin_date')
-    days_since_last_checkin = None
-    if last_checkin_date:
-        try:
-            days_since_last_checkin = (date.today() - date.fromisoformat(last_checkin_date)).days
-        except Exception:
-            pass
+        last_checkin_date = patient.get('last_checkin_date')
+        days_since_last_checkin = None
+        if last_checkin_date:
+            try:
+                days_since_last_checkin = (date.today() - date.fromisoformat(last_checkin_date)).days
+            except Exception:
+                pass
 
-    return render_template('provider/patient_detail.html',
-                           user=user, patient=patient,
-                           patients=patients,
-                           trends=trends,
-                           appointments=appointments,
-                           interactions=interactions,
-                           today_str=date.today().isoformat(),
-                           patient_has_crisis=patient_has_crisis,
-                           patient_crisis_context=patient_crisis_context,
-                           crisis_history=crisis_history,
-                           days_since_last_checkin=days_since_last_checkin,
-                           last_checkin_date=last_checkin_date)
+        return render_template('provider/patient_detail.html',
+                               user=user, patient=patient,
+                               patients=patients,
+                               trends=trends,
+                               appointments=appointments,
+                               interactions=interactions,
+                               today_str=date.today().isoformat(),
+                               patient_has_crisis=patient_has_crisis,
+                               patient_crisis_context=patient_crisis_context,
+                               crisis_history=crisis_history,
+                               days_since_last_checkin=days_since_last_checkin,
+                               last_checkin_date=last_checkin_date)
+    except Exception:
+        app.logger.exception(f"Error rendering patient detail for {patient_id}")
+        flash('An error occurred loading this patient's details. The issue has been logged.', 'error')
+        return redirect(url_for('provider_dashboard'))
 
 
 @app.route('/provider/patient/<patient_id>/appointment/new', methods=['POST'])
