@@ -1,0 +1,46 @@
+{% extends "layout.html" %}
+{% block title %}Resend verification — CognaSync{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block full_page %}
+<div class="auth-shell">
+  <div class="auth-brand">
+    <div class="auth-logo">CS</div>
+    <h1 class="auth-title">CognaSync</h1>
+  </div>
+
+  <div class="auth-card">
+    <h2 class="auth-card-title">Resend verification link</h2>
+    <p style="color:#555;font-size:14px;margin:0 0 20px;line-height:1.6;">
+      Enter the email address you registered with and we'll send a new
+      verification link if your account is awaiting confirmation.
+    </p>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% for category, message in messages %}
+      <div class="alert alert-{{ 'success' if category == 'success' else 'error' }}"
+           style="margin-bottom:16px;">
+        {{ message }}
+      </div>
+      {% endfor %}
+    {% endwith %}
+
+    <form method="POST" action="{{ url_for('resend_verification') }}">
+      <div class="form-group">
+        <label class="form-label" for="email">Email address</label>
+        <input type="email" id="email" name="email" class="form-input" required
+               value="{{ request.args.get('email', '') }}"
+               placeholder="you@example.com" autofocus>
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%;margin-top:8px;">
+        Send verification link
+      </button>
+    </form>
+
+    <p style="margin-top:20px;text-align:center;">
+      <a href="{{ url_for('login_page') }}" style="font-size:13px;color:#888;">← Back to sign in</a>
+    </p>
+  </div>
+</div>
+{% endblock %}

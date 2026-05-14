@@ -106,7 +106,15 @@ def require_provider(f):
 
 
 def register_user(email, password, full_name, role):
-    """Create a pending account. The user must verify email; admin must then approve."""
+    """Create a pending account. The user must verify email; admin must then approve.
+
+    Steps are separated so that a failure in any one step can be handled cleanly:
+      1. Check for existing (possibly partial) registrations first.
+      2. Create Supabase Auth user — if this fails, nothing was written.
+      3. Create profile row — if this fails, delete the auth user (rollback).
+      4. Send verification email — non-fatal; account exists either way,
+         and the user can request a resend.
+    """
     if role not in ('patient', 'provider'):
         return None, 'Invalid role'
     if not email or not password or not full_name:
@@ -116,36 +124,105 @@ def register_user(email, password, full_name, role):
 
     email = email.lower().strip()
     full_name = full_name.strip()
-    verify_token = str(uuid.uuid4())
 
+    # ── Step 0: Handle partially-created or duplicate accounts ────────
+    try:
+        existing = supabase_admin.table('profiles').select(
+            'id, status, email_verify_token, full_name'
+        ).eq('email', email).limit(1).execute()
+    except Exception:
+        existing = None
+
+    if existing and existing.data:
+        profile = existing.data[0]
+        status = profile.get('status', '')
+
+        if status == 'pending_email':
+            # Account exists but email was never verified — resend the link.
+            token = profile.get('email_verify_token') or str(uuid.uuid4())
+            if not profile.get('email_verify_token'):
+                try:
+                    supabase_admin.table('profiles').update(
+                        {'email_verify_token': token}
+                    ).eq('id', profile['id']).execute()
+                except Exception:
+                    pass
+            try:
+                email_utils.send_verification_email(
+                    email, profile.get('full_name', full_name), token
+                )
+            except Exception as mail_err:
+                print(f"[register] Resend verification failed for {email}: {mail_err}")
+            return None, (
+                'An account for this email is already registered but not yet verified. '
+                'We\'ve resent the verification link — check your inbox (and spam folder).'
+            )
+
+        if status in ('pending_approval', 'approved'):
+            return None, (
+                'An account with this email already exists. '
+                'Try signing in, or use "Forgot password" if you\'ve lost access.'
+            )
+
+        # Any other status — treat as duplicate
+        return None, 'An account with this email already exists.'
+
+    verify_token = str(uuid.uuid4())
+    user_id = None
+
+    # ── Step 1: Create the Supabase Auth user ─────────────────────────
     try:
         auth_response = supabase_admin.auth.admin.create_user({
             "email": email,
             "password": password,
-            "email_confirm": True,
-        })
+            "email_confirm": True,   # confirms within Supabase Auth; our flow
+        })                           # uses its own token stored in profiles
         user_id = auth_response.user.id
+    except Exception as e:
+        err_str = str(e).lower()
+        if 'already registered' in err_str or 'already exists' in err_str or 'duplicate' in err_str:
+            return None, (
+                'An account with this email already exists. '
+                'Try signing in, or use "Forgot password" if you\'ve lost access.'
+            )
+        return None, f'Registration failed — please try again. ({e})'
 
+    # ── Step 2: Create the profile row ────────────────────────────────
+    try:
         supabase_admin.table('profiles').insert({
-            'id': user_id,
-            'email': email,
-            'full_name': full_name,
-            'role': role,
-            'status': 'pending_email',
+            'id':                 user_id,
+            'email':              email,
+            'full_name':          full_name,
+            'role':               role,
+            'status':             'pending_email',
             'email_verify_token': verify_token,
         }).execute()
-
-        email_utils.send_verification_email(email, full_name, verify_token)
-
-        return {
-            'user_id': user_id,
-            'email': email,
-            'role': role,
-            'full_name': full_name,
-            'pending': True,
-        }, None
     except Exception as e:
-        return None, str(e)
+        # Profile insert failed — roll back the auth user so the address is free to retry.
+        try:
+            supabase_admin.auth.admin.delete_user(user_id)
+            print(f"[register] Rolled back auth user {user_id} after profile insert failure.")
+        except Exception as del_err:
+            print(f"[register] WARNING: could not delete orphaned auth user {user_id}: {del_err}")
+        return None, f'Registration failed — please try again. ({e})'
+
+    # ── Step 3: Send verification email (non-fatal) ───────────────────
+    email_sent = True
+    try:
+        email_utils.send_verification_email(email, full_name, verify_token)
+    except Exception as mail_err:
+        email_sent = False
+        print(f"[register] Verification email failed for {email}: {mail_err}")
+        # Account is fully created — don't fail registration, just warn.
+
+    return {
+        'user_id':    user_id,
+        'email':      email,
+        'role':       role,
+        'full_name':  full_name,
+        'pending':    True,
+        'email_sent': email_sent,
+    }, None
 
 
 def login_user(email, password):

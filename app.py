@@ -153,7 +153,47 @@ def register_post():
     if error:
         flash(error, 'error')
         return render_template('auth/register.html', email=email, full_name=full_name, role=role)
-    return render_template('auth/verify_sent.html', email=email)
+    email_sent = result.get('email_sent', True)
+    return render_template('auth/verify_sent.html', email=email, email_sent=email_sent)
+
+
+@app.route('/resend-verification', methods=['GET', 'POST'])
+def resend_verification():
+    """Let a stuck pending_email user request a new verification link."""
+    if request.method == 'GET':
+        return render_template('auth/resend_verification.html')
+
+    email = request.form.get('email', '').strip().lower()
+    if not email:
+        flash('Please enter your email address.', 'error')
+        return render_template('auth/resend_verification.html')
+
+    try:
+        profile_res = db.supabase_admin.table('profiles').select(
+            'id, full_name, status, email_verify_token'
+        ).eq('email', email).limit(1).execute()
+    except Exception:
+        profile_res = None
+
+    # Always show the same success message regardless of whether the address
+    # exists — prevents email enumeration.
+    if profile_res and profile_res.data:
+        profile = profile_res.data[0]
+        if profile.get('status') == 'pending_email':
+            import uuid as _uuid
+            token = profile.get('email_verify_token') or str(_uuid.uuid4())
+            if not profile.get('email_verify_token'):
+                db.supabase_admin.table('profiles').update(
+                    {'email_verify_token': token}
+                ).eq('id', profile['id']).execute()
+            try:
+                import email_utils as _eu
+                _eu.send_verification_email(email, profile.get('full_name', ''), token)
+            except Exception as e:
+                app.logger.error(f"Resend verification failed for {email}: {e}")
+
+    flash('If that email has a pending account, a new verification link is on its way.', 'success')
+    return render_template('auth/resend_verification.html')
 
 
 @app.route('/verify-email')

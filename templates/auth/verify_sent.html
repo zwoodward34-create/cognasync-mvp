@@ -9,20 +9,51 @@
     <div class="auth-logo">CS</div>
     <h1 class="auth-title">CognaSync</h1>
   </div>
+
   <div class="auth-card" style="text-align:center">
+
+    {% if email_sent == false %}
+    <!-- Email sending failed — account was still created -->
+    <div style="font-size:48px;margin-bottom:16px">⚠️</div>
+    <h2 class="auth-card-title">Account created — email not sent</h2>
+    <p style="color:#555;margin:12px 0 16px;line-height:1.7;">
+      Your account was created, but we couldn't send the verification email
+      to <strong>{{ email }}</strong> — there may be a temporary email delivery issue.
+    </p>
+    <p style="color:#555;margin:0 0 24px;line-height:1.7;">
+      Use the button below to request a new verification link once the issue is resolved.
+    </p>
+    <a href="{{ url_for('resend_verification') }}?email={{ email | urlencode }}"
+       class="btn btn-primary" style="display:inline-block;text-decoration:none;margin-bottom:16px;">
+      Resend verification link
+    </a>
+    <p style="color:#888;font-size:12px;margin-top:8px;">
+      Still having trouble? Contact your CognaSync administrator.
+    </p>
+
+    {% else %}
+    <!-- Happy path -->
     <div style="font-size:48px;margin-bottom:16px">✉</div>
     <h2 class="auth-card-title">Check your email</h2>
-    <p style="color:#555;margin:12px 0 24px">
+    <p style="color:#555;margin:12px 0 16px;line-height:1.7;">
       We sent a verification link to <strong>{{ email }}</strong>.
       Click the link in that email to continue.
     </p>
-    <p style="color:#888;font-size:13px">
+    <p style="color:#888;font-size:13px;margin-bottom:24px;line-height:1.6;">
       Once you verify your email, your account will be reviewed by an administrator.
       You'll receive another email when it's approved.
     </p>
-    <p style="margin-top:24px">
-      <a href="{{ url_for('login_page') }}" class="btn btn-ghost">Back to sign in</a>
+    <p style="font-size:13px;color:#888;margin-bottom:4px;">Didn't get the email?</p>
+    <a href="{{ url_for('resend_verification') }}"
+       class="btn btn-ghost" style="text-decoration:none;">
+      Resend verification link
+    </a>
+    {% endif %}
+
+    <p style="margin-top:24px;">
+      <a href="{{ url_for('login_page') }}" style="font-size:13px;color:#888;">← Back to sign in</a>
     </p>
+
   </div>
 </div>
 {% endblock %}
