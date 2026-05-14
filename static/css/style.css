@@ -2290,3 +2290,308 @@ body.pv-body .main-content {
   .aw-tab                { padding: 8px 12px; font-size: 12px; }
   .gq-suggestion         { flex-direction: column; gap: 6px; }
 }
+
+
+/* ═══════════════════════════════════════════════════════════════════════
+   APPOINTMENT WORKSPACE — 3-column layout + Journal Sidebar
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* When the appointment body class is set, make pv-shell a 3-col flex */
+body.pv-body-appt .pv-shell {
+  display: flex;
+  flex-direction: row;
+}
+
+/* Journal sidebar — right panel */
+.js-sidebar {
+  width: 280px;
+  flex-shrink: 0;
+  background: var(--surface);
+  border-left: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  transition: width 0.2s ease, opacity 0.2s ease;
+  position: relative;
+}
+
+.js-sidebar-collapsed {
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  border-left: none;
+}
+
+/* Sidebar header */
+.js-sidebar-head {
+  padding: 16px 14px 12px;
+  border-bottom: 1px solid var(--border-light);
+  background: var(--surface);
+  position: relative;
+  flex-shrink: 0;
+}
+
+.js-sidebar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 4px;
+  padding-right: 28px;
+}
+
+.js-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 6px;
+  background: var(--text);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  border-radius: 10px;
+}
+
+.js-sidebar-meta {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-family: monospace;
+  letter-spacing: .02em;
+}
+
+/* Collapse button — top right of sidebar header */
+.js-collapse-btn {
+  position: absolute;
+  top: 14px;
+  right: 10px;
+  width: 22px;
+  height: 22px;
+  background: none;
+  border: 1px solid var(--border-light);
+  color: var(--text-muted);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+  padding: 0;
+}
+
+.js-collapse-btn:hover {
+  background: var(--bg);
+  color: var(--text);
+  border-color: var(--border);
+}
+
+/* Scrollable entry list */
+.js-entry-list {
+  flex: 1;
+  overflow-y: auto;
+  padding: 8px 0;
+}
+
+/* Individual journal entry */
+.js-entry {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border-light);
+  cursor: pointer;
+  transition: background var(--transition);
+}
+
+.js-entry:last-child { border-bottom: none; }
+
+.js-entry:hover { background: var(--bg); }
+
+.js-entry-hdr {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+}
+
+.js-entry-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.js-entry-date {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.js-entry-type {
+  font-size: 10px;
+  text-transform: capitalize;
+  color: var(--text-muted);
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  padding: 1px 6px;
+  display: inline-block;
+  width: fit-content;
+}
+
+.js-entry-chevron {
+  font-size: 16px;
+  color: var(--text-muted);
+  transition: transform 0.15s ease;
+  flex-shrink: 0;
+  line-height: 1;
+  margin-top: 1px;
+}
+
+/* Preview (collapsed state) */
+.js-entry-preview {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Full body (expanded state) */
+.js-entry-body {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-light);
+}
+
+.js-entry-full {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* AI reflection block inside expanded entry */
+.js-entry-ai {
+  margin-top: 12px;
+  padding: 10px 12px;
+  background: var(--bg);
+  border-left: 2px solid var(--border-light);
+}
+
+.js-entry-ai-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted);
+  margin-bottom: 5px;
+}
+
+.js-entry-ai-text {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.65;
+  font-style: italic;
+}
+
+/* Empty state */
+.js-empty {
+  padding: 32px 16px;
+  text-align: center;
+}
+
+.js-empty-icon {
+  font-size: 28px;
+  margin-bottom: 12px;
+  opacity: .5;
+}
+
+.js-empty-text {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.6;
+  margin-bottom: 8px;
+}
+
+.js-empty-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+}
+
+/* Collapsed expand tab — vertical strip shown when sidebar is hidden */
+.js-expand-tab {
+  position: fixed;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-right: none;
+  padding: 12px 6px;
+  cursor: pointer;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  z-index: 100;
+  transition: background var(--transition);
+}
+
+.js-expand-tab:hover { background: var(--bg); }
+
+.js-expand-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text);
+  writing-mode: vertical-rl;
+  text-orientation: mixed;
+  transform: rotate(180deg);
+  white-space: nowrap;
+}
+
+/* ── Responsive: hide journal sidebar on small screens ─────────────── */
+@media (max-width: 1100px) {
+  .js-sidebar { width: 240px; }
+}
+
+@media (max-width: 900px) {
+  /* On tablet, sidebar sits below the main content as a drawer */
+  body.pv-body-appt .pv-shell {
+    flex-direction: column;
+  }
+
+  .js-sidebar {
+    width: 100%;
+    max-height: 320px;
+    border-left: none;
+    border-top: 1px solid var(--border);
+  }
+
+  .js-sidebar-collapsed {
+    width: 100%;
+    max-height: 0;
+    border-top: none;
+  }
+
+  .js-expand-tab {
+    position: static;
+    transform: none;
+    flex-direction: row;
+    width: 100%;
+    border: none;
+    border-top: 1px solid var(--border);
+    padding: 8px 14px;
+    justify-content: flex-start;
+  }
+
+  .js-expand-label {
+    writing-mode: horizontal-tb;
+    transform: none;
+    font-size: 12px;
+  }
+}

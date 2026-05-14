@@ -1,6 +1,6 @@
 {% extends "layout.html" %}
 {% block title %}Appointment — {{ patient.full_name }} — CognaSync{% endblock %}
-{% block body_class %}pv-body{% endblock %}
+{% block body_class %}pv-body pv-body-appt{% endblock %}
 
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
@@ -288,32 +288,6 @@
         {% endif %}
       </div>
 
-      <!-- Recent journals -->
-      {% if journals %}
-      <div class="pv-panel-full">
-        <div class="pv-panel-title">Shared Journal Entries</div>
-        <div class="pv-panel-sub">Entries the patient has shared with you · last {{ journals|length }}</div>
-        {% for j in journals %}
-        <div class="journal-entry-card">
-          <div class="journal-entry-meta">
-            <span class="entry-date">{{ j.created_at[:10] }}</span>
-            <span class="entry-type-badge">{{ (j.entry_type or 'free_flow') | replace('_', ' ') }}</span>
-          </div>
-          {% if j.raw_entry|length > 300 %}
-          <details>
-            <summary style="cursor:pointer;list-style:none;">
-              <div class="journal-entry-preview">{{ j.raw_entry[:300] }}…</div>
-            </summary>
-            <div class="journal-entry-preview" style="padding-top:6px;">{{ j.raw_entry }}</div>
-          </details>
-          {% else %}
-          <div class="journal-entry-preview">{{ j.raw_entry }}</div>
-          {% endif %}
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}
-
     </div><!-- /tab-data -->
 
     <!-- ═══ TAB: GUIDED QUESTIONS ═════════════════════════════════════ -->
@@ -549,6 +523,85 @@
     </div>
 
   </div><!-- /pv-main -->
+
+  <!-- ═══ RIGHT SIDEBAR — Shared Journal Entries ══════════════════════ -->
+  <div class="js-sidebar" id="js-sidebar">
+
+    <!-- Sidebar header -->
+    <div class="js-sidebar-head">
+      <div class="js-sidebar-title">
+        <span>📓 Journals</span>
+        {% if journals %}
+        <span class="js-count-badge">{{ journals|length }}</span>
+        {% endif %}
+      </div>
+      <div class="js-sidebar-meta">
+        {{ window_start }} → {{ window_end }}
+      </div>
+      <button class="js-collapse-btn" id="js-collapse-btn"
+              onclick="toggleJournalSidebar()" title="Collapse journal panel">
+        &#8250;
+      </button>
+    </div>
+
+    <!-- Entry list -->
+    <div class="js-entry-list" id="js-entry-list">
+      {% if journals %}
+        {% for j in journals %}
+        <div class="js-entry" id="js-entry-{{ loop.index }}"
+             onclick="toggleJournalEntry({{ loop.index }})">
+
+          <!-- Entry header (always visible) -->
+          <div class="js-entry-hdr">
+            <div class="js-entry-meta">
+              <span class="js-entry-date">{{ j.entry_date[:10] if j.entry_date else j.created_at[:10] }}</span>
+              <span class="js-entry-type">{{ (j.entry_type or 'free flow') | replace('_', ' ') }}</span>
+            </div>
+            <span class="js-entry-chevron" id="js-chev-{{ loop.index }}">›</span>
+          </div>
+
+          <!-- Preview line -->
+          <div class="js-entry-preview" id="js-preview-{{ loop.index }}">
+            {{ (j.raw_entry or '')[:90] }}{% if (j.raw_entry or '')|length > 90 %}…{% endif %}
+          </div>
+
+          <!-- Full content (hidden until expanded) -->
+          <div class="js-entry-body" id="js-body-{{ loop.index }}" style="display:none;">
+            <div class="js-entry-full">{{ j.raw_entry or '' }}</div>
+            {% if j.ai_analysis %}
+            <div class="js-entry-ai">
+              <div class="js-entry-ai-label">AI Reflection</div>
+              <div class="js-entry-ai-text">{{ j.ai_analysis }}</div>
+            </div>
+            {% endif %}
+          </div>
+
+        </div>
+        {% endfor %}
+
+      {% else %}
+      <div class="js-empty">
+        <div class="js-empty-icon">📓</div>
+        <div class="js-empty-text">
+          No shared journal entries in this
+          {{ selected_days }}-day window
+          ({{ window_start }} – {{ window_end }}).
+        </div>
+        <div class="js-empty-sub">
+          The patient can share entries from their Journal page.
+        </div>
+      </div>
+      {% endif %}
+    </div>
+
+  </div><!-- /js-sidebar -->
+
+  <!-- Collapsed tab (shown when sidebar is hidden) -->
+  <button class="js-expand-tab" id="js-expand-tab" style="display:none;"
+          onclick="toggleJournalSidebar()" title="Open journal panel">
+    <span class="js-expand-label">📓 Journals{% if journals %} · {{ journals|length }}{% endif %}</span>
+  </button>
+
 </div><!-- /pv-shell -->
 
 <script>
@@ -901,5 +954,24 @@ renderActions();
 
 // Autosave every 30s
 setInterval(doSave, 30000);
+
+// ── Journal sidebar ───────────────────────────────────────────────────
+function toggleJournalEntry(idx) {
+  const body    = document.getElementById('js-body-' + idx);
+  const preview = document.getElementById('js-preview-' + idx);
+  const chev    = document.getElementById('js-chev-' + idx);
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display    = open ? 'none' : 'block';
+  if (preview) preview.style.display = open ? '' : 'none';
+  if (chev) chev.style.transform = open ? '' : 'rotate(90deg)';
+}
+
+function toggleJournalSidebar() {
+  const sidebar   = document.getElementById('js-sidebar');
+  const expandTab = document.getElementById('js-expand-tab');
+  const collapsed = sidebar.classList.toggle('js-sidebar-collapsed');
+  if (expandTab) expandTab.style.display = collapsed ? 'flex' : 'none';
+}
 </script>
 {% endblock %}

@@ -459,10 +459,20 @@ def provider_appointment_workspace(patient_id, appt_id):
     patients     = db.get_provider_patients(user['id'])
     trends       = db.get_trends_data(patient_id, days=days) or {}
     summaries    = db.get_summaries(patient_id)
-    journals     = db.get_journals(patient_id, limit=10, shared_only=True)
     timing_stats = db.get_medication_timing_stats(patient_id, days=days)
     interactions = db.check_medication_interactions(patient_id)
     alerts       = _build_alerts(trends, days)
+
+    # Journals scoped to the appointment's review window
+    try:
+        appt_start_str = (appt.get('started_at') or date.today().isoformat())[:10]
+        appt_start_dt  = date.fromisoformat(appt_start_str)
+    except Exception:
+        appt_start_dt  = date.today()
+    window_start = (appt_start_dt - timedelta(days=days)).isoformat()
+    window_end   = appt_start_dt.isoformat()
+    journals     = db.get_journals_in_range(patient_id, window_start, window_end,
+                                            shared_only=True)
 
     current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
     patient_has_crisis = current_p.get('suicide_risk', False)
@@ -478,6 +488,8 @@ def provider_appointment_workspace(patient_id, appt_id):
                            trends=trends,
                            summaries=summaries,
                            journals=journals,
+                           window_start=window_start,
+                           window_end=window_end,
                            timing_stats=timing_stats,
                            interactions=interactions,
                            alerts=alerts,
