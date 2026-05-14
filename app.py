@@ -507,7 +507,7 @@ def provider_patient_detail(patient_id):
                                last_checkin_date=last_checkin_date)
     except Exception:
         app.logger.exception(f"Error rendering patient detail for {patient_id}")
-        flash('An error occurred loading this patient's details. The issue has been logged.', 'error')
+        flash("An error occurred loading this patient's details. The issue has been logged.", 'error')
         return redirect(url_for('provider_dashboard'))
 
 
