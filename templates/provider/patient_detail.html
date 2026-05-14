@@ -1,41 +1,31 @@
 {% extends "layout.html" %}
-{% block title %}{{ patient.full_name }} — CognaSync Provider{% endblock %}
-
+{% block title %}{{ patient.full_name }} — CognaSync{% endblock %}
 {% block body_class %}pv-body{% endblock %}
 
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<script src="{{ url_for('static', filename='js/insight-engine.js') }}"></script>
 {% endblock %}
 
 {% block content %}
 
 {% if patient_has_crisis %}
-<!-- Crisis warning modal — auto-shown, dismissed by provider -->
+<!-- Crisis overlay (same as before) -->
 <div id="crisis-overlay"
      style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;
             display:flex;align-items:center;justify-content:center;padding:16px;">
-  <div style="background:#fff;border:2px solid #dc2626;max-width:520px;width:100%;padding:32px 28px 24px;
-              font-family:'DM Sans',sans-serif;position:relative;">
+  <div style="background:#fff;border:2px solid #dc2626;max-width:520px;width:100%;padding:32px 28px 24px;">
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px;">
-      <span style="font-size:22px;color:#dc2626;line-height:1;">&#9888;</span>
-      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#dc2626;">
-        Urgent Safety Concern
-      </div>
+      <span style="font-size:22px;color:#dc2626;">&#9888;</span>
+      <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:#dc2626;">Urgent Safety Concern</div>
     </div>
-    <div style="font-family:'DM Serif Display',serif;font-size:20px;color:#111;margin-bottom:12px;font-weight:400;">
+    <div style="font-family:'DM Serif Display',serif;font-size:20px;color:#111;margin-bottom:12px;">
       Crisis-level content detected for {{ patient.full_name }}
     </div>
     <p style="font-size:13px;color:#333;line-height:1.65;margin:0 0 10px;">
-      Recent check-in notes or journal entries from this patient contain language
-      associated with suicidal ideation or self-harm. Immediate clinical follow-up
-      is recommended.
+      Recent entries contain language associated with suicidal ideation or self-harm.
+      Immediate clinical follow-up is recommended.
     </p>
-    <p style="font-size:12px;color:#666;line-height:1.6;margin:0 0 24px;">
-      Review the patient's recent check-ins and shared journals below for context.
-      If you cannot reach the patient, follow your practice's crisis protocol.
-    </p>
-    <div style="display:flex;gap:10px;">
+    <div style="display:flex;gap:10px;margin-top:20px;">
       <button onclick="document.getElementById('crisis-overlay').style.display='none'"
               style="padding:10px 20px;background:#dc2626;color:#fff;border:none;
                      font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">
@@ -50,250 +40,164 @@
   </div>
 </div>
 
-<!-- Crisis context modal — shows flagged entries on demand -->
 <div id="crisis-context-modal"
      style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2001;
             align-items:center;justify-content:center;padding:16px;">
   <div style="background:#fff;max-width:580px;width:100%;max-height:80vh;overflow-y:auto;
-              padding:28px 24px 20px;font-family:'DM Sans',sans-serif;position:relative;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;">
-      <div style="display:flex;align-items:center;gap:8px;">
-        <span style="font-size:16px;color:#dc2626;">&#9888;</span>
-        <span style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:#dc2626;">
-          Crisis Context — {{ patient.full_name }}
-        </span>
-      </div>
+              padding:28px 24px 20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <span style="font-size:13px;font-weight:700;text-transform:uppercase;color:#dc2626;">Crisis Context — {{ patient.full_name }}</span>
       <button onclick="document.getElementById('crisis-context-modal').style.display='none'"
-              style="background:none;border:none;font-size:18px;cursor:pointer;color:#666;line-height:1;">&#10005;</button>
+              style="background:none;border:none;font-size:18px;cursor:pointer;color:#666;">&#10005;</button>
     </div>
-    <p style="font-size:12px;color:#666;margin:0 0 20px;line-height:1.6;">
-      The following entries from the past 7 days contain language that triggered the crisis flag.
-      Review them to inform your outreach.
-    </p>
     {% for item in patient_crisis_context %}
     <div style="border-left:3px solid #dc2626;padding:10px 14px;margin-bottom:14px;background:#fff8f8;">
-      <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#dc2626;margin-bottom:6px;">
-        {{ item.source }} &mdash; {{ item.date }}
+      <div style="font-size:11px;font-weight:700;text-transform:uppercase;color:#dc2626;margin-bottom:6px;">
+        {{ item.source }} — {{ item.date }}
       </div>
       <p style="font-size:13px;color:#222;line-height:1.65;margin:0;white-space:pre-wrap;">{{ item.text }}</p>
     </div>
-    {% else %}
-    <p style="font-size:13px;color:#666;">No flagged entries found.</p>
     {% endfor %}
-    <div style="margin-top:20px;padding-top:16px;border-top:1px solid #eee;display:flex;gap:10px;align-items:center;flex-wrap:wrap;">
-      <button onclick="resolveCrisisRisk()"
-              id="resolve-crisis-btn"
-              style="padding:9px 20px;background:#fff;color:#dc2626;border:1px solid #dc2626;
-                     font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">
-        Mark as Resolved
-      </button>
-      <button onclick="document.getElementById('crisis-context-modal').style.display='none'"
-              style="padding:9px 20px;background:#111;color:#fff;border:none;
-                     font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">
-        Close
-      </button>
-      <span id="resolve-crisis-status" style="font-size:12px;color:#666;display:none;"></span>
-    </div>
+    <button onclick="document.getElementById('crisis-context-modal').style.display='none'"
+            style="margin-top:16px;padding:9px 20px;background:#111;color:#fff;border:none;
+                   font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">Close</button>
   </div>
 </div>
-
-<script>
-function resolveCrisisRisk() {
-  const btn = document.getElementById('resolve-crisis-btn');
-  const status = document.getElementById('resolve-crisis-status');
-  btn.disabled = true;
-  btn.textContent = 'Resolving…';
-  fetch('/api/provider/patient/{{ patient.patient_id }}/resolve-crisis', {method: 'POST'})
-    .then(r => r.json())
-    .then(data => {
-      if (data.status === 'resolved') {
-        document.getElementById('crisis-context-modal').style.display = 'none';
-        const overlay = document.getElementById('crisis-overlay');
-        if (overlay) overlay.style.display = 'none';
-        const ctxBtn = document.getElementById('crisis-ctx-btn');
-        if (ctxBtn) ctxBtn.style.display = 'none';
-        // Remove red triangles from sidebar
-        document.querySelectorAll('.crisis-indicator').forEach(el => el.remove());
-      } else {
-        status.textContent = 'Could not resolve — try again.';
-        status.style.display = 'inline';
-        btn.disabled = false;
-        btn.textContent = 'Mark as Resolved';
-      }
-    })
-    .catch(() => {
-      status.textContent = 'Network error — try again.';
-      status.style.display = 'inline';
-      btn.disabled = false;
-      btn.textContent = 'Mark as Resolved';
-    });
-}
-</script>
 {% endif %}
 
-<!-- Provider shell -->
 <div class="pv-shell">
 
-  <!-- ── Mobile patient selector toggle (hidden on desktop) ─────── -->
+  <!-- Sidebar: patient list -->
   <button class="pv-sidebar-toggle" id="pv-sidebar-toggle" aria-expanded="false">
     <span>☰</span>
     <span id="pv-toggle-label">{{ patient.full_name }}</span>
     <span class="pv-toggle-arrow">▾</span>
   </button>
 
-  <!-- ── Sidebar: patient list ──────────────────────────────────── -->
   <div class="pv-sidebar" id="pv-sidebar">
     <div class="pv-sidebar-head">
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:700;margin-bottom:10px;">
-        {{ patients|length }} Patient{{ 's' if patients|length != 1 }}
-      </div>
+      <a href="{{ url_for('provider_dashboard') }}"
+         style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+                text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);
+                text-decoration:none;margin-bottom:12px;">
+        ← All Patients
+      </a>
       <input type="text" class="pv-search" placeholder="Search patients…"
              oninput="filterPatients(this.value)">
     </div>
     <div class="pv-patient-list" id="patient-list">
       {% for p in patients %}
-      <a href="/provider/patient/{{ p.patient_id }}?days={{ selected_days }}"
+      <a href="{{ url_for('provider_patient_detail', patient_id=p.patient_id) }}"
          class="pv-patient-item {% if p.patient_id == patient.patient_id %}active{% endif %}"
          data-name="{{ p.full_name | lower }}">
         <div class="pv-patient-name">
           {{ p.full_name }}
           {% if p.suicide_risk %}
-          <span class="crisis-indicator" title="Crisis risk detected in last 7 days"
-                style="color:#dc2626;font-size:13px;margin-left:5px;line-height:1;">&#9888;</span>
+          <span class="crisis-indicator" title="Crisis risk detected"
+                style="color:#dc2626;font-size:13px;margin-left:5px;">&#9888;</span>
           {% endif %}
         </div>
         <div class="pv-patient-sub">
           <span>{% if p.last_checkin %}{{ p.last_checkin }}{% else %}No check-ins{% endif %}</span>
-          {% if p.latest_summary %}
-          <span style="font-size:10px;border:1px solid var(--border-light);padding:1px 5px;color:var(--text-muted);">summ.</span>
-          {% endif %}
         </div>
       </a>
       {% endfor %}
     </div>
   </div>
 
-  <!-- ── Main content ───────────────────────────────────────────── -->
+  <!-- Main content -->
   <div class="pv-main">
 
-    <!-- Patient header -->
-    <div class="pv-patient-hdr">
-      <div class="pv-hdr-top">
-        <div>
-          <h1 class="pv-hdr-name">{{ patient.full_name }}</h1>
-          <div class="pv-hdr-sub">{{ patient.email }}</div>
-        </div>
-        <div class="pv-hdr-actions">
-          {% if patient_has_crisis %}
-          <button class="btn btn-sm" id="crisis-ctx-btn"
-                  onclick="document.getElementById('crisis-context-modal').style.display='flex'"
-                  style="background:#dc2626;color:#fff;border:none;display:flex;align-items:center;gap:6px;">
-            <span style="font-size:14px;line-height:1;">&#9888;</span> View Crisis Context
-          </button>
-          {% endif %}
-          <a href="/provider/patient/{{ patient.patient_id }}/trends"
-             class="btn btn-sm"
-             style="text-decoration:none;">
-            View Full Trends →
-          </a>
-          <button class="btn btn-primary btn-sm" id="gen-btn-top"
-                  onclick="document.getElementById('summary-section').scrollIntoView({behavior:'smooth'})">
-            Pre-Appt Summary ↓
-          </button>
-        </div>
-      </div>
+    <!-- Breadcrumb -->
+    <div class="pv-breadcrumb">
+      <a href="{{ url_for('provider_dashboard') }}">All Patients</a>
+      <span class="pv-breadcrumb-sep">›</span>
+      <span>{{ patient.full_name }}</span>
+    </div>
 
-      <div class="pv-hdr-meta">
+    <!-- Patient header -->
+    <div class="ph-header">
+      <div class="ph-header-left">
+        <div class="ph-avatar">{{ patient.full_name[0] | upper }}</div>
         <div>
-          <span class="pv-meta-label">Current Medications</span>
+          <h1 class="ph-name">
+            {{ patient.full_name }}
+            {% if patient_has_crisis %}
+            <span style="color:#dc2626;font-size:18px;margin-left:8px;"
+                  onclick="document.getElementById('crisis-context-modal').style.display='flex'"
+                  title="Crisis flag — click to view" style="cursor:pointer;">&#9888;</span>
+            {% endif %}
+          </h1>
+          <div class="ph-email">{{ patient.email }}</div>
           {% if patient.current_medications %}
-          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-top:4px;">
+          <div class="ph-meds">
             {% for med in patient.current_medications %}
-            <span style="font-size:11px;border:1px solid var(--border-light);padding:2px 8px;background:var(--bg);">
-              {{ med.name | title }} {{ med.dose }}
-            </span>
+            <span class="pd-med-chip">{{ med.name | title }} {% if med.dose %}{{ med.dose }}{% endif %}</span>
             {% endfor %}
           </div>
-          {% else %}
-          <div class="pv-meta-value" style="font-size:13px;">None recorded</div>
           {% endif %}
         </div>
-        <div>
-          <span class="pv-meta-label">Avg Mood ({{ selected_days }}d)</span>
-          <div class="pv-meta-value">
+      </div>
+      <div class="ph-header-right">
+        <a href="{{ url_for('provider_patient_detail', patient_id=patient.patient_id) }}?full=1"
+           class="btn btn-sm">View Full Data →</a>
+      </div>
+    </div>
+
+    <!-- Quick stats bar -->
+    <div class="ph-stats-bar">
+      <div class="ph-stat">
+        <div class="ph-stat-label">Avg Mood (30d)</div>
+        <div class="ph-stat-val">
+          {% if trends.mood and trends.mood.average %}
             {{ trends.mood.average }}<span style="font-size:12px;font-weight:400;color:var(--text-muted);">/10</span>
-            <span style="font-size:11px;font-weight:400;color:var(--text-muted);margin-left:4px;">{{ trends.mood.trend }}</span>
-          </div>
+          {% else %}—{% endif %}
         </div>
-        <div>
-          <span class="pv-meta-label">Check-ins This Period</span>
-          <div class="pv-meta-value" style="display:flex;align-items:center;gap:8px;">
-            {{ patient.checkins_last_period }}
-            {% if days_since_last_checkin is not none and days_since_last_checkin > 7 %}
-            <span style="font-size:11px;background:#fffbf0;border:1px solid #f0c040;color:#7a5800;
-                         padding:2px 7px;font-weight:600;white-space:nowrap;">
-              Last: {{ last_checkin_date }} ({{ days_since_last_checkin }}d ago)
-            </span>
-            {% endif %}
-          </div>
+      </div>
+      <div class="ph-stat">
+        <div class="ph-stat-label">Avg Sleep (30d)</div>
+        <div class="ph-stat-val">
+          {% if trends.sleep and trends.sleep.average %}
+            {{ trends.sleep.average }}<span style="font-size:12px;font-weight:400;color:var(--text-muted);">h</span>
+          {% else %}—{% endif %}
         </div>
-        <div>
-          <span class="pv-meta-label">Med Adherence</span>
-          <div class="pv-meta-value">
-            {% if trends.medication_adherence > 0 %}
-              {{ trends.medication_adherence }}<span style="font-size:12px;font-weight:400;color:var(--text-muted);">%</span>
-            {% else %}—{% endif %}
-          </div>
+      </div>
+      <div class="ph-stat">
+        <div class="ph-stat-label">Med Adherence</div>
+        <div class="ph-stat-val">
+          {% if trends.medication_adherence and trends.medication_adherence > 0 %}
+            {{ trends.medication_adherence }}<span style="font-size:12px;font-weight:400;color:var(--text-muted);">%</span>
+          {% else %}—{% endif %}
         </div>
+      </div>
+      <div class="ph-stat">
+        <div class="ph-stat-label">Last Check-in</div>
+        <div class="ph-stat-val {% if days_since_last_checkin is not none and days_since_last_checkin > 7 %}ph-stat-warn{% endif %}">
+          {% if days_since_last_checkin == 0 %}Today
+          {% elif days_since_last_checkin == 1 %}Yesterday
+          {% elif days_since_last_checkin is not none %}{{ days_since_last_checkin }}d ago
+          {% else %}Never{% endif %}
+        </div>
+      </div>
+      <div class="ph-stat">
+        <div class="ph-stat-label">Check-ins (30d)</div>
+        <div class="ph-stat-val">{{ patient.checkins_last_period or 0 }}</div>
       </div>
     </div>
 
-    <!-- Controls -->
-    <div class="pv-controls">
-      <div class="pv-control-group">
-        <span class="pv-control-label">View Period</span>
-        <div class="pv-period-btns">
-          <a href="?days=7"  class="pv-period-btn {% if selected_days == 7  %}active{% endif %}">7d</a>
-          <a href="?days=14" class="pv-period-btn {% if selected_days == 14 %}active{% endif %}">14d</a>
-          <a href="?days=30" class="pv-period-btn {% if selected_days == 30 %}active{% endif %}">30d</a>
-          <a href="?days=60" class="pv-period-btn {% if selected_days == 60 %}active{% endif %}">60d</a>
-          <a href="?days=90" class="pv-period-btn {% if selected_days == 90 %}active{% endif %}">90d</a>
-        </div>
+    <!-- Mini mood sparkline -->
+    {% if trends.mood and trends.mood.daily_scores %}
+    <div class="ph-sparkline-wrap">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);font-weight:700;margin-bottom:8px;">
+        30-day Mood Trend
       </div>
-      <div class="pv-control-group">
-        <span class="pv-control-label" title="Higher values show only the most statistically reliable correlations — lower values surface more patterns with less certainty.">
-          Insight Confidence Threshold &#9432;
-        </span>
-        <div class="pv-confidence-row">
-          <input type="range" min="50" max="95" step="5" value="80" id="conf-slider"
-                 style="width:120px;"
-                 oninput="onConfidenceSlider(this.value)">
-          <span class="pv-confidence-val" id="conf-val">80%</span>
-        </div>
-        <div style="font-size:10px;color:var(--text-muted);margin-top:3px;max-width:260px;line-height:1.4;">
-          Higher = only strongest correlations shown. Lower = more patterns, less certainty.
-        </div>
-      </div>
-    </div>
-
-    <!-- Alerts: clinical flags -->
-    {% if alerts %}
-    <div class="pv-alert-banner">
-      {% for a in alerts %}
-      <div class="pv-alert-item {{ a.level }}">
-        <span class="pv-alert-label {{ a.level }}">{{ a.level | upper }}</span>
-        <div>
-          <div style="font-weight:600;font-size:13px;margin-bottom:2px;">{{ a.title }}</div>
-          <div style="font-size:12px;color:var(--text-muted);">{{ a.desc }}</div>
-        </div>
-      </div>
-      {% endfor %}
+      <canvas id="mood-spark" height="60"></canvas>
     </div>
     {% endif %}
 
-    <!-- Drug interactions -->
+    <!-- Interactions banner -->
     {% if interactions %}
-    <div class="pv-alert-banner">
+    <div class="pv-alert-banner" style="margin-bottom:20px;">
       {% for ia in interactions %}
       <div class="pv-alert-item {{ 'urgent' if ia.severity == 'serious' else 'warning' }}">
         <span class="pv-alert-label {{ 'urgent' if ia.severity == 'serious' else 'warning' }}">INTERACTION</span>
@@ -306,736 +210,157 @@ function resolveCrisisRisk() {
     </div>
     {% endif %}
 
-    <!-- Crisis log -->
+    <!-- ─── APPOINTMENT HISTORY ──────────────────────────────────────── -->
+    <div class="ah-section">
+      <div class="ah-section-hdr">
+        <div>
+          <div class="pv-panel-title" style="margin:0 0 3px;">Appointments</div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            {{ appointments|length }} session{{ 's' if appointments|length != 1 }}
+          </div>
+        </div>
+
+        <!-- Start new appointment -->
+        <form method="POST"
+              action="{{ url_for('provider_appointment_new', patient_id=patient.patient_id) }}"
+              style="display:flex;align-items:center;gap:10px;">
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
+              Review period
+            </label>
+            <select name="period_days"
+                    style="font-size:13px;padding:6px 8px;border:1px solid var(--border-light);
+                           background:var(--surface);color:var(--text);">
+              <option value="7">7 days</option>
+              <option value="14">14 days</option>
+              <option value="30" selected>30 days</option>
+              <option value="60">60 days</option>
+              <option value="90">90 days</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary"
+                  style="align-self:flex-end;">
+            + Start New Appointment
+          </button>
+        </form>
+      </div>
+
+      {% if appointments %}
+      <div class="ah-timeline">
+        {% for appt in appointments %}
+        <div class="ah-item {% if appt.status == 'active' %}ah-item-active{% elif appt.status == 'completed' %}ah-item-done{% else %}ah-item-cancelled{% endif %}">
+          <div class="ah-item-dot"></div>
+          <div class="ah-item-body">
+            <div class="ah-item-hdr">
+              <div>
+                <span class="ah-item-date">
+                  {{ appt.started_at[:10] if appt.started_at else '—' }}
+                </span>
+                <span class="ah-item-badge ah-badge-{{ appt.status }}">
+                  {{ appt.status | title }}
+                </span>
+                <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">
+                  {{ appt.period_days }}d review window
+                </span>
+              </div>
+              <a href="{{ url_for('provider_appointment_workspace', patient_id=patient.patient_id, appt_id=appt.id) }}"
+                 class="btn btn-sm" style="text-decoration:none;">
+                {% if appt.status == 'active' %}Continue →{% else %}View →{% endif %}
+              </a>
+            </div>
+
+            <!-- Notes preview -->
+            {% if appt.notes and appt.notes|trim %}
+            <div class="ah-item-preview">
+              {{ appt.notes[:200] }}{% if appt.notes|length > 200 %}…{% endif %}
+            </div>
+            {% endif %}
+
+            <!-- Actions count -->
+            {% if appt.actions %}
+            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
+              {% set done_count = appt.actions | selectattr('done') | list | length %}
+              {% set total_count = appt.actions | length %}
+              <span style="font-size:11px;color:var(--text-muted);">
+                Actions: {{ done_count }}/{{ total_count }} completed
+              </span>
+              {% if appt.next_appointment_date %}
+              <span style="font-size:11px;color:var(--green);border:1px solid var(--green-light);padding:1px 7px;">
+                Next appt: {{ appt.next_appointment_date }}
+              </span>
+              {% endif %}
+            </div>
+            {% endif %}
+
+            <!-- Guided Q count -->
+            {% if appt.guided_qa %}
+            <div style="margin-top:5px;font-size:11px;color:var(--text-muted);">
+              {{ appt.guided_qa | selectattr('answer') | list | length }} of
+              {{ appt.guided_qa | length }} questions answered
+            </div>
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+
+      {% else %}
+      <div class="ah-empty">
+        <div style="font-size:13px;color:var(--text-muted);line-height:1.7;">
+          No appointments recorded yet.
+          Click <strong>Start New Appointment</strong> above to begin the first session.
+        </div>
+      </div>
+      {% endif %}
+    </div><!-- /ah-section -->
+
+    <!-- Crisis history (if any) -->
     {% if crisis_history %}
-    <div class="pv-panel-full" id="crisis-log-section">
+    <div class="pv-panel-full" style="margin-top:24px;">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
         <div class="pv-panel-title" style="margin:0;">Crisis Log</div>
         <span style="font-size:11px;color:#dc2626;border:1px solid #dc2626;padding:1px 7px;font-weight:600;">
           {{ crisis_history|length }} flag{{ 's' if crisis_history|length != 1 }}
         </span>
       </div>
-      <div style="font-size:12px;color:var(--text-muted);margin-bottom:14px;line-height:1.6;">
-        All entries containing crisis-level language. Click a row to view the text.
-        Resolved entries were acknowledged by a provider before new content appeared.
-      </div>
-      <div id="crisis-log-list">
-        {% for item in crisis_history %}
-        <div class="crisis-log-row {% if item.resolved %}resolved{% else %}active{% endif %}"
-             onclick="toggleCrisisEntry(this)"
-             style="border-left:3px solid {% if item.resolved %}#6b7280{% else %}#dc2626{% endif %};
-                    padding:10px 14px;margin-bottom:8px;cursor:pointer;
-                    background:{% if item.resolved %}#f9fafb{% else %}#fff8f8{% endif %};">
-          <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;">
-            <div style="display:flex;align-items:center;gap:10px;">
-              <span style="font-size:11px;color:{% if item.resolved %}#6b7280{% else %}#dc2626{% endif %};">
-                {% if item.resolved %}&#10003;{% else %}&#9888;{% endif %}
-              </span>
-              <span style="font-size:13px;font-weight:600;color:#111;">{{ item.date }}</span>
-              <span style="font-size:11px;color:var(--text-muted);border:1px solid var(--border-light);padding:1px 6px;">
-                {{ item.source }}
-              </span>
-              {% if item.resolved %}
-              <span style="font-size:11px;color:#6b7280;">Resolved</span>
-              {% else %}
-              <span style="font-size:11px;color:#dc2626;font-weight:600;">Active</span>
-              {% endif %}
-            </div>
-            <span class="crisis-log-chevron" style="font-size:11px;color:var(--text-muted);transition:transform .15s;">▸</span>
-          </div>
-          <div class="crisis-log-body" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb;">
-            <p style="font-size:13px;color:#222;line-height:1.7;margin:0;white-space:pre-wrap;">{{ item.text }}</p>
-          </div>
+      {% for item in crisis_history %}
+      <div style="border-left:3px solid {% if item.resolved %}#6b7280{% else %}#dc2626{% endif %};
+                  padding:10px 14px;margin-bottom:8px;cursor:pointer;
+                  background:{% if item.resolved %}#f9fafb{% else %}#fff8f8{% endif %};"
+           onclick="this.querySelector('.crisis-body').style.display=this.querySelector('.crisis-body').style.display==='none'?'block':'none'">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <span style="font-size:13px;font-weight:600;">{{ item.date }}</span>
+          <span style="font-size:11px;color:var(--text-muted);border:1px solid var(--border-light);padding:1px 6px;">{{ item.source }}</span>
+          {% if item.resolved %}<span style="font-size:11px;color:#6b7280;">Resolved</span>
+          {% else %}<span style="font-size:11px;color:#dc2626;font-weight:600;">Active</span>{% endif %}
         </div>
-        {% endfor %}
-      </div>
-    </div>
-    {% endif %}
-
-    <!-- Insight analysis panel -->
-    <div class="pv-panel-full">
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
-        <div class="pv-panel-title">Insight Analysis</div>
-        <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border-light);padding:2px 7px;">
-          statistically validated · with audit trail
-        </span>
-      </div>
-      <div class="pv-panel-sub">
-        Confidence is adjusted for data density, gaps, and recent medication changes —
-        not just raw p-value.
-      </div>
-      <div id="pv-insights-container" style="margin-top:12px;"></div>
-    </div>
-
-    <!-- Stats row -->
-    <div class="stats-row" style="margin-bottom:20px;">
-      <div class="stat-card">
-        <div class="stat-label">Avg Mood</div>
-        <div class="stat-value">{{ trends.mood.average }}</div>
-        <div class="stat-sub">{{ trends.mood.trend }}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Avg Sleep</div>
-        <div class="stat-value">{{ trends.sleep.average }}</div>
-        <div class="stat-sub">hrs/night</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Avg Stress</div>
-        <div class="stat-value">{{ trends.stress.average }}</div>
-        <div class="stat-sub">{{ trends.stress.trend }}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Avg Energy</div>
-        <div class="stat-value">{{ trends.energy.average if trends.energy and trends.energy.average else '—' }}</div>
-        <div class="stat-sub">/10</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Adherence</div>
-        <div class="stat-value">{{ trends.medication_adherence if trends.medication_adherence > 0 else '—' }}</div>
-        <div class="stat-sub">%</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-label">Check-ins</div>
-        <div class="stat-value">{{ patient.checkins_last_period }}</div>
-        <div class="stat-sub">this period</div>
-      </div>
-    </div>
-
-    <!-- Computed scores row -->
-    {% set ss = trends.stability_score %}
-    {% set md = trends.mood_distortion %}
-    {% set sd = trends.sleep_disruption %}
-    {% set sl = trends.stim_load %}
-    {% set cr = trends.crash_risk %}
-    <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:700;margin:4px 0 8px;">
-      Computed System Scores
-    </div>
-    <div class="stats-row" style="margin-bottom:20px;">
-      <div class="stat-card flip-card {% if ss and ss.average and ss.average < 4 %}stat-card-alert flip-card-alert{% endif %}" onclick="this.classList.toggle('flipped')">
-        <div class="flip-card-inner">
-          <div class="flip-card-front">
-            <div class="stat-label">Stability Score</div>
-            <div class="stat-value">{{ ss.average if ss and ss.average else '—' }}</div>
-            <div class="stat-sub">/10 avg</div>
-            <div class="flip-hint">click for info ↻</div>
-          </div>
-          <div class="flip-card-back">
-            <strong>Stability Score</strong>
-            (Mood + Energy + (10−Dissoc.) + (10−Anxiety)) ÷ 4. Below 4 = dysregulated · Above 7 = stable. Gap from reported mood = Mood Distortion.
-          </div>
-        </div>
-      </div>
-      <div class="stat-card flip-card {% if md and md.average and md.average > 2.5 %}stat-card-alert flip-card-alert{% endif %}" onclick="this.classList.toggle('flipped')">
-        <div class="flip-card-inner">
-          <div class="flip-card-front">
-            <div class="stat-label">Mood Distortion</div>
-            <div class="stat-value">{{ md.average if md and md.average else '—' }}</div>
-            <div class="stat-sub">avg gap</div>
-            <div class="flip-hint">click for info ↻</div>
-          </div>
-          <div class="flip-card-back">
-            <strong>Mood Distortion</strong>
-            |Reported Mood − Stability Score|. Above 2.5 = self-report diverges from system state. Possible reporting bias or rapid intra-day state change.
-          </div>
-        </div>
-      </div>
-      <div class="stat-card flip-card {% if sd and sd.average and sd.average > 6 %}stat-card-alert flip-card-alert{% endif %}" onclick="this.classList.toggle('flipped')">
-        <div class="flip-card-inner">
-          <div class="flip-card-front">
-            <div class="stat-label">Sleep Disruption</div>
-            <div class="stat-value">{{ sd.average if sd and sd.average else '—' }}</div>
-            <div class="stat-sub">/10 avg</div>
-            <div class="flip-hint">click for info ↻</div>
-          </div>
-          <div class="flip-card-back">
-            <strong>Sleep Disruption</strong>
-            +2 if &lt;6 hrs · +3 if latency &gt;45 min · +2 if ≥2 awakenings · +3 if hard to fall asleep. Cap 10. Feeds into Crash Risk.
-          </div>
-        </div>
-      </div>
-      <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
-        <div class="flip-card-inner">
-          <div class="flip-card-front">
-            <div class="stat-label">Avg Stim Load</div>
-            <div class="stat-value">{{ sl.average if sl and sl.average else '—' }}</div>
-            <div class="stat-sub">/10 avg</div>
-            <div class="flip-hint">click for info ↻</div>
-          </div>
-          <div class="flip-card-back">
-            <strong>Stim Load</strong>
-            Caffeine tier (0/2/5/7/9) + stimulant meds taken + booster doses, capped at 10. Drives Nervous System Load and Crash Risk when combined with poor sleep.
-          </div>
-        </div>
-      </div>
-      <div class="stat-card flip-card {% if cr and cr.high_days and cr.high_days > 0 %}stat-card-alert flip-card-alert{% endif %}" onclick="this.classList.toggle('flipped')">
-        <div class="flip-card-inner">
-          <div class="flip-card-front">
-            <div class="stat-label">Crash Risk Days</div>
-            <div class="stat-value">{{ cr.high_days if cr else '—' }}</div>
-            <div class="stat-sub">days ≥7/10</div>
-            <div class="flip-hint">click for info ↻</div>
-          </div>
-          <div class="flip-card-back">
-            <strong>Crash Risk Days</strong>
-            Days where (Sleep Disruption × 0.5) + (NS Load × 0.5) ≥ 7. Compounding strain from poor sleep and high nervous system load on the same day.
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Charts 2×2 -->
-    <div class="pv-grid-2">
-      <div class="pv-panel">
-        <div class="pv-panel-title">Mood</div>
-        <div class="pv-panel-sub">Daily scores — {{ selected_days }}-day window</div>
-        {% if trends.mood.daily_scores %}
-        <canvas id="mood-chart" height="160"></canvas>
-        {% else %}
-        <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No data for this period</div>
-        {% endif %}
-      </div>
-      <div class="pv-panel">
-        <div class="pv-panel-title">Sleep</div>
-        <div class="pv-panel-sub">Hours per night — {{ selected_days }}-day window</div>
-        {% if trends.sleep.daily_hours %}
-        <canvas id="sleep-chart" height="160"></canvas>
-        {% else %}
-        <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No data for this period</div>
-        {% endif %}
-      </div>
-      <div class="pv-panel">
-        <div class="pv-panel-title">Stress</div>
-        <div class="pv-panel-sub">Daily scores — {{ selected_days }}-day window</div>
-        {% if trends.stress.daily_scores %}
-        <canvas id="stress-chart" height="160"></canvas>
-        {% else %}
-        <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No data for this period</div>
-        {% endif %}
-      </div>
-      <div class="pv-panel">
-        <div class="pv-panel-title">Energy</div>
-        <div class="pv-panel-sub">Daily scores — {{ selected_days }}-day window</div>
-        {% if trends.energy and trends.energy.daily_scores %}
-        <canvas id="energy-chart" height="160"></canvas>
-        {% else %}
-        <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No energy data for this period</div>
-        {% endif %}
-      </div>
-    </div>
-
-    <!-- Medications + adherence + timing -->
-    {% if patient.current_medications %}
-    <div class="pv-panel-full">
-      <div class="pv-panel-title">Medications</div>
-      <div class="pv-panel-sub">Current prescriptions · adherence &amp; timing from check-in logs</div>
-
-      {# Build a lookup of timing stats by med name+dose #}
-      {% set timing_map = {} %}
-      {% for ts in timing_stats.medications %}
-        {% set _ = timing_map.update({(ts.name | lower) + '|||' + (ts.dose | lower): ts}) %}
-      {% endfor %}
-
-      {% for med in patient.current_medications %}
-      {% set tk = (med.name | lower) + '|||' + (med.dose | lower | default('')) %}
-      {% set ts = timing_map.get(tk) %}
-      <div class="pv-med-row" style="align-items:flex-start;padding:12px 0;">
-        <div style="min-width:200px;">
-          <div class="pv-med-name">{{ med.name | title }}</div>
-          <div class="pv-med-dose">{{ med.dose }}{% if med.frequency %} · {{ med.frequency }}{% endif %}</div>
-          {% if ts and ts.avg_time %}
-          <div style="margin-top:6px;font-size:11px;color:var(--text-muted);">
-            Avg taken <strong>{{ ts.avg_time }}</strong>
-            &nbsp;·&nbsp;
-            <span style="border:1px solid {% if ts.consistency == 'excellent' %}#90c890{% elif ts.consistency == 'good' %}#90c890{% elif ts.consistency == 'fair' %}#f0c040{% else %}#d4856a{% endif %};
-                         color:{% if ts.consistency in ('excellent','good') %}#1a5c1a{% elif ts.consistency == 'fair' %}#7a5800{% else %}#8B1A1A{% endif %};
-                         padding:1px 6px;font-size:10px;text-transform:uppercase;letter-spacing:.05em;">
-              {{ ts.consistency }} timing
-            </span>
-            {% if ts.std_dev_hours is not none and ts.n_timed >= 2 %}
-            <span style="margin-left:4px;font-size:10px;color:var(--text-muted);">±{{ ts.std_dev_hours }}h</span>
-            {% endif %}
-          </div>
-          {% elif ts %}
-          <div style="margin-top:6px;font-size:11px;color:var(--text-muted);">
-            {{ ts.n_taken }} dose{{ 's' if ts.n_taken != 1 }} logged · no times recorded
-          </div>
-          {% endif %}
-        </div>
-        <div class="pv-adherence-bar">
-          {% if ts and ts.n_taken %}
-            {% set adh = [((ts.n_taken / selected_days * 100) | round | int), 100] | min %}
-          {% else %}
-            {% set adh = 0 %}
-          {% endif %}
-          <div class="pv-adherence-fill {% if adh < 60 %}low{% elif adh < 80 %}mid{% endif %}"
-               style="width:{{ adh }}%"></div>
-        </div>
-        <div class="pv-adherence-pct">
-          {% if ts and ts.n_taken %}
-            {{ [((ts.n_taken / selected_days * 100) | round | int), 100] | min }}%
-            <span style="font-size:10px;color:var(--text-muted);display:block;">{{ ts.n_taken }} of {{ selected_days }}d</span>
-          {% else %}—{% endif %}
+        <div class="crisis-body" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb;">
+          <p style="font-size:13px;color:#222;line-height:1.7;margin:0;white-space:pre-wrap;">{{ item.text }}</p>
         </div>
       </div>
       {% endfor %}
-
-      {# Timing-outcome correlations #}
-      {% if timing_stats.n_timing_records >= 5 %}
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-light);">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);margin-bottom:10px;">
-          Timing × Outcome Correlations
-          <span style="font-size:10px;font-weight:400;text-transform:none;letter-spacing:0;margin-left:6px;">
-            ({{ timing_stats.n_timing_records }} afternoon/evening check-ins with prior dose recorded)
-          </span>
-        </div>
-
-        {% macro corr_row(label, c) %}
-          {% if c %}
-          <div style="display:flex;align-items:center;gap:12px;font-size:12px;margin-bottom:7px;">
-            <span style="min-width:220px;color:var(--text-muted);">{{ label }}</span>
-            <span style="font-family:monospace;font-size:11px;">r={{ c.r }}</span>
-            <span style="font-family:monospace;font-size:11px;">p={{ c.p_value }}</span>
-            <span style="font-size:11px;
-                         {% if c.p_value <= 0.05 %}font-weight:600;
-                         {% else %}color:var(--text-muted);{% endif %}">
-              {% if c.p_value <= 0.05 %}
-                {% if c.r > 0 %}↑ significant positive{% else %}↓ significant negative{% endif %}
-              {% else %}
-                not significant
-              {% endif %}
-            </span>
-          </div>
-          {% endif %}
-        {% endmacro %}
-
-        {{ corr_row('Dose time → afternoon/evening mood', timing_stats.dose_time_vs_mood) }}
-        {{ corr_row('Hours since dose → mood at check-in', timing_stats.hours_since_dose_vs_mood) }}
-        {{ corr_row('Hours since dose → energy at check-in', timing_stats.hours_since_dose_vs_energy) }}
-      </div>
-      {% else %}
-      <div style="margin-top:10px;font-size:12px;color:var(--text-muted);">
-        Not enough timing data yet ({{ timing_stats.n_timing_records }}/5 check-ins with dose times recorded).
-        Timing coverage: {{ timing_stats.coverage_pct }}% of logged doses have a time.
-      </div>
-      {% endif %}
-
-      {% if timing_stats.timing_alerts %}
-      <div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-light);">
-        <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:#7a5800;margin-bottom:8px;font-weight:700;">
-          Timing Flags
-        </div>
-        {% for ta in timing_stats.timing_alerts %}
-        <div style="background:#fffbf0;border:1px solid #f0c040;padding:9px 12px;font-size:12px;
-                    margin-bottom:6px;line-height:1.55;">
-          {{ ta.message }}
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}
     </div>
     {% endif %}
 
-    <!-- Pre-appointment summary -->
-    <div class="pv-panel-full" id="summary-section">
-      <div class="pv-panel-title" style="margin-bottom:3px;">Pre-Appointment Summary</div>
-      <div class="pv-panel-sub" style="margin-bottom:14px;">
-        AI synthesis of check-ins and journals for appointment preparation ·
-        journals marked private are excluded
-      </div>
-
-      <!-- Date range form -->
-      <div style="display:flex;flex-wrap:wrap;gap:10px;align-items:flex-end;margin-bottom:16px;
-                  padding:14px;background:var(--surface-raised);border:1px solid var(--border-light);">
-        <div>
-          <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);
-                        text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">
-            Appointment date
-          </label>
-          <input type="date" id="appt-date" value="{{ today_str }}"
-                 style="font-size:13px;padding:5px 8px;border:1px solid var(--border-light);background:var(--surface);">
-        </div>
-        <div>
-          <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);
-                        text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">
-            Review period
-          </label>
-          <select id="appt-period"
-                  style="font-size:13px;padding:5px 8px;border:1px solid var(--border-light);background:var(--surface);">
-            <option value="7">7 days before</option>
-            <option value="14" selected>14 days before</option>
-            <option value="21">21 days before</option>
-            <option value="30">30 days before</option>
-          </select>
-        </div>
-        <button class="btn btn-primary btn-sm" id="gen-btn-main"
-                onclick="generateSummary('{{ patient.patient_id }}')">
-          Generate Summary
-        </button>
-      </div>
-
-      <div id="summary-loading" class="hidden"
-           style="padding:24px;text-align:center;font-size:12px;color:var(--text-muted);">
-        <div class="spinner" style="margin:0 auto 10px;"></div>
-        Analyzing patient data…
-      </div>
-      <div id="summary-error" class="alert alert-error hidden" style="margin-bottom:10px;"></div>
-      <div id="new-summary"></div>
-
-      {% if summaries %}
-        {% for s in summaries %}
-        <div class="pv-summary-card {% if loop.first %}new{% endif %}">
-          <div class="pv-summary-meta">
-            <span>{{ s.date_range_start }} – {{ s.date_range_end }}</span>
-            <span>{{ s.created_at[:10] }} · {{ s.generated_by }}</span>
-          </div>
-          <div class="md-summary pv-summary-body" data-raw="{{ s.summary_text | e }}"></div>
-        </div>
-        {% endfor %}
-      {% else %}
-      <div style="font-size:13px;color:var(--text-muted);padding:8px 0;">
-        No summaries yet. Click "Generate New" above to create the first one.
-      </div>
-      {% endif %}
-    </div>
-
-    <!-- Journal entries (shared with provider only) -->
-    {% if journals %}
-    <div class="pv-panel-full">
-      <div class="pv-panel-title">Journal Entries</div>
-      <div class="pv-panel-sub">Patient-shared entries only · entries marked private are not visible here</div>
-      {% for j in journals %}
-      <div class="journal-entry-card">
-        <div class="journal-entry-meta">
-          <span class="entry-date">{{ j.created_at[:10] }}</span>
-          <span class="entry-type-badge">{{ (j.entry_type or 'free_flow') | replace('_', ' ') }}</span>
-          <span style="font-size:10px;color:var(--green);border:1px solid var(--green-light);padding:1px 6px;">shared</span>
-        </div>
-        {% if j.raw_entry|length > 400 %}
-        <details>
-          <summary class="journal-entry-preview" style="cursor:pointer;list-style:none;">
-            {{ j.raw_entry[:400] }}… <span style="font-size:11px;color:var(--text-muted);white-space:nowrap;">read more ↓</span>
-          </summary>
-          <div class="journal-entry-preview" style="padding-top:6px;border-top:1px solid var(--border-light);margin-top:6px;">{{ j.raw_entry }}</div>
-        </details>
-        {% else %}
-        <div class="journal-entry-preview">{{ j.raw_entry }}</div>
-        {% endif %}
-        {% if j.ai_analysis %}
-        <details class="analysis-details">
-          <summary>AI Reflection</summary>
-          <div class="analysis-content">{{ j.ai_analysis }}</div>
-        </details>
-        {% endif %}
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
-
-    <!-- Recent check-ins table -->
-    {% if patient.recent_checkins %}
-    <div class="pv-panel-full">
-      <div class="pv-panel-title">Recent Check-ins</div>
-      <div class="pv-panel-sub">Last {{ patient.recent_checkins|length }} check-ins · click any row to expand advanced data</div>
-      <div style="overflow-x:auto;">
-        <table class="data-table">
-          <thead>
-            <tr>
-              <th></th>
-              <th>Date</th>
-              <th>Type</th>
-              <th>Mood</th>
-              <th>Energy</th>
-              <th>Sleep</th>
-              <th>Stress</th>
-              <th>Notes</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for c in patient.recent_checkins %}
-            {% set ext = c.extended_data or {} %}
-            {% set has_adv = ext.keys() | list | length > 0 %}
-            <tr style="cursor:{% if has_adv %}pointer{% else %}default{% endif %};"
-                onclick="toggleCheckinExpand(this)">
-              <td style="font-size:10px;color:var(--text-muted);padding-right:2px;">{% if has_adv %}▶{% endif %}</td>
-              <td>{{ c.date }}</td>
-              <td style="text-transform:capitalize;font-size:11px;color:var(--text-muted);">
-                {{ (c.checkin_type or c.time_of_day or '—') | replace('_', ' ') }}
-              </td>
-              <td><span class="score-badge score-mood">{{ c.mood_score or '—' }}/10</span></td>
-              <td style="font-size:12px;">{{ ext.energy or '—' }}{% if ext.energy %}/10{% endif %}</td>
-              <td>{{ c.sleep_hours or '—' }}{% if c.sleep_hours %}h{% endif %}</td>
-              <td><span class="score-badge score-stress">{{ c.stress_score or '—' }}/10</span></td>
-              <td style="font-size:12px;color:var(--text-muted);max-width:200px;">
-                {{ (c.notes or '')[:80] }}{% if c.notes and c.notes|length > 80 %}…{% endif %}
-              </td>
-            </tr>
-            {% if has_adv %}
-            <tr class="checkin-expand-row" style="display:none;">
-              <td colspan="8" style="background:var(--surface-alt);padding:10px 14px;border-top:none;">
-                <div style="display:flex;flex-wrap:wrap;gap:6px 18px;font-size:12px;">
-                  {% macro advfield(label, val, unit='') %}
-                    {% if val is not none %}<span style="color:var(--text-muted);">{{ label }}:</span> <strong>{{ val }}{{ unit }}</strong>{% endif %}
-                  {% endmacro %}
-                  {{ advfield('Focus',          ext.focus,           '/10') }}
-                  {{ advfield('Dissociation',   ext.dissociation,    '/10') }}
-                  {{ advfield('Irritability',   ext.irritability,    '/10') }}
-                  {{ advfield('Motivation',     ext.motivation,      '/10') }}
-                  {{ advfield('Perc. Stress',   ext.perceived_stress,'/10') }}
-                  {{ advfield('Social Quality', ext.social_quality,  '/10') }}
-                  {{ advfield('Workload',       ext.workload_friction,'/10') }}
-                  {{ advfield('Exercise',       ext.exercise_minutes,' min') }}
-                  {{ advfield('Sunlight',       ext.sunlight_hours,  ' hrs') }}
-                  {{ advfield('Alcohol',        ext.alcohol_units,   ' units') }}
-                  {{ advfield('Screen Time',    ext.screen_time_hours,' hrs') }}
-                  {{ advfield('Caffeine',       ext.caffeine_mg,     ' mg') }}
-                  {{ advfield('Sleep Quality',  ext.sleep_quality,   '/10') }}
-                </div>
-              </td>
-            </tr>
-            {% endif %}
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    {% endif %}
-
-    <!-- Footer -->
-    <div style="padding-top:16px;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-muted);">
+    <div style="padding-top:16px;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-muted);margin-top:24px;">
       All patient data access is logged for HIPAA compliance ·
-      Only journals marked "Share with provider" are visible above
+      Only journals marked "Share with provider" are visible to you
     </div>
 
   </div><!-- /pv-main -->
 </div><!-- /pv-shell -->
 
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-const trendsData = {{ trends | tojson }};
-trendsData.current_medications = {{ patient.current_medications | tojson if patient.current_medications else '[]' }};
-trendsData.period_days = {{ selected_days }};
-trendsData.checkin_count = trendsData.checkins_this_period || 0;
-
-// ── Charts ─────────────────────────────────────────────────────────
-const chartDefs = { fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 5 };
-const chartOpts = (min, max) => ({
-  responsive: true, maintainAspectRatio: true,
-  plugins: { legend: { display: false } },
-  scales: {
-    y: { min, max,
-      grid: { color: 'rgba(0,0,0,0.04)' },
-      ticks: { font: { family: 'DM Sans', size: 11 } } },
-    x: { grid: { display: false },
-      ticks: { font: { family: 'DM Sans', size: 11 }, maxTicksLimit: 8 } },
-  },
-});
-const mkLabels = arr => arr.map((_, i) => 'Day ' + (i + 1));
-
-if (trendsData.mood.daily_scores?.length)
-  new Chart(document.getElementById('mood-chart'), {
-    type: 'line',
-    data: { labels: mkLabels(trendsData.mood.daily_scores),
-      datasets: [{ ...chartDefs, data: trendsData.mood.daily_scores,
-        borderColor: '#000', backgroundColor: 'rgba(0,0,0,0.05)' }] },
-    options: chartOpts(0, 10),
-  });
-
-if (trendsData.sleep.daily_hours?.length)
-  new Chart(document.getElementById('sleep-chart'), {
-    type: 'line',
-    data: { labels: mkLabels(trendsData.sleep.daily_hours),
-      datasets: [{ ...chartDefs, data: trendsData.sleep.daily_hours,
-        borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.04)' }] },
-    options: chartOpts(0, 12),
-  });
-
-if (trendsData.stress.daily_scores?.length)
-  new Chart(document.getElementById('stress-chart'), {
-    type: 'line',
-    data: { labels: mkLabels(trendsData.stress.daily_scores),
-      datasets: [{ ...chartDefs, data: trendsData.stress.daily_scores,
-        borderColor: '#8B1A1A', backgroundColor: 'rgba(139,26,26,0.05)' }] },
-    options: chartOpts(0, 10),
-  });
-
-if (trendsData.energy?.daily_scores?.length)
-  new Chart(document.getElementById('energy-chart'), {
-    type: 'line',
-    data: { labels: mkLabels(trendsData.energy.daily_scores),
-      datasets: [{ ...chartDefs, data: trendsData.energy.daily_scores,
-        borderColor: '#6B4A00', backgroundColor: 'rgba(107,74,0,0.05)' }] },
-    options: chartOpts(0, 10),
-  });
-
-// ── Insight panel ───────────────────────────────────────────────────
-renderProviderInsights(trendsData, 'pv-insights-container', 80);
-
-function onConfidenceSlider(val) {
-  document.getElementById('conf-val').textContent = val + '%';
-  renderProviderInsights(trendsData, 'pv-insights-container', parseInt(val, 10));
-}
-
-// ── Sidebar search ──────────────────────────────────────────────────
+// Sidebar search
 function filterPatients(q) {
-  document.querySelectorAll('.pv-patient-item').forEach(item => {
+  document.querySelectorAll('.pv-patient-item').forEach(function(item) {
     item.style.display = item.dataset.name?.includes(q.toLowerCase()) ? '' : 'none';
   });
 }
 
-// ── Check-in expand row ──────────────────────────────────────────────
-function toggleCheckinExpand(tr) {
-  const next = tr.nextElementSibling;
-  if (!next || !next.classList.contains('checkin-expand-row')) return;
-  const open = next.style.display !== 'none';
-  next.style.display = open ? 'none' : 'table-row';
-  const arrow = tr.querySelector('td:first-child');
-  if (arrow) arrow.textContent = open ? '▶' : '▼';
-}
-
-// ── Crisis log row toggle ────────────────────────────────────────────
-function toggleCrisisEntry(row) {
-  const body = row.querySelector('.crisis-log-body');
-  const chevron = row.querySelector('.crisis-log-chevron');
-  const open = body.style.display !== 'none';
-  body.style.display = open ? 'none' : 'block';
-  chevron.style.transform = open ? '' : 'rotate(90deg)';
-}
-
-// ── Markdown → HTML (lightweight, summary-safe) ─────────────────────
-function mdToHtml(text) {
-  if (!text) return '';
-  const lines = text.split('\n');
-  const out = [];
-  let inUl = false, inOl = false;
-
-  function closeList() {
-    if (inUl) { out.push('</ul>'); inUl = false; }
-    if (inOl) { out.push('</ol>'); inOl = false; }
-  }
-
-  function inlineFormat(s) {
-    // Escape HTML first
-    s = s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-    // Bold **text** or __text__
-    s = s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
-    s = s.replace(/__(.+?)__/g,'<strong>$1</strong>');
-    // Italic *text* or _text_
-    s = s.replace(/\*(.+?)\*/g,'<em>$1</em>');
-    s = s.replace(/_(.+?)_/g,'<em>$1</em>');
-    return s;
-  }
-
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-    const line = raw.trimEnd();
-
-    // Horizontal rule
-    if (/^---+$/.test(line.trim())) {
-      closeList();
-      out.push('<hr>');
-      continue;
-    }
-
-    // Headings (### or ## treated as section headers)
-    const hm = line.match(/^(#{1,6})\s+(.*)/);
-    if (hm) {
-      closeList();
-      out.push(`<div class="md-summary-header">${inlineFormat(hm[2])}</div>`);
-      continue;
-    }
-
-    // Bold-only line acting as a header (e.g. **What the numbers showed**)
-    const boldHeader = line.match(/^\*\*([^*]+)\*\*\s*$/);
-    if (boldHeader) {
-      closeList();
-      out.push(`<div class="md-summary-header">${inlineFormat(boldHeader[1])}</div>`);
-      continue;
-    }
-
-    // Unordered list item
-    const ulm = line.match(/^[-*]\s+(.*)/);
-    if (ulm) {
-      if (!inUl) { closeList(); out.push('<ul>'); inUl = true; }
-      out.push(`<li>${inlineFormat(ulm[1])}</li>`);
-      continue;
-    }
-
-    // Ordered list item
-    const olm = line.match(/^\d+\.\s+(.*)/);
-    if (olm) {
-      if (!inOl) { closeList(); out.push('<ol>'); inOl = true; }
-      out.push(`<li>${inlineFormat(olm[1])}</li>`);
-      continue;
-    }
-
-    closeList();
-
-    // Blank line → paragraph break (skip)
-    if (line.trim() === '') {
-      continue;
-    }
-
-    out.push(`<p>${inlineFormat(line)}</p>`);
-  }
-
-  closeList();
-  return out.join('');
-}
-
-// Process existing server-rendered summaries
-document.querySelectorAll('.pv-summary-body[data-raw]').forEach(function(el) {
-  el.innerHTML = mdToHtml(el.dataset.raw);
-});
-
-// ── Generate summary ────────────────────────────────────────────────
-function generateSummary(patientId) {
-  const apptDate   = document.getElementById('appt-date').value;
-  const periodDays = parseInt(document.getElementById('appt-period').value, 10);
-
-  // Compute period_start = apptDate minus periodDays
-  const apptMs    = new Date(apptDate).getTime();
-  const startMs   = apptMs - periodDays * 86400000;
-  const periodStart = new Date(startMs).toISOString().slice(0, 10);
-
-  const btns    = document.querySelectorAll('#gen-btn-top, #gen-btn-main');
-  const loading = document.getElementById('summary-loading');
-  const error   = document.getElementById('summary-error');
-  const panel   = document.getElementById('new-summary');
-
-  btns.forEach(b => b.disabled = true);
-  loading.classList.remove('hidden');
-  error.classList.add('hidden');
-  panel.innerHTML = '';
-
-  apiPost('/api/provider/generate-summary/' + patientId, {
-    period_start:     periodStart,
-    period_end:       apptDate,
-    appointment_date: apptDate,
-  })
-    .then(data => {
-      const card = document.createElement('div');
-      card.className = 'pv-summary-card new';
-      const meta = document.createElement('div');
-      meta.className = 'pv-summary-meta';
-      const apptLabel = data.appointment_date ? ` · Appt: ${data.appointment_date}` : '';
-      meta.innerHTML = `<span>${data.date_range_start} – ${data.date_range_end}${apptLabel}</span><span>Just generated</span>`;
-      const body = document.createElement('div');
-      body.className = 'md-summary pv-summary-body';
-      body.innerHTML = mdToHtml(data.summary_text);
-      card.appendChild(meta);
-      card.appendChild(body);
-      panel.appendChild(card);
-      loading.classList.add('hidden');
-      btns.forEach(b => b.disabled = false);
-    })
-    .catch(err => {
-      error.textContent = err.message || 'Failed to generate summary.';
-      error.classList.remove('hidden');
-      loading.classList.add('hidden');
-      btns.forEach(b => b.disabled = false);
-    });
-}
-
-// ── Mobile sidebar toggle ───────────────────────────────────────────
+// Mobile sidebar toggle
 (function () {
   const toggleBtn = document.getElementById('pv-sidebar-toggle');
   const sidebar   = document.getElementById('pv-sidebar');
@@ -1045,7 +370,6 @@ function generateSummary(patientId) {
     toggleBtn.setAttribute('aria-expanded', open);
     toggleBtn.querySelector('.pv-toggle-arrow').textContent = open ? '▴' : '▾';
   });
-  // Close sidebar when a patient link is tapped on mobile
   sidebar.querySelectorAll('.pv-patient-item').forEach(function (a) {
     a.addEventListener('click', function () {
       sidebar.classList.remove('open');
@@ -1053,5 +377,38 @@ function generateSummary(patientId) {
     });
   });
 })();
+
+// Mini sparkline
+{% if trends.mood and trends.mood.daily_scores %}
+(function() {
+  const scores = {{ trends.mood.daily_scores | tojson }};
+  const ctx = document.getElementById('mood-spark');
+  if (!ctx) return;
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: scores.map((_, i) => ''),
+      datasets: [{
+        data: scores,
+        borderColor: '#111',
+        backgroundColor: 'rgba(0,0,0,0.05)',
+        fill: true,
+        tension: 0.3,
+        pointRadius: 0,
+        borderWidth: 2,
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: true,
+      plugins: { legend: { display: false }, tooltip: { enabled: false } },
+      scales: {
+        y: { min: 0, max: 10, display: false },
+        x: { display: false }
+      }
+    }
+  });
+})();
+{% endif %}
 </script>
 {% endblock %}

@@ -279,35 +279,73 @@ def provider_dashboard():
     user, redir = _require_provider()
     if redir:
         return redir
-    patients = db.get_provider_patients(user['id'])
+    patients = db.get_provider_patients_with_stats(user['id'])
     return render_template('provider/dashboard.html', user=user, patients=patients,
                            today_str=date.today().isoformat())
 
 
-@app.route('/provider/patient/<patient_id>')
-def provider_patient_detail(patient_id):
-    user, redir = _require_provider()
-    if redir:
-        return redir
-    if not _provider_owns_patient(user['id'], patient_id):
-        flash('Patient not found', 'error')
-        return redirect(url_for('provider_dashboard'))
-    days = min(int(request.args.get('days', 30)), 365)
-    patient = db.get_patient_detail(patient_id, days=days)
-    if not patient:
-        flash('Patient not found', 'error')
-        return redirect(url_for('provider_dashboard'))
+def _build_suggested_questions(trends, alerts, patient):
+    """Derive 3-5 AI-suggested interview questions from this patient's data."""
+    questions = []
+    mood_t   = (trends.get('mood') or {})
+    sleep_t  = (trends.get('sleep') or {})
+    stress_t = (trends.get('stress') or {})
+    adh      = trends.get('medication_adherence', 0)
+    meds     = patient.get('current_medications') or []
 
-    patients      = db.get_provider_patients(user['id'])
-    summaries     = db.get_summaries(patient_id)
-    trends        = db.get_trends_data(patient_id, days=days)
-    interactions  = db.check_medication_interactions(patient_id)
-    journals      = db.get_journals(patient_id, limit=10, shared_only=True)
-    timing_stats  = db.get_medication_timing_stats(patient_id, days=days)
+    if mood_t.get('trend') == 'decreasing':
+        questions.append({
+            'category': 'Mood',
+            'text': f"Your records show mood averaging {mood_t.get('average','?')}/10 and trending downward. "
+                    "What's been contributing to that from your perspective?"
+        })
+    elif mood_t.get('average') and float(mood_t['average']) < 5:
+        questions.append({
+            'category': 'Mood',
+            'text': f"Mood has averaged {mood_t['average']}/10 this period. "
+                    "Can you walk me through what a typical day has felt like?"
+        })
 
-    trends = trends or {}
-    MIN_OBS = 21
+    if sleep_t.get('average') and float(sleep_t['average']) < 6.5:
+        questions.append({
+            'category': 'Sleep',
+            'text': f"You're averaging {sleep_t['average']} hours of sleep. "
+                    "Is that disruption mainly falling asleep, staying asleep, or waking too early?"
+        })
+
+    if stress_t.get('average') and float(stress_t['average']) > 6:
+        questions.append({
+            'category': 'Stress',
+            'text': f"Stress has been elevated at {stress_t['average']}/10 on average. "
+                    "What's been the biggest driver of that?"
+        })
+
+    if meds and adh and adh < 80:
+        questions.append({
+            'category': 'Medication',
+            'text': f"Medication logs show about {adh}% adherence this period. "
+                    "Are there specific days or situations where taking it becomes harder?"
+        })
+    elif meds:
+        med_names = ', '.join(m.get('name', '').title() for m in meds[:2])
+        questions.append({
+            'category': 'Medication',
+            'text': f"How has {med_names} been feeling for you? Any side effects or timing issues?"
+        })
+
+    if not questions:
+        questions.append({
+            'category': 'Functioning',
+            'text': "How has your day-to-day functioning been since we last met — at work, at home, socially?"
+        })
+
+    return questions[:5]
+
+
+def _build_alerts(trends, days):
+    """Build clinical alert list from trends data."""
     alerts = []
+    MIN_OBS = 21
     n = trends.get('checkin_count', trends.get('total_checkins', 0))
     mood_t = trends.get('mood', {})
     if (mood_t.get('trend') == 'decreasing' and n >= MIN_OBS
@@ -327,8 +365,28 @@ def provider_patient_detail(patient_id):
         alerts.append({'level': 'warning', 'title': 'Elevated Stress Trend',
             'desc': f"Stress trending upward — average {stress_t['average']}/10 over {days} days "
                     f"(R²={stress_t['r_squared']}, p={stress_t['p_value']})."})
+    return alerts
 
-    # timing_alerts are rendered inside the Medications panel, not the global alerts banner
+
+@app.route('/provider/patient/<patient_id>')
+def provider_patient_detail(patient_id):
+    """Patient overview: key stats + appointment history."""
+    user, redir = _require_provider()
+    if redir:
+        return redir
+    if not _provider_owns_patient(user['id'], patient_id):
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+
+    patient = db.get_patient_detail(patient_id, days=30)
+    if not patient:
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+
+    patients     = db.get_provider_patients(user['id'])
+    trends       = db.get_trends_data(patient_id, days=30) or {}
+    appointments = db.get_patient_appointments(user['id'], patient_id)
+    interactions = db.check_medication_interactions(patient_id)
 
     current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
     patient_has_crisis = current_p.get('suicide_risk', False)
@@ -346,16 +404,88 @@ def provider_patient_detail(patient_id):
     return render_template('provider/patient_detail.html',
                            user=user, patient=patient,
                            patients=patients,
-                           summaries=summaries, trends=trends,
-                           alerts=alerts, interactions=interactions,
-                           journals=journals, timing_stats=timing_stats,
-                           selected_days=days,
+                           trends=trends,
+                           appointments=appointments,
+                           interactions=interactions,
                            today_str=date.today().isoformat(),
                            patient_has_crisis=patient_has_crisis,
                            patient_crisis_context=patient_crisis_context,
                            crisis_history=crisis_history,
                            days_since_last_checkin=days_since_last_checkin,
                            last_checkin_date=last_checkin_date)
+
+
+@app.route('/provider/patient/<patient_id>/appointment/new', methods=['POST'])
+def provider_appointment_new(patient_id):
+    """Create a new appointment session and redirect to the workspace."""
+    user, redir = _require_provider()
+    if redir:
+        return redir
+    if not _provider_owns_patient(user['id'], patient_id):
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+
+    period_days = int(request.form.get('period_days', 30))
+    appt = db.create_provider_appointment(user['id'], patient_id, period_days)
+    if not appt:
+        flash('Could not create appointment — please try again.', 'error')
+        return redirect(url_for('provider_patient_detail', patient_id=patient_id))
+
+    return redirect(url_for('provider_appointment_workspace',
+                            patient_id=patient_id, appt_id=appt['id']))
+
+
+@app.route('/provider/patient/<patient_id>/appointment/<appt_id>')
+def provider_appointment_workspace(patient_id, appt_id):
+    """Active appointment workspace."""
+    user, redir = _require_provider()
+    if redir:
+        return redir
+    if not _provider_owns_patient(user['id'], patient_id):
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+
+    appt = db.get_provider_appointment(appt_id, user['id'])
+    if not appt or str(appt['patient_id']) != str(patient_id):
+        flash('Appointment not found', 'error')
+        return redirect(url_for('provider_patient_detail', patient_id=patient_id))
+
+    days    = appt.get('period_days', 30)
+    patient = db.get_patient_detail(patient_id, days=days)
+    if not patient:
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+
+    patients     = db.get_provider_patients(user['id'])
+    trends       = db.get_trends_data(patient_id, days=days) or {}
+    summaries    = db.get_summaries(patient_id)
+    journals     = db.get_journals(patient_id, limit=10, shared_only=True)
+    timing_stats = db.get_medication_timing_stats(patient_id, days=days)
+    interactions = db.check_medication_interactions(patient_id)
+    alerts       = _build_alerts(trends, days)
+
+    current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
+    patient_has_crisis = current_p.get('suicide_risk', False)
+    patient_crisis_context = current_p.get('suicide_risk_context', [])
+
+    # Build AI-suggested questions from alert data + trends
+    ai_questions = _build_suggested_questions(trends, alerts, patient)
+
+    return render_template('provider/appointment.html',
+                           user=user, patient=patient,
+                           patients=patients,
+                           appt=appt,
+                           trends=trends,
+                           summaries=summaries,
+                           journals=journals,
+                           timing_stats=timing_stats,
+                           interactions=interactions,
+                           alerts=alerts,
+                           selected_days=days,
+                           today_str=date.today().isoformat(),
+                           patient_has_crisis=patient_has_crisis,
+                           patient_crisis_context=patient_crisis_context,
+                           ai_questions=ai_questions)
 
 
 @app.route('/provider/patient/<patient_id>/trends')
@@ -1090,6 +1220,37 @@ def api_provider_patient(patient_id):
     if not detail:
         return jsonify({'error': 'Patient not found'}), 404
     return jsonify(detail), 200
+
+
+@app.route('/api/provider/appointment/<appt_id>/save', methods=['POST'])
+def api_appointment_save(appt_id):
+    """Autosave appointment workspace data (notes, Q&A, actions, care plan)."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    updates = {}
+    if 'notes' in data:
+        updates['notes'] = str(data['notes'])
+    if 'care_plan_changes' in data:
+        updates['care_plan_changes'] = str(data['care_plan_changes'])
+    if 'guided_qa' in data and isinstance(data['guided_qa'], list):
+        updates['guided_qa'] = data['guided_qa']
+    if 'actions' in data and isinstance(data['actions'], list):
+        updates['actions'] = data['actions']
+    if 'next_appointment_date' in data:
+        nd = str(data['next_appointment_date']).strip()
+        updates['next_appointment_date'] = nd if nd else None
+    if 'next_appointment_notes' in data:
+        updates['next_appointment_notes'] = str(data['next_appointment_notes'])
+    if data.get('complete'):
+        from datetime import datetime as _dt
+        updates['status'] = 'completed'
+        updates['completed_at'] = _dt.utcnow().isoformat()
+    ok = db.update_provider_appointment(appt_id, user['id'], updates)
+    if not ok:
+        return jsonify({'error': 'Appointment not found or not authorized'}), 404
+    return jsonify({'status': 'saved'}), 200
 
 
 @app.route('/api/provider/patient/<patient_id>/resolve-crisis', methods=['POST'])

@@ -1,16 +1,150 @@
 {% extends "layout.html" %}
-{% block title %}Provider Dashboard — CognaSync{% endblock %}
+{% block title %}My Patients — CognaSync{% endblock %}
 
 {% block content %}
-{% if patients %}
-<script>window.location.replace('/provider/patient/{{ patients[0].patient_id }}');</script>
-<p style="color:var(--text-muted);font-size:13px;padding:40px;">Redirecting to patient dashboard…</p>
-{% else %}
-<div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:60vh;text-align:center;">
-  <h1 style="font-family:'DM Serif Display',serif;font-size:32px;font-weight:400;margin-bottom:14px;">No Patients Assigned</h1>
-  <p style="color:var(--text-muted);font-size:14px;max-width:420px;line-height:1.7;">
-    Patients will appear here once they connect to your provider account via their profile settings.
-  </p>
+<div class="pd-page">
+
+  <!-- Page header -->
+  <div class="pd-page-hdr">
+    <div>
+      <h1 class="pd-page-title">My Patients</h1>
+      <div class="pd-page-sub">{{ patients|length }} patient{{ 's' if patients|length != 1 }} · {{ today_str }}</div>
+    </div>
+    <div class="pd-page-hdr-actions">
+      <input type="text" class="pd-search" id="pd-search"
+             placeholder="Search by name…" oninput="filterCards(this.value)">
+    </div>
+  </div>
+
+  {% if not patients %}
+  <div class="pd-empty">
+    <div class="pd-empty-icon">👤</div>
+    <div class="pd-empty-title">No patients yet</div>
+    <div class="pd-empty-sub">
+      Patients appear here once they link to your provider account
+      via their CognaSync profile settings.
+    </div>
+  </div>
+
+  {% else %}
+  <!-- Filters -->
+  <div class="pd-filter-bar">
+    <button class="pd-filter-btn active" data-filter="all" onclick="setFilter(this,'all')">All</button>
+    <button class="pd-filter-btn" data-filter="alert" onclick="setFilter(this,'alert')">⚠ Needs Attention</button>
+    <button class="pd-filter-btn" data-filter="recent" onclick="setFilter(this,'recent')">Checked in Recently</button>
+    <button class="pd-filter-btn" data-filter="inactive" onclick="setFilter(this,'inactive')">No Recent Check-ins</button>
+  </div>
+
+  <!-- Patient grid -->
+  <div class="pd-grid" id="pd-grid">
+    {% for p in patients %}
+    {% set has_crisis = p.suicide_risk %}
+    {% set inactive   = p.days_since_checkin is not none and p.days_since_checkin > 7 %}
+    {% set mood_low   = p.mood_avg_30d is not none and p.mood_avg_30d < 5 %}
+    {% set has_alert  = has_crisis or mood_low %}
+    <a href="{{ url_for('provider_patient_detail', patient_id=p.patient_id) }}"
+       class="pd-card {% if has_crisis %}pd-card-crisis{% elif has_alert %}pd-card-alert{% endif %}"
+       data-name="{{ p.full_name | lower }}"
+       data-state="{% if has_alert %}alert{% elif inactive %}inactive{% else %}recent{% endif %}">
+
+      <!-- Card header -->
+      <div class="pd-card-hdr">
+        <div class="pd-card-avatar">{{ p.full_name[0] | upper }}</div>
+        <div class="pd-card-id">
+          <div class="pd-card-name">
+            {{ p.full_name }}
+            {% if has_crisis %}
+            <span class="pd-badge pd-badge-crisis" title="Crisis flag active">&#9888;</span>
+            {% endif %}
+          </div>
+          <div class="pd-card-email">{{ p.email }}</div>
+        </div>
+      </div>
+
+      <!-- Stats row -->
+      <div class="pd-card-stats">
+        <div class="pd-stat">
+          <div class="pd-stat-label">Avg Mood (30d)</div>
+          <div class="pd-stat-val {% if p.mood_avg_30d is not none and p.mood_avg_30d < 5 %}pd-stat-low{% elif p.mood_avg_30d is not none and p.mood_avg_30d >= 7 %}pd-stat-good{% endif %}">
+            {% if p.mood_avg_30d is not none %}{{ p.mood_avg_30d }}/10{% else %}—{% endif %}
+          </div>
+        </div>
+        <div class="pd-stat">
+          <div class="pd-stat-label">Check-ins (30d)</div>
+          <div class="pd-stat-val">{{ p.checkin_count_30d or 0 }}</div>
+        </div>
+        <div class="pd-stat">
+          <div class="pd-stat-label">Last Check-in</div>
+          <div class="pd-stat-val {% if inactive %}pd-stat-low{% endif %}">
+            {% if p.last_checkin %}
+              {% if p.days_since_checkin == 0 %}Today
+              {% elif p.days_since_checkin == 1 %}Yesterday
+              {% elif p.days_since_checkin is not none %}{{ p.days_since_checkin }}d ago
+              {% else %}{{ p.last_checkin }}{% endif %}
+            {% else %}Never{% endif %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Meds row -->
+      {% if p.current_medications %}
+      <div class="pd-card-meds">
+        {% for med in p.current_medications[:3] %}
+        <span class="pd-med-chip">{{ med.name | title }}</span>
+        {% endfor %}
+        {% if p.current_medications|length > 3 %}
+        <span class="pd-med-chip pd-med-chip-more">+{{ p.current_medications|length - 3 }}</span>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Last appointment -->
+      <div class="pd-card-footer">
+        <span class="pd-card-appt">
+          {% if p.last_appointment %}
+            Last appt: {{ p.last_appointment }}
+          {% else %}
+            No appointments yet
+          {% endif %}
+        </span>
+        <span class="pd-card-arrow">→</span>
+      </div>
+    </a>
+    {% endfor %}
+  </div><!-- /pd-grid -->
+
+  <div class="pd-no-results" id="pd-no-results" style="display:none;">
+    No patients match your search.
+  </div>
+  {% endif %}
+
 </div>
-{% endif %}
+
+<script>
+function filterCards(q) {
+  q = q.toLowerCase().trim();
+  let visible = 0;
+  document.querySelectorAll('.pd-card').forEach(function(c) {
+    const match = c.dataset.name.includes(q);
+    c.style.display = match ? '' : 'none';
+    if (match) visible++;
+  });
+  const noRes = document.getElementById('pd-no-results');
+  if (noRes) noRes.style.display = visible === 0 ? '' : 'none';
+}
+
+let activeFilter = 'all';
+function setFilter(btn, filter) {
+  activeFilter = filter;
+  document.querySelectorAll('.pd-filter-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  document.querySelectorAll('.pd-card').forEach(function(c) {
+    if (filter === 'all') {
+      c.style.display = '';
+    } else {
+      c.style.display = c.dataset.state === filter ? '' : 'none';
+    }
+  });
+}
+</script>
 {% endblock %}

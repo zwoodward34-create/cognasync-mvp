@@ -1947,3 +1947,143 @@ def log_ai_feedback(user_id: str, content_type: str, content_id: str, rating: st
     except Exception as e:
         print(f"Error logging AI feedback: {e}")
         return False
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# PROVIDER APPOINTMENTS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def create_provider_appointment(provider_id: str, patient_id: str, period_days: int = 30) -> dict | None:
+    """Create a new appointment session and return the row."""
+    try:
+        row = {
+            'id':            str(uuid.uuid4()),
+            'provider_id':   str(provider_id),
+            'patient_id':    str(patient_id),
+            'status':        'active',
+            'period_days':   period_days,
+            'started_at':    datetime.utcnow().isoformat(),
+            'guided_qa':     json.dumps([]),
+            'notes':         '',
+            'care_plan_changes': '',
+            'actions':       json.dumps([]),
+            'next_appointment_date':  None,
+            'next_appointment_notes': '',
+            'created_at':    datetime.utcnow().isoformat(),
+            'updated_at':    datetime.utcnow().isoformat(),
+        }
+        resp = supabase_admin.table('provider_appointments').insert(row).execute()
+        return resp.data[0] if resp.data else None
+    except Exception as e:
+        print(f"Error creating appointment: {e}")
+        return None
+
+
+def get_provider_appointment(appt_id: str, provider_id: str) -> dict | None:
+    """Fetch a single appointment, verifying it belongs to this provider."""
+    try:
+        resp = supabase_admin.table('provider_appointments').select('*').eq(
+            'id', appt_id).eq('provider_id', str(provider_id)).limit(1).execute()
+        if not resp.data:
+            return None
+        row = resp.data[0]
+        # Deserialize JSONB fields
+        for field in ('guided_qa', 'actions'):
+            if isinstance(row.get(field), str):
+                try:
+                    row[field] = json.loads(row[field])
+                except Exception:
+                    row[field] = []
+        return row
+    except Exception as e:
+        print(f"Error fetching appointment: {e}")
+        return None
+
+
+def get_patient_appointments(provider_id: str, patient_id: str) -> list:
+    """Return all appointments for a patient (newest first)."""
+    try:
+        resp = supabase_admin.table('provider_appointments').select('*').eq(
+            'provider_id', str(provider_id)).eq(
+            'patient_id', str(patient_id)).order(
+            'started_at', desc=True).execute()
+        rows = resp.data or []
+        for row in rows:
+            for field in ('guided_qa', 'actions'):
+                if isinstance(row.get(field), str):
+                    try:
+                        row[field] = json.loads(row[field])
+                    except Exception:
+                        row[field] = []
+        return rows
+    except Exception as e:
+        print(f"Error fetching patient appointments: {e}")
+        return []
+
+
+def update_provider_appointment(appt_id: str, provider_id: str, updates: dict) -> bool:
+    """Patch an appointment row. Only allowed fields are applied."""
+    ALLOWED = {
+        'status', 'period_days', 'guided_qa', 'notes',
+        'care_plan_changes', 'actions',
+        'next_appointment_date', 'next_appointment_notes', 'completed_at',
+    }
+    payload = {k: v for k, v in updates.items() if k in ALLOWED}
+    if not payload:
+        return False
+    payload['updated_at'] = datetime.utcnow().isoformat()
+    # Serialize JSON fields
+    for field in ('guided_qa', 'actions'):
+        if field in payload and not isinstance(payload[field], str):
+            payload[field] = json.dumps(payload[field])
+    try:
+        supabase_admin.table('provider_appointments').update(payload).eq(
+            'id', appt_id).eq('provider_id', str(provider_id)).execute()
+        return True
+    except Exception as e:
+        print(f"Error updating appointment: {e}")
+        return False
+
+
+def get_provider_patients_with_stats(provider_id: str) -> list:
+    """Enhanced version of get_provider_patients with mood avg and adherence for the dashboard grid."""
+    base = get_provider_patients(provider_id)
+    for p in base:
+        uid = p['patient_id']
+        # 30-day mood average
+        try:
+            since = (date.today() - timedelta(days=30)).isoformat()
+            ci = supabase_admin.table('checkins').select('mood_score').eq(
+                'user_id', uid).gte('checkin_date', since).execute()
+            scores = [r['mood_score'] for r in (ci.data or []) if r.get('mood_score') is not None]
+            p['mood_avg_30d'] = round(sum(scores) / len(scores), 1) if scores else None
+            p['checkin_count_30d'] = len(scores)
+        except Exception:
+            p['mood_avg_30d'] = None
+            p['checkin_count_30d'] = 0
+
+        # Days since last check-in
+        if p.get('last_checkin'):
+            try:
+                p['days_since_checkin'] = (date.today() - date.fromisoformat(p['last_checkin'])).days
+            except Exception:
+                p['days_since_checkin'] = None
+        else:
+            p['days_since_checkin'] = None
+
+        # Last appointment date
+        try:
+            ar = supabase_admin.table('provider_appointments').select(
+                'started_at, status').eq('provider_id', str(provider_id)).eq(
+                'patient_id', uid).order('started_at', desc=True).limit(1).execute()
+            if ar.data:
+                p['last_appointment'] = ar.data[0]['started_at'][:10]
+                p['last_appointment_status'] = ar.data[0]['status']
+            else:
+                p['last_appointment'] = None
+                p['last_appointment_status'] = None
+        except Exception:
+            p['last_appointment'] = None
+            p['last_appointment_status'] = None
+
+    return base

@@ -1,0 +1,905 @@
+{% extends "layout.html" %}
+{% block title %}Appointment — {{ patient.full_name }} — CognaSync{% endblock %}
+{% block body_class %}pv-body{% endblock %}
+
+{% block head %}
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="{{ url_for('static', filename='js/insight-engine.js') }}"></script>
+{% endblock %}
+
+{% block content %}
+
+{% if patient_has_crisis %}
+<div id="crisis-overlay"
+     style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;
+            display:flex;align-items:center;justify-content:center;padding:16px;">
+  <div style="background:#fff;border:2px solid #dc2626;max-width:480px;width:100%;padding:28px 24px;">
+    <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#dc2626;margin-bottom:12px;">&#9888; Urgent Safety Concern</div>
+    <p style="font-size:13px;color:#333;line-height:1.65;margin:0 0 18px;">
+      Recent entries for {{ patient.full_name }} contain crisis-level language.
+      Review flagged content before continuing.
+    </p>
+    <div style="display:flex;gap:8px;">
+      <button onclick="document.getElementById('crisis-overlay').style.display='none'"
+              style="padding:9px 18px;background:#dc2626;color:#fff;border:none;
+                     font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">
+        Acknowledge
+      </button>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<div class="pv-shell">
+
+  <!-- Sidebar -->
+  <button class="pv-sidebar-toggle" id="pv-sidebar-toggle" aria-expanded="false">
+    <span>☰</span>
+    <span id="pv-toggle-label">{{ patient.full_name }}</span>
+    <span class="pv-toggle-arrow">▾</span>
+  </button>
+
+  <div class="pv-sidebar" id="pv-sidebar">
+    <div class="pv-sidebar-head">
+      <a href="{{ url_for('provider_patient_detail', patient_id=patient.patient_id) }}"
+         style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+                text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);
+                text-decoration:none;margin-bottom:12px;">
+        ← Patient Profile
+      </a>
+      <input type="text" class="pv-search" placeholder="Search patients…"
+             oninput="filterPatients(this.value)">
+    </div>
+    <div class="pv-patient-list" id="patient-list">
+      {% for p in patients %}
+      <a href="{{ url_for('provider_patient_detail', patient_id=p.patient_id) }}"
+         class="pv-patient-item {% if p.patient_id == patient.patient_id %}active{% endif %}"
+         data-name="{{ p.full_name | lower }}">
+        <div class="pv-patient-name">{{ p.full_name }}
+          {% if p.suicide_risk %}<span class="crisis-indicator" style="color:#dc2626;font-size:13px;margin-left:5px;">&#9888;</span>{% endif %}
+        </div>
+        <div class="pv-patient-sub">
+          <span>{% if p.last_checkin %}{{ p.last_checkin }}{% else %}No check-ins{% endif %}</span>
+        </div>
+      </a>
+      {% endfor %}
+    </div>
+  </div>
+
+  <!-- Main workspace -->
+  <div class="pv-main">
+
+    <!-- Breadcrumb + status bar -->
+    <div class="pv-breadcrumb">
+      <a href="{{ url_for('provider_dashboard') }}">All Patients</a>
+      <span class="pv-breadcrumb-sep">›</span>
+      <a href="{{ url_for('provider_patient_detail', patient_id=patient.patient_id) }}">{{ patient.full_name }}</a>
+      <span class="pv-breadcrumb-sep">›</span>
+      <span>Appointment — {{ appt.started_at[:10] if appt.started_at else 'New' }}</span>
+    </div>
+
+    <!-- Appointment header -->
+    <div class="aw-header">
+      <div class="aw-header-left">
+        <div class="aw-header-name">{{ patient.full_name }}</div>
+        <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:4px;">
+          <span class="ah-item-badge ah-badge-{{ appt.status }}" style="font-size:11px;">{{ appt.status | title }}</span>
+          <span style="font-size:12px;color:var(--text-muted);">Started {{ appt.started_at[:10] if appt.started_at else '—' }}</span>
+          <span style="font-size:12px;color:var(--text-muted);">{{ selected_days }}-day data window</span>
+        </div>
+      </div>
+      <div class="aw-header-actions">
+        {% if appt.status == 'active' %}
+        <button class="btn btn-sm" id="complete-btn" onclick="completeAppointment()">Mark Complete</button>
+        {% endif %}
+        <span id="save-status" style="font-size:11px;color:var(--text-muted);display:none;"></span>
+      </div>
+    </div>
+
+    <!-- Alerts -->
+    {% if alerts %}
+    <div class="pv-alert-banner" style="margin-bottom:20px;">
+      {% for a in alerts %}
+      <div class="pv-alert-item {{ a.level }}">
+        <span class="pv-alert-label {{ a.level }}">{{ a.level | upper }}</span>
+        <div>
+          <div style="font-weight:600;font-size:13px;margin-bottom:2px;">{{ a.title }}</div>
+          <div style="font-size:12px;color:var(--text-muted);">{{ a.desc }}</div>
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- ═══ TAB NAV ════════════════════════════════════════════════════ -->
+    <div class="aw-tabs">
+      <button class="aw-tab active" data-tab="data"      onclick="switchTab(this,'data')">📊 Data &amp; Insights</button>
+      <button class="aw-tab"        data-tab="questions" onclick="switchTab(this,'questions')">💬 Guided Questions</button>
+      <button class="aw-tab"        data-tab="notes"     onclick="switchTab(this,'notes')">📝 Notes &amp; Care Plan</button>
+      <button class="aw-tab"        data-tab="schedule"  onclick="switchTab(this,'schedule')">📅 Next Appointment</button>
+    </div>
+
+    <!-- ═══ TAB: DATA & INSIGHTS ══════════════════════════════════════ -->
+    <div class="aw-tab-pane active" id="tab-data">
+
+      <!-- Period selector -->
+      <div class="pv-controls" style="margin-bottom:20px;">
+        <div class="pv-control-group">
+          <span class="pv-control-label">Data Window</span>
+          <div class="pv-period-btns">
+            {% for d in [7,14,30,60,90] %}
+            <a href="{{ url_for('provider_appointment_workspace', patient_id=patient.patient_id, appt_id=appt.id) }}?days={{ d }}"
+               class="pv-period-btn {% if selected_days == d %}active{% endif %}">{{ d }}d</a>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+      <!-- Stats row -->
+      <div class="stats-row" style="margin-bottom:20px;">
+        <div class="stat-card">
+          <div class="stat-label">Avg Mood</div>
+          <div class="stat-value">{{ trends.mood.average if trends.mood and trends.mood.average else '—' }}</div>
+          <div class="stat-sub">{{ trends.mood.trend if trends.mood and trends.mood.trend else '/10' }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg Sleep</div>
+          <div class="stat-value">{{ trends.sleep.average if trends.sleep and trends.sleep.average else '—' }}</div>
+          <div class="stat-sub">hrs/night</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Avg Stress</div>
+          <div class="stat-value">{{ trends.stress.average if trends.stress and trends.stress.average else '—' }}</div>
+          <div class="stat-sub">{{ trends.stress.trend if trends.stress and trends.stress.trend else '/10' }}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Adherence</div>
+          <div class="stat-value">{{ trends.medication_adherence if trends.medication_adherence and trends.medication_adherence > 0 else '—' }}</div>
+          <div class="stat-sub">%</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Check-ins</div>
+          <div class="stat-value">{{ patient.checkins_last_period or 0 }}</div>
+          <div class="stat-sub">this period</div>
+        </div>
+      </div>
+
+      <!-- Computed scores -->
+      {% set ss = trends.stability_score %}
+      {% set cr = trends.crash_risk %}
+      {% if ss or cr %}
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:700;margin-bottom:8px;">Computed Scores</div>
+      <div class="stats-row" style="margin-bottom:20px;">
+        {% if ss %}
+        <div class="stat-card {% if ss.average and ss.average < 4 %}stat-card-alert{% endif %}">
+          <div class="stat-label">Stability</div>
+          <div class="stat-value">{{ ss.average if ss.average else '—' }}</div>
+          <div class="stat-sub">/10 avg</div>
+        </div>
+        {% endif %}
+        {% if trends.mood_distortion %}
+        {% set md = trends.mood_distortion %}
+        <div class="stat-card {% if md.average and md.average > 2.5 %}stat-card-alert{% endif %}">
+          <div class="stat-label">Mood Distortion</div>
+          <div class="stat-value">{{ md.average if md.average else '—' }}</div>
+          <div class="stat-sub">avg gap</div>
+        </div>
+        {% endif %}
+        {% if trends.sleep_disruption %}
+        {% set sd = trends.sleep_disruption %}
+        <div class="stat-card {% if sd.average and sd.average > 6 %}stat-card-alert{% endif %}">
+          <div class="stat-label">Sleep Disruption</div>
+          <div class="stat-value">{{ sd.average if sd.average else '—' }}</div>
+          <div class="stat-sub">/10 avg</div>
+        </div>
+        {% endif %}
+        {% if cr %}
+        <div class="stat-card {% if cr.high_days and cr.high_days > 0 %}stat-card-alert{% endif %}">
+          <div class="stat-label">Crash Risk Days</div>
+          <div class="stat-value">{{ cr.high_days if cr.high_days else '—' }}</div>
+          <div class="stat-sub">days ≥7/10</div>
+        </div>
+        {% endif %}
+      </div>
+      {% endif %}
+
+      <!-- Charts -->
+      <div class="pv-grid-2">
+        <div class="pv-panel">
+          <div class="pv-panel-title">Mood</div>
+          <div class="pv-panel-sub">Daily scores · {{ selected_days }}-day window</div>
+          {% if trends.mood and trends.mood.daily_scores %}
+          <canvas id="mood-chart" height="160"></canvas>
+          {% else %}
+          <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No data for this period</div>
+          {% endif %}
+        </div>
+        <div class="pv-panel">
+          <div class="pv-panel-title">Sleep</div>
+          <div class="pv-panel-sub">Hours per night · {{ selected_days }}-day window</div>
+          {% if trends.sleep and trends.sleep.daily_hours %}
+          <canvas id="sleep-chart" height="160"></canvas>
+          {% else %}
+          <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No data for this period</div>
+          {% endif %}
+        </div>
+        <div class="pv-panel">
+          <div class="pv-panel-title">Stress</div>
+          <div class="pv-panel-sub">Daily scores · {{ selected_days }}-day window</div>
+          {% if trends.stress and trends.stress.daily_scores %}
+          <canvas id="stress-chart" height="160"></canvas>
+          {% else %}
+          <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No data for this period</div>
+          {% endif %}
+        </div>
+        <div class="pv-panel">
+          <div class="pv-panel-title">Energy</div>
+          <div class="pv-panel-sub">Daily scores · {{ selected_days }}-day window</div>
+          {% if trends.energy and trends.energy.daily_scores %}
+          <canvas id="energy-chart" height="160"></canvas>
+          {% else %}
+          <div style="text-align:center;padding:36px 0;font-size:12px;color:var(--text-muted);">No energy data for this period</div>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- AI Insight panel -->
+      <div class="pv-panel-full" style="margin-top:4px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px;">
+          <div class="pv-panel-title">Insight Analysis</div>
+          <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border-light);padding:2px 7px;">statistically validated</span>
+        </div>
+        <div class="pv-panel-sub">Confidence-adjusted correlations across the data window.</div>
+        <div id="pv-insights-container" style="margin-top:12px;"></div>
+      </div>
+
+      <!-- Pre-appt AI summary -->
+      <div class="pv-panel-full" id="summary-section">
+        <div class="pv-panel-title" style="margin-bottom:3px;">Clinical Summary</div>
+        <div class="pv-panel-sub" style="margin-bottom:14px;">
+          AI synthesis of check-ins and shared journals for this review period
+        </div>
+        <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;">
+          <div>
+            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);
+                          text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Appointment date</label>
+            <input type="date" id="appt-date" value="{{ today_str }}"
+                   style="font-size:13px;padding:5px 8px;border:1px solid var(--border-light);background:var(--surface);">
+          </div>
+          <button class="btn btn-primary btn-sm" onclick="generateSummary('{{ patient.patient_id }}')">Generate Summary</button>
+        </div>
+        <div id="summary-loading" class="hidden" style="padding:20px;text-align:center;font-size:12px;color:var(--text-muted);">
+          <div class="spinner" style="margin:0 auto 8px;"></div>Analyzing patient data…
+        </div>
+        <div id="summary-error" class="alert alert-error hidden" style="margin-bottom:10px;"></div>
+        <div id="new-summary"></div>
+        {% if summaries %}
+          {% for s in summaries[:2] %}
+          <div class="pv-summary-card {% if loop.first %}new{% endif %}">
+            <div class="pv-summary-meta">
+              <span>{{ s.date_range_start }} – {{ s.date_range_end }}</span>
+              <span>{{ s.created_at[:10] }} · {{ s.generated_by }}</span>
+            </div>
+            <div class="md-summary pv-summary-body" data-raw="{{ s.summary_text | e }}"></div>
+          </div>
+          {% endfor %}
+        {% else %}
+        <div style="font-size:13px;color:var(--text-muted);">No summaries yet — generate one above.</div>
+        {% endif %}
+      </div>
+
+      <!-- Recent journals -->
+      {% if journals %}
+      <div class="pv-panel-full">
+        <div class="pv-panel-title">Shared Journal Entries</div>
+        <div class="pv-panel-sub">Entries the patient has shared with you · last {{ journals|length }}</div>
+        {% for j in journals %}
+        <div class="journal-entry-card">
+          <div class="journal-entry-meta">
+            <span class="entry-date">{{ j.created_at[:10] }}</span>
+            <span class="entry-type-badge">{{ (j.entry_type or 'free_flow') | replace('_', ' ') }}</span>
+          </div>
+          {% if j.raw_entry|length > 300 %}
+          <details>
+            <summary style="cursor:pointer;list-style:none;">
+              <div class="journal-entry-preview">{{ j.raw_entry[:300] }}…</div>
+            </summary>
+            <div class="journal-entry-preview" style="padding-top:6px;">{{ j.raw_entry }}</div>
+          </details>
+          {% else %}
+          <div class="journal-entry-preview">{{ j.raw_entry }}</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </div><!-- /tab-data -->
+
+    <!-- ═══ TAB: GUIDED QUESTIONS ═════════════════════════════════════ -->
+    <div class="aw-tab-pane" id="tab-questions">
+
+      <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:260px;">
+          <div class="pv-panel-title" style="margin-bottom:4px;">Guided Questions</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.6;">
+            AI-suggested questions are based on this patient's data.
+            Add from the library or write your own. Record answers in real time.
+          </div>
+        </div>
+        <button class="btn btn-sm" onclick="toggleLibrary()">📚 Question Library</button>
+      </div>
+
+      <!-- AI-suggested questions (pre-loaded) -->
+      {% if ai_questions %}
+      <div class="gq-section">
+        <div class="gq-section-label">✦ Suggested for this patient</div>
+        {% for q in ai_questions %}
+        <div class="gq-suggestion" onclick="addSuggestion({{ loop.index0 }})">
+          <div class="gq-suggestion-cat">{{ q.category }}</div>
+          <div class="gq-suggestion-text">{{ q.text }}</div>
+          <div class="gq-suggestion-add">+ Add to session</div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+      <!-- Active Q&A list -->
+      <div class="gq-active-list" id="gq-active-list">
+        <!-- Populated by JS from appt.guided_qa -->
+      </div>
+
+      <!-- Add custom question -->
+      <div class="gq-add-row">
+        <input type="text" id="gq-custom-input" placeholder="Type a custom question…"
+               class="gq-custom-input" onkeydown="if(event.key==='Enter')addCustomQuestion()">
+        <button class="btn btn-sm" onclick="addCustomQuestion()">Add</button>
+      </div>
+
+      <!-- Question library (hidden by default) -->
+      <div class="gq-library" id="gq-library" style="display:none;">
+        <div class="gq-library-hdr">
+          <div class="pv-panel-title" style="margin:0;">Question Library</div>
+          <button class="btn btn-sm" onclick="toggleLibrary()">Close</button>
+        </div>
+        {% set lib = [
+          {'cat':'Daily Functioning', 'q':'How has your day-to-day functioning been since we last met — at work, at home, socially?'},
+          {'cat':'Daily Functioning', 'q':'Have you noticed any changes in your ability to focus or complete tasks?'},
+          {'cat':'Daily Functioning', 'q':'Are there specific times of day when you feel most and least functional?'},
+          {'cat':'Mood', 'q':'How would you describe your overall mood over the past few weeks?'},
+          {'cat':'Mood', 'q':'Have you had periods of feeling unusually elevated, or unusually low?'},
+          {'cat':'Mood', 'q':'How has your irritability or frustration tolerance been?'},
+          {'cat':'Sleep', 'q':'How has your sleep been? Are you having trouble falling asleep or staying asleep?'},
+          {'cat':'Sleep', 'q':'What time are you typically going to bed and waking up?'},
+          {'cat':'Sleep', 'q':'How rested do you feel in the morning?'},
+          {'cat':'Energy & Motivation', 'q':'How are your energy levels throughout the day? Any patterns you\'ve noticed?'},
+          {'cat':'Energy & Motivation', 'q':'Has your motivation to do things you normally enjoy changed?'},
+          {'cat':'Medication', 'q':'How are you feeling about your current medication(s)? Any side effects?'},
+          {'cat':'Medication', 'q':'Have there been days where you\'ve taken your medication at significantly different times?'},
+          {'cat':'Medication', 'q':'On days you\'ve missed a dose, how did that affect you?'},
+          {'cat':'Stress & Coping', 'q':'What have been the main sources of stress for you recently?'},
+          {'cat':'Stress & Coping', 'q':'What strategies have been helping you manage challenging moments?'},
+          {'cat':'Stress & Coping', 'q':'Are you using any mindfulness, exercise, or other coping tools consistently?'},
+          {'cat':'Social & Relationships', 'q':'How have your relationships been — family, friends, colleagues?'},
+          {'cat':'Social & Relationships', 'q':'Have you been isolating more or less than usual?'},
+          {'cat':'Life Events', 'q':'Are there any major life changes or upcoming events affecting you?'},
+          {'cat':'Safety', 'q':'Have you had any thoughts of harming yourself or others?'},
+          {'cat':'Safety', 'q':'Are you feeling safe at home and in your environment?'},
+        ] %}
+        {% set categories = lib | map(attribute='cat') | list | unique %}
+        {% for cat in ['Daily Functioning','Mood','Sleep','Energy & Motivation','Medication','Stress & Coping','Social & Relationships','Life Events','Safety'] %}
+        <div class="gq-lib-cat">
+          <div class="gq-lib-cat-label">{{ cat }}</div>
+          {% for item in lib if item.cat == cat %}
+          <div class="gq-lib-item" onclick="addFromLibrary(this.querySelector('.gq-lib-text').textContent, '{{ cat }}')">
+            <div class="gq-lib-text">{{ item.q }}</div>
+            <button class="gq-lib-add">+ Add</button>
+          </div>
+          {% endfor %}
+        </div>
+        {% endfor %}
+      </div>
+
+    </div><!-- /tab-questions -->
+
+    <!-- ═══ TAB: NOTES & CARE PLAN ════════════════════════════════════ -->
+    <div class="aw-tab-pane" id="tab-notes">
+
+      <div class="pv-grid-2" style="gap:20px;">
+
+        <!-- Session notes -->
+        <div>
+          <label class="aw-field-label">Session Notes</label>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+            Clinical observations, patient-reported topics, discussion highlights.
+          </div>
+          <textarea id="notes-field" class="aw-textarea" rows="12"
+                    placeholder="Enter session notes…"
+                    oninput="scheduleSave()">{{ appt.notes or '' }}</textarea>
+        </div>
+
+        <!-- Care plan -->
+        <div>
+          <label class="aw-field-label">Care Plan Changes</label>
+          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+            Adjustments to treatment plan discussed or decided this session.
+          </div>
+          <textarea id="care-plan-field" class="aw-textarea" rows="12"
+                    placeholder="Document any care plan changes…"
+                    oninput="scheduleSave()">{{ appt.care_plan_changes or '' }}</textarea>
+        </div>
+      </div>
+
+      <!-- Action items -->
+      <div style="margin-top:24px;">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
+          <label class="aw-field-label" style="margin:0;">Action Items</label>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="action-input" placeholder="Add an action item…"
+                   class="gq-custom-input" style="width:300px;"
+                   onkeydown="if(event.key==='Enter')addAction()">
+            <button class="btn btn-sm" onclick="addAction()">Add</button>
+          </div>
+        </div>
+        <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">
+          Tasks to be completed before the next appointment.
+        </div>
+        <div id="actions-list" class="aw-actions-list">
+          <!-- Populated by JS -->
+        </div>
+        <div class="aw-action-templates">
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;margin-bottom:8px;">
+            Common Actions
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:6px;">
+            {% for tmpl in [
+              'Schedule follow-up labs',
+              'Patient to track sleep for 2 weeks',
+              'Refer to therapy',
+              'Review medication timing logs',
+              'Complete PHQ-9 before next visit',
+              'Check in via portal if symptoms worsen',
+              'Patient to try sleep hygiene protocol',
+              'Coordinate with pharmacy',
+            ] %}
+            <button class="aw-action-template-btn" onclick="addActionFromTemplate('{{ tmpl }}')">
+              {{ tmpl }}
+            </button>
+            {% endfor %}
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /tab-notes -->
+
+    <!-- ═══ TAB: NEXT APPOINTMENT ═════════════════════════════════════ -->
+    <div class="aw-tab-pane" id="tab-schedule">
+
+      <div class="aw-schedule-card">
+        <div class="pv-panel-title" style="margin-bottom:4px;">Schedule Next Appointment</div>
+        <div style="font-size:12px;color:var(--text-muted);margin-bottom:20px;">
+          Record the next scheduled appointment date and any prep notes for the patient.
+        </div>
+
+        <div class="aw-schedule-grid">
+          <div>
+            <label class="aw-field-label">Next Appointment Date</label>
+            <input type="date" id="next-appt-date" class="aw-date-input"
+                   value="{{ appt.next_appointment_date or '' }}"
+                   oninput="scheduleSave()">
+          </div>
+          <div>
+            <label class="aw-field-label">Review Period for Next Session</label>
+            <select id="next-period" class="aw-select" style="width:100%;">
+              <option value="7">7 days</option>
+              <option value="14">14 days</option>
+              <option value="30" selected>30 days</option>
+              <option value="60">60 days</option>
+              <option value="90">90 days</option>
+            </select>
+          </div>
+        </div>
+
+        <div style="margin-top:16px;">
+          <label class="aw-field-label">Notes for Patient / Prep Instructions</label>
+          <textarea id="next-appt-notes" class="aw-textarea" rows="5"
+                    placeholder="E.g. 'Continue tracking sleep. Bring list of any new side effects.'"
+                    oninput="scheduleSave()">{{ appt.next_appointment_notes or '' }}</textarea>
+        </div>
+
+        <div style="margin-top:20px;">
+          <button class="btn btn-primary" onclick="saveSchedule()">Save Appointment Details</button>
+          <span id="schedule-saved" style="display:none;font-size:12px;color:var(--green);margin-left:12px;">✓ Saved</span>
+        </div>
+
+        {% if appt.next_appointment_date %}
+        <div class="aw-schedule-current">
+          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+                      color:var(--green);margin-bottom:6px;">Currently Scheduled</div>
+          <div style="font-size:18px;font-weight:600;color:var(--text);">{{ appt.next_appointment_date }}</div>
+          {% if appt.next_appointment_notes %}
+          <div style="font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.6;">{{ appt.next_appointment_notes }}</div>
+          {% endif %}
+        </div>
+        {% endif %}
+      </div>
+
+      <!-- Appointment history quick view -->
+      {% if summaries %}
+      <div class="pv-panel-full" style="margin-top:20px;">
+        <div class="pv-panel-title">Past Summaries</div>
+        <div class="pv-panel-sub">Previous pre-appointment AI summaries for reference</div>
+        {% for s in summaries[:3] %}
+        <div class="pv-summary-card">
+          <div class="pv-summary-meta">
+            <span>{{ s.date_range_start }} – {{ s.date_range_end }}</span>
+            <span>{{ s.created_at[:10] }}</span>
+          </div>
+          <div class="md-summary pv-summary-body" data-raw="{{ s.summary_text | e }}"></div>
+        </div>
+        {% endfor %}
+      </div>
+      {% endif %}
+
+    </div><!-- /tab-schedule -->
+
+    <div style="padding-top:16px;border-top:1px solid var(--border-light);font-size:11px;
+                color:var(--text-muted);margin-top:24px;">
+      All data access is logged · Appointment autosaves every 30 seconds
+    </div>
+
+  </div><!-- /pv-main -->
+</div><!-- /pv-shell -->
+
+<script>
+const APPT_ID = '{{ appt.id }}';
+const PATIENT_ID = '{{ patient.patient_id }}';
+const trendsData = {{ trends | tojson }};
+trendsData.current_medications = {{ patient.current_medications | tojson if patient.current_medications else '[]' }};
+trendsData.period_days = {{ selected_days }};
+
+// ── AI suggested questions (from server) ──────────────────────────────
+const AI_QUESTIONS = {{ ai_questions | tojson }};
+
+// ── Guided Q&A state (loaded from appt) ──────────────────────────────
+let qAndA = {{ appt.guided_qa | tojson }};
+let actions = {{ appt.actions | tojson }};
+
+// ── Autosave machinery ───────────────────────────────────────────────
+let saveTimer = null;
+let lastSaved = null;
+
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(doSave, 1500);
+}
+
+async function doSave() {
+  const payload = {
+    notes:                 document.getElementById('notes-field')?.value || '',
+    care_plan_changes:     document.getElementById('care-plan-field')?.value || '',
+    guided_qa:             qAndA,
+    actions:               actions,
+    next_appointment_date: document.getElementById('next-appt-date')?.value || '',
+    next_appointment_notes:document.getElementById('next-appt-notes')?.value || '',
+  };
+  try {
+    const r = await fetch(`/api/provider/appointment/${APPT_ID}/save`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    if (r.ok) {
+      const el = document.getElementById('save-status');
+      if (el) { el.textContent = 'Saved'; el.style.display = 'inline'; }
+    }
+  } catch(e) { console.error('Save failed', e); }
+}
+
+async function completeAppointment() {
+  if (!confirm('Mark this appointment as complete? You can still view it, but it will be closed.')) return;
+  const payload = {
+    notes:                  document.getElementById('notes-field')?.value || '',
+    care_plan_changes:      document.getElementById('care-plan-field')?.value || '',
+    guided_qa:              qAndA,
+    actions:                actions,
+    next_appointment_date:  document.getElementById('next-appt-date')?.value || '',
+    next_appointment_notes: document.getElementById('next-appt-notes')?.value || '',
+    complete: true,
+  };
+  const r = await fetch(`/api/provider/appointment/${APPT_ID}/save`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify(payload),
+  });
+  if (r.ok) {
+    window.location.href = `/provider/patient/${PATIENT_ID}`;
+  }
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────
+function switchTab(btn, tab) {
+  document.querySelectorAll('.aw-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.aw-tab-pane').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById('tab-' + tab).classList.add('active');
+  if (tab === 'data') renderInsights();
+}
+
+// ── Charts ────────────────────────────────────────────────────────────
+const chartDefs = { fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 5 };
+const chartOpts = (min, max) => ({
+  responsive: true, maintainAspectRatio: true,
+  plugins: { legend: { display: false } },
+  scales: {
+    y: { min, max, grid: { color: 'rgba(0,0,0,0.04)' },
+         ticks: { font: { family: 'DM Sans', size: 11 } } },
+    x: { grid: { display: false },
+         ticks: { font: { family: 'DM Sans', size: 11 }, maxTicksLimit: 8 } },
+  },
+});
+const mkLabels = arr => arr.map((_, i) => 'Day ' + (i + 1));
+
+if (trendsData.mood?.daily_scores?.length)
+  new Chart(document.getElementById('mood-chart'), {
+    type: 'line',
+    data: { labels: mkLabels(trendsData.mood.daily_scores),
+      datasets: [{ ...chartDefs, data: trendsData.mood.daily_scores,
+        borderColor: '#000', backgroundColor: 'rgba(0,0,0,0.05)' }] },
+    options: chartOpts(0, 10),
+  });
+
+if (trendsData.sleep?.daily_hours?.length)
+  new Chart(document.getElementById('sleep-chart'), {
+    type: 'line',
+    data: { labels: mkLabels(trendsData.sleep.daily_hours),
+      datasets: [{ ...chartDefs, data: trendsData.sleep.daily_hours,
+        borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.04)' }] },
+    options: chartOpts(0, 12),
+  });
+
+if (trendsData.stress?.daily_scores?.length)
+  new Chart(document.getElementById('stress-chart'), {
+    type: 'line',
+    data: { labels: mkLabels(trendsData.stress.daily_scores),
+      datasets: [{ ...chartDefs, data: trendsData.stress.daily_scores,
+        borderColor: '#8B1A1A', backgroundColor: 'rgba(139,26,26,0.05)' }] },
+    options: chartOpts(0, 10),
+  });
+
+if (trendsData.energy?.daily_scores?.length)
+  new Chart(document.getElementById('energy-chart'), {
+    type: 'line',
+    data: { labels: mkLabels(trendsData.energy.daily_scores),
+      datasets: [{ ...chartDefs, data: trendsData.energy.daily_scores,
+        borderColor: '#6B4A00', backgroundColor: 'rgba(107,74,0,0.05)' }] },
+    options: chartOpts(0, 10),
+  });
+
+function renderInsights() {
+  if (typeof renderProviderInsights === 'function')
+    renderProviderInsights(trendsData, 'pv-insights-container', 80);
+}
+renderInsights();
+
+// ── Guided Q&A ────────────────────────────────────────────────────────
+function renderQA() {
+  const list = document.getElementById('gq-active-list');
+  if (!list) return;
+  if (qAndA.length === 0) {
+    list.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:12px 0;">No questions added yet. Use AI suggestions above or the question library.</div>';
+    return;
+  }
+  list.innerHTML = qAndA.map((item, i) => `
+    <div class="gq-item" id="gq-item-${i}">
+      <div class="gq-item-hdr">
+        <span class="gq-item-cat">${escHtml(item.category || 'Custom')}</span>
+        <button class="gq-item-remove" onclick="removeQuestion(${i})" title="Remove">✕</button>
+      </div>
+      <div class="gq-item-q">${escHtml(item.question)}</div>
+      <textarea class="gq-item-answer" rows="3"
+                placeholder="Record patient's answer…"
+                oninput="updateAnswer(${i}, this.value); scheduleSave();">${escHtml(item.answer || '')}</textarea>
+    </div>
+  `).join('');
+}
+
+function escHtml(str) {
+  return (str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function addSuggestion(idx) {
+  const q = AI_QUESTIONS[idx];
+  if (!q) return;
+  qAndA.push({ question: q.text, category: q.category, answer: '' });
+  renderQA();
+  scheduleSave();
+  // Switch to questions tab if not already there
+  document.querySelector('[data-tab="questions"]').click();
+}
+
+function addFromLibrary(text, cat) {
+  qAndA.push({ question: text.trim(), category: cat, answer: '' });
+  renderQA();
+  scheduleSave();
+}
+
+function addCustomQuestion() {
+  const inp = document.getElementById('gq-custom-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  qAndA.push({ question: text, category: 'Custom', answer: '' });
+  inp.value = '';
+  renderQA();
+  scheduleSave();
+}
+
+function updateAnswer(idx, val) {
+  if (qAndA[idx]) qAndA[idx].answer = val;
+}
+
+function removeQuestion(idx) {
+  qAndA.splice(idx, 1);
+  renderQA();
+  scheduleSave();
+}
+
+function toggleLibrary() {
+  const lib = document.getElementById('gq-library');
+  lib.style.display = lib.style.display === 'none' ? '' : 'none';
+}
+
+// ── Actions ────────────────────────────────────────────────────────────
+function renderActions() {
+  const list = document.getElementById('actions-list');
+  if (!list) return;
+  if (actions.length === 0) {
+    list.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">No action items yet.</div>';
+    return;
+  }
+  list.innerHTML = actions.map((a, i) => `
+    <div class="aw-action-item ${a.done ? 'aw-action-done' : ''}">
+      <input type="checkbox" class="aw-action-check" ${a.done ? 'checked' : ''}
+             onchange="toggleAction(${i}, this.checked)">
+      <span class="aw-action-text">${escHtml(a.text)}</span>
+      <button class="aw-action-remove" onclick="removeAction(${i})">✕</button>
+    </div>
+  `).join('');
+}
+
+function addAction() {
+  const inp = document.getElementById('action-input');
+  const text = inp.value.trim();
+  if (!text) return;
+  actions.push({ text, done: false });
+  inp.value = '';
+  renderActions();
+  scheduleSave();
+}
+
+function addActionFromTemplate(text) {
+  actions.push({ text, done: false });
+  renderActions();
+  scheduleSave();
+}
+
+function toggleAction(idx, done) {
+  if (actions[idx]) actions[idx].done = done;
+  renderActions();
+  scheduleSave();
+}
+
+function removeAction(idx) {
+  actions.splice(idx, 1);
+  renderActions();
+  scheduleSave();
+}
+
+// ── Schedule save ─────────────────────────────────────────────────────
+function saveSchedule() {
+  scheduleSave();
+  const el = document.getElementById('schedule-saved');
+  if (el) { el.style.display = 'inline'; setTimeout(() => el.style.display = 'none', 2000); }
+}
+
+// ── Summary generation (reuse from existing provider JS) ──────────────
+function mdToHtml(text) {
+  if (!text) return '';
+  const lines = text.split('\n');
+  const out = [];
+  let inUl = false, inOl = false;
+  function closeList() {
+    if (inUl) { out.push('</ul>'); inUl = false; }
+    if (inOl) { out.push('</ol>'); inOl = false; }
+  }
+  function fmt(s) {
+    s = s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    s = s.replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>');
+    s = s.replace(/_(.+?)_/g,'<em>$1</em>');
+    return s;
+  }
+  for (const raw of lines) {
+    const line = raw.trimEnd();
+    if (/^---+$/.test(line.trim())) { closeList(); out.push('<hr>'); continue; }
+    const hm = line.match(/^(#{1,6})\s+(.*)/);
+    if (hm) { closeList(); out.push(`<div class="md-summary-header">${fmt(hm[2])}</div>`); continue; }
+    const bh = line.match(/^\*\*([^*]+)\*\*\s*$/);
+    if (bh) { closeList(); out.push(`<div class="md-summary-header">${fmt(bh[1])}</div>`); continue; }
+    const ul = line.match(/^[-*]\s+(.*)/);
+    if (ul) { if (!inUl) { closeList(); out.push('<ul>'); inUl = true; } out.push(`<li>${fmt(ul[1])}</li>`); continue; }
+    const ol = line.match(/^\d+\.\s+(.*)/);
+    if (ol) { if (!inOl) { closeList(); out.push('<ol>'); inOl = true; } out.push(`<li>${fmt(ol[1])}</li>`); continue; }
+    closeList();
+    if (line.trim() === '') continue;
+    out.push(`<p>${fmt(line)}</p>`);
+  }
+  closeList();
+  return out.join('');
+}
+
+document.querySelectorAll('.pv-summary-body[data-raw]').forEach(function(el) {
+  el.innerHTML = mdToHtml(el.dataset.raw);
+});
+
+async function generateSummary(patientId) {
+  const apptDate = document.getElementById('appt-date').value;
+  const periodDays = {{ selected_days }};
+  const startMs = new Date(apptDate).getTime() - periodDays * 86400000;
+  const periodStart = new Date(startMs).toISOString().slice(0, 10);
+  const btns = document.querySelectorAll('[onclick*="generateSummary"]');
+  const loading = document.getElementById('summary-loading');
+  const error   = document.getElementById('summary-error');
+  const panel   = document.getElementById('new-summary');
+  btns.forEach(b => b.disabled = true);
+  loading.classList.remove('hidden');
+  error.classList.add('hidden');
+  panel.innerHTML = '';
+  try {
+    const r = await fetch('/api/provider/generate-summary/' + patientId, {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ period_start: periodStart, period_end: apptDate, appointment_date: apptDate }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || 'Failed');
+    const card = document.createElement('div');
+    card.className = 'pv-summary-card new';
+    card.innerHTML = `<div class="pv-summary-meta"><span>${data.date_range_start} – ${data.date_range_end}</span><span>Just generated</span></div>
+      <div class="md-summary pv-summary-body">${mdToHtml(data.summary_text)}</div>`;
+    panel.appendChild(card);
+  } catch(e) {
+    error.textContent = e.message;
+    error.classList.remove('hidden');
+  } finally {
+    loading.classList.add('hidden');
+    btns.forEach(b => b.disabled = false);
+  }
+}
+
+// ── Sidebar search ────────────────────────────────────────────────────
+function filterPatients(q) {
+  document.querySelectorAll('.pv-patient-item').forEach(function(item) {
+    item.style.display = item.dataset.name?.includes(q.toLowerCase()) ? '' : 'none';
+  });
+}
+
+// Mobile sidebar
+(function () {
+  const toggleBtn = document.getElementById('pv-sidebar-toggle');
+  const sidebar   = document.getElementById('pv-sidebar');
+  if (!toggleBtn || !sidebar) return;
+  toggleBtn.addEventListener('click', function () {
+    const open = sidebar.classList.toggle('open');
+    toggleBtn.setAttribute('aria-expanded', open);
+    toggleBtn.querySelector('.pv-toggle-arrow').textContent = open ? '▴' : '▾';
+  });
+})();
+
+// ── Init ──────────────────────────────────────────────────────────────
+renderQA();
+renderActions();
+
+// Autosave every 30s
+setInterval(doSave, 30000);
+</script>
+{% endblock %}
