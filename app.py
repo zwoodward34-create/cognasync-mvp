@@ -38,6 +38,15 @@ CORS(app, resources={r"/api/*": {"origins": _allowed_origin}})
 
 limiter = Limiter(app=app, key_func=get_remote_address, default_limits=["1000/day"])
 
+# Log which email provider is active at startup so Render logs make it obvious.
+import email_utils as _eu
+if _eu.RESEND_API_KEY:
+    print(f"[email] provider=Resend from={_eu._RESEND_FROM!r}")
+elif all([_eu.SMTP_HOST, _eu.SMTP_USER, _eu.SMTP_PASS]):
+    print(f"[email] provider=SMTP host={_eu.SMTP_HOST!r} from={_eu.FROM_EMAIL!r}")
+else:
+    print("[email] WARNING: no email provider configured — emails will fail silently")
+
 db.init_db()
 
 
@@ -216,7 +225,8 @@ def forgot_password_page():
         try:
             email_utils.send_password_reset_email(email, full_name or 'there', token)
         except Exception as e:
-            app.logger.error(f"Failed to send reset email to {email}: {e}")
+            reset_url = f"{email_utils.APP_URL}/reset-password?token={token}"
+            app.logger.error(f"Failed to send reset email to {email}: {e} — RESET URL: {reset_url}")
 
     # Always show success — don't reveal whether the email exists
     flash('If that email has a CognaSync account, a reset link is on its way. Check your inbox.', 'success')
