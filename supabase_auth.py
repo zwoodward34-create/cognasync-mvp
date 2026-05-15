@@ -401,7 +401,7 @@ def initiate_password_reset(email: str):
         if not result.data:
             return None, None
         profile = result.data[0]
-        if profile.get('status') not in ('approved', 'pending_approval'):
+        if profile.get('status') not in ('approved', 'pending_approval', 'pending_email'):
             return None, None
         return profile['id'], profile.get('full_name', '')
     except Exception as e:
@@ -418,6 +418,14 @@ def reset_password_with_token(token: str, new_password: str, secret: str):
         return False, 'This reset link has expired or is invalid. Please request a new one.'
     try:
         supabase_admin.auth.admin.update_user_by_id(str(user_id), {"password": new_password})
+        # If the account was stuck in pending_email, the reset email proves ownership —
+        # advance to pending_approval so admin review can complete the flow.
+        try:
+            supabase_admin.table('profiles').update(
+                {'status': 'pending_approval', 'email_verify_token': None}
+            ).eq('id', str(user_id)).eq('status', 'pending_email').execute()
+        except Exception:
+            pass
         return True, None
     except Exception as e:
         print(f"[password_reset] Error updating password for {user_id}: {e}")

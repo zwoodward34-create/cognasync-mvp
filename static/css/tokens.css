@@ -1,0 +1,164 @@
+/* ============================================================
+ * CognaSync Design System — Tokens v1.0 (May 2026)
+ * ------------------------------------------------------------
+ * Authoritative reference: /docs/design-system.html
+ * React mirror:            /client/src/components/ds/tokens.js
+ *
+ * Rules:
+ *  - Single brand accent (teal). Amber/red are semantic only.
+ *  - Never use font-weight 600/700. Max is 500.
+ *  - DM Serif Display = display only (names, scores, section titles)
+ *  - JetBrains Mono   = numeric only (scores, timestamps, deltas)
+ *  - DM Sans          = everything else
+ * ============================================================ */
+
+:root {
+  /* — Brand teal — */
+  --cs-teal-50:  #E1F5EE;
+  --cs-teal-100: #9FE1CB;
+  --cs-teal-400: #1D9E75;
+  --cs-teal-600: #0F6E56;  /* primary */
+  --cs-teal-800: #085041;
+  --cs-teal-900: #04342C;
+
+  /* — Status amber (watch) — */
+  --cs-amber-50:  #FAEEDA;
+  --cs-amber-400: #BA7517;
+  --cs-amber-600: #854F0B;
+  --cs-amber-800: #633806;
+
+  /* — Status red (decline / crisis) — */
+  --cs-red-50:  #FCEBEB;
+  --cs-red-400: #E24B4A;
+  --cs-red-600: #A32D2D;
+  --cs-red-800: #791F1F;
+
+  /* — Auxiliary blue (L2 insight only — not a brand color) — */
+  --cs-blue-600: #185FA5;
+
+  /* — Neutrals — */
+  --cs-gray-50:  #F7F5F1;
+  --cs-gray-100: #EDEBE6;
+  --cs-gray-200: #D3D1C7;
+  --cs-gray-400: #888780;
+  --cs-gray-600: #5F5E5A;
+  --cs-gray-800: #2C2C2A;
+  --cs-gray-900: #1A1A18;
+
+  /* — Surfaces (semantic) — */
+  --cs-bg-primary:   #FAFAF8;  /* card / elevated surface */
+  --cs-bg-secondary: #F4F2ED;  /* page background        */
+  --cs-bg-tertiary:  #EDEBE6;  /* inset surface          */
+
+  /* — Text (semantic) — */
+  --cs-text-primary:   #1A1A18;
+  --cs-text-secondary: #5F5E5A;
+  --cs-text-tertiary:  #888780;
+
+  /* — Borders (semantic, always low alpha) — */
+  --cs-border-subtle:  rgba(0,0,0,0.08);
+  --cs-border-default: rgba(0,0,0,0.12);
+  --cs-border-strong:  rgba(0,0,0,0.20);
+
+  /* — Typography — */
+  --cs-font-display: 'DM Serif Display', Georgia, serif;
+  --cs-font-body:    'DM Sans', system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+  --cs-font-mono:    'JetBrains Mono', 'SF Mono', 'Courier New', monospace;
+
+  /* — Radii — */
+  --cs-radius-sm: 6px;
+  --cs-radius-md: 10px;
+  --cs-radius-lg: 16px;
+  --cs-radius-xl: 22px;
+
+  /* — Spacing scale (4px base) — */
+  --cs-space-1:  4px;
+  --cs-space-2:  8px;
+  --cs-space-3:  12px;
+  --cs-space-4:  16px;
+  --cs-space-5:  20px;
+  --cs-space-6:  24px;
+  --cs-space-8:  32px;
+  --cs-space-10: 40px;
+  --cs-space-12: 48px;
+}
+
+/* ============================================================
+ * Utility classes — opt-in helpers usable from Jinja2 templates
+ * Use these sparingly; prefer purpose-built component classes.
+ * ============================================================ */
+
+.cs-t-display    { font-family: var(--cs-font-display); font-size: 40px; line-height: 1.1;  letter-spacing: -.02em; }
+.cs-t-display-sm { font-family: var(--cs-font-display); font-size: 28px; line-height: 1.15; letter-spacing: -.01em; }
+.cs-t-heading    { font-family: var(--cs-font-display); font-size: 20px; line-height: 1.2; }
+.cs-t-subheading { font-family: var(--cs-font-body);    font-size: 15px; line-height: 1.3; font-weight: 500; }
+.cs-t-body       { font-family: var(--cs-font-body);    font-size: 14px; line-height: 1.6; }
+.cs-t-small      { font-family: var(--cs-font-body);    font-size: 12px; line-height: 1.5; }
+.cs-t-micro      { font-family: var(--cs-font-body);    font-size: 10px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; }
+.cs-t-mono       { font-family: var(--cs-font-mono);    font-size: 13px; }
+
+.cs-t-muted { color: var(--cs-text-secondary); }
+.cs-t-hint  { color: var(--cs-text-tertiary); }
+.cs-t-teal  { color: var(--cs-teal-600); }
+
+.cs-card    { background: var(--cs-bg-primary); border: 0.5px solid var(--cs-border-default); border-radius: var(--cs-radius-lg); padding: var(--cs-space-5); }
+.cs-card-sm { background: var(--cs-bg-primary); border: 0.5px solid var(--cs-border-default); border-radius: var(--cs-radius-md); padding: var(--cs-space-3) var(--cs-space-4); }
+.cs-surface { background: var(--cs-bg-secondary); border-radius: var(--cs-radius-md); padding: var(--cs-space-3) var(--cs-space-4); }
+
+/* — Buttons — */
+.cs-btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: var(--cs-radius-md); font-family: var(--cs-font-body); font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: opacity .15s; text-decoration: none; }
+.cs-btn:hover { opacity: 0.88; }
+.cs-btn-primary   { background: var(--cs-teal-600); color: #fff; }
+.cs-btn-secondary { background: transparent; color: var(--cs-teal-600); border: 1px solid var(--cs-teal-600); }
+.cs-btn-ghost     { background: var(--cs-bg-secondary); color: var(--cs-text-secondary); border: 0.5px solid var(--cs-border-default); }
+.cs-btn-danger    { background: var(--cs-red-50); color: var(--cs-red-800); border: 1px solid var(--cs-red-400); }
+.cs-btn-sm        { padding: 7px 13px; font-size: 12px; border-radius: var(--cs-radius-sm); }
+
+/* — Badges — */
+.cs-badge          { display: inline-block; padding: 3px 9px; border-radius: 20px; font-size: 11px; font-weight: 500; }
+.cs-badge-stable   { background: var(--cs-teal-50);  color: var(--cs-teal-800); }
+.cs-badge-watch    { background: var(--cs-amber-50); color: var(--cs-amber-800); }
+.cs-badge-decline  { background: var(--cs-red-50);   color: var(--cs-red-800); }
+.cs-badge-neutral  { background: var(--cs-bg-tertiary); color: var(--cs-text-secondary); }
+
+/* — Insight cards — */
+.cs-insight    { border-left: 2.5px solid; padding: 8px 0 8px 12px; }
+.cs-insight-l1 { border-color: var(--cs-teal-600); }
+.cs-insight-l2 { border-color: var(--cs-blue-600); }
+.cs-insight-l3 { border-color: var(--cs-amber-600); }
+.cs-insight-l4 { border-color: var(--cs-red-600); }
+.cs-insight-tag  { font-size: 10px; font-weight: 500; letter-spacing: .07em; text-transform: uppercase; margin-bottom: 3px; }
+.cs-insight-l1 .cs-insight-tag { color: var(--cs-teal-600); }
+.cs-insight-l2 .cs-insight-tag { color: var(--cs-blue-600); }
+.cs-insight-l3 .cs-insight-tag { color: var(--cs-amber-600); }
+.cs-insight-l4 .cs-insight-tag { color: var(--cs-red-600); }
+.cs-insight-text { font-size: 13px; color: var(--cs-text-primary); line-height: 1.5; }
+
+/* — Crisis banner (hard override) — */
+.cs-crisis-banner { background: var(--cs-red-50); border: 1.5px solid var(--cs-red-400); border-radius: var(--cs-radius-md); padding: 14px 16px; }
+.cs-crisis-label  { font-size: 11px; font-weight: 500; color: var(--cs-red-800); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 4px; }
+.cs-crisis-text   { font-size: 13px; color: var(--cs-red-800); line-height: 1.5; }
+
+/* — Slider (range input) — */
+input[type=range].cs-range { -webkit-appearance: none; appearance: none; width: 100%; height: 3px; background: var(--cs-bg-tertiary); border-radius: 2px; outline: none; }
+input[type=range].cs-range::-webkit-slider-thumb { -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%; background: var(--cs-teal-600); cursor: pointer; box-shadow: 0 1px 4px rgba(15,110,86,.35); border: none; }
+input[type=range].cs-range::-moz-range-thumb     { width: 20px; height: 20px; border-radius: 50%; background: var(--cs-teal-600); cursor: pointer; border: none; box-shadow: 0 1px 4px rgba(15,110,86,.35); }
+
+/* — Step progress — */
+.cs-step-progress { display: flex; gap: 4px; }
+.cs-step-seg      { height: 3px; flex: 1; border-radius: 2px; background: var(--cs-bg-tertiary); }
+.cs-step-seg.done   { background: var(--cs-teal-600); }
+.cs-step-seg.active { background: var(--cs-teal-100); }
+
+/* — Score components — */
+.cs-score-hero       { text-align: center; }
+.cs-score-hero-label { font-size: 11px; font-weight: 500; letter-spacing: .08em; text-transform: uppercase; color: var(--cs-text-secondary); margin-bottom: 6px; }
+.cs-score-hero-val   { font-family: var(--cs-font-display); font-size: 64px; line-height: 1; color: var(--cs-teal-600); }
+.cs-score-hero-delta { font-size: 12px; color: var(--cs-text-secondary); margin-top: 6px; font-family: var(--cs-font-mono); }
+.cs-score-bar        { height: 3px; background: var(--cs-bg-tertiary); border-radius: 2px; overflow: hidden; margin-top: 8px; }
+.cs-score-bar-fill   { height: 100%; border-radius: 2px; }
+.cs-score-grid       { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.cs-score-cell       { background: var(--cs-bg-primary); border: 0.5px solid var(--cs-border-default); border-radius: var(--cs-radius-md); padding: 10px 12px; }
+.cs-score-cell-label { font-size: 10px; color: var(--cs-text-secondary); margin-bottom: 3px; }
+.cs-score-cell-val   { font-family: var(--cs-font-mono); font-size: 18px; font-weight: 500; }
+.cs-score-cell-bar   { height: 2px; background: var(--cs-bg-tertiary); border-radius: 1px; overflow: hidden; margin-top: 6px; }

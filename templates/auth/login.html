@@ -15,6 +15,11 @@
     {% if messages %}
       {% for category, message in messages %}
         <div class="flash flash-{{ category }}">{{ message }}</div>
+        {% if 'verify your email' in message %}
+        <div style="text-align:center;margin-bottom:12px;">
+          <a href="{{ url_for('resend_verification') }}" style="font-size:13px;">Resend the verification email →</a>
+        </div>
+        {% endif %}
       {% endfor %}
     {% endif %}
   {% endwith %}

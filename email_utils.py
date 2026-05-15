@@ -45,8 +45,14 @@ def _send(to, subject, html):
     if _send_via_resend(to, subject, html):
         return
     if not all([SMTP_HOST, SMTP_USER, SMTP_PASS]):
-        print(f"[email] No email provider configured — would send to {to}: {subject}")
-        return
+        # No provider configured — log links so admins can extract them from Render logs,
+        # then raise so callers know delivery failed (email_sent = False).
+        import re as _re
+        links = _re.findall(r'href="(https?://[^"]+)"', html)
+        print(f"[email] NO PROVIDER — to={to} subject={subject}")
+        for link in links:
+            print(f"[email] LINK: {link}")
+        raise RuntimeError("No email provider configured")
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject
     msg['From'] = FROM_EMAIL
