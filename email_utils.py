@@ -33,12 +33,12 @@ def _send_via_resend(to: str, subject: str, html: str) -> bool:
             timeout=10.0,
         )
         if resp.status_code not in (200, 201):
-            print(f"[email] Resend FAILED {resp.status_code} from={_RESEND_FROM!r} to={to!r}: {resp.text}")
+            print(f"[email] Resend FAILED {resp.status_code} from={_RESEND_FROM!r} to={to!r}: {resp.text}", flush=True)
             return False
-        print(f"[email] Resend OK: {to!r}")
+        print(f"[email] Resend OK: {to!r}", flush=True)
         return True
     except Exception as e:
-        print(f"[email] Resend exception: {e}")
+        print(f"[email] Resend exception: {e}", flush=True)
         return False
 
 
@@ -50,9 +50,9 @@ def _send(to, subject, html):
         # then raise so callers know delivery failed (email_sent = False).
         import re as _re
         links = _re.findall(r'href="(https?://[^"]+)"', html)
-        print(f"[email] NO PROVIDER — to={to} subject={subject}")
+        print(f"[email] NO PROVIDER — to={to} subject={subject}", flush=True)
         for link in links:
-            print(f"[email] LINK: {link}")
+            print(f"[email] LINK: {link}", flush=True)
         raise RuntimeError("No email provider configured")
     msg = MIMEMultipart('alternative')
     msg['Subject'] = subject

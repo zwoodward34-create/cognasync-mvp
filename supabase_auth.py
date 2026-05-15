@@ -399,17 +399,17 @@ def initiate_password_reset(email: str):
             'email', email.lower().strip()
         ).limit(1).execute()
         if not result.data:
-            print(f"[password_reset] no profile row found for email={email!r}")
+            print(f"[password_reset] no profile row found for email={email!r}", flush=True)
             return None, None
         profile = result.data[0]
         status = profile.get('status')
         if status not in ('approved', 'pending_approval', 'pending_email'):
-            print(f"[password_reset] account found but status={status!r} is not resetable for email={email!r}")
+            print(f"[password_reset] account found but status={status!r} is not resetable for email={email!r}", flush=True)
             return None, None
-        print(f"[password_reset] reset initiated for email={email!r} status={status!r}")
+        print(f"[password_reset] reset initiated for email={email!r} status={status!r}", flush=True)
         return profile['id'], profile.get('full_name', '')
     except Exception as e:
-        print(f"[password_reset] Error finding user {email}: {e}")
+        print(f"[password_reset] Error finding user {email}: {e}", flush=True)
         return None, None
 
 
