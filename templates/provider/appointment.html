@@ -111,12 +111,47 @@
     </div>
     {% endif %}
 
-    <!-- ═══ TAB NAV ════════════════════════════════════════════════════ -->
-    <div class="aw-tabs">
-      <button class="aw-tab active" data-tab="data"      onclick="switchTab(this,'data')">📊 Data &amp; Insights</button>
-      <button class="aw-tab"        data-tab="questions" onclick="switchTab(this,'questions')">💬 Guided Questions</button>
-      <button class="aw-tab"        data-tab="notes"     onclick="switchTab(this,'notes')">📝 Notes &amp; Care Plan</button>
-      <button class="aw-tab"        data-tab="schedule"  onclick="switchTab(this,'schedule')">📅 Next Appointment</button>
+    <!-- ═══ APPOINTMENT STEPPER ═════════════════════════════════════ -->
+    <div class="aw-stepper">
+
+      <div class="aw-step active" data-tab="data" onclick="switchTab(this,'data')">
+        <div class="aw-step-badge">1</div>
+        <div class="aw-step-info">
+          <div class="aw-step-label">Data &amp; Insights</div>
+          <div class="aw-step-sub">Review patient trends</div>
+        </div>
+      </div>
+
+      <div class="aw-step-line"></div>
+
+      <div class="aw-step" data-tab="questions" onclick="switchTab(this,'questions')">
+        <div class="aw-step-badge">2</div>
+        <div class="aw-step-info">
+          <div class="aw-step-label">Guided Questions</div>
+          <div class="aw-step-sub">Session Q&amp;A</div>
+        </div>
+      </div>
+
+      <div class="aw-step-line"></div>
+
+      <div class="aw-step" data-tab="notes" onclick="switchTab(this,'notes')">
+        <div class="aw-step-badge">3</div>
+        <div class="aw-step-info">
+          <div class="aw-step-label">Notes &amp; Care Plan</div>
+          <div class="aw-step-sub">Document session</div>
+        </div>
+      </div>
+
+      <div class="aw-step-line"></div>
+
+      <div class="aw-step" data-tab="schedule" onclick="switchTab(this,'schedule')">
+        <div class="aw-step-badge">4</div>
+        <div class="aw-step-info">
+          <div class="aw-step-label">Next Appointment</div>
+          <div class="aw-step-sub">Schedule follow-up</div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ═══ TAB: DATA & INSIGHTS ══════════════════════════════════════ -->
@@ -672,7 +707,7 @@ async function completeAppointment() {
 
 // ── Tab switching ─────────────────────────────────────────────────────
 function switchTab(btn, tab) {
-  document.querySelectorAll('.aw-tab').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.aw-step').forEach(b => b.classList.remove('active'));
   document.querySelectorAll('.aw-tab-pane').forEach(p => p.classList.remove('active'));
   btn.classList.add('active');
   document.getElementById('tab-' + tab).classList.add('active');

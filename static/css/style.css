@@ -1971,6 +1971,88 @@ body.pv-body .main-content {
 .aw-tab-pane { display: none; }
 .aw-tab-pane.active { display: block; }
 
+/* Appointment stepper */
+.aw-stepper {
+  display: flex;
+  align-items: center;
+  background: var(--surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 14px 20px;
+  margin-bottom: 24px;
+  gap: 0;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.aw-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  flex: 1;
+  min-width: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  transition: background var(--transition);
+}
+
+.aw-step:hover { background: var(--bg); }
+
+.aw-step-badge {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: transparent;
+  border: 2px solid var(--border);
+  color: var(--text-muted);
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'DM Sans', sans-serif;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: background var(--transition), border-color var(--transition), color var(--transition);
+}
+
+.aw-step.active .aw-step-badge {
+  background: var(--text);
+  border-color: var(--text);
+  color: #fff;
+}
+
+.aw-step-info { min-width: 0; }
+
+.aw-step-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  transition: color var(--transition);
+  white-space: nowrap;
+  line-height: 1.25;
+}
+
+.aw-step.active .aw-step-label {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.aw-step-sub {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+}
+
+.aw-step-line {
+  flex-shrink: 0;
+  height: 1px;
+  width: 28px;
+  background: var(--border-light);
+  margin: 0 2px;
+}
+
 /* Guided Q&A */
 .gq-section {
   margin-bottom: 24px;
@@ -2288,6 +2370,11 @@ body.pv-body .main-content {
   .ah-section-hdr        { flex-direction: column; }
   .aw-tabs               { gap: 0; }
   .aw-tab                { padding: 8px 12px; font-size: 12px; }
+  .aw-step               { padding: 8px 8px; gap: 8px; }
+  .aw-step-badge         { width: 26px; height: 26px; font-size: 11px; }
+  .aw-step-label         { font-size: 12px; }
+  .aw-step-sub           { display: none; }
+  .aw-step-line          { width: 14px; }
   .gq-suggestion         { flex-direction: column; gap: 6px; }
 }
 
