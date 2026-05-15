@@ -296,14 +296,14 @@ def admin_approve():
     expected = email_utils.approval_sig(user_id, secret_key)
     if not hmac.compare_digest(expected, sig):
         return 'Invalid or tampered approval link.', 403
-    profile_res = db.supabase_admin.table('profiles').select('id, email, full_name, status').eq('id', user_id).execute()
+    profile_res = db.supabase_admin.table('profiles').select('id, email, full_name, status, role').eq('id', user_id).execute()
     if not profile_res.data:
         return 'User not found.', 404
     profile = profile_res.data[0]
     if profile['status'] == 'approved':
         return render_template('auth/approval_done.html', already=True, email=profile['email'])
     db.supabase_admin.table('profiles').update({'status': 'approved'}).eq('id', user_id).execute()
-    email_utils.send_account_approved_email(profile['email'], profile['full_name'])
+    email_utils.send_account_approved_email(profile['email'], profile['full_name'], profile.get('role', 'patient'))
     return render_template('auth/approval_done.html', already=False, email=profile['email'])
 
 
@@ -361,6 +361,24 @@ def trends_page():
     if redir:
         return redir
     return render_template('patient/trends.html', user=user)
+
+
+@app.route('/help')
+def help_page():
+    user = _current_user()
+    if not user:
+        return redirect(url_for('login_page'))
+    if user['role'] == 'provider':
+        return render_template('help/provider.html', user=user)
+    return render_template('help/patient.html', user=user)
+
+
+@app.route('/welcome')
+def welcome_page():
+    role = request.args.get('role', 'patient')
+    if role not in ('patient', 'provider'):
+        role = 'patient'
+    return render_template('help/welcome.html', role=role)
 
 
 @app.route('/settings')

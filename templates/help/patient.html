@@ -1,0 +1,117 @@
+{% extends "layout.html" %}
+{% block title %}Getting Started — CognaSync{% endblock %}
+
+{% block head %}
+<style>
+  .help-page { max-width: 680px; margin: 0 auto; padding: 40px 24px 80px; }
+  .help-hero { margin-bottom: 40px; }
+  .help-hero h1 { font-size: 2rem; margin: 0 0 8px; }
+  .help-hero p { color: var(--color-text-muted, #666); margin: 0; font-size: 1.05rem; }
+  .help-step { border-top: 1px solid var(--color-border, #e5e5e5); padding: 32px 0; }
+  .help-step:last-child { border-bottom: 1px solid var(--color-border, #e5e5e5); }
+  .help-step-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted, #888); margin-bottom: 8px; }
+  .help-step h2 { font-size: 1.2rem; margin: 0 0 12px; }
+  .help-step p { margin: 0 0 12px; line-height: 1.65; color: var(--color-text, #222); }
+  .help-step p:last-child { margin-bottom: 0; }
+  .help-step strong { color: var(--color-text, #111); }
+  .help-step .help-note { background: var(--color-surface-alt, #f5f5f5); border-radius: 6px; padding: 12px 16px; font-size: 0.9rem; color: var(--color-text-muted, #555); margin-top: 12px; }
+  .help-table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 0.9rem; }
+  .help-table th { text-align: left; padding: 8px 12px; background: var(--color-surface-alt, #f5f5f5); font-weight: 600; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .help-table td { padding: 10px 12px; border-top: 1px solid var(--color-border, #e5e5e5); vertical-align: top; line-height: 1.5; }
+  .help-table td:first-child { font-weight: 500; white-space: nowrap; }
+  .help-crisis { background: #fff3f3; border: 1px solid #f5c6c6; border-radius: 8px; padding: 20px 24px; margin-top: 40px; }
+  .help-crisis h3 { margin: 0 0 8px; font-size: 1rem; }
+  .help-crisis p { margin: 0 0 6px; font-size: 0.9rem; line-height: 1.6; color: #444; }
+  .help-crisis p:last-child { margin: 0; }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="help-page">
+
+  <div class="help-hero">
+    <h1>Getting started with CognaSync</h1>
+    <p>Track your patterns between appointments so every visit starts from the same page.</p>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Step 1</div>
+    <h2>Complete your first check-in</h2>
+    <p>The daily check-in is the core habit. From the home screen, click <strong>Check-In</strong> in the navigation to open the form.</p>
+    <p>You'll be asked to log your <strong>mood</strong> (0–10), <strong>stress</strong> (0–10), <strong>hours of sleep</strong> last night, which <strong>medications</strong> you took today, and any <strong>notes</strong> you want your provider to see.</p>
+    <p>You can check in in the morning, afternoon, or evening — each one captures a snapshot of that part of your day. If you only do one, once a day is enough to start.</p>
+    <p>After you submit, you'll see a brief AI reflection based on your actual numbers. It's not a diagnosis — it's just a plain-language read of what you logged.</p>
+    <div class="help-note">Once you're comfortable with the basics, you can unlock advanced fields for energy, focus, caffeine, exercise, and more. These give your provider a fuller picture but aren't required.</div>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Step 2</div>
+    <h2>Write your first journal entry</h2>
+    <p>Tap <strong>Journal</strong> in the navigation. Write whatever's on your mind — there's no required format. A sentence is fine. A few paragraphs is fine too.</p>
+    <p>Journal entries are <strong>shared with your provider by default.</strong> Toggle off "Share with provider" before saving if you want to keep an entry private.</p>
+    <p>After you save, you'll see a brief AI reflection — an observation about what you wrote, without clinical interpretation.</p>
+    <div class="help-note">If your entry contains language that suggests you may be in crisis, CognaSync will show you crisis resources instead of an AI reflection. Your entry is still saved.</div>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Step 3</div>
+    <h2>Set up your medication list</h2>
+    <p>Go to <strong>Settings → Medications</strong> to add the medications you take regularly. Enter the name and dose for each one.</p>
+    <p>Once they're in the system, your medications appear in the check-in form so you can mark them taken or missed with one tap. The home screen also gets a quick-log widget — tap the medication name, confirm the time, and the dose is recorded without opening a full check-in.</p>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Step 4</div>
+    <h2>Link your provider</h2>
+    <p>Go to <strong>Settings → Provider</strong> and enter your provider's CognaSync email address. Once linked, they'll have read access to your check-ins, shared journal entries, scores, and trends. They cannot edit your data.</p>
+    <p>If you don't know your provider's email, ask them directly — they'll need an active CognaSync provider account first. You can unlink at any time from the same settings screen.</p>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Step 5</div>
+    <h2>Generate a pre-appointment summary</h2>
+    <p>A few days before your next appointment, go to <strong>Pre-Appt Summary</strong> in the navigation and click <strong>Generate Summary</strong>. The summary covers the past 14 days (adjustable) and includes how your mood, sleep, and stress trended, what stood out from your journals, and 2–3 suggested topics to bring to your appointment.</p>
+    <p>Read it before you go in. It's written in plain language, for you — your provider generates their own version on their end.</p>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Reference</div>
+    <h2>What the scores mean</h2>
+    <p>After each check-in, CognaSync computes a few summary scores. None of them is a diagnosis — they're inputs to track and discuss.</p>
+    <table class="help-table">
+      <thead>
+        <tr>
+          <th>Score</th>
+          <th>What it reflects</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>Stability Score</td>
+          <td>How aligned your mood, energy, and anxiety signals are. Higher means more consistent.</td>
+        </tr>
+        <tr>
+          <td>Stim Load</td>
+          <td>Total stimulant input for the day — caffeine tiers plus any stimulant medications. A high Stim Load on a poor sleep day is worth noting.</td>
+        </tr>
+        <tr>
+          <td>Crash Risk</td>
+          <td>A combined read of sleep disruption, nervous system strain, and nutrition. High Crash Risk days give useful context for your provider.</td>
+        </tr>
+        <tr>
+          <td>Nervous System Load</td>
+          <td>How much strain your anxiety, sleep quality, and stimulant intake are putting on your system together.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="help-crisis">
+    <h3>If you need help right now</h3>
+    <p><strong>988 Suicide &amp; Crisis Lifeline</strong> — call or text <strong>988</strong></p>
+    <p><strong>Crisis Text Line</strong> — text HOME to <strong>741741</strong></p>
+    <p><strong>Emergency</strong> — call <strong>911</strong></p>
+  </div>
+
+</div>
+{% endblock %}

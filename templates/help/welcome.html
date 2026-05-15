@@ -1,0 +1,110 @@
+{% extends "layout.html" %}
+{% block title %}Welcome to CognaSync{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block full_page %}
+<style>
+  .welcome-shell { max-width: 680px; margin: 0 auto; padding: 48px 24px 80px; }
+  .welcome-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 40px; }
+  .welcome-logo { width: 36px; height: 36px; background: #000; color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 0.9rem; letter-spacing: 0.02em; flex-shrink: 0; }
+  .welcome-brand-name { font-size: 1.1rem; font-weight: 600; }
+  .welcome-hero { margin-bottom: 40px; }
+  .welcome-hero h1 { font-size: 1.75rem; margin: 0 0 10px; }
+  .welcome-hero p { color: #555; margin: 0; font-size: 1.05rem; line-height: 1.6; }
+  .welcome-step { border-top: 1px solid #e5e5e5; padding: 28px 0; }
+  .welcome-step:last-of-type { border-bottom: 1px solid #e5e5e5; margin-bottom: 40px; }
+  .welcome-step-label { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: #999; margin-bottom: 6px; }
+  .welcome-step h2 { font-size: 1.1rem; margin: 0 0 10px; }
+  .welcome-step p { margin: 0; line-height: 1.65; color: #333; font-size: 0.95rem; }
+  .welcome-cta { text-align: center; }
+  .welcome-cta a { display: inline-block; background: #000; color: #fff; padding: 14px 32px; text-decoration: none; border-radius: 6px; font-weight: 500; font-size: 1rem; }
+  .welcome-cta a:hover { background: #222; }
+  .welcome-cta p { margin-top: 12px; color: #888; font-size: 0.85rem; }
+
+  /* Provider-specific alert chips */
+  .welcome-alert-row { display: flex; gap: 10px; align-items: baseline; padding: 6px 0; font-size: 0.9rem; color: #333; }
+</style>
+
+<div class="welcome-shell">
+  <div class="welcome-brand">
+    <div class="welcome-logo">CS</div>
+    <span class="welcome-brand-name">CognaSync</span>
+  </div>
+
+  {% if role == 'provider' %}
+
+  <div class="welcome-hero">
+    <h1>Welcome to CognaSync</h1>
+    <p>Here's a quick overview of what you can do in the platform before your first login.</p>
+  </div>
+
+  <div class="welcome-step">
+    <div class="welcome-step-label">Goal 1</div>
+    <h2>Get oriented on your patient panel</h2>
+    <p>Your dashboard shows each patient's last check-in date, 30-day mood and stress averages, medication adherence, and color-coded alerts — 🔴 urgent, 🟡 watch, 🔵 informational. Start with the flagged rows.</p>
+  </div>
+
+  <div class="welcome-step">
+    <div class="welcome-step-label">Goal 2</div>
+    <h2>Prepare for an appointment</h2>
+    <p>Open a patient's detail page and click <strong>Start Appointment Session</strong>. Generate an AI clinical summary, review AI-suggested interview questions drawn from the patient's actual data, read shared journal entries, and take notes — all in one workspace. Everything autosaves.</p>
+  </div>
+
+  <div class="welcome-step">
+    <div class="welcome-step-label">Goal 3</div>
+    <h2>Go deeper on trends</h2>
+    <p>The trends view shows time-series charts for mood, sleep, stress, energy, and adherence. The medication timing panel shows average time taken and variability per medication when the patient logs event times.</p>
+  </div>
+
+  <div class="welcome-step">
+    <div class="welcome-step-label">Goal 4</div>
+    <h2>Respond to a crisis flag</h2>
+    <p>A 🔴 crisis indicator means the patient's entry contained explicit crisis language. The patient was shown crisis resources only — no AI output. After following up directly, resolve the flag from their detail page.</p>
+  </div>
+
+  {% else %}
+
+  <div class="welcome-hero">
+    <h1>Welcome to CognaSync</h1>
+    <p>Here's what to do in your first few days to get the most out of the platform.</p>
+  </div>
+
+  <div class="welcome-step">
+    <div class="welcome-step-label">Step 1</div>
+    <h2>Complete your first check-in</h2>
+    <p>Log your mood, stress, sleep, medications, and any notes. Takes about two minutes. You'll get a brief AI reflection after each one — your actual numbers, in plain language.</p>
+  </div>
+
+  <div class="welcome-step">
+    <div class="welcome-step-label">Step 2</div>
+    <h2>Write your first journal entry</h2>
+    <p>Write whatever's on your mind. Entries are shared with your provider by default — toggle that off before saving if you want to keep one private.</p>
+  </div>
+
+  <div class="welcome-step">
+    <div class="welcome-step-label">Step 3</div>
+    <h2>Set up your medication list</h2>
+    <p>Add your medications in Settings. Once they're there, you can log doses with a single tap from the home screen — no need to open a full check-in.</p>
+  </div>
+
+  <div class="welcome-step">
+    <div class="welcome-step-label">Step 4</div>
+    <h2>Link your provider</h2>
+    <p>Go to Settings → Provider and enter your provider's CognaSync email. Once linked, they'll have read access to your data. You can unlink at any time.</p>
+  </div>
+
+  <div class="welcome-step">
+    <div class="welcome-step-label">Step 5</div>
+    <h2>Generate a pre-appointment summary</h2>
+    <p>A few days before your next appointment, go to Pre-Appt Summary and generate one. It covers the past 14 days and suggests specific things to bring up with your provider.</p>
+  </div>
+
+  {% endif %}
+
+  <div class="welcome-cta">
+    <a href="{{ url_for('login_page') }}">Sign in to get started →</a>
+    <p>Once you're in, the <strong>Help</strong> link in the navigation has the full guide.</p>
+  </div>
+
+</div>
+{% endblock %}

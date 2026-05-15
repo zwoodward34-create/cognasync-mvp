@@ -129,16 +129,18 @@ def send_password_reset_email(to_email: str, full_name: str, token: str) -> None
     _send(to_email, "Reset your CognaSync password", html)
 
 
-def send_account_approved_email(to_email: str, full_name: str) -> None:
+def send_account_approved_email(to_email: str, full_name: str, role: str = 'patient') -> None:
     login_url = f"{APP_URL}/login"
+    welcome_url = f"{APP_URL}/welcome?role={role}"
     html = f"""
     <p>Hi {full_name},</p>
-    <p>Your CognaSync account has been approved. You can now sign in:</p>
+    <p>Your CognaSync account has been approved. Before you sign in, take a minute to read the quick-start guide — it covers everything you need to know to get the most out of the platform:</p>
     <p style="margin:24px 0">
-      <a href="{login_url}" style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">
-        Sign in to CognaSync
+      <a href="{welcome_url}" style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">
+        Get started →
       </a>
     </p>
+    <p>Or if you're ready to jump in: <a href="{login_url}">sign in to CognaSync</a>.</p>
     <p>Welcome aboard.</p>
     """
     _send(to_email, "Your CognaSync account is approved", html)

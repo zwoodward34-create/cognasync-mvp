@@ -1,0 +1,94 @@
+{% extends "layout.html" %}
+{% block title %}Getting Started — CognaSync{% endblock %}
+
+{% block head %}
+<style>
+  .help-page { max-width: 680px; margin: 0 auto; padding: 40px 24px 80px; }
+  .help-hero { margin-bottom: 40px; }
+  .help-hero h1 { font-size: 2rem; margin: 0 0 8px; }
+  .help-hero p { color: var(--color-text-muted, #666); margin: 0; font-size: 1.05rem; }
+  .help-step { border-top: 1px solid var(--color-border, #e5e5e5); padding: 32px 0; }
+  .help-step:last-child { border-bottom: 1px solid var(--color-border, #e5e5e5); }
+  .help-step-label { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-muted, #888); margin-bottom: 8px; }
+  .help-step h2 { font-size: 1.2rem; margin: 0 0 12px; }
+  .help-step p { margin: 0 0 12px; line-height: 1.65; color: var(--color-text, #222); }
+  .help-step p:last-child { margin-bottom: 0; }
+  .help-step strong { color: var(--color-text, #111); }
+  .help-step .help-note { background: var(--color-surface-alt, #f5f5f5); border-radius: 6px; padding: 12px 16px; font-size: 0.9rem; color: var(--color-text-muted, #555); margin-top: 12px; }
+  .help-alert-row { display: flex; gap: 12px; align-items: baseline; padding: 8px 0; border-top: 1px solid var(--color-border, #e5e5e5); font-size: 0.9rem; }
+  .help-alert-row:first-child { border-top: none; }
+  .help-alert-icon { font-size: 1rem; flex-shrink: 0; }
+  .help-alert-desc { line-height: 1.5; color: var(--color-text, #333); }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="help-page">
+
+  <div class="help-hero">
+    <h1>Getting started with CognaSync</h1>
+    <p>Structured behavioral data from your patients between sessions — surfaced before you walk into the room.</p>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Goal 1</div>
+    <h2>Get oriented on your patient panel</h2>
+    <p>When you log in, you land on the <strong>Provider Dashboard</strong>. Each row is one patient. At a glance you can see their last check-in date, 30-day mood and stress averages, medication adherence rate, and any active alerts.</p>
+    <p>Alert levels:</p>
+    <div>
+      <div class="help-alert-row">
+        <span class="help-alert-icon">🔴</span>
+        <span class="help-alert-desc"><strong>Urgent</strong> — statistically significant declining trend (R² ≥ 0.25, p ≤ 0.05) or active crisis signal. Review immediately.</span>
+      </div>
+      <div class="help-alert-row">
+        <span class="help-alert-icon">🟡</span>
+        <span class="help-alert-desc"><strong>Watch</strong> — elevated stress trend, medication adherence below 80%, or sustained Crash Risk. Monitor at next session.</span>
+      </div>
+      <div class="help-alert-row">
+        <span class="help-alert-icon">🔵</span>
+        <span class="help-alert-desc"><strong>Informational</strong> — notable pattern, no threshold crossed. Good context for the appointment.</span>
+      </div>
+    </div>
+    <p style="margin-top:16px">A patient row with no alerts and a recent check-in is stable. Start with the flagged ones.</p>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Goal 2</div>
+    <h2>Prepare for an appointment</h2>
+    <p>This is the primary workflow. From a patient's detail page, click <strong>Start Appointment Session</strong>. The workspace gives you:</p>
+    <p><strong>AI Clinical Summary</strong> — generated from the patient's check-ins and shared journals over the selected review window. Click <strong>Generate Summary</strong> to produce it. It covers mood, stress, sleep, and energy averages with trend direction; medication adherence and timing; advanced data averages (exercise, social quality, workload friction) when available; qualitative journal themes; and flagged threshold crossings.</p>
+    <p><strong>AI-Suggested Questions</strong> — 3–5 interview questions derived from this patient's specific numbers (e.g., "Mood has averaged 3.8/10 this period — what's been contributing to that?"). Starting points, not scripts.</p>
+    <p><strong>Shared journals</strong> — entries the patient chose to share, scoped to the appointment window.</p>
+    <p><strong>Notes and care plan</strong> — fields for session notes, guided Q&A, action items, and care plan updates. All autosave. Set a next appointment date to close the session cleanly.</p>
+    <div class="help-note">Click <strong>Complete Appointment</strong> when done. This closes the workspace and saves the record to the patient's appointment history.</div>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Goal 3</div>
+    <h2>Go deeper on a patient</h2>
+    <p>From a patient's detail page, click <strong>View Trends</strong> to open the full trend chart view. Charts cover mood, sleep, stress, energy, and medication adherence. Adjust the lookback window between 7 and 90 days.</p>
+    <p>The <strong>medication timing panel</strong> shows average time taken per medication and timing variability (standard deviation in minutes) when the patient has been logging event times. Variability above 60 minutes across 7+ days is surfaced as a pattern — it's observational, not a clinical warning.</p>
+    <p><strong>Interaction flags</strong> appear on the detail page if the patient's medication list contains combinations with known signals. These are reference flags, not clinical advisories.</p>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Goal 4</div>
+    <h2>Respond to a crisis flag</h2>
+    <p>A 🔴 crisis indicator means a recent check-in or journal entry contained language matching crisis detection criteria — explicit statements of self-harm or suicidal ideation.</p>
+    <p>When this flag is active: the patient was shown only the static crisis resource block, no AI-generated content was returned to them, and the entry was still saved so you can review it.</p>
+    <p>After you have followed up with the patient directly, open their detail page and click <strong>Resolve Crisis Flag</strong>. This marks the flag as addressed — it does not delete the underlying entry.</p>
+    <div class="help-note">Do not resolve the flag before making contact with the patient.</div>
+  </div>
+
+  <div class="help-step">
+    <div class="help-step-label">Reference</div>
+    <h2>What the AI does and doesn't do</h2>
+    <p><strong>What it does:</strong> describes patterns in numbers. Average mood over a period. Trend direction with statistical confidence. Co-occurrences between variables. Language themes from journals.</p>
+    <p><strong>What it doesn't do:</strong> diagnose, suggest medication changes, or claim causality. Phrases like "this indicates," "you are depressed," or "reduce your dose" are explicitly blocked from all outputs. If you see language like that, it's a bug.</p>
+    <p><strong>Minimum data requirements:</strong> the AI will not generate trend language from fewer than 7 check-ins, will not call a pattern statistically significant without p ≤ 0.05 and R² ≥ 0.25, and will not generate a summary if there are no check-ins or journals in the selected window. Sparse data is stated as sparse.</p>
+    <p><strong>Missing fields are not zero.</strong> If a patient hasn't logged advanced check-in data, those fields are marked "not recorded" — not assumed to be zero. Absence of data is not the same as absence of the behavior.</p>
+    <p>The summaries and suggested questions are inputs to the clinical conversation. They give you a cleaner starting point — the interpretation is yours.</p>
+  </div>
+
+</div>
+{% endblock %}

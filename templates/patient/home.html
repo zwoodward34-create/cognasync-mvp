@@ -1,7 +1,77 @@
 {% extends "layout.html" %}
 {% block title %}Home — CognaSync{% endblock %}
 
+{% block head %}
+<style>
+  .getting-started-card {
+    border: 1px solid var(--color-border, #e5e5e5);
+    border-radius: 10px;
+    padding: 28px 32px;
+    margin-bottom: 32px;
+    background: var(--color-surface-alt, #fafafa);
+  }
+  .getting-started-card h2 {
+    font-size: 1.1rem;
+    margin: 0 0 6px;
+  }
+  .getting-started-card .gs-subtitle {
+    color: var(--color-text-muted, #666);
+    font-size: 0.9rem;
+    margin: 0 0 20px;
+  }
+  .gs-steps { list-style: none; margin: 0 0 20px; padding: 0; }
+  .gs-steps li {
+    display: flex;
+    gap: 12px;
+    align-items: baseline;
+    padding: 7px 0;
+    font-size: 0.9rem;
+    color: var(--color-text, #333);
+    border-top: 1px solid var(--color-border, #ececec);
+  }
+  .gs-steps li:first-child { border-top: none; }
+  .gs-step-num {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: var(--color-text-muted, #aaa);
+    min-width: 18px;
+    padding-top: 1px;
+  }
+  .gs-step-text strong { color: var(--color-text, #111); }
+</style>
+{% endblock %}
+
 {% block content %}
+{% if not streak and not latest_summary %}
+<div class="getting-started-card">
+  <h2>Welcome, {{ first_name }}. Here's how to get started.</h2>
+  <p class="gs-subtitle">Five steps to get the most out of CognaSync in your first week.</p>
+  <ol class="gs-steps">
+    <li>
+      <span class="gs-step-num">01</span>
+      <span class="gs-step-text"><strong>Complete your first check-in</strong> — log mood, stress, sleep, and medications. Takes about two minutes.</span>
+    </li>
+    <li>
+      <span class="gs-step-num">02</span>
+      <span class="gs-step-text"><strong>Write a journal entry</strong> — anything on your mind. Entries are shared with your provider by default.</span>
+    </li>
+    <li>
+      <span class="gs-step-num">03</span>
+      <span class="gs-step-text"><strong>Add your medications in Settings</strong> — then you can log doses with one tap from this screen.</span>
+    </li>
+    <li>
+      <span class="gs-step-num">04</span>
+      <span class="gs-step-text"><strong>Link your provider</strong> — go to Settings → Provider and enter their CognaSync email.</span>
+    </li>
+    <li>
+      <span class="gs-step-num">05</span>
+      <span class="gs-step-text"><strong>Generate a pre-appointment summary</strong> — a few days before your next visit, go to Pre-Appt Summary.</span>
+    </li>
+  </ol>
+  <a href="{{ url_for('help_page') }}" class="btn btn-ghost">Read the full guide →</a>
+</div>
+{% endif %}
+
 <div class="page-header">
   <div>
     <h1 class="page-title">Welcome back, {{ first_name }}.</h1>
