@@ -759,6 +759,29 @@ def api_create_checkin():
     if not checkin_id:
         return jsonify({'error': 'Failed to create check-in'}), 500
 
+    # Mirror taken medications into medication_events so the home-screen tracker shows them.
+    taken_meds = [m for m in data.get('medications', []) if m.get('taken')]
+    if taken_meds:
+        existing_names = {(log.get('name') or '').lower() for log in db.get_today_dose_logs(user['id'], raw_date)}
+        for med in taken_meds:
+            name = (med.get('name') or '').strip()
+            if not name or name.lower() in existing_names:
+                continue
+            dose_raw = str(med.get('dose') or '').strip()
+            time_taken = str(med.get('time_taken') or '').strip() or None
+            med_id = db.find_or_create_profile_medication(user['id'], name, dose_raw)
+            if med_id:
+                dose_num = re.sub(r'[^\d.]', '', dose_raw)
+                db.log_medication_event(
+                    user_id=user['id'],
+                    medication_id=med_id,
+                    event_date=raw_date,
+                    actual_time=None,
+                    dose=float(dose_num) if dose_num else None,
+                    status='TAKEN',
+                    notes=time_taken,
+                )
+
     ai_insight = None
     try:
         baseline = db.get_checkin_baseline(user['id'], days=7)
