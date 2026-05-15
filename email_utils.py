@@ -33,8 +33,9 @@ def _send_via_resend(to: str, subject: str, html: str) -> bool:
             timeout=10.0,
         )
         if resp.status_code not in (200, 201):
-            print(f"[email] Resend error {resp.status_code}: {resp.text}")
+            print(f"[email] Resend FAILED {resp.status_code} from={_RESEND_FROM!r} to={to!r}: {resp.text}")
             return False
+        print(f"[email] Resend OK: {to!r}")
         return True
     except Exception as e:
         print(f"[email] Resend exception: {e}")
