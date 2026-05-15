@@ -144,7 +144,10 @@ def assign_patient_to_provider(patient_user_id, provider_id):
     """Assign patient to provider. Pass provider_id=None to unlink."""
     try:
         value = str(provider_id) if provider_id is not None else None
-        supabase_admin.table('patient_profiles').update({'provider_id': value}).eq('user_id', str(patient_user_id)).execute()
+        supabase_admin.table('patient_profiles').upsert(
+            {'user_id': str(patient_user_id), 'provider_id': value},
+            on_conflict='user_id',
+        ).execute()
         return True
     except Exception as e:
         print(f"Error assigning patient to provider: {e}")
