@@ -525,7 +525,7 @@
   </div><!-- /pv-main -->
 
   <!-- ═══ RIGHT SIDEBAR — Shared Journal Entries ══════════════════════ -->
-  <div class="js-sidebar" id="js-sidebar">
+  <div class="js-sidebar js-sidebar-collapsed" id="js-sidebar">
 
     <!-- Sidebar header -->
     <div class="js-sidebar-head">
@@ -597,7 +597,7 @@
   </div><!-- /js-sidebar -->
 
   <!-- Collapsed tab (shown when sidebar is hidden) -->
-  <button class="js-expand-tab" id="js-expand-tab" style="display:none;"
+  <button class="js-expand-tab" id="js-expand-tab" style="display:flex;"
           onclick="toggleJournalSidebar()" title="Open journal panel">
     <span class="js-expand-label">📓 Journals{% if journals %} · {{ journals|length }}{% endif %}</span>
   </button>
