@@ -170,86 +170,96 @@
 
   <!-- Weekly Discovery -->
   <div id="discovery-section" class="insights-panel" style="margin-bottom:24px;display:none;">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px;">
+    <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="toggleSection('discovery-body','discovery-chevron')">
       <h2 class="section-title" style="margin:0;">Weekly Discovery</h2>
-      <button class="btn btn-ghost btn-sm" onclick="refreshDiscovery()">↻ Refresh</button>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();refreshDiscovery()">↻ Refresh</button>
+        <span id="discovery-chevron" style="font-size:18px;color:var(--text-muted);transition:transform 0.2s;display:inline-block;transform:rotate(-90deg);">▾</span>
+      </div>
     </div>
-    <p style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">
-      Strongest patterns found in your data — updated weekly
-    </p>
-    <div id="unexpected-panel"></div>
+    <div id="discovery-body" style="display:none;">
+      <p style="font-size:13px;color:var(--text-muted);margin:12px 0 16px;">
+        Strongest patterns found in your data — updated weekly
+      </p>
+      <div id="unexpected-panel"></div>
+    </div>
   </div>
 
   <!-- Hypothesis tester -->
   <div class="insights-panel" style="margin-bottom:24px;">
-    <h2 class="section-title">Test a Hypothesis</h2>
-    <p style="font-size:13px;color:var(--text-muted);margin-bottom:14px;">
-      State a belief about your data — we'll test it against all three possible outcomes simultaneously.
-    </p>
-
-    <div id="hyp-error" class="alert alert-error hidden" style="margin-bottom:10px;"></div>
-
-    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;">
-      <span style="font-size:13px;">I think</span>
-      <select id="hyp-var-a" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
-        <optgroup label="Core">
-          <option value="mood">Mood</option>
-          <option value="stress">Stress</option>
-          <option value="sleep">Sleep</option>
-          <option value="energy">Energy</option>
-          <option value="focus">Focus</option>
-        </optgroup>
-        <optgroup label="Cognitive &amp; Emotional">
-          <option value="irritability">Irritability</option>
-          <option value="motivation">Motivation</option>
-          <option value="perceived_stress">Perceived Stress</option>
-          <option value="social_quality">Social Quality</option>
-          <option value="workload_friction">Workload Friction</option>
-        </optgroup>
-        <optgroup label="Lifestyle">
-          <option value="exercise">Exercise</option>
-          <option value="sunlight">Sunlight</option>
-          <option value="alcohol">Alcohol</option>
-          <option value="screen_time">Screen Time</option>
-        </optgroup>
-      </select>
-      <select id="hyp-direction" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
-        <option value="positive">helps / increases</option>
-        <option value="negative">hurts / decreases</option>
-        <option value="null">has no effect on</option>
-      </select>
-      <select id="hyp-var-b" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
-        <optgroup label="Core">
-          <option value="mood">Mood</option>
-          <option value="stress">Stress</option>
-          <option value="sleep">Sleep</option>
-          <option value="energy">Energy</option>
-          <option value="focus">Focus</option>
-        </optgroup>
-        <optgroup label="Cognitive &amp; Emotional">
-          <option value="irritability">Irritability</option>
-          <option value="motivation">Motivation</option>
-          <option value="perceived_stress">Perceived Stress</option>
-          <option value="social_quality">Social Quality</option>
-          <option value="workload_friction">Workload Friction</option>
-        </optgroup>
-        <optgroup label="Lifestyle">
-          <option value="exercise">Exercise</option>
-          <option value="sunlight">Sunlight</option>
-          <option value="alcohol">Alcohol</option>
-          <option value="screen_time">Screen Time</option>
-        </optgroup>
-      </select>
-      <button class="btn btn-primary btn-sm" id="hyp-btn" onclick="runHypothesisTest()">
-        Test Hypothesis
-      </button>
+    <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="toggleSection('hypothesis-body','hypothesis-chevron')">
+      <h2 class="section-title" style="margin:0;">Test a Hypothesis</h2>
+      <span id="hypothesis-chevron" style="font-size:18px;color:var(--text-muted);transition:transform 0.2s;display:inline-block;transform:rotate(-90deg);">▾</span>
     </div>
+    <div id="hypothesis-body" style="display:none;">
+      <p style="font-size:13px;color:var(--text-muted);margin:12px 0 14px;">
+        State a belief about your data — we'll test it against all three possible outcomes simultaneously.
+      </p>
 
-    <div id="hyp-loading" class="hidden" style="font-size:12px;color:var(--text-muted);padding:8px 0;">
-      Testing all three directions…
+      <div id="hyp-error" class="alert alert-error hidden" style="margin-bottom:10px;"></div>
+
+      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;">
+        <span style="font-size:13px;">I think</span>
+        <select id="hyp-var-a" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
+          <optgroup label="Core">
+            <option value="mood">Mood</option>
+            <option value="stress">Stress</option>
+            <option value="sleep">Sleep</option>
+            <option value="energy">Energy</option>
+            <option value="focus">Focus</option>
+          </optgroup>
+          <optgroup label="Cognitive &amp; Emotional">
+            <option value="irritability">Irritability</option>
+            <option value="motivation">Motivation</option>
+            <option value="perceived_stress">Perceived Stress</option>
+            <option value="social_quality">Social Quality</option>
+            <option value="workload_friction">Workload Friction</option>
+          </optgroup>
+          <optgroup label="Lifestyle">
+            <option value="exercise">Exercise</option>
+            <option value="sunlight">Sunlight</option>
+            <option value="alcohol">Alcohol</option>
+            <option value="screen_time">Screen Time</option>
+          </optgroup>
+        </select>
+        <select id="hyp-direction" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
+          <option value="positive">helps / increases</option>
+          <option value="negative">hurts / decreases</option>
+          <option value="null">has no effect on</option>
+        </select>
+        <select id="hyp-var-b" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
+          <optgroup label="Core">
+            <option value="mood">Mood</option>
+            <option value="stress">Stress</option>
+            <option value="sleep">Sleep</option>
+            <option value="energy">Energy</option>
+            <option value="focus">Focus</option>
+          </optgroup>
+          <optgroup label="Cognitive &amp; Emotional">
+            <option value="irritability">Irritability</option>
+            <option value="motivation">Motivation</option>
+            <option value="perceived_stress">Perceived Stress</option>
+            <option value="social_quality">Social Quality</option>
+            <option value="workload_friction">Workload Friction</option>
+          </optgroup>
+          <optgroup label="Lifestyle">
+            <option value="exercise">Exercise</option>
+            <option value="sunlight">Sunlight</option>
+            <option value="alcohol">Alcohol</option>
+            <option value="screen_time">Screen Time</option>
+          </optgroup>
+        </select>
+        <button class="btn btn-primary btn-sm" id="hyp-btn" onclick="runHypothesisTest()">
+          Test Hypothesis
+        </button>
+      </div>
+
+      <div id="hyp-loading" class="hidden" style="font-size:12px;color:var(--text-muted);padding:8px 0;">
+        Testing all three directions…
+      </div>
+      <div id="hyp-result"></div>
+      <div id="hyp-history"></div>
     </div>
-    <div id="hyp-result"></div>
-    <div id="hyp-history"></div>
   </div>
 
   <div class="charts-grid">
@@ -790,10 +800,21 @@ async function runHypothesisTest() {
 }
 
 function prefillHypothesis(varA, varB, dir) {
+  // Ensure hypothesis section is expanded before scrolling into it.
+  const body = document.getElementById('hypothesis-body');
+  if (body && body.style.display === 'none') toggleSection('hypothesis-body', 'hypothesis-chevron');
   document.getElementById('hyp-var-a').value = varA;
   document.getElementById('hyp-var-b').value = varB;
   document.getElementById('hyp-direction').value = dir;
   document.getElementById('hyp-btn').scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
+function toggleSection(bodyId, chevronId) {
+  const body = document.getElementById(bodyId);
+  const chevron = document.getElementById(chevronId);
+  const opening = body.style.display === 'none';
+  body.style.display = opening ? '' : 'none';
+  chevron.style.transform = opening ? 'rotate(0deg)' : 'rotate(-90deg)';
 }
 
 function dismissUnexpected() {
