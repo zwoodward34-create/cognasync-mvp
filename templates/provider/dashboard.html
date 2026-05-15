@@ -1,6 +1,30 @@
 {% extends "layout.html" %}
 {% block title %}My Patients — CognaSync{% endblock %}
 
+{% block head %}
+<style>
+  /* Delta indicator chips */
+  .pd-delta {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    margin-left: 4px;
+    vertical-align: middle;
+  }
+  .pd-delta-up-good   { background: #e6f4ea; color: #1a7f3c; }  /* mood/sleep up   = good */
+  .pd-delta-down-good { background: #e6f4ea; color: #1a7f3c; }  /* stress down     = good */
+  .pd-delta-up-bad    { background: #fdecea; color: #c0392b; }  /* stress up       = bad  */
+  .pd-delta-down-bad  { background: #fdecea; color: #c0392b; }  /* mood/sleep down = bad  */
+  .pd-delta-stable    { background: #f0f0f0; color: #888; }
+  .pd-card-stats { display: flex; gap: 0; flex-wrap: wrap; }
+  .pd-stat { flex: 1; min-width: 80px; }
+</style>
+{% endblock %}
+
 {% block content %}
 <div class="pd-page">
 
@@ -63,16 +87,59 @@
 
       <!-- Stats row -->
       <div class="pd-card-stats">
+
+        {# ── Mood ─────────────────────────────────────────────────── #}
         <div class="pd-stat">
-          <div class="pd-stat-label">Avg Mood (30d)</div>
-          <div class="pd-stat-val {% if p.mood_avg_30d is not none and p.mood_avg_30d < 5 %}pd-stat-low{% elif p.mood_avg_30d is not none and p.mood_avg_30d >= 7 %}pd-stat-good{% endif %}">
-            {% if p.mood_avg_30d is not none %}{{ p.mood_avg_30d }}/10{% else %}—{% endif %}
+          <div class="pd-stat-label">Mood (14d)</div>
+          <div class="pd-stat-val {% if p.mood_recent is not none and p.mood_recent < 5 %}pd-stat-low{% elif p.mood_recent is not none and p.mood_recent >= 7 %}pd-stat-good{% endif %}">
+            {% if p.mood_recent is not none %}{{ p.mood_recent }}/10{% else %}—{% endif %}
+            {% if p.mood_delta is not none %}
+              {% if p.mood_dir == 'stable' %}
+                <span class="pd-delta pd-delta-stable">→</span>
+              {% elif p.mood_dir == 'up' %}
+                <span class="pd-delta pd-delta-up-good" title="vs. prior baseline">↑ +{{ p.mood_delta }}</span>
+              {% else %}
+                <span class="pd-delta pd-delta-down-bad" title="vs. prior baseline">↓ {{ p.mood_delta }}</span>
+              {% endif %}
+            {% endif %}
           </div>
         </div>
+
+        {# ── Stress ───────────────────────────────────────────────── #}
         <div class="pd-stat">
-          <div class="pd-stat-label">Check-ins (30d)</div>
-          <div class="pd-stat-val">{{ p.checkin_count_30d or 0 }}</div>
+          <div class="pd-stat-label">Stress (14d)</div>
+          <div class="pd-stat-val {% if p.stress_recent is not none and p.stress_recent > 6 %}pd-stat-low{% elif p.stress_recent is not none and p.stress_recent <= 4 %}pd-stat-good{% endif %}">
+            {% if p.stress_recent is not none %}{{ p.stress_recent }}/10{% else %}—{% endif %}
+            {% if p.stress_delta is not none %}
+              {% if p.stress_dir == 'stable' %}
+                <span class="pd-delta pd-delta-stable">→</span>
+              {% elif p.stress_dir == 'up' %}
+                <span class="pd-delta pd-delta-up-bad" title="vs. prior baseline">↑ +{{ p.stress_delta }}</span>
+              {% else %}
+                <span class="pd-delta pd-delta-down-good" title="vs. prior baseline">↓ {{ p.stress_delta }}</span>
+              {% endif %}
+            {% endif %}
+          </div>
         </div>
+
+        {# ── Sleep ────────────────────────────────────────────────── #}
+        <div class="pd-stat">
+          <div class="pd-stat-label">Sleep (14d)</div>
+          <div class="pd-stat-val {% if p.sleep_recent is not none and p.sleep_recent < 6 %}pd-stat-low{% elif p.sleep_recent is not none and p.sleep_recent >= 7 %}pd-stat-good{% endif %}">
+            {% if p.sleep_recent is not none %}{{ p.sleep_recent }}h{% else %}—{% endif %}
+            {% if p.sleep_delta is not none %}
+              {% if p.sleep_dir == 'stable' %}
+                <span class="pd-delta pd-delta-stable">→</span>
+              {% elif p.sleep_dir == 'up' %}
+                <span class="pd-delta pd-delta-up-good" title="vs. prior baseline">↑ +{{ p.sleep_delta }}h</span>
+              {% else %}
+                <span class="pd-delta pd-delta-down-bad" title="vs. prior baseline">↓ {{ p.sleep_delta }}h</span>
+              {% endif %}
+            {% endif %}
+          </div>
+        </div>
+
+        {# ── Last Check-in ─────────────────────────────────────────── #}
         <div class="pd-stat">
           <div class="pd-stat-label">Last Check-in</div>
           <div class="pd-stat-val {% if inactive %}pd-stat-low{% endif %}">
@@ -84,6 +151,7 @@
             {% else %}Never{% endif %}
           </div>
         </div>
+
       </div>
 
       <!-- Meds row -->

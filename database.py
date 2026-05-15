@@ -2048,33 +2048,96 @@ def update_provider_appointment(appt_id: str, provider_id: str, updates: dict) -
         return False
 
 
+def _baseline_delta(recent_vals, historical_vals, min_n=5):
+    """Compute (recent_avg, delta, direction) for a metric.
+
+    recent_vals:     values from the last 14 days
+    historical_vals: values from days 15–90 (the prior baseline window)
+    min_n:           minimum observations required in each window to show a delta
+
+    Returns:
+        recent_avg  – rounded average of recent window, or None if no data
+        delta       – recent_avg minus historical_avg, rounded to 1dp, or None
+        direction   – 'up' | 'down' | 'stable' | None
+    """
+    recent = [x for x in recent_vals if x is not None]
+    historical = [x for x in historical_vals if x is not None]
+    recent_avg = round(sum(recent) / len(recent), 1) if recent else None
+    if len(recent) < min_n or len(historical) < min_n:
+        return recent_avg, None, None
+    hist_avg = sum(historical) / len(historical)
+    delta = round((sum(recent) / len(recent)) - hist_avg, 1)
+    if abs(delta) < 0.5:
+        direction = 'stable'
+    elif delta > 0:
+        direction = 'up'
+    else:
+        direction = 'down'
+    return recent_avg, delta, direction
+
+
 def get_provider_patients_with_stats(provider_id: str) -> list:
-    """Enhanced version of get_provider_patients with mood avg and adherence for the dashboard grid."""
+    """Enhanced version of get_provider_patients with mood avg and adherence for the dashboard grid.
+
+    For each patient, fetches 90 days of check-in data in a single query and
+    partitions it into:
+      - recent   : last 14 days  (aligns with default appointment review window)
+      - historical: days 15–90   (personal baseline for comparison)
+
+    Computes delta and direction for mood, stress, and sleep so the dashboard
+    can display deviation-from-baseline rather than raw averages.
+    """
     base = get_provider_patients(provider_id)
+    today = date.today()
+    cutoff_90d = (today - timedelta(days=90)).isoformat()
+    cutoff_14d = (today - timedelta(days=14)).isoformat()
+
     for p in base:
         uid = p['patient_id']
-        # 30-day mood average
-        try:
-            since = (date.today() - timedelta(days=30)).isoformat()
-            ci = supabase_admin.table('checkins').select('mood_score').eq(
-                'user_id', uid).gte('checkin_date', since).execute()
-            scores = [r['mood_score'] for r in (ci.data or []) if r.get('mood_score') is not None]
-            p['mood_avg_30d'] = round(sum(scores) / len(scores), 1) if scores else None
-            p['checkin_count_30d'] = len(scores)
-        except Exception:
-            p['mood_avg_30d'] = None
-            p['checkin_count_30d'] = 0
 
-        # Days since last check-in
+        # ── Fetch 90 days of core metrics in one query ────────────────────────
+        try:
+            ci = supabase_admin.table('checkins').select(
+                'checkin_date, mood_score, stress_score, sleep_hours'
+            ).eq('user_id', uid).gte('checkin_date', cutoff_90d).execute()
+            rows = ci.data or []
+        except Exception:
+            rows = []
+
+        # Partition into recent (≤14d) and historical (15–90d)
+        recent_mood, hist_mood = [], []
+        recent_stress, hist_stress = [], []
+        recent_sleep, hist_sleep = [], []
+
+        for r in rows:
+            d = (r.get('checkin_date') or '')[:10]
+            is_recent = d >= cutoff_14d
+            bucket_mood   = recent_mood   if is_recent else hist_mood
+            bucket_stress = recent_stress if is_recent else hist_stress
+            bucket_sleep  = recent_sleep  if is_recent else hist_sleep
+            if r.get('mood_score')  is not None: bucket_mood.append(r['mood_score'])
+            if r.get('stress_score') is not None: bucket_stress.append(r['stress_score'])
+            if r.get('sleep_hours')  is not None: bucket_sleep.append(r['sleep_hours'])
+
+        # Compute deltas (min 5 observations per window to show a delta)
+        p['mood_recent'],   p['mood_delta'],   p['mood_dir']   = _baseline_delta(recent_mood,   hist_mood)
+        p['stress_recent'], p['stress_delta'], p['stress_dir'] = _baseline_delta(recent_stress, hist_stress)
+        p['sleep_recent'],  p['sleep_delta'],  p['sleep_dir']  = _baseline_delta(recent_sleep,  hist_sleep)
+
+        # Keep legacy key so existing template references don't break
+        p['mood_avg_30d']     = p['mood_recent']
+        p['checkin_count_30d'] = len(recent_mood)
+
+        # ── Days since last check-in ──────────────────────────────────────────
         if p.get('last_checkin'):
             try:
-                p['days_since_checkin'] = (date.today() - date.fromisoformat(p['last_checkin'])).days
+                p['days_since_checkin'] = (today - date.fromisoformat(p['last_checkin'])).days
             except Exception:
                 p['days_since_checkin'] = None
         else:
             p['days_since_checkin'] = None
 
-        # Last appointment date
+        # ── Last appointment date ─────────────────────────────────────────────
         try:
             ar = supabase_admin.table('provider_appointments').select(
                 'started_at, status').eq('provider_id', str(provider_id)).eq(
