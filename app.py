@@ -209,6 +209,7 @@ def forgot_password_page():
         flash('Please enter your email address.', 'error')
         return render_template('auth/forgot_password.html')
 
+    import email_utils
     user_id, full_name = auth_module.initiate_password_reset(email)
     if user_id:
         token = auth_module.generate_reset_token(user_id, app.secret_key)
