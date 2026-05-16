@@ -750,9 +750,44 @@ input[type="number"], input[type="date"], select, .form-textarea, textarea {
 .insights-list  { padding-left: 18px; font-size: 0.89rem; line-height: 1.85; }
 
 .charts-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 16px; }
+.charts-grid-primary { display: grid; grid-template-columns: repeat(2, 1fr); gap: 16px; margin-bottom: 16px; }
 .chart-card  { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); padding: 20px; }
-.chart-title { font-size: 0.94rem; margin-bottom: 14px; color: var(--text-muted); font-family: 'DM Sans', sans-serif; font-weight: 600; }
+.chart-title { font-size: 0.94rem; margin-bottom: 6px; color: var(--text-muted); font-family: 'DM Sans', sans-serif; font-weight: 600; }
+.chart-title-row { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+.chart-title-avg { font-size: 0.78rem; color: var(--text-muted); }
+.chart-title-trend { font-size: 0.72rem; font-weight: 700; padding: 1px 6px; border-radius: 3px; }
+.chart-trend-up-good  { background: #e6f4ea; color: #1a7f3c; }
+.chart-trend-down-bad { background: #fdecea; color: #c0392b; }
+.chart-trend-up-bad   { background: #fdecea; color: #c0392b; }
+.chart-trend-down-good{ background: #e6f4ea; color: #1a7f3c; }
+.chart-trend-stable   { background: #f0f0f0; color: #888; }
 .chart-density-banner { font-size: 11px; color: var(--amber); background: var(--amber-light); border: 1px solid #e8c96a; border-radius: 2px; padding: 4px 8px; margin-bottom: 10px; letter-spacing: .01em; }
+.chart-empty-ph { font-size: 0.8rem; color: var(--text-muted); text-align: center; padding: 48px 0; border: 1px dashed var(--border); border-radius: var(--radius); }
+
+/* Stat card trend indicators */
+.stat-trend { font-size: 0.68rem; font-weight: 700; letter-spacing: 0.02em; margin-top: 4px; min-height: 14px; }
+.stat-trend-good { color: #1a7f3c; }
+.stat-trend-bad  { color: #c0392b; }
+.stat-trend-neutral { color: var(--text-muted); }
+
+/* Collapsible trends sections */
+.trends-section { background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius); margin-bottom: 16px; overflow: hidden; }
+.trends-section-hdr {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 20px; cursor: pointer; user-select: none;
+  border-bottom: 1px solid transparent; transition: background 0.15s;
+}
+.trends-section-hdr:hover { background: var(--bg); }
+.trends-section-hdr.open { border-bottom-color: var(--border-light); }
+.trends-section-title { font-size: 0.9rem; font-weight: 700; color: var(--text); }
+.trends-section-meta  { font-size: 0.75rem; color: var(--text-muted); margin-left: 10px; }
+.trends-section-chevron { font-size: 0.75rem; color: var(--text-muted); transition: transform 0.2s; }
+.trends-section-hdr.open .trends-section-chevron { transform: rotate(180deg); }
+.trends-section-body { padding: 20px; }
+
+@media (max-width: 640px) {
+  .charts-grid-primary { grid-template-columns: 1fr; }
+}
 
 /* ── Settings ────────────────────────────────────────────────────────── */
 

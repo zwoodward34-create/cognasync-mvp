@@ -9,6 +9,7 @@
 {% endblock %}
 
 {% block content %}
+
 <!-- Day detail modal -->
 <div id="day-modal-overlay"
      onclick="if(event.target===this)closeDayModal()"
@@ -29,11 +30,15 @@
   </div>
 </div>
 
+<!-- ── Page header ─────────────────────────────────────────────────────────── -->
 <div class="page-header">
   <div>
     {% if provider_view %}
-    <a href="/provider/patient/{{ provider_patient_id }}" style="font-size:12px;color:var(--text-muted);text-decoration:none;display:inline-block;margin-bottom:4px;">← Back to {{ provider_patient_name }}</a>
-    <h1 class="page-title">{{ provider_patient_name }} — Full Trends</h1>
+    <a href="/provider/patient/{{ provider_patient_id }}"
+       style="font-size:12px;color:var(--text-muted);text-decoration:none;display:inline-block;margin-bottom:4px;">
+      ← Back to {{ provider_patient_name }}
+    </a>
+    <h1 class="page-title">{{ provider_patient_name }} — Trends</h1>
     <p class="page-sub" style="color:#dc2626;">Provider view — read only</p>
     {% else %}
     <h1 class="page-title">Trends</h1>
@@ -41,44 +46,54 @@
     {% endif %}
   </div>
   <div class="period-selector">
-    <button class="period-btn active" data-days="7" onclick="loadTrends(7, this)">7d</button>
-    <button class="period-btn" data-days="14" onclick="loadTrends(14, this)">14d</button>
-    <button class="period-btn" data-days="30" onclick="loadTrends(30, this)">30d</button>
+    <button class="period-btn active" data-days="7"  onclick="loadTrends(7, this)">7d</button>
+    <button class="period-btn"        data-days="14" onclick="loadTrends(14, this)">14d</button>
+    <button class="period-btn"        data-days="30" onclick="loadTrends(30, this)">30d</button>
+    <button class="period-btn"        data-days="60" onclick="loadTrends(60, this)">60d</button>
+    <button class="period-btn"        data-days="90" onclick="loadTrends(90, this)">90d</button>
   </div>
 </div>
 
+<!-- ── Loading / error ─────────────────────────────────────────────────────── -->
 <div id="trends-loading" class="loading-panel hidden">
   <div class="spinner"></div>
   <p>Loading your data…</p>
 </div>
 <div id="trends-error" class="alert alert-error hidden"></div>
 
+<!-- ── Main content ────────────────────────────────────────────────────────── -->
 <div id="trends-content">
-  <div class="stats-row" id="stats-row">
+
+  <!-- 1. Core stat strip -->
+  <div class="stats-row" id="stats-row" style="margin-bottom:20px;">
     <div class="stat-card">
       <div class="stat-label">Avg Mood</div>
       <div class="stat-value" id="stat-mood">—</div>
       <div class="stat-sub">/10</div>
+      <div class="stat-trend" id="stat-mood-trend"></div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Avg Sleep</div>
       <div class="stat-value" id="stat-sleep">—</div>
       <div class="stat-sub">hrs/night</div>
+      <div class="stat-trend" id="stat-sleep-trend"></div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Avg Stress</div>
       <div class="stat-value" id="stat-stress">—</div>
       <div class="stat-sub">/10</div>
-    </div>
-    <div class="stat-card">
-      <div class="stat-label">Check-ins</div>
-      <div class="stat-value" id="stat-checkins">—</div>
-      <div class="stat-sub">this period</div>
+      <div class="stat-trend" id="stat-stress-trend"></div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Avg Energy</div>
       <div class="stat-value" id="stat-energy">—</div>
       <div class="stat-sub">/10</div>
+      <div class="stat-trend" id="stat-energy-trend"></div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Check-ins</div>
+      <div class="stat-value" id="stat-checkins">—</div>
+      <div class="stat-sub">this period</div>
     </div>
     <div class="stat-card">
       <div class="stat-label">Med Adherence</div>
@@ -87,117 +102,265 @@
     </div>
   </div>
 
-  <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:700;margin:20px 0 10px;">
-    System Scores
-  </div>
-  <div class="stats-row" id="scores-row">
-    <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
-      <div class="flip-card-inner">
-        <div class="flip-card-front">
-          <div class="stat-label">Stability Score</div>
-          <div class="stat-value" id="stat-stability">—</div>
-          <div class="stat-sub">/10 avg</div>
-          <div class="flip-hint">tap for info ↻</div>
-        </div>
-        <div class="flip-card-back">
-          <strong>Stability Score</strong>
-          Blends mood, energy, dissociation, and anxiety into one 0–10 number. Below 4 means these signals are pulling against each other — worth discussing with your provider.
-        </div>
-      </div>
-    </div>
-    <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
-      <div class="flip-card-inner">
-        <div class="flip-card-front">
-          <div class="stat-label">Stim Load</div>
-          <div class="stat-value" id="stat-stim">—</div>
-          <div class="stat-sub">/10 avg</div>
-          <div class="flip-hint">tap for info ↻</div>
-        </div>
-        <div class="flip-card-back">
-          <strong>Stim Load</strong>
-          Total stimulant burden per day: caffeine tier plus any stimulant medications taken. Above 7 puts significant load on your system, especially alongside poor sleep.
-        </div>
-      </div>
-    </div>
-    <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
-      <div class="flip-card-inner">
-        <div class="flip-card-front">
-          <div class="stat-label">Crash Risk Days</div>
-          <div class="stat-value" id="stat-crash">—</div>
-          <div class="stat-sub">days ≥7/10</div>
-          <div class="flip-hint">tap for info ↻</div>
-        </div>
-        <div class="flip-card-back">
-          <strong>Crash Risk Days</strong>
-          Days where sleep disruption and nervous system load combined to score 7/10 or higher. These are days your system was under meaningful compounding strain.
-        </div>
-      </div>
-    </div>
-    <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
-      <div class="flip-card-inner">
-        <div class="flip-card-front">
-          <div class="stat-label">Sleep Disruption</div>
-          <div class="stat-value" id="stat-sleepdis">—</div>
-          <div class="stat-sub">/10 avg</div>
-          <div class="flip-hint">tap for info ↻</div>
-        </div>
-        <div class="flip-card-back">
-          <strong>Sleep Disruption</strong>
-          Scored from sleep duration, time to fall asleep, and nighttime awakenings. 0 = undisturbed. A consistent average above 6 is worth raising with your provider.
-        </div>
-      </div>
-    </div>
-    <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
-      <div class="flip-card-inner">
-        <div class="flip-card-front">
-          <div class="stat-label">Mood Distortion</div>
-          <div class="stat-value" id="stat-distortion">—</div>
-          <div class="stat-sub">avg gap</div>
-          <div class="flip-hint">tap for info ↻</div>
-        </div>
-        <div class="flip-card-back">
-          <strong>Mood Distortion</strong>
-          The gap between how you rated your mood and what your other signals (energy, dissociation, anxiety) suggest. A gap above 2.5 means your self-report and system state may be misaligned.
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div id="insights-panel" class="insights-panel hidden">
+  <!-- 2. Key Insights — high signal, appears before charts -->
+  <div id="insights-panel" class="insights-panel hidden" style="margin-bottom:20px;">
     <h2 class="section-title">Key Insights</h2>
     <ul id="insights-list" class="insights-list"></ul>
   </div>
 
-  <!-- Weekly Discovery -->
-  <div id="discovery-section" class="insights-panel" style="margin-bottom:24px;display:none;">
-    <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="toggleSection('discovery-body','discovery-chevron')">
-      <h2 class="section-title" style="margin:0;">Weekly Discovery</h2>
-      <div style="display:flex;align-items:center;gap:8px;">
-        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();refreshDiscovery()">↻ Refresh</button>
-        <span id="discovery-chevron" style="font-size:18px;color:var(--text-muted);transition:transform 0.2s;display:inline-block;transform:rotate(-90deg);">▾</span>
+  <!-- 3. Primary charts — 2-column, taller -->
+  <div class="charts-grid-primary" style="margin-bottom:20px;">
+    <div class="chart-card">
+      <div class="chart-title-row">
+        <span class="chart-title">Mood</span>
+        <span class="chart-title-avg" id="chart-label-mood"></span>
+        <span class="chart-title-trend" id="chart-trend-mood"></span>
+      </div>
+      <canvas id="mood-chart" height="240"></canvas>
+      <div class="chart-empty-ph" id="mood-empty" style="display:none;">No check-ins recorded this period</div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title-row">
+        <span class="chart-title">Sleep</span>
+        <span class="chart-title-avg" id="chart-label-sleep"></span>
+        <span class="chart-title-trend" id="chart-trend-sleep"></span>
+      </div>
+      <canvas id="sleep-chart" height="240"></canvas>
+      <div class="chart-empty-ph" id="sleep-empty" style="display:none;">No check-ins recorded this period</div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title-row">
+        <span class="chart-title">Stress</span>
+        <span class="chart-title-avg" id="chart-label-stress"></span>
+        <span class="chart-title-trend" id="chart-trend-stress"></span>
+      </div>
+      <canvas id="stress-chart" height="240"></canvas>
+      <div class="chart-empty-ph" id="stress-empty" style="display:none;">No check-ins recorded this period</div>
+    </div>
+    <div class="chart-card">
+      <div class="chart-title-row">
+        <span class="chart-title">Energy</span>
+        <span class="chart-title-avg" id="chart-label-energy"></span>
+        <span class="chart-title-trend" id="chart-trend-energy"></span>
+      </div>
+      <canvas id="energy-chart" height="240"></canvas>
+      <div class="chart-empty-ph" id="energy-empty" style="display:none;">No check-ins recorded this period</div>
+    </div>
+  </div>
+
+  <!-- 4. System Scores — collapsible -->
+  <div class="trends-section" id="section-scores">
+    <div class="trends-section-hdr" onclick="toggleTrendsSection('scores')">
+      <div style="display:flex;align-items:center;">
+        <span class="trends-section-title">System Scores</span>
+        <span class="trends-section-meta">Computed from your check-in data</span>
+      </div>
+      <span class="trends-section-chevron">▾</span>
+    </div>
+    <div class="trends-section-body" id="section-body-scores" style="display:none;">
+      <div class="stats-row" id="scores-row" style="margin-bottom:0;">
+        <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <div class="stat-label">Stability Score</div>
+              <div class="stat-value" id="stat-stability">—</div>
+              <div class="stat-sub">/10 avg</div>
+              <div class="flip-hint">tap for info ↻</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Stability Score</strong>
+              Blends mood, energy, dissociation, and anxiety into one 0–10 number. Below 4 means these signals are pulling against each other — worth discussing with your provider.
+            </div>
+          </div>
+        </div>
+        <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <div class="stat-label">Stim Load</div>
+              <div class="stat-value" id="stat-stim">—</div>
+              <div class="stat-sub">/10 avg</div>
+              <div class="flip-hint">tap for info ↻</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Stim Load</strong>
+              Total stimulant burden per day: caffeine tier plus any stimulant medications taken. Above 7 puts significant load on your system, especially alongside poor sleep.
+            </div>
+          </div>
+        </div>
+        <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <div class="stat-label">Crash Risk Days</div>
+              <div class="stat-value" id="stat-crash">—</div>
+              <div class="stat-sub">days ≥7/10</div>
+              <div class="flip-hint">tap for info ↻</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Crash Risk Days</strong>
+              Days where sleep disruption and nervous system load combined to score 7/10 or higher. These are days your system was under meaningful compounding strain.
+            </div>
+          </div>
+        </div>
+        <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <div class="stat-label">Sleep Disruption</div>
+              <div class="stat-value" id="stat-sleepdis">—</div>
+              <div class="stat-sub">/10 avg</div>
+              <div class="flip-hint">tap for info ↻</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Sleep Disruption</strong>
+              Scored from sleep duration, time to fall asleep, and nighttime awakenings. 0 = undisturbed. A consistent average above 6 is worth raising with your provider.
+            </div>
+          </div>
+        </div>
+        <div class="stat-card flip-card" onclick="this.classList.toggle('flipped')">
+          <div class="flip-card-inner">
+            <div class="flip-card-front">
+              <div class="stat-label">Mood Distortion</div>
+              <div class="stat-value" id="stat-distortion">—</div>
+              <div class="stat-sub">avg gap</div>
+              <div class="flip-hint">tap for info ↻</div>
+            </div>
+            <div class="flip-card-back">
+              <strong>Mood Distortion</strong>
+              The gap between how you rated your mood and what your other signals suggest. A gap above 2.5 means your self-report and system state may be misaligned.
+            </div>
+          </div>
+        </div>
       </div>
     </div>
-    <div id="discovery-body" style="display:none;">
-      <p style="font-size:13px;color:var(--text-muted);margin:12px 0 16px;">
-        Strongest patterns found in your data — updated weekly
+  </div>
+
+  <!-- 5. Cognitive & Emotional — collapsible -->
+  <div class="trends-section" id="section-cognitive">
+    <div class="trends-section-hdr" onclick="toggleTrendsSection('cognitive')">
+      <div style="display:flex;align-items:center;">
+        <span class="trends-section-title">Cognitive &amp; Emotional</span>
+        <span class="trends-section-meta">Focus, motivation, irritability &amp; more</span>
+      </div>
+      <span class="trends-section-chevron">▾</span>
+    </div>
+    <div class="trends-section-body" id="section-body-cognitive" style="display:none;">
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3 class="chart-title">Focus</h3>
+          <canvas id="focus-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="focus-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Dissociation</h3>
+          <canvas id="dissociation-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="dissociation-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Irritability</h3>
+          <canvas id="irritability-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="irritability-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Motivation</h3>
+          <canvas id="motivation-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="motivation-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Social Quality</h3>
+          <canvas id="social-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="social-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Workload Friction</h3>
+          <canvas id="workload-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="workload-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Perceived Stress</h3>
+          <canvas id="perceived-stress-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="perceived-stress-empty" style="display:none;">No data this period</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 6. Lifestyle — collapsible -->
+  <div class="trends-section" id="section-lifestyle">
+    <div class="trends-section-hdr" onclick="toggleTrendsSection('lifestyle')">
+      <div style="display:flex;align-items:center;">
+        <span class="trends-section-title">Lifestyle</span>
+        <span class="trends-section-meta">Caffeine, exercise, sleep quality &amp; more</span>
+      </div>
+      <span class="trends-section-chevron">▾</span>
+    </div>
+    <div class="trends-section-body" id="section-body-lifestyle" style="display:none;">
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3 class="chart-title">Caffeine (mg)</h3>
+          <canvas id="caffeine-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="caffeine-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Alcohol (drinks)</h3>
+          <canvas id="alcohol-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="alcohol-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Exercise (min)</h3>
+          <canvas id="exercise-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="exercise-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Sunlight (hrs)</h3>
+          <canvas id="sunlight-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="sunlight-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Screen Time (hrs)</h3>
+          <canvas id="screentime-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="screentime-empty" style="display:none;">No data this period</div>
+        </div>
+        <div class="chart-card">
+          <h3 class="chart-title">Sleep Quality</h3>
+          <canvas id="sleep-quality-chart" height="200"></canvas>
+          <div class="chart-empty-ph" id="sleep-quality-empty" style="display:none;">No data this period</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 7. Weekly Discovery — collapsible -->
+  <div class="trends-section" id="section-discovery">
+    <div class="trends-section-hdr" onclick="toggleTrendsSection('discovery')">
+      <div style="display:flex;align-items:center;">
+        <span class="trends-section-title">Weekly Discovery</span>
+        <span class="trends-section-meta">Strongest patterns in your data</span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="btn btn-ghost btn-sm"
+                onclick="event.stopPropagation();refreshDiscovery()"
+                style="font-size:0.75rem;">↻ Refresh</button>
+        <span class="trends-section-chevron">▾</span>
+      </div>
+    </div>
+    <div class="trends-section-body" id="section-body-discovery" style="display:none;">
+      <p style="font-size:13px;color:var(--text-muted);margin:0 0 16px;">
+        Strongest correlations found in your data — updated weekly.
       </p>
       <div id="unexpected-panel"></div>
     </div>
   </div>
 
-  <!-- Hypothesis tester -->
-  <div class="insights-panel" style="margin-bottom:24px;">
-    <div style="display:flex;align-items:center;justify-content:space-between;cursor:pointer;" onclick="toggleSection('hypothesis-body','hypothesis-chevron')">
-      <h2 class="section-title" style="margin:0;">Test a Hypothesis</h2>
-      <span id="hypothesis-chevron" style="font-size:18px;color:var(--text-muted);transition:transform 0.2s;display:inline-block;transform:rotate(-90deg);">▾</span>
+  <!-- 8. Hypothesis Tester — collapsible -->
+  <div class="trends-section" id="section-hypothesis">
+    <div class="trends-section-hdr" onclick="toggleTrendsSection('hypothesis')">
+      <div style="display:flex;align-items:center;">
+        <span class="trends-section-title">Test a Hypothesis</span>
+        <span class="trends-section-meta">State a belief — we'll check it against your data</span>
+      </div>
+      <span class="trends-section-chevron">▾</span>
     </div>
-    <div id="hypothesis-body" style="display:none;">
-      <p style="font-size:13px;color:var(--text-muted);margin:12px 0 14px;">
-        State a belief about your data — we'll test it against all three possible outcomes simultaneously.
-      </p>
-
+    <div class="trends-section-body" id="section-body-hypothesis" style="display:none;">
       <div id="hyp-error" class="alert alert-error hidden" style="margin-bottom:10px;"></div>
-
       <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px;margin-bottom:14px;">
         <span style="font-size:13px;">I think</span>
         <select id="hyp-var-a" class="form-input" style="width:auto;padding:6px 10px;font-size:13px;">
@@ -253,7 +416,6 @@
           Test Hypothesis
         </button>
       </div>
-
       <div id="hyp-loading" class="hidden" style="font-size:12px;color:var(--text-muted);padding:8px 0;">
         Testing all three directions…
       </div>
@@ -262,87 +424,7 @@
     </div>
   </div>
 
-  <div class="charts-grid">
-    <div class="chart-card">
-      <h3 class="chart-title">Mood</h3>
-      <canvas id="mood-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Sleep (hours)</h3>
-      <canvas id="sleep-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Stress</h3>
-      <canvas id="stress-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Energy</h3>
-      <canvas id="energy-chart" height="200"></canvas>
-    </div>
-  </div>
-
-  <!-- Cognitive & Emotional -->
-  <h2 class="section-title" style="margin-top:32px;">Cognitive &amp; Emotional</h2>
-  <div class="charts-grid">
-    <div class="chart-card">
-      <h3 class="chart-title">Focus</h3>
-      <canvas id="focus-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Dissociation</h3>
-      <canvas id="dissociation-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Irritability</h3>
-      <canvas id="irritability-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Motivation</h3>
-      <canvas id="motivation-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Social Quality</h3>
-      <canvas id="social-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Workload Friction</h3>
-      <canvas id="workload-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Perceived Stress</h3>
-      <canvas id="perceived-stress-chart" height="200"></canvas>
-    </div>
-  </div>
-
-  <!-- Lifestyle -->
-  <h2 class="section-title" style="margin-top:32px;">Lifestyle</h2>
-  <div class="charts-grid">
-    <div class="chart-card">
-      <h3 class="chart-title">Caffeine (mg)</h3>
-      <canvas id="caffeine-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Alcohol (drinks)</h3>
-      <canvas id="alcohol-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Exercise (min)</h3>
-      <canvas id="exercise-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Sunlight (hrs)</h3>
-      <canvas id="sunlight-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Screen Time (hrs)</h3>
-      <canvas id="screentime-chart" height="200"></canvas>
-    </div>
-    <div class="chart-card">
-      <h3 class="chart-title">Sleep Quality</h3>
-      <canvas id="sleep-quality-chart" height="200"></canvas>
-    </div>
-  </div>
-</div>
+</div><!-- /trends-content -->
 {% endblock %}
 
 {% block scripts %}
@@ -354,8 +436,18 @@ let moodChart, sleepChart, stressChart, energyChart;
 let focusChart, dissociationChart, irritabilityChart, motivationChart, socialChart, workloadChart, perceivedStressChart;
 let caffeineChart, alcoholChart, exerciseChart, sunlightChart, screentimeChart, sleepQualityChart;
 
-// ── Day detail popup ──────────────────────────────────────────────────────────
-const chartDates = {};   // keyed by metric: { mood: [...], sleep: [...], ... }
+// ── Collapsible section toggle ────────────────────────────────────────────────
+function toggleTrendsSection(key) {
+  const hdr  = document.querySelector(`#section-${key} .trends-section-hdr`);
+  const body = document.getElementById(`section-body-${key}`);
+  if (!hdr || !body) return;
+  const opening = body.style.display === 'none';
+  body.style.display = opening ? '' : 'none';
+  hdr.classList.toggle('open', opening);
+}
+
+// ── Day detail modal ──────────────────────────────────────────────────────────
+const chartDates = {};
 let activeModalDate = null;
 
 function formatChartDate(dateStr) {
@@ -437,37 +529,48 @@ function renderDayDetail(checkins) {
     }).join('') + '</div>';
 }
 
-function loadTrends(days, btn) {
-  document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
-  if (btn) btn.classList.add('active');
+// ── Trend indicator helpers ───────────────────────────────────────────────────
 
-  const loading = document.getElementById('trends-loading');
-  const error = document.getElementById('trends-error');
-  loading.classList.remove('hidden');
-  error.classList.add('hidden');
-
-  const trendsUrl = window.PROVIDER_PATIENT_ID
-    ? '/api/provider/patient/' + window.PROVIDER_PATIENT_ID + '/trends?days=' + days
-    : '/api/trends?days=' + days;
-  apiGet(trendsUrl)
-    .then(data => {
-      loading.classList.add('hidden');
-      renderTrends(data);
-      if (!window.PROVIDER_PATIENT_ID) loadTimingInsights(days);
-    })
-    .catch(err => {
-      loading.classList.add('hidden');
-      error.textContent = 'Could not load trends. Try again.';
-      error.classList.remove('hidden');
-    });
+function setStatTrend(statId, metric, goodWhenUp) {
+  const el = document.getElementById(statId + '-trend');
+  if (!el) return;
+  if (!metric || !metric.trend || metric.trend === 'flat') { el.textContent = ''; return; }
+  const isUp   = metric.trend === 'increasing';
+  const isDown = metric.trend === 'decreasing';
+  const isGood = goodWhenUp ? isUp : isDown;
+  const arrow  = isUp ? '↑' : (isDown ? '↓' : '→');
+  const label  = isUp ? 'trending up' : (isDown ? 'trending down' : 'stable');
+  el.className = 'stat-trend ' + (isGood ? 'stat-trend-good' : 'stat-trend-bad');
+  el.textContent = arrow + ' ' + label;
 }
+
+function setChartTrendLabel(metricKey, metric, avgLabel, unit, goodWhenUp) {
+  const avgEl   = document.getElementById('chart-label-' + metricKey);
+  const trendEl = document.getElementById('chart-trend-' + metricKey);
+  if (avgEl && metric && metric.average != null) {
+    avgEl.textContent = metric.average + unit + ' avg';
+  }
+  if (!trendEl || !metric || !metric.trend || metric.trend === 'flat') return;
+  const isUp   = metric.trend === 'increasing';
+  const isDown = metric.trend === 'decreasing';
+  const isGood = goodWhenUp ? isUp : isDown;
+  const arrow  = isUp ? '↑' : (isDown ? '↓' : '→');
+  const label  = isUp ? 'trending up' : (isDown ? 'trending down' : 'stable');
+  trendEl.textContent = arrow + ' ' + label;
+  trendEl.className = 'chart-title-trend ' + (
+    metric.trend === 'stable' ? 'chart-trend-stable'
+    : isGood ? (isUp ? 'chart-trend-up-good' : 'chart-trend-down-good')
+    :          (isUp ? 'chart-trend-up-bad'  : 'chart-trend-down-bad')
+  );
+}
+
+// ── Chart helpers ─────────────────────────────────────────────────────────────
 
 function setDensityBanner(canvasId, n, totalDays) {
   const canvas = document.getElementById(canvasId);
   if (!canvas) return;
   const card = canvas.closest('.chart-card');
   if (!card) return;
-  // Remove any previous banner
   const prev = card.querySelector('.chart-density-banner');
   if (prev) prev.remove();
   if (n > 0 && n < 7) {
@@ -478,11 +581,26 @@ function setDensityBanner(canvasId, n, totalDays) {
   }
 }
 
+// Show/hide empty placeholder for a chart
+function setChartEmpty(canvasId, isEmpty) {
+  const canvas = document.getElementById(canvasId);
+  // Derive placeholder id by replacing '-chart' suffix with '-empty'
+  const emptyId = canvasId.replace('-chart', '-empty');
+  const ph = document.getElementById(emptyId);
+  if (canvas) canvas.style.display = isEmpty ? 'none' : '';
+  if (ph)     ph.style.display     = isEmpty ? ''     : 'none';
+}
+
 function makeMetricChart(existingChart, canvasId, label, metric, color, bgColor, yMin, yMax, unit, totalDays) {
   if (existingChart) existingChart.destroy();
   const scores = (metric && metric.daily_scores) || [];
   const dates  = (metric && metric.dates)        || [];
   chartDates[canvasId] = dates;
+
+  const isEmpty = scores.length === 0;
+  setChartEmpty(canvasId, isEmpty);
+  if (isEmpty) return null;
+
   if (totalDays != null) setDensityBanner(canvasId, scores.length, totalDays);
   return new Chart(document.getElementById(canvasId), {
     type: 'line',
@@ -497,24 +615,67 @@ function makeMetricChart(existingChart, canvasId, label, metric, color, bgColor,
   });
 }
 
+// ── Main loadTrends ───────────────────────────────────────────────────────────
+
+function loadTrends(days, btn) {
+  document.querySelectorAll('.period-btn').forEach(b => b.classList.remove('active'));
+  if (btn) btn.classList.add('active');
+
+  const loading = document.getElementById('trends-loading');
+  const error   = document.getElementById('trends-error');
+  loading.classList.remove('hidden');
+  error.classList.add('hidden');
+
+  const trendsUrl = window.PROVIDER_PATIENT_ID
+    ? '/api/provider/patient/' + window.PROVIDER_PATIENT_ID + '/trends?days=' + days
+    : '/api/trends?days=' + days;
+
+  apiGet(trendsUrl)
+    .then(data => {
+      loading.classList.add('hidden');
+      renderTrends(data);
+      if (!window.PROVIDER_PATIENT_ID) loadTimingInsights(days);
+    })
+    .catch(() => {
+      loading.classList.add('hidden');
+      error.textContent = 'Could not load trends. Try again.';
+      error.classList.remove('hidden');
+    });
+}
+
+// ── renderTrends ──────────────────────────────────────────────────────────────
+
 function renderTrends(data) {
-  document.getElementById('stat-mood').textContent = data.mood.average || '—';
-  document.getElementById('stat-sleep').textContent = data.sleep.average || '—';
-  document.getElementById('stat-stress').textContent = data.stress.average || '—';
-  document.getElementById('stat-energy').textContent = (data.energy && data.energy.average) || '—';
-  document.getElementById('stat-checkins').textContent = data.checkins_this_period;
+  // Core stats
+  document.getElementById('stat-mood').textContent      = data.mood.average || '—';
+  document.getElementById('stat-sleep').textContent     = data.sleep.average || '—';
+  document.getElementById('stat-stress').textContent    = data.stress.average || '—';
+  document.getElementById('stat-energy').textContent    = (data.energy && data.energy.average) || '—';
+  document.getElementById('stat-checkins').textContent  = data.checkins_this_period;
   document.getElementById('stat-adherence').textContent =
     data.medication_adherence > 0 ? data.medication_adherence : '—';
 
-  // ── System scores ─────────────────────────────────────────────────
-  const fmt = (v) => v != null ? v : '—';
+  // Trend direction on stat cards (good direction: mood/sleep/energy up, stress down)
+  setStatTrend('stat-mood',   data.mood,   true);
+  setStatTrend('stat-sleep',  data.sleep,  true);
+  setStatTrend('stat-stress', data.stress, false);
+  setStatTrend('stat-energy', data.energy, true);
+
+  // Trend labels on primary chart headers
+  setChartTrendLabel('mood',   data.mood,   'Mood',   '/10', true);
+  setChartTrendLabel('sleep',  data.sleep,  'Sleep',  'h',   true);
+  setChartTrendLabel('stress', data.stress, 'Stress', '/10', false);
+  setChartTrendLabel('energy', data.energy, 'Energy', '/10', true);
+
+  // System scores
+  const fmt = v => v != null ? v : '—';
   document.getElementById('stat-stability').textContent  = fmt(data.stability_score?.average);
   document.getElementById('stat-stim').textContent       = fmt(data.stim_load?.average);
   document.getElementById('stat-crash').textContent      = data.crash_risk?.high_days ?? '—';
   document.getElementById('stat-sleepdis').textContent   = fmt(data.sleep_disruption?.average);
   document.getElementById('stat-distortion').textContent = fmt(data.mood_distortion?.average);
 
-  // ── Build insights via Insight class ─────────────────────────────
+  // ── Insights ────────────────────────────────────────────────────────
   const insightCandidates = [
     { key: 'mood',   dir: 'increasing', text: 'Mood trending upward.' },
     { key: 'mood',   dir: 'decreasing', text: 'Mood trending downward — worth discussing with your provider.' },
@@ -535,25 +696,20 @@ function renderTrends(data) {
     if (!metric || metric.trend !== c.dir) continue;
     const scores = metric.daily_scores || metric.daily_hours || [];
     if (!scores.length) continue;
-
-    // Gate: same preconditions as before
-    const n = scores.length;
+    const n    = scores.length;
     const freq = data.checkin_count / data.period_days;
     const maxGap = Math.max(...(metric.dates && metric.dates.length > 1
       ? metric.dates.slice(1).map((d, i) => (new Date(d) - new Date(metric.dates[i])) / 3600000)
       : [0]));
-
-    if (n < 21)      { suppressedCount++; firstSuppressReason = firstSuppressReason || `Only ${n} observations; need 21`; continue; }
-    if (freq < 1.5)  { suppressedCount++; firstSuppressReason = firstSuppressReason || `Check-in frequency ${freq.toFixed(1)}/day below 1.5/day minimum`; continue; }
-    if (maxGap > 72) { suppressedCount++; firstSuppressReason = firstSuppressReason || `Data gap of ${Math.round(maxGap)}h detected`; continue; }
-    if (metric.r_squared < 0.64) { suppressedCount++; firstSuppressReason = firstSuppressReason || `R²=${metric.r_squared} — need R²≥0.64 (|r|≥0.8) for 80% confidence threshold`; continue; }
+    if (n < 21)               { suppressedCount++; firstSuppressReason = firstSuppressReason || `Only ${n} observations; need 21`; continue; }
+    if (freq < 1.5)           { suppressedCount++; firstSuppressReason = firstSuppressReason || `Check-in frequency ${freq.toFixed(1)}/day below 1.5/day minimum`; continue; }
+    if (maxGap > 72)          { suppressedCount++; firstSuppressReason = firstSuppressReason || `Data gap of ${Math.round(maxGap)}h detected`; continue; }
+    if (metric.r_squared < 0.64) { suppressedCount++; firstSuppressReason = firstSuppressReason || `R²=${metric.r_squared} — need R²≥0.64`; continue; }
     if (metric.p_value > 0.05)   { suppressedCount++; firstSuppressReason = firstSuppressReason || `p=${metric.p_value} — not statistically significant`; continue; }
-
     const insight = buildInsightFromMetric(data, c.key, c.text);
     if (insight) patientInsights.push(insight.toPatientDisplay());
   }
 
-  // Adherence insight — no correlation required, just observation count
   if (data.checkin_count >= 21) {
     if (data.medication_adherence >= 90)
       patientInsights.push({ pattern: `Excellent medication adherence at ${data.medication_adherence}%.`, confidence: null, limitations: [], contextProblems: [] });
@@ -580,8 +736,6 @@ function renderTrends(data) {
     const n = data.checkin_count || 0;
     const remaining = Math.max(0, 21 - n);
     const progressPct = Math.min(100, Math.round((n / 21) * 100));
-
-    // Early patterns: soft observations, no statistical gates
     const earlyItems = [];
     for (const c of insightCandidates) {
       const metric = data[c.key];
@@ -594,7 +748,6 @@ function renderTrends(data) {
       const dirWord = c.dir === 'increasing' ? 'trending up' : 'trending down';
       earlyItems.push(`${c.key.charAt(0).toUpperCase() + c.key.slice(1)} is ${dirWord} (avg ${avg}${unit} over ${scores.length} check-ins so far).`);
     }
-
     let earlyHtml = '';
     if (earlyItems.length) {
       earlyHtml = `<div style="margin-top:14px;padding-top:12px;border-top:1px solid var(--border-light);">
@@ -606,7 +759,6 @@ function renderTrends(data) {
         </ul>
       </div>`;
     }
-
     insightList.innerHTML = `<li style="list-style:none;">
       <div style="font-size:13px;color:var(--text);margin-bottom:8px;">
         Full insights unlock at 21 check-ins. You have <strong>${n}</strong> so far
@@ -622,107 +774,97 @@ function renderTrends(data) {
     document.getElementById('insights-panel').classList.add('hidden');
   }
 
-  const chartDefaults = {
-    fill: true,
-    tension: 0.4,
-    pointRadius: 5,
-    pointHoverRadius: 8,
-    pointHitRadius: 12,
-  };
-
-  // Store dates for click lookups
+  // ── Primary charts ───────────────────────────────────────────────────
+  const chartDefaults = { fill: true, tension: 0.4, pointRadius: 5, pointHoverRadius: 8, pointHitRadius: 12 };
   chartDates.mood   = data.mood.dates   || [];
   chartDates.sleep  = data.sleep.dates  || [];
   chartDates.stress = data.stress.dates || [];
   chartDates.energy = (data.energy && data.energy.dates) || [];
 
+  const moodScores = data.mood.daily_scores || [];
+  setChartEmpty('mood-chart', moodScores.length === 0);
   if (moodChart) moodChart.destroy();
-  moodChart = new Chart(document.getElementById('mood-chart'), {
-    type: 'line',
-    data: {
-      labels: chartDates.mood.map(formatChartDate),
-      datasets: [{
-        ...chartDefaults,
-        label: 'Mood',
-        data: data.mood.daily_scores,
-        borderColor: '#7c6fcd',
-        backgroundColor: 'rgba(124,111,205,0.12)',
-      }]
-    },
-    options: chartOptions(1, 10, 'mood', 'Mood', data.mood.daily_scores, '/10'),
-  });
-  setDensityBanner('mood-chart', data.mood.daily_scores.length, data.period_days);
+  if (moodScores.length > 0) {
+    moodChart = new Chart(document.getElementById('mood-chart'), {
+      type: 'line',
+      data: { labels: chartDates.mood.map(formatChartDate),
+              datasets: [{ ...chartDefaults, label: 'Mood', data: moodScores, borderColor: '#7c6fcd', backgroundColor: 'rgba(124,111,205,0.12)' }] },
+      options: chartOptions(1, 10, 'mood', 'Mood', moodScores, '/10'),
+    });
+    setDensityBanner('mood-chart', moodScores.length, data.period_days);
+  }
 
+  const sleepHours = data.sleep.daily_hours || [];
+  setChartEmpty('sleep-chart', sleepHours.length === 0);
   if (sleepChart) sleepChart.destroy();
-  sleepChart = new Chart(document.getElementById('sleep-chart'), {
-    type: 'line',
-    data: {
-      labels: chartDates.sleep.map(formatChartDate),
-      datasets: [{
-        ...chartDefaults,
-        label: 'Sleep (hrs)',
-        data: data.sleep.daily_hours,
-        borderColor: '#5aa9a3',
-        backgroundColor: 'rgba(90,169,163,0.12)',
-      }]
-    },
-    options: chartOptions(0, 12, 'sleep', 'Sleep', data.sleep.daily_hours, ' hrs'),
-  });
-  setDensityBanner('sleep-chart', data.sleep.daily_hours.length, data.period_days);
+  if (sleepHours.length > 0) {
+    sleepChart = new Chart(document.getElementById('sleep-chart'), {
+      type: 'line',
+      data: { labels: chartDates.sleep.map(formatChartDate),
+              datasets: [{ ...chartDefaults, label: 'Sleep (hrs)', data: sleepHours, borderColor: '#5aa9a3', backgroundColor: 'rgba(90,169,163,0.12)' }] },
+      options: chartOptions(0, 12, 'sleep', 'Sleep', sleepHours, ' hrs'),
+    });
+    setDensityBanner('sleep-chart', sleepHours.length, data.period_days);
+  }
 
+  const stressScores = data.stress.daily_scores || [];
+  setChartEmpty('stress-chart', stressScores.length === 0);
   if (stressChart) stressChart.destroy();
-  stressChart = new Chart(document.getElementById('stress-chart'), {
-    type: 'line',
-    data: {
-      labels: chartDates.stress.map(formatChartDate),
-      datasets: [{
-        ...chartDefaults,
-        label: 'Stress',
-        data: data.stress.daily_scores,
-        borderColor: '#d4856a',
-        backgroundColor: 'rgba(212,133,106,0.12)',
-      }]
-    },
-    options: chartOptions(1, 10, 'stress', 'Stress', data.stress.daily_scores, '/10'),
-  });
-  setDensityBanner('stress-chart', data.stress.daily_scores.length, data.period_days);
+  if (stressScores.length > 0) {
+    stressChart = new Chart(document.getElementById('stress-chart'), {
+      type: 'line',
+      data: { labels: chartDates.stress.map(formatChartDate),
+              datasets: [{ ...chartDefaults, label: 'Stress', data: stressScores, borderColor: '#d4856a', backgroundColor: 'rgba(212,133,106,0.12)' }] },
+      options: chartOptions(1, 10, 'stress', 'Stress', stressScores, '/10'),
+    });
+    setDensityBanner('stress-chart', stressScores.length, data.period_days);
+  }
 
-  if (energyChart) energyChart.destroy();
   const energyScores = (data.energy && data.energy.daily_scores) || [];
-  energyChart = new Chart(document.getElementById('energy-chart'), {
-    type: 'line',
-    data: {
-      labels: chartDates.energy.map(formatChartDate),
-      datasets: [{
-        ...chartDefaults,
-        label: 'Energy',
-        data: energyScores,
-        borderColor: '#e6a817',
-        backgroundColor: 'rgba(230,168,23,0.12)',
-      }]
-    },
-    options: chartOptions(1, 10, 'energy', 'Energy', energyScores, '/10'),
-  });
-  setDensityBanner('energy-chart', energyScores.length, data.period_days);
+  setChartEmpty('energy-chart', energyScores.length === 0);
+  if (energyChart) energyChart.destroy();
+  if (energyScores.length > 0) {
+    energyChart = new Chart(document.getElementById('energy-chart'), {
+      type: 'line',
+      data: { labels: chartDates.energy.map(formatChartDate),
+              datasets: [{ ...chartDefaults, label: 'Energy', data: energyScores, borderColor: '#e6a817', backgroundColor: 'rgba(230,168,23,0.12)' }] },
+      options: chartOptions(1, 10, 'energy', 'Energy', energyScores, '/10'),
+    });
+    setDensityBanner('energy-chart', energyScores.length, data.period_days);
+  }
 
+  // ── Secondary charts (only render if section is open or has data) ────
   const pd = data.period_days;
+  focusChart        = makeMetricChart(focusChart,        'focus-chart',        'Focus',           data.focus,           '#3d9e8c', 'rgba(61,158,140,0.12)',  1, 10, '/10',     pd);
+  dissociationChart = makeMetricChart(dissociationChart, 'dissociation-chart', 'Dissociation',    data.dissociation,    '#6366f1', 'rgba(99,102,241,0.12)',  1, 10, '/10',     pd);
+  irritabilityChart = makeMetricChart(irritabilityChart, 'irritability-chart', 'Irritability',    data.irritability,    '#e85d3a', 'rgba(232,93,58,0.12)',   1, 10, '/10',     pd);
+  motivationChart   = makeMetricChart(motivationChart,   'motivation-chart',   'Motivation',      data.motivation,      '#22c55e', 'rgba(34,197,94,0.12)',   1, 10, '/10',     pd);
+  socialChart       = makeMetricChart(socialChart,       'social-chart',       'Social Quality',  data.social_quality,  '#ec4899', 'rgba(236,72,153,0.12)',  1,  5, '/5',      pd);
+  workloadChart     = makeMetricChart(workloadChart,     'workload-chart',     'Workload Friction',data.workload_friction,'#f59e0b','rgba(245,158,11,0.12)', 1,  5, '/5',      pd);
+  perceivedStressChart = makeMetricChart(perceivedStressChart,'perceived-stress-chart','Perceived Stress',data.perceived_stress,'#a78bfa','rgba(167,139,250,0.12)',1,10,'/10',pd);
+  caffeineChart     = makeMetricChart(caffeineChart,     'caffeine-chart',     'Caffeine',        data.caffeine,        '#8b5e3c', 'rgba(139,94,60,0.12)',   0,null,'mg',       pd);
+  alcoholChart      = makeMetricChart(alcoholChart,      'alcohol-chart',      'Alcohol',         data.alcohol,         '#9333ea', 'rgba(147,51,234,0.12)',  0,null,' drinks',  pd);
+  exerciseChart     = makeMetricChart(exerciseChart,     'exercise-chart',     'Exercise',        data.exercise,        '#84cc16', 'rgba(132,204,22,0.12)',  0, 120,' min',     pd);
+  sunlightChart     = makeMetricChart(sunlightChart,     'sunlight-chart',     'Sunlight',        data.sunlight,        '#f97316', 'rgba(249,115,22,0.12)',  0,   8,' hrs',     pd);
+  screentimeChart   = makeMetricChart(screentimeChart,   'screentime-chart',   'Screen Time',     data.screen_time,     '#64748b', 'rgba(100,116,139,0.12)', 0,  16,' hrs',     pd);
+  sleepQualityChart = makeMetricChart(sleepQualityChart, 'sleep-quality-chart','Sleep Quality',   data.sleep_quality,   '#3b82f6', 'rgba(59,130,246,0.12)',  1,  10,'/10',      pd);
 
-  // ── Cognitive & Emotional ────────────────────────────────────────────
-  focusChart        = makeMetricChart(focusChart,        'focus-chart',        'Focus',            data.focus,            '#3d9e8c', 'rgba(61,158,140,0.12)',  1, 10, '/10', pd);
-  dissociationChart = makeMetricChart(dissociationChart, 'dissociation-chart', 'Dissociation',     data.dissociation,     '#6366f1', 'rgba(99,102,241,0.12)',  1, 10, '/10', pd);
-  irritabilityChart = makeMetricChart(irritabilityChart, 'irritability-chart', 'Irritability',     data.irritability,     '#e85d3a', 'rgba(232,93,58,0.12)',   1, 10, '/10', pd);
-  motivationChart   = makeMetricChart(motivationChart,   'motivation-chart',   'Motivation',       data.motivation,       '#22c55e', 'rgba(34,197,94,0.12)',   1, 10, '/10', pd);
-  socialChart       = makeMetricChart(socialChart,       'social-chart',       'Social Quality',   data.social_quality,   '#ec4899', 'rgba(236,72,153,0.12)',  1,  5, '/5',  pd);
-  workloadChart       = makeMetricChart(workloadChart,       'workload-chart',          'Workload Friction', data.workload_friction, '#f59e0b', 'rgba(245,158,11,0.12)',  1,  5, '/5',  pd);
-  perceivedStressChart= makeMetricChart(perceivedStressChart,'perceived-stress-chart',  'Perceived Stress',  data.perceived_stress,  '#a78bfa', 'rgba(167,139,250,0.12)', 1, 10, '/10', pd);
+  // Auto-expand sections that have actual data
+  const cognitiveHasData = [data.focus, data.dissociation, data.irritability, data.motivation, data.social_quality, data.workload_friction, data.perceived_stress]
+    .some(m => m && (m.daily_scores || []).length > 0);
+  const lifestyleHasData = [data.caffeine, data.alcohol, data.exercise, data.sunlight, data.screen_time, data.sleep_quality]
+    .some(m => m && (m.daily_scores || []).length > 0);
 
-  // ── Lifestyle ────────────────────────────────────────────────────────
-  caffeineChart    = makeMetricChart(caffeineChart,    'caffeine-chart',      'Caffeine',     data.caffeine,      '#8b5e3c', 'rgba(139,94,60,0.12)',   0, null, 'mg',      pd);
-  alcoholChart     = makeMetricChart(alcoholChart,     'alcohol-chart',       'Alcohol',      data.alcohol,       '#9333ea', 'rgba(147,51,234,0.12)',  0, null, ' drinks', pd);
-  exerciseChart    = makeMetricChart(exerciseChart,    'exercise-chart',      'Exercise',     data.exercise,      '#84cc16', 'rgba(132,204,22,0.12)',  0,  120, ' min',    pd);
-  sunlightChart    = makeMetricChart(sunlightChart,    'sunlight-chart',      'Sunlight',     data.sunlight,      '#f97316', 'rgba(249,115,22,0.12)',  0,    8, ' hrs',    pd);
-  screentimeChart  = makeMetricChart(screentimeChart,  'screentime-chart',    'Screen Time',  data.screen_time,   '#64748b', 'rgba(100,116,139,0.12)', 0,   16, ' hrs',    pd);
-  sleepQualityChart= makeMetricChart(sleepQualityChart,'sleep-quality-chart', 'Sleep Quality',data.sleep_quality, '#3b82f6', 'rgba(59,130,246,0.12)',  1,   10, '/10',     pd);
+  if (cognitiveHasData) {
+    const body = document.getElementById('section-body-cognitive');
+    const hdr  = document.querySelector('#section-cognitive .trends-section-hdr');
+    if (body && body.style.display === 'none') { body.style.display = ''; hdr && hdr.classList.add('open'); }
+  }
+  if (lifestyleHasData) {
+    const body = document.getElementById('section-body-lifestyle');
+    const hdr  = document.querySelector('#section-lifestyle .trends-section-hdr');
+    if (body && body.style.display === 'none') { body.style.display = ''; hdr && hdr.classList.add('open'); }
+  }
 }
 
 function chartOptions(min, max, metricKey, metricLabel, values, unit) {
@@ -734,7 +876,7 @@ function chartOptions(min, max, metricKey, metricLabel, values, unit) {
     },
     onClick: (event, activeElements) => {
       if (!activeElements.length) return;
-      const idx = activeElements[0].index;
+      const idx  = activeElements[0].index;
       const date = (chartDates[metricKey] || [])[idx];
       if (!date) return;
       const val = (values || [])[idx];
@@ -759,35 +901,24 @@ loadTrends(7, null);
 
 // ── Hypothesis tester ─────────────────────────────────────────────────────────
 const hypTester = new HypothesisTester();
-
-// Default var-b to something different from var-a
 document.getElementById('hyp-var-b').value = 'stress';
 
 async function runHypothesisTest() {
   const varA = document.getElementById('hyp-var-a').value;
   const varB = document.getElementById('hyp-var-b').value;
   const dir  = document.getElementById('hyp-direction').value;
-  const errEl = document.getElementById('hyp-error');
-  const btn   = document.getElementById('hyp-btn');
+  const errEl   = document.getElementById('hyp-error');
+  const btn     = document.getElementById('hyp-btn');
   const loading = document.getElementById('hyp-loading');
-
   errEl.classList.add('hidden');
-
-  if (varA === varB) {
-    errEl.textContent = 'Choose two different variables.';
-    errEl.classList.remove('hidden');
-    return;
-  }
-
+  if (varA === varB) { errEl.textContent = 'Choose two different variables.'; errEl.classList.remove('hidden'); return; }
   btn.disabled = true;
   loading.classList.remove('hidden');
   document.getElementById('hyp-result').innerHTML = '';
-
   try {
     const result = await hypTester.testUserHypothesis(varA, varB, dir, 60);
     loading.classList.add('hidden');
     hypTester.renderResult('hyp-result', varA, varB, dir, result);
-    // Reload history
     await hypTester.loadHistory();
     hypTester.renderHistory('hyp-history');
   } catch (err) {
@@ -800,27 +931,61 @@ async function runHypothesisTest() {
 }
 
 function prefillHypothesis(varA, varB, dir) {
-  // Ensure hypothesis section is expanded before scrolling into it.
-  const body = document.getElementById('hypothesis-body');
-  if (body && body.style.display === 'none') toggleSection('hypothesis-body', 'hypothesis-chevron');
+  const body = document.getElementById('section-body-hypothesis');
+  const hdr  = document.querySelector('#section-hypothesis .trends-section-hdr');
+  if (body && body.style.display === 'none') { body.style.display = ''; hdr && hdr.classList.add('open'); }
   document.getElementById('hyp-var-a').value = varA;
   document.getElementById('hyp-var-b').value = varB;
   document.getElementById('hyp-direction').value = dir;
   document.getElementById('hyp-btn').scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
-function toggleSection(bodyId, chevronId) {
-  const body = document.getElementById(bodyId);
-  const chevron = document.getElementById(chevronId);
-  const opening = body.style.display === 'none';
-  body.style.display = opening ? '' : 'none';
-  chevron.style.transform = opening ? 'rotate(0deg)' : 'rotate(-90deg)';
+// ── Medication timing insights ────────────────────────────────────────────────
+async function loadTimingInsights(days) {
+  try {
+    const t = await apiGet('/api/trends/medication-timing?days=' + days);
+    const list = document.getElementById('insights-list');
+    const panel = document.getElementById('insights-panel');
+    const items = [];
+    for (const med of (t.medications || [])) {
+      if (med.n_timed < 3) continue;
+      if (med.consistency === 'poor' || med.consistency === 'fair') {
+        items.push(
+          `Timing for ${med.name}${med.dose ? ' (' + med.dose + ')' : ''} varies by ±${med.std_dev_hours}h ` +
+          `(average: ${med.avg_time}) — more consistent dosing may improve predictability of effects.`
+        );
+      }
+    }
+    const hm = t.hours_since_dose_vs_mood;
+    if (hm && hm.p_value <= 0.05 && Math.abs(hm.r) >= 0.6) {
+      const dir = hm.r > 0 ? 'improves as more time passes since your dose' : 'tends to peak closer to your dose time';
+      items.push(`Mood ${dir} (r=${hm.r}, p=${hm.p_value}, ${hm.n} check-ins).`);
+    }
+    const he = t.hours_since_dose_vs_energy;
+    if (he && he.p_value <= 0.05 && Math.abs(he.r) >= 0.6) {
+      const dir = he.r > 0 ? 'builds as more time passes since your dose' : 'tends to peak closer to your dose time';
+      items.push(`Energy ${dir} (r=${he.r}, p=${he.p_value}, ${he.n} check-ins).`);
+    }
+    const dm = t.dose_time_vs_mood;
+    if (dm && dm.p_value <= 0.05 && Math.abs(dm.r) >= 0.6) {
+      const dir = dm.r < 0 ? 'Earlier dosing correlates with higher afternoon/evening mood.' : 'Later dosing correlates with higher afternoon/evening mood.';
+      items.push(`${dir} (r=${dm.r}, p=${dm.p_value}, ${dm.n} check-ins).`);
+    }
+    if (items.length) {
+      const existing = list.innerHTML;
+      list.innerHTML = existing + items.map(i =>
+        `<li><strong style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;opacity:.6;">Timing · </strong>${i}</li>`
+      ).join('');
+      panel.classList.remove('hidden');
+    }
+  } catch (_) {}
 }
 
+// ── Discovery / unexpected patterns ──────────────────────────────────────────
 function dismissUnexpected() {
   localStorage.removeItem('hyp_unexpected_result');
   localStorage.removeItem('hyp_unexpected_checked');
-  document.getElementById('discovery-section').style.display = 'none';
+  document.getElementById('section-discovery').style.display = 'none';
 }
 
 async function refreshDiscovery() {
@@ -835,66 +1000,14 @@ async function refreshDiscovery() {
   if (btn) { btn.disabled = false; btn.textContent = '↻ Refresh'; }
 }
 
-// ── Medication timing insights ────────────────────────────────────────────────
-async function loadTimingInsights(days) {
-  try {
-    const t = await apiGet('/api/trends/medication-timing?days=' + days);
-    const list = document.getElementById('insights-list');
-    const panel = document.getElementById('insights-panel');
-    const items = [];
-
-    // Consistency warnings
-    for (const med of (t.medications || [])) {
-      if (med.n_timed < 3) continue;
-      if (med.consistency === 'poor' || med.consistency === 'fair') {
-        items.push(
-          `Timing for ${med.name}${med.dose ? ' (' + med.dose + ')' : ''} varies by ±${med.std_dev_hours}h ` +
-          `(average: ${med.avg_time}) — more consistent dosing may improve predictability of effects.`
-        );
-      }
-    }
-
-    // Significant timing-outcome correlations
-    const hm = t.hours_since_dose_vs_mood;
-    if (hm && hm.p_value <= 0.05 && Math.abs(hm.r) >= 0.6) {
-      const dir = hm.r > 0
-        ? 'improves as more time passes since your dose'
-        : 'tends to peak closer to your dose time';
-      items.push(`Mood ${dir} (r=${hm.r}, p=${hm.p_value}, ${hm.n} check-ins).`);
-    }
-
-    const he = t.hours_since_dose_vs_energy;
-    if (he && he.p_value <= 0.05 && Math.abs(he.r) >= 0.6) {
-      const dir = he.r > 0
-        ? 'builds as more time passes since your dose'
-        : 'tends to peak closer to your dose time';
-      items.push(`Energy ${dir} (r=${he.r}, p=${he.p_value}, ${he.n} check-ins).`);
-    }
-
-    const dm = t.dose_time_vs_mood;
-    if (dm && dm.p_value <= 0.05 && Math.abs(dm.r) >= 0.6) {
-      const dir = dm.r < 0 ? 'Earlier dosing correlates with higher afternoon/evening mood.'
-                           : 'Later dosing correlates with higher afternoon/evening mood.';
-      items.push(`${dir} (r=${dm.r}, p=${dm.p_value}, ${dm.n} check-ins).`);
-    }
-
-    if (items.length) {
-      const existing = list.innerHTML;
-      list.innerHTML = existing +
-        items.map(i => `<li><strong style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;opacity:.6;">Timing · </strong>${i}</li>`).join('');
-      panel.classList.remove('hidden');
-    }
-  } catch (_) {}
-}
-
-// Load history and check for unexpected pattern on page load
 (async () => {
+  // Load hypothesis history
   try {
     await hypTester.loadHistory();
     hypTester.renderHistory('hyp-history');
   } catch (_) {}
 
-  // Bust stale cache: clear old single-pattern shape (pre-redesign) or corrupted entries
+  // Bust stale cache
   const cached = localStorage.getItem('hyp_unexpected_result');
   if (cached && cached !== 'null') {
     let parsed = null;
@@ -906,10 +1019,11 @@ async function loadTimingInsights(days) {
       localStorage.removeItem('hyp_unexpected_result');
     }
   }
+
+  // Load discovery patterns
   try {
     const patterns = await hypTester.surfaceUnexpectedPatterns(30);
     hypTester.renderDiscovery('unexpected-panel', patterns);
-    document.getElementById('discovery-section').style.display = '';
   } catch (_) {}
 })();
 </script>
