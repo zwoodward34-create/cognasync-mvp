@@ -1395,7 +1395,7 @@ def get_trends_data(user_id: str, days: int = 30):
         ]
 
         for row in data:
-            d = row.get('checkin_date', '')
+            d = (row.get('checkin_date') or '')[:10]
 
             mood = row.get('mood_score') or row.get('stability_score')
             if mood is not None:

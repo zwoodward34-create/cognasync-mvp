@@ -480,7 +480,7 @@ async function expandDayDetail() {
   btn.textContent = 'Loading…';
   btn.disabled = true;
   try {
-    const data = await apiGet('/api/checkins/by-date?date=' + activeModalDate);
+    const data = await apiGet('/api/checkins/by-date?date=' + activeModalDate.slice(0, 10));
     renderDayDetail(data.checkins);
     btn.style.display = 'none';
   } catch (e) {
