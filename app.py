@@ -1644,6 +1644,24 @@ def api_patient_care_revoke(member_id):
     return jsonify({'error': result.get('error')}), 400
 
 
+@app.route('/api/patient/care-team/invite', methods=['POST'])
+def api_patient_care_invite():
+    """Patient invites a provider by email to join their care team."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    provider_email = (body.get('provider_email') or '').strip()
+    role           = body.get('role', 'psychiatrist')
+    message        = (body.get('message') or '').strip() or None
+    if not provider_email:
+        return jsonify({'error': 'provider_email is required'}), 400
+    result = db.send_patient_care_request(user['id'], provider_email, role, message)
+    if result.get('ok'):
+        return jsonify(result), 200
+    return jsonify({'error': result.get('error', 'Could not send invite')}), 400
+
+
 @app.route('/api/patient/care-team/<member_id>/permissions', methods=['PATCH'])
 def api_patient_care_permissions(member_id):
     """Patient updates per-provider data permissions."""

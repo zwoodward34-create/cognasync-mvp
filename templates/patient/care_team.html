@@ -42,15 +42,53 @@
   </div>
 </div>
 
+<!-- Add a provider -->
+<div class="ct-section">
+  <div class="ct-section-title">Add a Provider</div>
+  <div class="ct-card">
+    <p style="font-size:0.85rem;color:var(--text-muted);margin:0 0 16px;">
+      Invite a provider to connect with you. They'll need a CognaSync account to accept.
+    </p>
+    <div style="display:grid;gap:12px;max-width:500px;">
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">Provider Email</label>
+        <input type="email" id="invite-email" class="form-input" placeholder="provider@example.com">
+      </div>
+      <div class="form-row" style="gap:12px;">
+        <div class="form-group" style="margin:0;flex:1;">
+          <label class="form-label">Role</label>
+          <select id="invite-role" class="form-input">
+            <option value="psychiatrist">Psychiatrist</option>
+            <option value="therapist">Therapist</option>
+            <option value="counselor">Counselor</option>
+            <option value="coach">Coach</option>
+            <option value="sleep_specialist">Sleep Specialist</option>
+            <option value="other">Other Provider</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-group" style="margin:0;">
+        <label class="form-label">Message <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+        <textarea id="invite-message" class="form-input" rows="2"
+                  placeholder="A brief note to your provider…" style="resize:vertical;"></textarea>
+      </div>
+      <div style="display:flex;align-items:center;gap:12px;">
+        <button class="btn btn-primary" id="invite-btn" onclick="sendInvite()">Send Invite</button>
+        <span id="invite-status" style="font-size:0.82rem;"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div id="ct-loading" class="loading-panel">
   <div class="spinner"></div><p>Loading your care team…</p>
 </div>
 <div id="ct-error" class="alert alert-error hidden"></div>
 <div id="ct-content" class="hidden">
 
-  <!-- Pending requests -->
+  <!-- Pending requests / outbound invites -->
   <div class="ct-section" id="pending-section" style="display:none;">
-    <div class="ct-section-title">Pending Connection Requests</div>
+    <div class="ct-section-title">Pending</div>
     <div id="pending-list"></div>
   </div>
 
@@ -58,7 +96,7 @@
   <div class="ct-section">
     <div class="ct-section-title">Your Active Care Team</div>
     <div id="active-list">
-      <div class="ct-empty">No providers connected yet. Your providers can send you a connection request.</div>
+      <div class="ct-empty">No providers connected yet.</div>
     </div>
   </div>
 
@@ -97,7 +135,9 @@ function renderPending(items) {
   const list    = document.getElementById('pending-list');
   if (!items.length) { section.style.display = 'none'; return; }
   section.style.display = '';
-  list.innerHTML = items.map(r => `
+  list.innerHTML = items.map(r => {
+    const byPatient = r.requested_by === 'patient';
+    return `
     <div class="ct-card" id="req-${r.id}">
       <div class="ct-card-header">
         <span class="ct-role-badge ${r.role}">${r.role_label}</span>
@@ -107,13 +147,20 @@ function renderPending(items) {
         </div>
       </div>
       ${r.request_message ? `<div class="ct-message">"${esc(r.request_message)}"</div>` : ''}
-      <div class="ct-since">Requested ${fmtDate(r.requested_at)}</div>
-      <div class="ct-actions">
-        <button class="btn btn-primary btn-sm" onclick="approveRequest('${r.id}')">Accept</button>
-        <button class="btn btn-sm" onclick="denyRequest('${r.id}')">Decline</button>
+      <div class="ct-since">
+        ${byPatient ? 'Invite sent' : 'Request received'} ${fmtDate(r.requested_at)}
       </div>
-    </div>
-  `).join('');
+      <div class="ct-actions">
+        ${byPatient
+          ? `<span style="font-size:0.78rem;color:var(--text-muted);font-style:italic;">Awaiting provider response</span>
+             <button class="btn btn-sm" style="color:#c0392b;border-color:#c0392b;"
+                     onclick="cancelInvite('${r.id}')">Cancel</button>`
+          : `<button class="btn btn-primary btn-sm" onclick="approveRequest('${r.id}')">Accept</button>
+             <button class="btn btn-sm" onclick="denyRequest('${r.id}')">Decline</button>`
+        }
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function renderActive(items) {
@@ -176,6 +223,53 @@ async function denyRequest(memberId) {
     if (!remaining.length) document.getElementById('pending-section').style.display = 'none';
   } catch (e) {
     alert('Could not decline request. Please try again.');
+  }
+}
+
+async function sendInvite() {
+  const email   = document.getElementById('invite-email').value.trim();
+  const role    = document.getElementById('invite-role').value;
+  const message = document.getElementById('invite-message').value.trim();
+  const status  = document.getElementById('invite-status');
+  const btn     = document.getElementById('invite-btn');
+
+  if (!email) {
+    status.textContent = 'Please enter a provider email.';
+    status.style.color = '#c0392b';
+    return;
+  }
+
+  btn.disabled = true;
+  status.textContent = 'Sending…';
+  status.style.color = 'var(--text-muted)';
+
+  try {
+    const result = await apiFetch('/api/patient/care-team/invite', {
+      method: 'POST',
+      body: JSON.stringify({ provider_email: email, role, message: message || null }),
+    });
+    status.textContent = `Invite sent to ${result.provider_name || email}.`;
+    status.style.color = 'var(--green, #1a7f3c)';
+    document.getElementById('invite-email').value = '';
+    document.getElementById('invite-message').value = '';
+    loadCareTeam();
+  } catch (e) {
+    status.textContent = e.error || 'Could not send invite. Please try again.';
+    status.style.color = '#c0392b';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function cancelInvite(memberId) {
+  if (!confirm('Cancel this invite?')) return;
+  try {
+    await apiFetch(`/api/patient/care-team/${memberId}/deny`, { method: 'POST' });
+    document.getElementById(`req-${memberId}`)?.remove();
+    if (!document.querySelectorAll('[id^="req-"]').length)
+      document.getElementById('pending-section').style.display = 'none';
+  } catch (e) {
+    alert('Could not cancel invite. Please try again.');
   }
 }
 

@@ -2600,6 +2600,67 @@ def send_care_team_request(provider_id: str, patient_email: str, role: str = 'ps
         return {'ok': False, 'error': f'Could not create request: {e}'}
 
 
+def send_patient_care_request(patient_id: str, provider_email: str,
+                              role: str = 'psychiatrist', message: str = None) -> dict:
+    """
+    Patient invites a provider by email to join their care team.
+    Returns {'ok': True, 'member_id': ..., 'provider_name': ...} or {'ok': False, 'error': '...'}.
+    """
+    role = role if role in _ROLE_LABELS else 'other'
+
+    # Look up provider by email
+    try:
+        pr = supabase_admin.table('profiles').select('id, full_name, role').eq(
+            'email', provider_email.lower().strip()).single().execute()
+        if not pr.data or pr.data.get('role') != 'provider':
+            return {'ok': False, 'error': 'No provider account found with that email.'}
+        provider_id = pr.data['id']
+    except Exception:
+        return {'ok': False, 'error': 'No provider account found with that email.'}
+
+    if str(provider_id) == str(patient_id):
+        return {'ok': False, 'error': 'Cannot connect to your own account.'}
+
+    # Check for existing relationship
+    try:
+        existing = supabase_admin.table('care_team_members').select('id, status').eq(
+            'patient_id', str(patient_id)).eq('provider_id', str(provider_id)).execute()
+        if existing.data:
+            rec = existing.data[0]
+            if rec['status'] == 'active':
+                return {'ok': False, 'error': 'This provider is already on your care team.'}
+            if rec['status'] == 'pending':
+                return {'ok': False, 'error': 'A connection request is already pending for this provider.'}
+            if rec['status'] == 'revoked':
+                supabase_admin.table('care_team_members').update({
+                    'status': 'pending',
+                    'role': role,
+                    'request_message': message,
+                    'requested_by': 'patient',
+                    'requested_at': datetime.utcnow().isoformat(),
+                    'approved_at': None,
+                    'revoked_at': None,
+                }).eq('id', rec['id']).execute()
+                return {'ok': True, 'member_id': rec['id'], 'provider_name': pr.data.get('full_name')}
+    except Exception:
+        pass
+
+    try:
+        res = supabase_admin.table('care_team_members').insert({
+            'patient_id':      str(patient_id),
+            'provider_id':     str(provider_id),
+            'role':            role,
+            'status':          'pending',
+            'data_permissions': _DEFAULT_PERMISSIONS,
+            'requested_by':    'patient',
+            'request_message': message,
+        }).execute()
+        member_id = res.data[0]['id'] if res.data else None
+        return {'ok': True, 'member_id': member_id, 'provider_name': pr.data.get('full_name')}
+    except Exception as e:
+        return {'ok': False, 'error': f'Could not send invite: {e}'}
+
+
 def get_pending_care_requests(patient_id: str) -> list:
     """
     Returns all pending care team requests for a patient, with provider details.
@@ -2712,7 +2773,7 @@ def get_patient_care_team(patient_id: str) -> dict:
     """
     try:
         res = supabase_admin.table('care_team_members').select(
-            'id, role, status, data_permissions, requested_at, approved_at, provider_id'
+            'id, role, status, data_permissions, requested_at, approved_at, provider_id, requested_by, request_message'
         ).eq('patient_id', str(patient_id)).in_('status', ['active', 'pending']).execute()
         records = res.data or []
     except Exception:
@@ -2728,15 +2789,17 @@ def get_patient_care_team(patient_id: str) -> dict:
             provider = {}
 
         entry = {
-            'id':             rec['id'],
-            'provider_id':    rec['provider_id'],
-            'provider_name':  provider.get('full_name') or 'Unknown Provider',
-            'provider_email': provider.get('email', ''),
-            'role':           rec['role'],
-            'role_label':     _ROLE_LABELS.get(rec['role'], 'Provider'),
-            'permissions':    rec.get('data_permissions') or _DEFAULT_PERMISSIONS,
-            'approved_at':    rec.get('approved_at'),
-            'requested_at':   rec.get('requested_at'),
+            'id':              rec['id'],
+            'provider_id':     rec['provider_id'],
+            'provider_name':   provider.get('full_name') or 'Unknown Provider',
+            'provider_email':  provider.get('email', ''),
+            'role':            rec['role'],
+            'role_label':      _ROLE_LABELS.get(rec['role'], 'Provider'),
+            'permissions':     rec.get('data_permissions') or _DEFAULT_PERMISSIONS,
+            'approved_at':     rec.get('approved_at'),
+            'requested_at':    rec.get('requested_at'),
+            'requested_by':    rec.get('requested_by', 'provider'),
+            'request_message': rec.get('request_message'),
         }
         if rec['status'] == 'active':
             active.append(entry)
