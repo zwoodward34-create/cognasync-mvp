@@ -59,10 +59,10 @@ class Insight {
     const maxGap = Math.max(...this.evidence.dataPoints.gaps);
     if (maxGap > 48) confidence = confidence / 1.2;
 
-    // Sparse data penalty (÷1.1 per observation below 40)
+    // Sparse data: scale linearly up to 21 observations (CLAUDE.md statistical minimum)
     const n = this.evidence.dataPoints.count;
-    if (n < 40) {
-      confidence = confidence / Math.pow(1.1, 40 - n);
+    if (n < 21) {
+      confidence = confidence * (n / 21);
     }
 
     return Math.max(0, Math.floor(confidence));
@@ -85,8 +85,8 @@ class Insight {
     const r2 = this.evidence.statistics.rSquared;
     const maxGap = Math.max(...this.evidence.dataPoints.gaps);
 
-    if (n < 40)
-      lims.push(`Pattern based on ${n} observations; confidence stabilizes above 40 data points.`);
+    if (n < 21)
+      lims.push(`Pattern based on ${n} observations; confidence stabilizes above 21 data points.`);
 
     if (maxGap > 48)
       lims.push(`Data gap of ${Math.round(maxGap)} hours detected — trend may not reflect the full period.`);

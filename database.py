@@ -1472,7 +1472,9 @@ def get_trends_data(user_id: str, days: int = 30):
         mood_ts   = {**_trend_stats(mood_vals),   'daily_scores': mood_vals,   'dates': mood_dates}
         stress_ts = {**_trend_stats(stress_vals), 'daily_scores': stress_vals, 'dates': stress_dates}
 
-        energy_ts = _make_ts(energy_pairs)
+        energy_dates, energy_vals = _unzip(energy_pairs)
+        sleep_ts  = _trend_stats(sleep_vals)
+        energy_ts = _trend_stats(energy_vals)
 
         return {
             'user_id':              user_id,
@@ -1483,10 +1485,8 @@ def get_trends_data(user_id: str, days: int = 30):
             'period_days':          days,
             'mood':                 mood_ts,
             'stress':               stress_ts,
-            'sleep':  {'average': _avg(sleep_vals), 'values': sleep_vals,
-                       'daily_hours': sleep_vals,   'dates': sleep_dates},
-            'energy': {'average': energy_ts['average'], 'values': energy_ts['daily_scores'],
-                       'daily_scores': energy_ts['daily_scores'], 'dates': energy_ts['dates']},
+            'sleep':  {**sleep_ts,  'daily_hours': sleep_vals,  'dates': sleep_dates},
+            'energy': {**energy_ts, 'daily_scores': energy_vals, 'dates': energy_dates},
             'medication_adherence': adherence,
             'average_stability':    _avg(mood_vals),
             # ── Computed composite scores (CLAUDE.md formulas) ──────
@@ -2380,6 +2380,13 @@ def get_provider_patients_with_stats(provider_id: str) -> list:
             p['last_appointment'] = None
             p['last_appointment_status'] = None
 
+    # ── Care flag counts — unresolved flags from other providers ─────────────
+    all_patient_ids = [str(p.get('patient_id') or p.get('id', '')) for p in base]
+    flag_counts = get_unresolved_flag_counts(provider_id, all_patient_ids)
+    for p in base:
+        pid = str(p.get('patient_id') or p.get('id', ''))
+        p['flag_count'] = flag_counts.get(pid, 0)
+
     # ── Urgency sort ──────────────────────────────────────────────────────────
     # Tier 0 (most urgent): active crisis flag
     # Tier 1: mood declining meaningfully OR mood is acutely low
@@ -2509,12 +2516,13 @@ def get_care_team_member_role(provider_id: str, patient_id: str):
 # ═══════════════════════════════════════════════════════════════════════════
 
 _DEFAULT_PERMISSIONS = {
-    'journals_raw':      True,
-    'journals_themes':   True,
-    'mood_stress_sleep': True,
-    'medication_data':   True,
-    'system_scores':     True,
-    'advanced_data':     True,
+    'journals_raw':        True,
+    'journals_themes':     True,
+    'mood_stress_sleep':   True,
+    'medication_data':     True,
+    'system_scores':       True,
+    'advanced_data':       True,
+    'cross_provider_flags': True,   # Phase 4: see flags posted by other providers
 }
 
 _ROLE_LABELS = {
@@ -2812,3 +2820,180 @@ def update_care_permissions(patient_id: str, member_id: str, permissions: dict) 
         return {'ok': True}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Care Flags — cross-provider clinical observations (Phase 4)
+# ═══════════════════════════════════════════════════════════════════════════
+
+_FLAG_TYPES = {'observation', 'concern', 'progress', 'coordination_needed'}
+
+
+def create_care_flag(author_provider_id: str, patient_id: str,
+                     flag_type: str, body: str) -> dict:
+    """
+    Provider posts a flag on a patient record. The flag is immediately visible
+    to other active care team providers who have cross_provider_flags permission.
+
+    Returns {'ok': True, 'flag': {...}} or {'ok': False, 'error': '...'}.
+    """
+    if flag_type not in _FLAG_TYPES:
+        return {'ok': False, 'error': f'Invalid flag_type. Must be one of: {", ".join(sorted(_FLAG_TYPES))}'}
+    body = (body or '').strip()
+    if not (10 <= len(body) <= 1000):
+        return {'ok': False, 'error': 'Flag body must be between 10 and 1000 characters.'}
+
+    # Verify the author has access to this patient.
+    if not provider_has_care_access(author_provider_id, patient_id):
+        # Also allow legacy single-provider relationship
+        try:
+            legacy = supabase_admin.table('patient_profiles').select('id').eq(
+                'patient_id', str(patient_id)).eq('provider_id', str(author_provider_id)).execute()
+            if not legacy.data:
+                return {'ok': False, 'error': 'No active relationship with this patient.'}
+        except Exception as e:
+            return {'ok': False, 'error': str(e)}
+
+    try:
+        res = supabase_admin.table('care_flags').insert({
+            'patient_id':         str(patient_id),
+            'author_provider_id': str(author_provider_id),
+            'flag_type':          flag_type,
+            'body':               body,
+            'visibility':         'care_team',
+        }).execute()
+        return {'ok': True, 'flag': res.data[0] if res.data else {}}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+def get_care_flags_for_provider(viewing_provider_id: str, patient_id: str) -> list:
+    """
+    Returns all unresolved care flags on patient_id that are visible to
+    viewing_provider_id. A flag is visible when:
+      - The viewing provider has an active care relationship with the patient, AND
+      - That relationship's data_permissions includes cross_provider_flags: true, AND
+      - The flag was NOT authored by the viewing provider themselves
+        (you already know what you wrote).
+
+    Each flag dict includes author_role derived from care_team_members.
+    """
+    # Check viewing provider's permission
+    perms = get_care_team_permissions(patient_id, viewing_provider_id)
+    if perms is None:
+        # Allow if viewing provider is the legacy single-provider
+        try:
+            leg = supabase_admin.table('patient_profiles').select('id').eq(
+                'patient_id', str(patient_id)).eq(
+                'provider_id', str(viewing_provider_id)).execute()
+            if not leg.data:
+                return []
+            # Legacy providers can see flags but we treat cross_provider_flags as True for them
+        except Exception:
+            return []
+        cross_ok = True
+    else:
+        cross_ok = perms.get('cross_provider_flags', True)
+
+    if not cross_ok:
+        return []
+
+    try:
+        res = supabase_admin.table('care_flags').select(
+            'id, flag_type, body, created_at, author_provider_id'
+        ).eq('patient_id', str(patient_id)).is_('resolved_at', 'null').neq(
+            'author_provider_id', str(viewing_provider_id)
+        ).order('created_at', desc=True).execute()
+
+        flags = res.data or []
+
+        # Annotate with author name + role
+        if flags:
+            author_ids = list({f['author_provider_id'] for f in flags})
+            # Fetch author profile names
+            prof_res = supabase_admin.table('profiles').select('id, full_name').in_(
+                'id', author_ids).execute()
+            name_map = {r['id']: r['full_name'] for r in (prof_res.data or [])}
+
+            # Fetch author roles from care_team_members for this patient
+            role_res = supabase_admin.table('care_team_members').select(
+                'provider_id, role'
+            ).eq('patient_id', str(patient_id)).eq('status', 'active').in_(
+                'provider_id', author_ids).execute()
+            role_map = {r['provider_id']: r['role'] for r in (role_res.data or [])}
+
+            for f in flags:
+                aid = f['author_provider_id']
+                f['author_name'] = name_map.get(aid, 'Provider')
+                f['author_role'] = _ROLE_LABELS.get(role_map.get(aid, ''), 'Provider')
+
+        return flags
+    except Exception as e:
+        print(f"get_care_flags_for_provider error: {e}")
+        return []
+
+
+def get_my_care_flags(author_provider_id: str, patient_id: str) -> list:
+    """
+    Returns unresolved flags THIS provider posted on a patient — shown in
+    the brief drawer so a provider can see/manage their own flags.
+    """
+    try:
+        res = supabase_admin.table('care_flags').select(
+            'id, flag_type, body, created_at'
+        ).eq('patient_id', str(patient_id)).eq(
+            'author_provider_id', str(author_provider_id)
+        ).is_('resolved_at', 'null').order('created_at', desc=True).execute()
+        return res.data or []
+    except Exception as e:
+        print(f"get_my_care_flags error: {e}")
+        return []
+
+
+def resolve_care_flag(flag_id: str, resolving_provider_id: str, patient_id: str) -> dict:
+    """
+    Mark a flag as resolved. Any active provider on the care team can resolve.
+    Returns {'ok': True} or {'ok': False, 'error': '...'}.
+    """
+    # Confirm the flag belongs to this patient and is unresolved
+    try:
+        rec = supabase_admin.table('care_flags').select('id, resolved_at').eq(
+            'id', str(flag_id)).eq('patient_id', str(patient_id)).execute()
+        if not rec.data:
+            return {'ok': False, 'error': 'Flag not found.'}
+        if rec.data[0].get('resolved_at'):
+            return {'ok': False, 'error': 'Flag already resolved.'}
+
+        supabase_admin.table('care_flags').update({
+            'resolved_at': datetime.utcnow().isoformat(),
+            'resolved_by': str(resolving_provider_id),
+        }).eq('id', str(flag_id)).execute()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+def get_unresolved_flag_counts(provider_id: str, patient_ids: list) -> dict:
+    """
+    Bulk-fetch unresolved flag counts for a list of patients, visible to provider.
+    Returns {patient_id: count} dict. Used to stamp patient cards on the dashboard.
+    Only counts flags NOT authored by the viewing provider.
+    """
+    if not patient_ids:
+        return {}
+    try:
+        # Fetch all unresolved flags for these patients not authored by this provider
+        res = supabase_admin.table('care_flags').select(
+            'patient_id'
+        ).in_('patient_id', [str(p) for p in patient_ids]).is_(
+            'resolved_at', 'null'
+        ).neq('author_provider_id', str(provider_id)).execute()
+
+        counts: dict = {}
+        for row in (res.data or []):
+            pid = row['patient_id']
+            counts[pid] = counts.get(pid, 0) + 1
+        return counts
+    except Exception as e:
+        print(f"get_unresolved_flag_counts error: {e}")
+        return {}
