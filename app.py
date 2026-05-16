@@ -1432,14 +1432,67 @@ def api_resolve_crisis(patient_id):
 
 @app.route('/api/provider/patient/<patient_id>/brief', methods=['GET'])
 def api_between_session_brief(patient_id):
-    """Return a structured between-session brief for a patient."""
+    """Return a structured between-session brief for a patient.
+
+    For care team providers with therapy/counselor/coach roles, the response
+    also includes a `behavioral` block and `provider_role` so the dashboard
+    drawer can surface the right signal set.
+    """
     user, err = _api_user('provider')
     if err:
         return err
     if not _provider_owns_patient(user['id'], patient_id):
         return jsonify({'error': 'Patient not found'}), 404
+
     brief = db.get_between_session_brief(patient_id, user['id'])
+
+    # Detect care team role for this provider-patient pair
+    care_role = db.get_care_team_member_role(user['id'], patient_id) or 'psychiatrist'
+    brief['provider_role'] = care_role
+
+    _THERAPY_ROLES = {'therapist', 'counselor', 'coach'}
+    if care_role in _THERAPY_ROLES:
+        brief['behavioral'] = db.get_behavioral_data(patient_id, days=brief.get('days_in_period', 30))
+
     return jsonify(brief), 200
+
+
+@app.route('/api/provider/patient/<patient_id>/therapy-summary', methods=['POST'])
+def api_provider_therapy_summary(patient_id):
+    """Generate a therapy-weighted AI summary (Mode C variant for therapists/counselors).
+
+    Only callable when the provider has an active care team relationship with
+    role therapist, counselor, or coach.
+    """
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+
+    _THERAPY_ROLES = {'therapist', 'counselor', 'coach'}
+    care_role = db.get_care_team_member_role(user['id'], patient_id)
+    if care_role not in _THERAPY_ROLES:
+        return jsonify({'error': 'Therapy summaries are only available for therapist / counselor / coach roles.'}), 403
+
+    body = request.get_json(silent=True) or {}
+    days = max(7, min(int(body.get('days', 14)), 90))
+
+    checkins    = db.get_checkins(patient_id, days)
+    journals    = db.get_journals(patient_id, limit=20, shared_only=True)
+    behavioral  = db.get_behavioral_data(patient_id, days=days)
+
+    try:
+        result = claude_api.generate_therapy_summary(
+            checkin_data=checkins,
+            journal_data=journals,
+            behavioral_data=behavioral,
+            days=days,
+        )
+        return jsonify(result), 200
+    except RuntimeError as e:
+        app.logger.error(f"Therapy summary failed for patient {patient_id}: {e}")
+        return jsonify({'error': 'Summary generation failed — please try again.'}), 500
 
 
 # ── Care Team API — Provider side ─────────────────────────────────────────────

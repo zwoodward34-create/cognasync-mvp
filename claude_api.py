@@ -428,3 +428,199 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             "Please regenerate or contact support."
         )
     return {'status': 'safe', 'text': clean, 'raw': raw}
+
+
+def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
+                              days=14, period_start=None, period_end=None,
+                              appointment_date=None):
+    """Therapy-weighted Mode C summary for therapists and counselors.
+
+    Leads with journal themes and behavioral patterns (social quality, coping,
+    workload friction).  Mood / stress / sleep are supporting context, not the
+    primary signal.  Never medication-first.
+
+    behavioral_data – optional dict from db.get_behavioral_data(); if None, the
+    function will derive what it can from extended_data inside checkin_data.
+    """
+    # ── Parse checkin rows (identical to generate_appointment_summary) ────────
+    mood_vals, stress_vals, sleep_vals, energy_vals = [], [], [], []
+    social_vals, workload_vals, exercise_vals = [], [], []
+    coping_days = {'breathing': 0, 'meditation': 0, 'movement': 0}
+    coping_any = 0
+    advanced_days = 0
+    checkin_rows = []
+    n = 0
+
+    for c in checkin_data:
+        ext = {}
+        if c.get('extended_data'):
+            try:
+                ext = (json.loads(c['extended_data'])
+                       if isinstance(c['extended_data'], str)
+                       else c.get('extended_data', {}))
+            except Exception:
+                pass
+
+        mood   = c.get('mood_score')
+        stress = c.get('stress_score')
+        sleep  = c.get('sleep_hours')
+        energy = ext.get('energy')
+
+        row = {
+            'date':  c.get('checkin_date', c.get('date', '')),
+            'type':  c.get('checkin_type', 'on_demand'),
+            'mood':  mood,
+            'stress': stress,
+            'sleep_hours': sleep,
+        }
+        if energy is not None:
+            row['energy'] = energy
+
+        is_advanced = False
+        for field, store_list, rkey in [
+            ('social_quality',   social_vals,   'social_quality'),
+            ('workload_friction', workload_vals, 'workload_friction'),
+            ('exercise_minutes', exercise_vals,  'exercise_minutes'),
+        ]:
+            val = ext.get(field)
+            if val is not None:
+                store_list.append(float(val))
+                row[rkey] = val
+                is_advanced = True
+
+        has_coping = False
+        coping = ext.get('coping') or {}
+        for k in coping_days:
+            if coping.get(k):
+                coping_days[k] += 1
+                has_coping = True
+        if has_coping:
+            coping_any += 1
+            is_advanced = True
+        if is_advanced:
+            advanced_days += 1
+
+        if c.get('notes'):
+            row['notes'] = c['notes'][:200]
+
+        checkin_rows.append(row)
+        if mood   is not None: mood_vals.append(float(mood))
+        if stress is not None: stress_vals.append(float(stress))
+        if sleep  is not None: sleep_vals.append(float(sleep))
+        if energy is not None: energy_vals.append(float(energy))
+        n += 1
+
+    def _avg(v): return round(sum(v) / len(v), 1) if v else None
+    def _trend(v):
+        if len(v) < 2: return 'insufficient data'
+        return ('improving' if v[-1] > v[0] else
+                'declining' if v[-1] < v[0] else 'stable')
+
+    # Use behavioral_data if provided (pre-computed), else use parsed values
+    if behavioral_data:
+        social_avg    = behavioral_data.get('social_avg')
+        workload_avg  = behavioral_data.get('workload_avg')
+        exercise_avg  = behavioral_data.get('exercise_avg')
+        b_coping_days = behavioral_data.get('coping_days', coping_days)
+        b_coping_any  = behavioral_data.get('coping_any_days', coping_any)
+    else:
+        social_avg    = _avg(social_vals)
+        workload_avg  = _avg(workload_vals)
+        exercise_avg  = _avg(exercise_vals)
+        b_coping_days = coping_days
+        b_coping_any  = coping_any
+
+    # ── Journal rows ──────────────────────────────────────────────────────────
+    journal_rows = []
+    for j in journal_data:
+        entry_date = (j.get('entry_date') or j.get('created_at', ''))[:10]
+        content    = j.get('content') or j.get('raw_entry') or ''
+        journal_rows.append({
+            'date':    entry_date,
+            'excerpt': content[:400] + ('...' if len(content) > 400 else ''),
+        })
+
+    # ── Period labels ─────────────────────────────────────────────────────────
+    appt_context = (f"The session is on {appointment_date}. "
+                    if appointment_date else "")
+    period_label = (f"{period_start} to {period_end}"
+                    if period_start and period_end
+                    else f"past {days} days")
+    data_boundary = (
+        f"This summary is based on {n} check-in{'s' if n != 1 else ''} over "
+        f"{days or 'the selected'} days."
+    )
+    if advanced_days >= 3:
+        data_boundary += f" Advanced behavioral data available for {advanced_days} of those days."
+
+    # ── Behavioral stats block for the prompt ─────────────────────────────────
+    beh_lines = []
+    if social_avg  is not None: beh_lines.append(f"Social quality avg: {social_avg}/10")
+    if workload_avg is not None: beh_lines.append(f"Workload friction avg: {workload_avg}/10")
+    if exercise_avg is not None: beh_lines.append(f"Exercise avg: {exercise_avg} min/day")
+    total_coping = sum(b_coping_days.values())
+    if total_coping > 0:
+        parts = [f"{k}: {v}d" for k, v in b_coping_days.items() if v > 0]
+        beh_lines.append(f"Coping activities — {', '.join(parts)} ({b_coping_any} days with any activity)")
+    beh_section = ("\n\nBEHAVIORAL DATA:\n" + '\n'.join(beh_lines)) if beh_lines else ""
+
+    # ── System prompt ─────────────────────────────────────────────────────────
+    summary_system = (
+        "You are a clinical data assistant preparing a pre-session brief for a therapist or counselor. "
+        "Your audience is a behavioral health clinician whose work centers on patterns of living, "
+        "relationships, coping, and functional well-being — not primarily medication or diagnosis. "
+        f"{appt_context}\n\n"
+        "STRUCTURE (use these exact section headers):\n"
+        "**Trajectory:** One sentence — the behavioral and emotional arc of the period in plain clinical language.\n"
+        "**Journal Themes:** 2-3 recurring patterns from journal language. "
+        "Language-level observations only — no clinical interpretations. "
+        "Quote a phrase only when it is clearly representative (fewer than 10 words, in quotes).\n"
+        "**Behavioral Patterns:** Social engagement quality, workload friction, exercise frequency, "
+        "and coping activity use. Report averages and any notable consistency or breakdown. "
+        "Be specific — cite numbers. This is the PRIMARY section.\n"
+        "**Mood & Stress Context:** Mood avg+trend, stress avg+trend, sleep avg as supporting context. "
+        "Keep brief — this is background, not the lead signal.\n"
+        "**Flags:** Any patterns worth direct clinical attention with supporting data. "
+        "If none, write 'None for this period.'\n"
+        "**Suggested Discussion Topics:** 2-3 specific, therapy-relevant topics anchored to the data. "
+        "Frame as questions the provider might explore.\n\n"
+        "RULES:\n"
+        "- Never diagnose or name a disorder\n"
+        "- Never advise medication changes\n"
+        "- Do not say 'you have,' 'you suffer from,' or 'this indicates [disorder]'\n"
+        "- Behavioral signals (social quality, coping, workload friction) are PRIMARY — cite them first\n"
+        "- Medication is not the lens here; if logged, it is background context only\n"
+        "- Write in concise, clinically neutral prose — data-first, not narrative-first\n"
+        f"- Always state: '{data_boundary}'"
+    )
+
+    # ── Stats for prompt ──────────────────────────────────────────────────────
+    stats = {
+        'total_checkins':  n,
+        'period_days':     days,
+        'avg_mood':        _avg(mood_vals),
+        'mood_trend':      _trend(mood_vals),
+        'avg_stress':      _avg(stress_vals),
+        'stress_trend':    _trend(stress_vals),
+        'avg_sleep_hours': _avg(sleep_vals),
+        'avg_energy':      _avg(energy_vals),
+    }
+
+    user_content = (
+        f"REVIEW PERIOD: {period_label}\n\n"
+        f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}"
+        f"{beh_section}\n\n"
+        f"DAILY CHECK-INS ({n} total):\n"
+        f"{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
+        f"JOURNAL ENTRIES ({len(journal_rows)} total):\n"
+        f"{json.dumps(journal_rows, indent=2, default=str)}"
+    )
+
+    raw = _call_claude(summary_system, user_content, max_tokens=1000)
+    clean = _sanitize_output(raw)
+    if clean is None:
+        clean = (
+            "A therapy summary was generated but contained language that requires clinical review. "
+            "Please regenerate or contact support."
+        )
+    return {'status': 'safe', 'text': clean, 'raw': raw}

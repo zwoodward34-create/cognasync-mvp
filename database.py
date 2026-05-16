@@ -2298,6 +2298,18 @@ def get_provider_patients_with_stats(provider_id: str) -> list:
     cutoff_90d = (today - timedelta(days=90)).isoformat()
     cutoff_14d = (today - timedelta(days=14)).isoformat()
 
+    # ── Bulk-fetch care team roles for this provider ──────────────────────────
+    # Maps patient_id → care team role string so we can tag each patient card
+    # without an extra per-patient query.
+    _THERAPY_ROLES = {'therapist', 'counselor', 'coach'}
+    try:
+        ct_resp = supabase_admin.table('care_team_members').select(
+            'patient_id, role'
+        ).eq('provider_id', str(provider_id)).eq('status', 'active').execute()
+        ct_roles = {str(r['patient_id']): r['role'] for r in (ct_resp.data or [])}
+    except Exception:
+        ct_roles = {}
+
     for p in base:
         uid = p['patient_id']
 
@@ -2333,6 +2345,16 @@ def get_provider_patients_with_stats(provider_id: str) -> list:
         # Keep legacy key so existing template references don't break
         p['mood_avg_30d']     = p['mood_recent']
         p['checkin_count_30d'] = len(recent_mood)
+
+        # ── Provider role for this patient (care team or legacy) ─────────────
+        ct_role = ct_roles.get(str(uid))
+        p['provider_role'] = ct_role or 'psychiatrist'
+        p['is_care_team']  = ct_role is not None
+        # For therapy roles, fetch behavioral signals (used in brief drawer)
+        if ct_role in _THERAPY_ROLES:
+            p['behavioral'] = get_behavioral_data(uid, days=14)
+        else:
+            p['behavioral'] = None
 
         # ── Days since last check-in ──────────────────────────────────────────
         if p.get('last_checkin'):
@@ -2395,6 +2417,91 @@ def get_provider_patients_with_stats(provider_id: str) -> list:
         p['urgency_tier'] = _urgency_tier(p)
 
     return base
+
+
+def get_behavioral_data(patient_id: str, days: int = 30) -> dict:
+    """Return behavioral signal averages used by therapy-lens provider views.
+
+    Pulls advanced check-in fields for the period and aggregates:
+      social_avg       – avg social quality (0–10), or None
+      workload_avg     – avg workload friction (0–10), or None
+      exercise_avg     – avg exercise minutes per day, or None
+      coping_days      – {breathing, meditation, movement: count of days each}
+      coping_any_days  – distinct days with at least one coping activity
+      advanced_days    – days with any advanced field logged
+    """
+    _empty = {
+        'social_avg': None, 'workload_avg': None, 'exercise_avg': None,
+        'coping_days': {'breathing': 0, 'meditation': 0, 'movement': 0},
+        'coping_any_days': 0, 'advanced_days': 0,
+    }
+    try:
+        cutoff = (date.today() - timedelta(days=days)).isoformat()
+        ci = supabase_admin.table('checkins').select(
+            'extended_data'
+        ).eq('user_id', str(patient_id)).gte('checkin_date', cutoff).execute()
+        rows = ci.data or []
+    except Exception:
+        return _empty
+
+    social_vals, workload_vals, exercise_vals = [], [], []
+    coping_counts = {'breathing': 0, 'meditation': 0, 'movement': 0}
+    coping_any = 0
+    advanced = 0
+
+    for r in rows:
+        ext = r.get('extended_data') or {}
+        if isinstance(ext, str):
+            try:
+                ext = json.loads(ext)
+            except Exception:
+                ext = {}
+        is_advanced = False
+        if ext.get('social_quality') is not None:
+            social_vals.append(float(ext['social_quality']))
+            is_advanced = True
+        if ext.get('workload_friction') is not None:
+            workload_vals.append(float(ext['workload_friction']))
+            is_advanced = True
+        if ext.get('exercise_minutes') is not None:
+            exercise_vals.append(float(ext['exercise_minutes']))
+            is_advanced = True
+        has_coping_today = False
+        coping = ext.get('coping') or {}
+        for k in coping_counts:
+            if coping.get(k):
+                coping_counts[k] += 1
+                has_coping_today = True
+        if has_coping_today:
+            coping_any += 1
+            is_advanced = True
+        if is_advanced:
+            advanced += 1
+
+    def _avg(v): return round(sum(v) / len(v), 1) if v else None
+
+    return {
+        'social_avg':      _avg(social_vals),
+        'workload_avg':    _avg(workload_vals),
+        'exercise_avg':    _avg(exercise_vals),
+        'coping_days':     coping_counts,
+        'coping_any_days': coping_any,
+        'advanced_days':   advanced,
+    }
+
+
+def get_care_team_member_role(provider_id: str, patient_id: str):
+    """Returns the role string for an active care team relationship, or None."""
+    try:
+        res = supabase_admin.table('care_team_members').select('role').eq(
+            'patient_id', str(patient_id)).eq(
+            'provider_id', str(provider_id)).eq(
+            'status', 'active').limit(1).execute()
+        if res.data:
+            return res.data[0].get('role')
+        return None
+    except Exception:
+        return None
 
 
 # ═══════════════════════════════════════════════════════════════════════════

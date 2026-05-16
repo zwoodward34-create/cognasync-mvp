@@ -165,6 +165,88 @@
     padding-top: 10px;
     margin-top: 4px;
   }
+
+  /* ── Role badge (care team patients only) ──────────────────────────── */
+  .pd-role-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: 5px;
+    vertical-align: middle;
+  }
+  .pd-role-therapist  { background: #e6f4ea; color: #1a7f3c; }
+  .pd-role-counselor  { background: #e6f4ea; color: #1a7f3c; }
+  .pd-role-coach      { background: #fff4e0; color: #8a5a00; }
+  .pd-role-sleep_specialist { background: #e0f0ff; color: #0057a8; }
+
+  /* ── Behavioral signals block in brief drawer ──────────────────────── */
+  .pd-brief-beh-section {
+    background: #f0f9f4;
+    border: 1px solid #c8e6d5;
+    border-radius: 8px;
+    padding: 14px 16px;
+    margin-bottom: 16px;
+  }
+  .pd-brief-beh-title {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #1a7f3c;
+    margin-bottom: 10px;
+  }
+  .pd-brief-beh-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .pd-brief-beh-stat {
+    background: #fff;
+    border: 1px solid #c8e6d5;
+    border-radius: 6px;
+    padding: 8px 12px;
+  }
+
+  /* ── Therapy AI summary section ─────────────────────────────────────── */
+  .pd-therapy-ai-section {
+    margin-top: 16px;
+    border-top: 1px solid var(--color-border, #ececec);
+    padding-top: 14px;
+  }
+  .pd-therapy-ai-title {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--color-text-muted, #888);
+    margin-bottom: 10px;
+  }
+  .pd-therapy-ai-body {
+    font-size: 0.85rem;
+    color: var(--color-text, #111);
+    line-height: 1.65;
+    white-space: pre-wrap;
+  }
+  .pd-therapy-ai-body strong { font-weight: 700; }
+  .pd-brief-gen-btn {
+    background: #1a7f3c;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    padding: 6px 14px;
+    cursor: pointer;
+    line-height: 1.5;
+  }
+  .pd-brief-gen-btn:hover { opacity: 0.88; }
+  .pd-brief-gen-btn:disabled { opacity: 0.55; cursor: default; }
 </style>
 {% endblock %}
 
@@ -233,6 +315,10 @@
             <span class="pd-urgency-badge pd-urgency-1">Needs Attention</span>
             {% elif p.urgency_tier == 2 %}
             <span class="pd-urgency-badge pd-urgency-2">Watch</span>
+            {% endif %}
+            {# Role badge — show for non-psychiatrist care team patients #}
+            {% if p.is_care_team and p.provider_role and p.provider_role != 'psychiatrist' %}
+            <span class="pd-role-badge pd-role-{{ p.provider_role }}">{{ p.provider_role | replace('_', ' ') | title }}</span>
             {% endif %}
           </div>
           <div class="pd-card-email">{{ p.email }}</div>
@@ -332,6 +418,7 @@
         <button class="pd-brief-btn"
                 data-patient-id="{{ p.patient_id }}"
                 data-patient-name="{{ p.full_name }}"
+                data-provider-role="{{ p.provider_role or 'psychiatrist' }}"
                 onclick="event.preventDefault(); event.stopPropagation(); openBrief(this)">
           Brief
         </button>
@@ -410,13 +497,17 @@ function fmtDelta(delta, dir, unit, goodDir) {
   return `<span class="${cls}" style="display:inline-flex;">${label}</span>`;
 }
 
-function renderBriefBody(d) {
+const _THERAPY_ROLES = new Set(['therapist', 'counselor', 'coach']);
+
+function renderBriefBody(d, patientId) {
   const subtitle = document.getElementById('brief-drawer-subtitle');
   const body     = document.getElementById('brief-drawer-body');
+  const role     = d.provider_role || 'psychiatrist';
+  const isTherapy = _THERAPY_ROLES.has(role);
 
   const period = d.has_appointment
     ? `Since last appointment (${d.appointment_date}) · ${d.days_in_period} days · ${d.checkin_count} check-in${d.checkin_count !== 1 ? 's' : ''}`
-    : `Last 90 days (no prior appointment on record) · ${d.checkin_count} check-in${d.checkin_count !== 1 ? 's' : ''}`;
+    : `Last 90 days (no prior appointment) · ${d.checkin_count} check-in${d.checkin_count !== 1 ? 's' : ''}`;
   subtitle.textContent = period;
 
   let html = '';
@@ -428,9 +519,55 @@ function renderBriefBody(d) {
   if (d.checkin_count === 0) {
     html += `<p style="color:var(--color-text-muted,#888);font-size:0.88rem;margin:0 0 16px;">No check-ins recorded in this period.</p>`;
   } else {
+
+    // ── Therapy lens: behavioral signals FIRST ────────────────────────────
+    if (isTherapy && d.behavioral) {
+      const beh = d.behavioral;
+      html += `<div class="pd-brief-beh-section">
+        <div class="pd-brief-beh-title">Behavioral Signals</div>
+        <div class="pd-brief-beh-grid">`;
+
+      const socialVal    = beh.social_avg    !== null ? beh.social_avg    + '/10' : '—';
+      const workloadVal  = beh.workload_avg  !== null ? beh.workload_avg  + '/10' : '—';
+      const exerciseVal  = beh.exercise_avg  !== null ? beh.exercise_avg  + ' min/d' : '—';
+
+      html += `<div class="pd-brief-beh-stat">
+        <div class="pd-brief-stat-label">Social Quality</div>
+        <div class="pd-brief-stat-val">${socialVal}</div>
+      </div>
+      <div class="pd-brief-beh-stat">
+        <div class="pd-brief-stat-label">Workload Friction</div>
+        <div class="pd-brief-stat-val">${workloadVal}</div>
+      </div>
+      <div class="pd-brief-beh-stat">
+        <div class="pd-brief-stat-label">Exercise avg</div>
+        <div class="pd-brief-stat-val">${exerciseVal}</div>
+      </div>`;
+
+      const anyDays = beh.coping_any_days || 0;
+      html += `<div class="pd-brief-beh-stat">
+        <div class="pd-brief-stat-label">Coping Activity</div>
+        <div class="pd-brief-stat-val">${anyDays} <small>days</small></div>
+      </div>`;
+
+      html += `</div>`; // /pd-brief-beh-grid
+
+      // Coping breakdown
+      const cp = beh.coping_days || {};
+      const cpParts = Object.entries(cp).filter(([,v]) => v > 0).map(([k,v]) =>
+        `<span class="pd-brief-theme-chip">${k}: ${v}d</span>`);
+      if (cpParts.length) {
+        html += `<div style="margin-top:6px;">${cpParts.join('')}</div>`;
+      } else if (beh.advanced_days === 0) {
+        html += `<div style="font-size:0.78rem;color:var(--color-text-muted,#aaa);margin-top:4px;">No advanced check-in data logged in this period.</div>`;
+      }
+
+      html += `</div>`; // /pd-brief-beh-section
+    }
+
+    // ── Standard clinical stats (mood / stress / sleep) ───────────────────
     html += `<div class="pd-brief-stat-grid">`;
 
-    // Mood
     const moodVal  = d.mood_avg  !== null ? d.mood_avg  + '/10' : '—';
     const moodBase = d.mood_baseline !== null ? `<small>baseline ${d.mood_baseline}</small>` : '';
     html += `<div class="pd-brief-stat">
@@ -438,7 +575,6 @@ function renderBriefBody(d) {
       <div class="pd-brief-stat-val">${moodVal} ${moodBase} ${fmtDelta(d.mood_delta, d.mood_dir, '', 'up')}</div>
     </div>`;
 
-    // Stress
     const stressVal  = d.stress_avg  !== null ? d.stress_avg  + '/10' : '—';
     const stressBase = d.stress_baseline !== null ? `<small>baseline ${d.stress_baseline}</small>` : '';
     html += `<div class="pd-brief-stat">
@@ -446,7 +582,6 @@ function renderBriefBody(d) {
       <div class="pd-brief-stat-val">${stressVal} ${stressBase} ${fmtDelta(d.stress_delta, d.stress_dir, '', 'down')}</div>
     </div>`;
 
-    // Sleep
     const sleepVal  = d.sleep_avg  !== null ? d.sleep_avg  + 'h' : '—';
     const sleepBase = d.sleep_baseline !== null ? `<small>baseline ${d.sleep_baseline}h</small>` : '';
     html += `<div class="pd-brief-stat">
@@ -454,7 +589,6 @@ function renderBriefBody(d) {
       <div class="pd-brief-stat-val">${sleepVal} ${sleepBase} ${fmtDelta(d.sleep_delta, d.sleep_dir, 'h', 'up')}</div>
     </div>`;
 
-    // Last check-in
     const lastCI = d.last_checkin
       ? (d.days_since_checkin === 0 ? 'Today'
          : d.days_since_checkin === 1 ? 'Yesterday'
@@ -465,7 +599,7 @@ function renderBriefBody(d) {
       <div class="pd-brief-stat-val">${lastCI}</div>
     </div>`;
 
-    if (d.med_doses_logged > 0) {
+    if (!isTherapy && d.med_doses_logged > 0) {
       html += `<div class="pd-brief-stat">
         <div class="pd-brief-stat-label">Doses Logged</div>
         <div class="pd-brief-stat-val">${d.med_doses_logged} <small>on ${d.med_days_logged} day${d.med_days_logged !== 1 ? 's' : ''}</small></div>
@@ -489,9 +623,23 @@ function renderBriefBody(d) {
       });
       html += `</div>`;
     }
+
+    // ── Therapy AI summary section ────────────────────────────────────────
+    if (isTherapy) {
+      html += `<div class="pd-therapy-ai-section" id="therapy-ai-${patientId}">
+        <div class="pd-therapy-ai-title">AI Therapy Summary</div>
+        <div id="therapy-ai-body-${patientId}" style="margin-bottom:10px;">
+          <button class="pd-brief-gen-btn"
+                  id="therapy-gen-btn-${patientId}"
+                  onclick="generateTherapySummary('${patientId}')">
+            Generate Therapy Summary
+          </button>
+        </div>
+      </div>`;
+    }
   }
 
-  html += `<div class="pd-brief-footer-note">Data covers ${d.since_date} through today. Figures derived from patient check-ins and shared journals. Baseline = 90-day window prior to last appointment.</div>`;
+  html += `<div class="pd-brief-footer-note">Data covers ${d.since_date} through today. Figures from patient check-ins and shared journals. Baseline = 90-day window prior to last appointment.</div>`;
   body.innerHTML = html;
 }
 
@@ -514,7 +662,7 @@ async function openBrief(btn) {
   drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   if (_briefCache[pid]) {
-    renderBriefBody(_briefCache[pid]);
+    renderBriefBody(_briefCache[pid], pid);
     return;
   }
 
@@ -523,7 +671,7 @@ async function openBrief(btn) {
     const data = res.ok ? await res.json() : null;
     if (data) {
       _briefCache[pid] = data;
-      if (_activePid === pid) renderBriefBody(data);
+      if (_activePid === pid) renderBriefBody(data, pid);
     } else {
       document.getElementById('brief-drawer-body').innerHTML =
         '<p style="color:#c0392b;font-size:0.88rem;">Failed to load brief — try again.</p>';
@@ -531,6 +679,39 @@ async function openBrief(btn) {
   } catch (e) {
     document.getElementById('brief-drawer-body').innerHTML =
       '<p style="color:#c0392b;font-size:0.88rem;">Failed to load brief — try again.</p>';
+  }
+}
+
+async function generateTherapySummary(patientId) {
+  const btn  = document.getElementById('therapy-gen-btn-' + patientId);
+  const body = document.getElementById('therapy-ai-body-' + patientId);
+  if (!btn || !body) return;
+
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+
+  try {
+    const res = await fetch('/api/provider/patient/' + patientId + '/therapy-summary', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ days: 14 }),
+      credentials: 'same-origin',
+    });
+    const data = res.ok ? await res.json() : null;
+    if (data && data.text) {
+      // Format **bold** markdown
+      const formatted = data.text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+      body.innerHTML = `<div class="pd-therapy-ai-body">${formatted}</div>`;
+    } else {
+      const errMsg = (data && data.error) ? data.error : 'Generation failed — try again.';
+      body.innerHTML = `<p style="color:#c0392b;font-size:0.82rem;">${errMsg}</p>
+        <button class="pd-brief-gen-btn" id="therapy-gen-btn-${patientId}"
+                onclick="generateTherapySummary('${patientId}')">Retry</button>`;
+    }
+  } catch (e) {
+    body.innerHTML = `<p style="color:#c0392b;font-size:0.82rem;">Network error — try again.</p>
+      <button class="pd-brief-gen-btn" id="therapy-gen-btn-${patientId}"
+              onclick="generateTherapySummary('${patientId}')">Retry</button>`;
   }
 }
 
