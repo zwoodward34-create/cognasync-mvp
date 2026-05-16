@@ -144,3 +144,114 @@ def send_account_approved_email(to_email: str, full_name: str, role: str = 'pati
     <p>Welcome aboard.</p>
     """
     _send(to_email, "Your CognaSync account is approved", html)
+
+
+def send_care_flag_notification(to_email: str, to_name: str,
+                                author_name: str, author_role: str,
+                                patient_name: str,
+                                flag_type: str, flag_body: str) -> None:
+    """Notify a provider that a care team colleague posted a flag on a shared patient."""
+    dashboard_url = f"{APP_URL}/provider"
+    _FLAG_TYPE_LABELS = {
+        'observation':         'Observation',
+        'concern':             'Concern ⚠',
+        'progress':            'Progress ✓',
+        'coordination_needed': 'Needs Coordination',
+    }
+    type_label = _FLAG_TYPE_LABELS.get(flag_type, flag_type.replace('_', ' ').title())
+    # Truncate body for email preview — full text in dashboard
+    preview = flag_body if len(flag_body) <= 200 else flag_body[:197] + '…'
+    html = f"""
+    <p>Hi {to_name},</p>
+    <p>A care team update has been posted for your shared patient <strong>{patient_name}</strong>.</p>
+    <table style="border-collapse:collapse;margin:16px 0;width:100%;max-width:520px;">
+      <tr>
+        <td style="padding:4px 12px 4px 0;color:#666;font-size:13px;white-space:nowrap;vertical-align:top;">
+          <strong>From</strong>
+        </td>
+        <td style="font-size:13px;">{author_name} · {author_role}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 12px 4px 0;color:#666;font-size:13px;white-space:nowrap;vertical-align:top;">
+          <strong>Type</strong>
+        </td>
+        <td style="font-size:13px;">{type_label}</td>
+      </tr>
+      <tr>
+        <td style="padding:4px 12px 4px 0;color:#666;font-size:13px;white-space:nowrap;vertical-align:top;">
+          <strong>Note</strong>
+        </td>
+        <td style="font-size:13px;line-height:1.55;">{preview}</td>
+      </tr>
+    </table>
+    <p style="margin:24px 0">
+      <a href="{dashboard_url}"
+         style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">
+        View in dashboard →
+      </a>
+    </p>
+    <p style="color:#888;font-size:12px;margin-top:32px;">
+      You're receiving this because you and {author_name} are both active care team
+      providers for {patient_name} on CognaSync. Patient data permissions apply.
+    </p>
+    """
+    subject = f"Care team flag — {patient_name} [{type_label}]"
+    _send(to_email, subject, html)
+
+
+def send_care_team_request_email(to_email: str, to_name: str,
+                                  provider_name: str, role_label: str,
+                                  message: str | None = None) -> None:
+    """Notify a patient that a provider has requested to join their care team."""
+    care_team_url = f"{APP_URL}/care-team"
+    msg_block = f"""
+    <p style="background:#f5f5f5;border-left:3px solid #ccc;padding:10px 14px;
+              font-size:13px;color:#444;margin:16px 0;">
+      "{message}"
+    </p>""" if message else ""
+    html = f"""
+    <p>Hi {to_name},</p>
+    <p><strong>{provider_name}</strong> ({role_label}) has requested to join your CognaSync
+    care team. They would like access to your check-in data and journals to support your care.</p>
+    {msg_block}
+    <p>You can review and approve or deny this request from your Care Team page:</p>
+    <p style="margin:24px 0">
+      <a href="{care_team_url}"
+         style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">
+        Review request →
+      </a>
+    </p>
+    <p style="color:#888;font-size:12px;margin-top:32px;">
+      You control exactly which data each provider can access. You can also revoke
+      access at any time from the Care Team page.
+    </p>
+    """
+    _send(to_email, f"Care team request from {provider_name}", html)
+
+
+def send_checkin_reminder(to_email: str, to_name: str, days_since: int) -> None:
+    """Gentle reminder email to a patient who hasn't checked in recently."""
+    checkin_url = f"{APP_URL}/checkin"
+    if days_since == 2:
+        opening = "Just a friendly nudge — you haven't logged a check-in in a couple of days."
+    elif days_since <= 4:
+        opening = f"It's been {days_since} days since your last check-in. A quick log now keeps your data current for your provider."
+    else:
+        opening = f"It's been {days_since} days since your last check-in. Even a quick log helps your care team understand how you've been doing."
+    html = f"""
+    <p>Hi {to_name},</p>
+    <p>{opening}</p>
+    <p>Check-ins take about two minutes and give your provider a clear picture of
+    how your mood, sleep, and stress have been trending between appointments.</p>
+    <p style="margin:24px 0">
+      <a href="{checkin_url}"
+         style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">
+        Log today's check-in →
+      </a>
+    </p>
+    <p style="color:#888;font-size:12px;margin-top:32px;">
+      To stop receiving these reminders, visit Settings in CognaSync and turn off
+      check-in reminders. You won't be emailed more than once every 48 hours.
+    </p>
+    """
+    _send(to_email, "Your CognaSync check-in is waiting", html)

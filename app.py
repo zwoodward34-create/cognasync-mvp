@@ -1958,6 +1958,74 @@ def api_remove_medication():
     return jsonify({'message': f'{name.title()} removed', 'medications': updated}), 200
 
 
+@app.route('/api/settings/reminders', methods=['POST'])
+def api_set_reminders():
+    """Patient toggles check-in reminder emails on or off."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    data = request.get_json(silent=True) or {}
+    if 'enabled' not in data:
+        return jsonify({'error': 'enabled (bool) is required'}), 400
+    ok = db.set_checkin_reminders_enabled(user['id'], bool(data['enabled']))
+    return (jsonify({'ok': True}), 200) if ok else (jsonify({'error': 'Update failed'}), 500)
+
+
+# ── Internal: check-in reminders (Render cron or external scheduler) ──────────
+
+_INTERNAL_SECRET = os.environ.get('INTERNAL_SECRET', '')
+
+@app.route('/api/internal/send-checkin-reminders', methods=['GET'])
+def api_send_checkin_reminders():
+    """Send check-in reminder emails to eligible patients.
+
+    Protected by X-Internal-Secret header matching the INTERNAL_SECRET env var.
+    Designed to be called by a Render cron job or external scheduler — e.g.,
+    once daily at 10am.
+
+    Query params:
+        min_days  – minimum days inactive before reminding (default 2)
+        dry_run   – if 'true', return list without sending (default false)
+    """
+    secret = request.headers.get('X-Internal-Secret', '')
+    if not _INTERNAL_SECRET or secret != _INTERNAL_SECRET:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    import email_utils as _eu
+    min_days = max(1, int(request.args.get('min_days', 2)))
+    dry_run  = request.args.get('dry_run', '').lower() == 'true'
+
+    patients = db.get_patients_needing_checkin_reminder(min_days_inactive=min_days)
+    results  = []
+    sent     = 0
+    failed   = 0
+
+    for p in patients:
+        if dry_run:
+            results.append({'email': p['email'], 'days_since': p['days_since'], 'action': 'dry_run'})
+            continue
+        try:
+            _eu.send_checkin_reminder(
+                to_email=p['email'],
+                to_name=p['full_name'].split()[0] if p['full_name'] else 'there',
+                days_since=p['days_since'],
+            )
+            db.mark_reminder_sent(p['user_id'])
+            results.append({'email': p['email'], 'days_since': p['days_since'], 'action': 'sent'})
+            sent += 1
+        except Exception as e:
+            results.append({'email': p['email'], 'days_since': p['days_since'], 'action': 'failed', 'error': str(e)})
+            failed += 1
+
+    return jsonify({
+        'eligible': len(patients),
+        'sent':     sent,
+        'failed':   failed,
+        'dry_run':  dry_run,
+        'results':  results,
+    }), 200
+
+
 @app.route('/api/trends/medication-timing', methods=['GET'])
 def api_medication_timing():
     user, err = _api_user()

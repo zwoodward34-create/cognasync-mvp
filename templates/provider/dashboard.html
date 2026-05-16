@@ -248,6 +248,55 @@
   .pd-brief-gen-btn:hover { opacity: 0.88; }
   .pd-brief-gen-btn:disabled { opacity: 0.55; cursor: default; }
 
+  /* ── Previous session notes section ─────────────────────────────────── */
+  .pd-session-notes-section {
+    margin-bottom: 16px;
+    border-top: 1px solid var(--color-border, #ececec);
+    padding-top: 14px;
+  }
+  .pd-session-notes-title {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--color-text-muted, #888);
+    margin-bottom: 10px;
+  }
+  .pd-session-notes-date {
+    font-weight: 500;
+    letter-spacing: 0;
+    text-transform: none;
+    margin-left: 6px;
+    color: #aaa;
+  }
+  .pd-session-notes-block {
+    background: #f8f8f8;
+    border: 1px solid var(--color-border, #e8e8e8);
+    border-radius: 6px;
+    padding: 9px 12px;
+    margin-bottom: 8px;
+  }
+  .pd-session-notes-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: #aaa;
+    margin-bottom: 5px;
+  }
+  .pd-session-notes-body {
+    font-size: 0.82rem;
+    color: var(--color-text, #222);
+    line-height: 1.55;
+  }
+  .pd-session-actions-list {
+    margin: 0;
+    padding-left: 18px;
+    font-size: 0.82rem;
+    color: var(--color-text, #222);
+    line-height: 1.7;
+  }
+
   /* ── Care flag indicator on patient card ────────────────────────────── */
   .pd-flag-indicator {
     display: inline-flex;
@@ -796,6 +845,43 @@ function renderBriefBody(d, patientId) {
         </div>
       </div>`;
     }
+  }
+
+  // ── Previous session notes ───────────────────────────────────────────────
+  const hasNotes   = d.session_notes && d.session_notes.trim();
+  const hasPlan    = d.care_plan_changes && d.care_plan_changes.trim();
+  const hasActions = d.session_actions && d.session_actions.length > 0;
+
+  if (hasNotes || hasPlan || hasActions) {
+    html += `<div class="pd-session-notes-section">
+      <div class="pd-session-notes-title">Last Session Notes <span class="pd-session-notes-date">${d.appointment_date || ''}</span></div>`;
+
+    if (hasNotes) {
+      const notesEsc = d.session_notes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+      html += `<div class="pd-session-notes-block">
+        <div class="pd-session-notes-label">Notes</div>
+        <div class="pd-session-notes-body">${notesEsc}</div>
+      </div>`;
+    }
+    if (hasPlan) {
+      const planEsc = d.care_plan_changes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
+      html += `<div class="pd-session-notes-block">
+        <div class="pd-session-notes-label">Care Plan Changes</div>
+        <div class="pd-session-notes-body">${planEsc}</div>
+      </div>`;
+    }
+    if (hasActions) {
+      html += `<div class="pd-session-notes-block">
+        <div class="pd-session-notes-label">Action Items</div>
+        <ul class="pd-session-actions-list">`;
+      d.session_actions.forEach(a => {
+        const txt = (a.text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+        const sty = a.done ? ' style="text-decoration:line-through;opacity:0.5;"' : '';
+        html += `<li${sty}>${txt}</li>`;
+      });
+      html += `</ul></div>`;
+    }
+    html += `</div>`;
   }
 
   // ── Care flags section (loaded async after render) ──────────────────────

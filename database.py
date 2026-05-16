@@ -154,6 +154,85 @@ def assign_patient_to_provider(patient_user_id, provider_id):
         return False
 
 
+def get_patients_needing_checkin_reminder(min_days_inactive: int = 2) -> list:
+    """Return patients eligible for a check-in reminder email.
+
+    Eligibility:
+      - checkin_reminders_enabled = true
+      - last check-in is >= min_days_inactive days ago (or never)
+      - last_reminder_sent_at is NULL or > 48h ago (no spam)
+
+    Returns list of dicts: {user_id, email, full_name, days_since, last_reminder_sent_at}
+    """
+    try:
+        cutoff_checkin = (date.today() - timedelta(days=min_days_inactive)).isoformat()
+        cutoff_reminder = (datetime.utcnow() - timedelta(hours=48)).isoformat()
+
+        # Get eligible patient_profiles
+        q = supabase_admin.table('patient_profiles').select(
+            'user_id, last_reminder_sent_at'
+        ).eq('checkin_reminders_enabled', True)
+        pp_resp = q.execute()
+        profiles = pp_resp.data or []
+
+        eligible = []
+        for p in profiles:
+            uid = p['user_id']
+            last_sent = p.get('last_reminder_sent_at')
+            # Skip if reminder sent within 48h
+            if last_sent and last_sent > cutoff_reminder:
+                continue
+            # Check most recent check-in
+            ci = supabase_admin.table('checkins').select('checkin_date').eq(
+                'user_id', uid).order('checkin_date', desc=True).limit(1).execute()
+            if ci.data:
+                last_ci = ci.data[0]['checkin_date']  # YYYY-MM-DD string
+                if last_ci >= cutoff_checkin:
+                    continue  # checked in recently enough
+                days_since = (date.today() - date.fromisoformat(last_ci)).days
+            else:
+                days_since = 999  # never checked in
+
+            # Fetch email + name
+            prof = supabase_admin.table('profiles').select(
+                'email, full_name').eq('id', uid).limit(1).execute()
+            if not prof.data:
+                continue
+            eligible.append({
+                'user_id':   uid,
+                'email':     prof.data[0]['email'],
+                'full_name': prof.data[0]['full_name'],
+                'days_since': days_since,
+            })
+
+        return eligible
+    except Exception as e:
+        print(f"get_patients_needing_checkin_reminder error: {e}")
+        return []
+
+
+def mark_reminder_sent(user_id: str) -> None:
+    """Stamp last_reminder_sent_at on the patient profile after sending a reminder."""
+    try:
+        supabase_admin.table('patient_profiles').update({
+            'last_reminder_sent_at': datetime.utcnow().isoformat(),
+        }).eq('user_id', str(user_id)).execute()
+    except Exception as e:
+        print(f"mark_reminder_sent error: {e}")
+
+
+def set_checkin_reminders_enabled(user_id: str, enabled: bool) -> bool:
+    """Patient opts in or out of check-in reminder emails."""
+    try:
+        supabase_admin.table('patient_profiles').update({
+            'checkin_reminders_enabled': bool(enabled),
+        }).eq('user_id', str(user_id)).execute()
+        return True
+    except Exception as e:
+        print(f"set_checkin_reminders_enabled error: {e}")
+        return False
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # CHECK-INS
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2086,7 +2165,7 @@ def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
     # ── Find most recent completed appointment ────────────────────────────────
     try:
         ar = supabase_admin.table('provider_appointments').select(
-            'id, started_at, completed_at, status'
+            'id, started_at, completed_at, status, notes, care_plan_changes, actions'
         ).eq('provider_id', str(provider_id)).eq(
             'patient_id', str(patient_id)
         ).eq('status', 'completed').order('started_at', desc=True).limit(1).execute()
@@ -2103,10 +2182,24 @@ def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
             since_date = today - timedelta(days=90)
         has_appointment = True
         appointment_date = appt_date_str
+        # Extract session notes written by the provider at the last appointment
+        session_notes      = (appt.get('notes') or '').strip() or None
+        care_plan_changes  = (appt.get('care_plan_changes') or '').strip() or None
+        # Deserialise action items (stored as JSON string or list)
+        raw_actions = appt.get('actions') or []
+        if isinstance(raw_actions, str):
+            try:
+                raw_actions = json.loads(raw_actions)
+            except Exception:
+                raw_actions = []
+        session_actions = [a for a in raw_actions if isinstance(a, dict) and a.get('text')]
     else:
         since_date = today - timedelta(days=90)
         has_appointment = False
         appointment_date = None
+        session_notes     = None
+        care_plan_changes = None
+        session_actions   = []
 
     since_iso = since_date.isoformat()
     days_in_period = (today - since_date).days
@@ -2251,6 +2344,10 @@ def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
         'journal_themes':     journal_themes,
         'has_appointment':    has_appointment,
         'appointment_date':   appointment_date,
+        # Session notes from the last completed appointment (feed-forward context)
+        'session_notes':      session_notes,
+        'care_plan_changes':  care_plan_changes,
+        'session_actions':    session_actions,
     }
 
 
@@ -2925,9 +3022,68 @@ def create_care_flag(author_provider_id: str, patient_id: str,
             'body':               body,
             'visibility':         'care_team',
         }).execute()
-        return {'ok': True, 'flag': res.data[0] if res.data else {}}
+        flag_row = res.data[0] if res.data else {}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
+
+    # ── Notify other active care team providers ───────────────────────────────
+    try:
+        import email_utils as _eu
+        # Fetch all active care team members for this patient
+        ct = supabase_admin.table('care_team_members').select(
+            'provider_id, role, data_permissions'
+        ).eq('patient_id', str(patient_id)).eq('status', 'active').execute()
+
+        # Fetch patient name for the email
+        pr = supabase_admin.table('profiles').select(
+            'full_name').eq('id', str(patient_id)).limit(1).execute()
+        patient_name = pr.data[0]['full_name'] if pr.data else 'your patient'
+
+        # Fetch author name + role
+        auth_pr = supabase_admin.table('profiles').select(
+            'full_name').eq('id', str(author_provider_id)).limit(1).execute()
+        author_name = auth_pr.data[0]['full_name'] if auth_pr.data else 'A provider'
+        author_ct_role = next(
+            (r['role'] for r in (ct.data or []) if r['provider_id'] == str(author_provider_id)),
+            'psychiatrist'
+        )
+        author_role_label = _ROLE_LABELS.get(author_ct_role, 'Provider')
+
+        for member in (ct.data or []):
+            pid = member['provider_id']
+            if pid == str(author_provider_id):
+                continue   # don't notify yourself
+            perms = member.get('data_permissions') or {}
+            if isinstance(perms, str):
+                try:
+                    perms = json.loads(perms)
+                except Exception:
+                    perms = {}
+            if not perms.get('cross_provider_flags', True):
+                continue   # patient revoked flag visibility for this provider
+
+            # Fetch provider email + name
+            prov_pr = supabase_admin.table('profiles').select(
+                'email, full_name').eq('id', pid).limit(1).execute()
+            if not prov_pr.data:
+                continue
+            prov = prov_pr.data[0]
+            try:
+                _eu.send_care_flag_notification(
+                    to_email=prov['email'],
+                    to_name=prov['full_name'],
+                    author_name=author_name,
+                    author_role=author_role_label,
+                    patient_name=patient_name,
+                    flag_type=flag_type,
+                    flag_body=body,
+                )
+            except Exception as email_err:
+                print(f"care flag email failed for {prov['email']}: {email_err}")
+    except Exception as notify_err:
+        print(f"care flag notify error (non-fatal): {notify_err}")
+
+    return {'ok': True, 'flag': flag_row}
 
 
 def get_care_flags_for_provider(viewing_provider_id: str, patient_id: str) -> list:

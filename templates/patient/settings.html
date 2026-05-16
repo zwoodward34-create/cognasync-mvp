@@ -111,6 +111,27 @@
     <div id="provider-msg" class="hidden" style="margin-top:10px;font-size:13px;"></div>
   </div>
 
+  <!-- Notifications -->
+  <div class="settings-card">
+    <h2 class="settings-heading">Notifications</h2>
+    <div class="settings-row" style="align-items:center;">
+      <div>
+        <span class="settings-label">Check-in reminders</span>
+        <p class="text-muted" style="margin:2px 0 0;font-size:12px;">
+          Occasional emails when you haven't checked in for 2+ days.
+          No more than one every 48 hours.
+        </p>
+      </div>
+      <label class="toggle-switch" style="flex-shrink:0;margin-left:16px;">
+        <input type="checkbox" id="reminder-toggle"
+               {% if profile and profile.get('checkin_reminders_enabled', True) %}checked{% endif %}
+               onchange="setReminders(this.checked)">
+        <span class="toggle-slider"></span>
+      </label>
+    </div>
+    <div id="reminder-msg" style="font-size:12px;margin-top:8px;display:none;"></div>
+  </div>
+
   <div class="settings-card settings-card--danger">
     <h2 class="settings-heading">Session</h2>
     <p class="text-muted">Signing out will end your current session on this device.</p>
@@ -118,6 +139,39 @@
   </div>
 
 </div>
+{% endblock %}
+
+{% block head %}
+<style>
+  .toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 40px;
+    height: 22px;
+    cursor: pointer;
+  }
+  .toggle-switch input { opacity: 0; width: 0; height: 0; }
+  .toggle-slider {
+    position: absolute;
+    inset: 0;
+    background: #ccc;
+    border-radius: 22px;
+    transition: background 0.2s;
+  }
+  .toggle-slider::before {
+    content: '';
+    position: absolute;
+    width: 16px;
+    height: 16px;
+    left: 3px;
+    bottom: 3px;
+    background: #fff;
+    border-radius: 50%;
+    transition: transform 0.2s;
+  }
+  .toggle-switch input:checked + .toggle-slider { background: var(--color-primary, #3b5bdb); }
+  .toggle-switch input:checked + .toggle-slider::before { transform: translateX(18px); }
+</style>
 {% endblock %}
 
 {% block scripts %}
@@ -170,6 +224,31 @@ function unlinkProvider() {
 
 function toggleLinkForm(show) {
   document.getElementById('provider-link-form').style.display = show ? '' : 'none';
+}
+
+async function setReminders(enabled) {
+  const msg = document.getElementById('reminder-msg');
+  msg.style.display = '';
+  msg.style.color = 'var(--color-text-muted, #888)';
+  msg.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/settings/reminders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled }),
+      credentials: 'same-origin',
+    });
+    if (res.ok) {
+      msg.textContent = enabled ? 'Reminders on.' : 'Reminders turned off.';
+      setTimeout(() => { msg.style.display = 'none'; }, 2500);
+    } else {
+      msg.textContent = 'Failed to save — try again.';
+      msg.style.color = '#c0392b';
+    }
+  } catch (_) {
+    msg.textContent = 'Network error — try again.';
+    msg.style.color = '#c0392b';
+  }
 }
 </script>
 {% endblock %}

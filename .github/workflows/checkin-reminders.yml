@@ -1,0 +1,32 @@
+name: Send check-in reminders
+
+on:
+  schedule:
+    # Runs daily at 2pm UTC (10am ET / 7am PT). Adjust as needed.
+    - cron: '0 14 * * *'
+  # Allow manual triggering from the GitHub Actions UI for testing
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (list eligible patients without sending emails)'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'true'
+          - 'false'
+
+jobs:
+  send-reminders:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Send check-in reminder emails
+        run: |
+          DRY_RUN="${{ github.event.inputs.dry_run || 'false' }}"
+          RESPONSE=$(curl -f --max-time 60 --silent --show-error \
+            -H "X-Internal-Secret: ${{ secrets.INTERNAL_SECRET }}" \
+            "${{ secrets.APP_URL }}/api/internal/send-checkin-reminders?dry_run=${DRY_RUN}")
+          echo "$RESPONSE"
+          # Pretty-print if jq is available
+          echo "$RESPONSE" | jq . 2>/dev/null || true
