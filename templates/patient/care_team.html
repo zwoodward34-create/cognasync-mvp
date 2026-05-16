@@ -64,6 +64,9 @@
 
 </div>
 
+{% endblock %}
+
+{% block scripts %}
 <script>
 const PERM_LABELS = {
   mood_stress_sleep: 'Mood, stress & sleep data',
@@ -231,3 +234,4 @@ function apiFetch(url, opts = {}) {
 loadCareTeam();
 </script>
 {% endblock %}
+
