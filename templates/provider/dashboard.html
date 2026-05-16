@@ -247,6 +247,161 @@
   }
   .pd-brief-gen-btn:hover { opacity: 0.88; }
   .pd-brief-gen-btn:disabled { opacity: 0.55; cursor: default; }
+
+  /* ── Care flag indicator on patient card ────────────────────────────── */
+  .pd-flag-indicator {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 16px;
+    height: 16px;
+    background: #e53e3e;
+    color: #fff;
+    font-size: 0.6rem;
+    font-weight: 700;
+    border-radius: 8px;
+    padding: 0 4px;
+    margin-left: 5px;
+    vertical-align: middle;
+    line-height: 1;
+  }
+
+  /* ── Care flags section inside brief drawer ─────────────────────────── */
+  .pd-flags-section {
+    margin-bottom: 16px;
+    border-top: 1px solid var(--color-border, #ececec);
+    padding-top: 14px;
+  }
+  .pd-flags-section-title {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--color-text-muted, #888);
+    margin-bottom: 10px;
+  }
+  .pd-flag-card {
+    border-radius: 7px;
+    padding: 10px 13px;
+    margin-bottom: 8px;
+    border-left: 3px solid;
+    background: var(--color-surface, #fff);
+    border-color: var(--color-border, #ddd);
+  }
+  .pd-flag-card-concern         { border-color: #e53e3e; background: #fff8f8; }
+  .pd-flag-card-observation     { border-color: #3182ce; background: #f7fbff; }
+  .pd-flag-card-progress        { border-color: #38a169; background: #f0faf4; }
+  .pd-flag-card-coordination_needed { border-color: #d69e2e; background: #fffbf0; }
+  .pd-flag-card-mine            { border-color: #a0aec0; background: #f8f9fa; opacity: 0.85; }
+
+  .pd-flag-card-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 5px;
+  }
+  .pd-flag-type-badge {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: rgba(0,0,0,0.07);
+    color: inherit;
+    flex-shrink: 0;
+  }
+  .pd-flag-author {
+    font-size: 0.72rem;
+    color: var(--color-text-muted, #777);
+    flex: 1;
+  }
+  .pd-flag-resolve-btn {
+    background: none;
+    border: 1px solid var(--color-border, #ccc);
+    border-radius: 4px;
+    font-size: 0.66rem;
+    font-weight: 600;
+    color: var(--color-text-muted, #888);
+    padding: 1px 7px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  .pd-flag-resolve-btn:hover { background: #f0f0f0; }
+  .pd-flag-body {
+    font-size: 0.82rem;
+    color: var(--color-text, #222);
+    line-height: 1.5;
+  }
+  .pd-flag-time {
+    font-size: 0.68rem;
+    color: var(--color-text-muted, #aaa);
+    margin-top: 4px;
+  }
+
+  /* ── Post a new flag form ───────────────────────────────────────────── */
+  .pd-flag-create {
+    margin-top: 10px;
+    background: var(--color-surface, #fff);
+    border: 1px dashed var(--color-border, #ddd);
+    border-radius: 7px;
+    padding: 12px 14px;
+  }
+  .pd-flag-create-title {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--color-text-muted, #999);
+    margin-bottom: 8px;
+  }
+  .pd-flag-create-row {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .pd-flag-type-select {
+    font-size: 0.78rem;
+    border: 1px solid var(--color-border, #ccc);
+    border-radius: 5px;
+    padding: 5px 8px;
+    background: var(--color-surface, #fff);
+    color: var(--color-text, #111);
+    flex-shrink: 0;
+  }
+  .pd-flag-body-input {
+    flex: 1;
+    min-width: 180px;
+    font-size: 0.82rem;
+    border: 1px solid var(--color-border, #ccc);
+    border-radius: 5px;
+    padding: 5px 9px;
+    resize: none;
+    font-family: inherit;
+    color: var(--color-text, #111);
+    min-height: 38px;
+  }
+  .pd-flag-submit-btn {
+    background: var(--color-primary, #3b5bdb);
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 6px 13px;
+    cursor: pointer;
+    flex-shrink: 0;
+    align-self: flex-end;
+  }
+  .pd-flag-submit-btn:hover { opacity: 0.9; }
+  .pd-flag-submit-btn:disabled { opacity: 0.5; cursor: default; }
+  .pd-flag-create-err {
+    font-size: 0.75rem;
+    color: #c0392b;
+    margin-top: 5px;
+  }
 </style>
 {% endblock %}
 
@@ -319,6 +474,10 @@
             {# Role badge — show for non-psychiatrist care team patients #}
             {% if p.is_care_team and p.provider_role and p.provider_role != 'psychiatrist' %}
             <span class="pd-role-badge pd-role-{{ p.provider_role }}">{{ p.provider_role | replace('_', ' ') | title }}</span>
+            {% endif %}
+            {# Care flag indicator — unresolved flags from other providers #}
+            {% if p.flag_count and p.flag_count > 0 %}
+            <span class="pd-flag-indicator" title="{{ p.flag_count }} care flag{{ 's' if p.flag_count != 1 }} from team">{{ p.flag_count }}🚩</span>
             {% endif %}
           </div>
           <div class="pd-card-email">{{ p.email }}</div>
@@ -639,8 +798,166 @@ function renderBriefBody(d, patientId) {
     }
   }
 
+  // ── Care flags section (loaded async after render) ──────────────────────
+  html += `<div class="pd-flags-section" id="flags-section-${patientId}">
+    <div class="pd-flags-section-title">Care Team Flags</div>
+    <div id="flags-body-${patientId}">
+      <p style="font-size:0.78rem;color:var(--color-text-muted,#aaa);">Loading flags…</p>
+    </div>
+  </div>`;
+
   html += `<div class="pd-brief-footer-note">Data covers ${d.since_date} through today. Figures from patient check-ins and shared journals. Baseline = 90-day window prior to last appointment.</div>`;
   body.innerHTML = html;
+  // Async: load care flags after DOM is updated
+  loadCareFlags(patientId);
+}
+
+// ── Care flag helpers ──────────────────────────────────────────────────────
+
+const _FLAG_TYPE_LABELS = {
+  observation:          'Observation',
+  concern:              'Concern',
+  progress:             'Progress',
+  coordination_needed:  'Needs Coordination',
+};
+
+function _relativeTime(isoStr) {
+  if (!isoStr) return '';
+  const diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
+  if (diff < 60)   return 'just now';
+  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+  return Math.floor(diff / 86400) + 'd ago';
+}
+
+function _renderFlagCard(f, isMine) {
+  const typeLabel = _FLAG_TYPE_LABELS[f.flag_type] || f.flag_type;
+  const cardCls   = isMine ? 'pd-flag-card pd-flag-card-mine'
+                            : `pd-flag-card pd-flag-card-${f.flag_type}`;
+  const authorLine = isMine
+    ? `<span class="pd-flag-author">Posted by you</span>`
+    : `<span class="pd-flag-author">${f.author_name || 'Provider'} · ${f.author_role || ''}</span>`;
+  const resolveBtn = isMine
+    ? `<button class="pd-flag-resolve-btn" onclick="resolveCareFlag('${f.id}','__PID__')">Resolve</button>`
+    : `<button class="pd-flag-resolve-btn" onclick="resolveCareFlag('${f.id}','__PID__')">Mark Resolved</button>`;
+  return `<div class="${cardCls}" id="flag-card-${f.id}">
+    <div class="pd-flag-card-top">
+      <span class="pd-flag-type-badge">${typeLabel}</span>
+      ${authorLine}
+      ${resolveBtn}
+    </div>
+    <div class="pd-flag-body">${f.body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+    <div class="pd-flag-time">${_relativeTime(f.created_at)}</div>
+  </div>`;
+}
+
+async function loadCareFlags(patientId) {
+  const el = document.getElementById('flags-body-' + patientId);
+  if (!el) return;
+  try {
+    const res  = await fetch('/api/provider/patient/' + patientId + '/flags', { credentials: 'same-origin' });
+    const data = res.ok ? await res.json() : null;
+    if (!data) { el.innerHTML = '<p style="font-size:0.78rem;color:#c0392b;">Failed to load flags.</p>'; return; }
+
+    let html = '';
+    const others = data.from_others || [];
+    const mine   = data.my_flags   || [];
+
+    if (others.length === 0 && mine.length === 0) {
+      html += `<p style="font-size:0.78rem;color:var(--color-text-muted,#aaa);margin-bottom:8px;">No active flags from care team members.</p>`;
+    } else {
+      if (others.length > 0) {
+        html += `<div style="margin-bottom:4px;font-size:0.72rem;font-weight:600;color:var(--color-text-muted,#888);">From care team (${others.length})</div>`;
+        others.forEach(f => { html += _renderFlagCard(f, false).replace(/__PID__/g, patientId); });
+      }
+      if (mine.length > 0) {
+        html += `<div style="margin:10px 0 4px;font-size:0.72rem;font-weight:600;color:var(--color-text-muted,#888);">Posted by you (${mine.length})</div>`;
+        mine.forEach(f => { html += _renderFlagCard(f, true).replace(/__PID__/g, patientId); });
+      }
+    }
+
+    // Post-a-flag form
+    html += `<div class="pd-flag-create">
+      <div class="pd-flag-create-title">Post a Flag</div>
+      <div class="pd-flag-create-row">
+        <select class="pd-flag-type-select" id="flag-type-${patientId}">
+          <option value="observation">Observation</option>
+          <option value="concern">Concern</option>
+          <option value="progress">Progress</option>
+          <option value="coordination_needed">Needs Coordination</option>
+        </select>
+        <textarea class="pd-flag-body-input" id="flag-body-${patientId}"
+                  placeholder="What do you want to share with the care team? (10–1000 chars)"
+                  rows="2"></textarea>
+        <button class="pd-flag-submit-btn" id="flag-submit-${patientId}"
+                onclick="submitCareFlag('${patientId}')">Post</button>
+      </div>
+      <div class="pd-flag-create-err" id="flag-err-${patientId}"></div>
+    </div>`;
+
+    el.innerHTML = html;
+  } catch (e) {
+    el.innerHTML = '<p style="font-size:0.78rem;color:#c0392b;">Network error loading flags.</p>';
+  }
+}
+
+async function resolveCareFlag(flagId, patientId) {
+  const card = document.getElementById('flag-card-' + flagId);
+  if (card) { card.style.opacity = '0.4'; card.style.pointerEvents = 'none'; }
+  try {
+    const res = await fetch(
+      '/api/provider/patient/' + patientId + '/flags/' + flagId + '/resolve',
+      { method: 'PATCH', credentials: 'same-origin' }
+    );
+    if (res.ok) {
+      // Reload flags panel to reflect resolved state
+      loadCareFlags(patientId);
+    } else {
+      if (card) { card.style.opacity = ''; card.style.pointerEvents = ''; }
+    }
+  } catch (_) {
+    if (card) { card.style.opacity = ''; card.style.pointerEvents = ''; }
+  }
+}
+
+async function submitCareFlag(patientId) {
+  const typeEl = document.getElementById('flag-type-' + patientId);
+  const bodyEl = document.getElementById('flag-body-' + patientId);
+  const btnEl  = document.getElementById('flag-submit-' + patientId);
+  const errEl  = document.getElementById('flag-err-' + patientId);
+  if (!typeEl || !bodyEl) return;
+
+  const flagType = typeEl.value;
+  const body     = bodyEl.value.trim();
+  errEl.textContent = '';
+
+  if (body.length < 10) { errEl.textContent = 'Please write at least 10 characters.'; return; }
+  if (body.length > 1000) { errEl.textContent = 'Limit 1000 characters.'; return; }
+
+  btnEl.disabled = true;
+  btnEl.textContent = 'Posting…';
+
+  try {
+    const res = await fetch('/api/provider/patient/' + patientId + '/flags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flag_type: flagType, body }),
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      bodyEl.value = '';
+      loadCareFlags(patientId);  // refresh flags panel
+    } else {
+      errEl.textContent = data.error || 'Failed to post flag — try again.';
+      btnEl.disabled = false;
+      btnEl.textContent = 'Post';
+    }
+  } catch (_) {
+    errEl.textContent = 'Network error — try again.';
+    btnEl.disabled = false;
+    btnEl.textContent = 'Post';
+  }
 }
 
 async function openBrief(btn) {

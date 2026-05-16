@@ -1495,6 +1495,68 @@ def api_provider_therapy_summary(patient_id):
         return jsonify({'error': 'Summary generation failed — please try again.'}), 500
 
 
+# ── Care Flags API ────────────────────────────────────────────────────────────
+
+@app.route('/api/provider/patient/<patient_id>/flags', methods=['GET'])
+def api_get_care_flags(patient_id):
+    """Return unresolved care flags on this patient posted by other providers.
+
+    Also returns the viewing provider's own unresolved flags so they can manage them.
+    Response: { 'from_others': [...], 'my_flags': [...] }
+    """
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+
+    from_others = db.get_care_flags_for_provider(user['id'], patient_id)
+    my_flags    = db.get_my_care_flags(user['id'], patient_id)
+    return jsonify({'from_others': from_others, 'my_flags': my_flags}), 200
+
+
+@app.route('/api/provider/patient/<patient_id>/flags', methods=['POST'])
+def api_create_care_flag(patient_id):
+    """Provider posts a new care flag on a patient.
+
+    Body: { flag_type: 'observation'|'concern'|'progress'|'coordination_needed', body: str }
+    """
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+
+    data = request.get_json(silent=True) or {}
+    flag_type = (data.get('flag_type') or '').strip()
+    body      = (data.get('body') or '').strip()
+
+    if not flag_type:
+        return jsonify({'error': 'flag_type is required.'}), 400
+    if not body:
+        return jsonify({'error': 'body is required.'}), 400
+
+    result = db.create_care_flag(user['id'], patient_id, flag_type, body)
+    if result.get('ok'):
+        return jsonify(result), 201
+    return jsonify({'error': result.get('error', 'Failed to create flag.')}), 400
+
+
+@app.route('/api/provider/patient/<patient_id>/flags/<flag_id>/resolve', methods=['PATCH'])
+def api_resolve_care_flag(patient_id, flag_id):
+    """Mark a care flag as resolved."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+
+    result = db.resolve_care_flag(flag_id, user['id'], patient_id)
+    if result.get('ok'):
+        return jsonify({'ok': True}), 200
+    return jsonify({'error': result.get('error', 'Failed to resolve flag.')}), 400
+
+
 # ── Care Team API — Provider side ─────────────────────────────────────────────
 
 @app.route('/api/provider/care-team/request', methods=['POST'])
