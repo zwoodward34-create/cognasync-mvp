@@ -1426,6 +1426,18 @@ def api_resolve_crisis(patient_id):
     return jsonify({'status': 'resolved'}), 200
 
 
+@app.route('/api/provider/patient/<patient_id>/brief', methods=['GET'])
+def api_between_session_brief(patient_id):
+    """Return a structured between-session brief for a patient."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+    brief = db.get_between_session_brief(patient_id, user['id'])
+    return jsonify(brief), 200
+
+
 @app.route('/api/provider/generate-summary/<patient_id>', methods=['POST'])
 @limiter.limit("10/hour")
 def api_provider_generate_summary(patient_id):

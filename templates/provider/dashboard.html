@@ -15,13 +15,156 @@
     margin-left: 4px;
     vertical-align: middle;
   }
-  .pd-delta-up-good   { background: #e6f4ea; color: #1a7f3c; }  /* mood/sleep up   = good */
-  .pd-delta-down-good { background: #e6f4ea; color: #1a7f3c; }  /* stress down     = good */
-  .pd-delta-up-bad    { background: #fdecea; color: #c0392b; }  /* stress up       = bad  */
-  .pd-delta-down-bad  { background: #fdecea; color: #c0392b; }  /* mood/sleep down = bad  */
+  .pd-delta-up-good   { background: #e6f4ea; color: #1a7f3c; }
+  .pd-delta-down-good { background: #e6f4ea; color: #1a7f3c; }
+  .pd-delta-up-bad    { background: #fdecea; color: #c0392b; }
+  .pd-delta-down-bad  { background: #fdecea; color: #c0392b; }
   .pd-delta-stable    { background: #f0f0f0; color: #888; }
   .pd-card-stats { display: flex; gap: 0; flex-wrap: wrap; }
   .pd-stat { flex: 1; min-width: 80px; }
+
+  /* Urgency tier badge */
+  .pd-urgency-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 2px 6px;
+    border-radius: 3px;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .pd-urgency-0 { background: #fdecea; color: #c0392b; }
+  .pd-urgency-1 { background: #fff3cd; color: #7a5200; }
+  .pd-urgency-2 { background: #e8f0fe; color: #1a56db; }
+
+  /* Brief button inside card footer */
+  .pd-brief-btn {
+    background: none;
+    border: 1px solid var(--color-border, #ddd);
+    border-radius: 5px;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--color-text-muted, #666);
+    padding: 2px 9px;
+    cursor: pointer;
+    line-height: 1.6;
+  }
+  .pd-brief-btn:hover { background: var(--color-surface-alt, #f5f5f5); }
+
+  .pd-card-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .pd-card-footer .pd-card-appt { flex: 1; }
+
+  /* ── Between-session brief drawer ───────────────────────────────────── */
+  .pd-brief-drawer {
+    display: none;
+    background: var(--color-surface-alt, #fafafa);
+    border: 1px solid var(--color-border, #e5e5e5);
+    border-radius: 10px;
+    padding: 22px 28px;
+    margin-top: 24px;
+  }
+  .pd-brief-drawer.open { display: block; }
+
+  .pd-brief-hdr {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+  .pd-brief-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--color-text, #111);
+  }
+  .pd-brief-subtitle {
+    font-size: 0.78rem;
+    color: var(--color-text-muted, #777);
+    margin-top: 3px;
+  }
+  .pd-brief-close {
+    background: none;
+    border: none;
+    font-size: 1.1rem;
+    cursor: pointer;
+    color: var(--color-text-muted, #aaa);
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+  .pd-brief-stat-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .pd-brief-stat {
+    background: var(--color-surface, #fff);
+    border: 1px solid var(--color-border, #e5e5e5);
+    border-radius: 7px;
+    padding: 10px 14px;
+  }
+  .pd-brief-stat-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted, #888);
+    margin-bottom: 4px;
+  }
+  .pd-brief-stat-val {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--color-text, #111);
+  }
+  .pd-brief-stat-val small {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--color-text-muted, #999);
+    margin-left: 3px;
+  }
+  .pd-brief-themes-row {
+    margin-bottom: 14px;
+  }
+  .pd-brief-themes-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--color-text-muted, #888);
+    margin-bottom: 6px;
+  }
+  .pd-brief-theme-chip {
+    display: inline-block;
+    background: #f0f0f0;
+    color: #555;
+    font-size: 0.75rem;
+    padding: 3px 10px;
+    border-radius: 20px;
+    margin-right: 5px;
+    margin-bottom: 4px;
+  }
+  .pd-brief-crisis-bar {
+    background: #fdecea;
+    color: #c0392b;
+    border-radius: 6px;
+    padding: 8px 14px;
+    font-size: 0.83rem;
+    font-weight: 600;
+    margin-bottom: 14px;
+  }
+  .pd-brief-footer-note {
+    font-size: 0.75rem;
+    color: var(--color-text-muted, #aaa);
+    border-top: 1px solid var(--color-border, #ececec);
+    padding-top: 10px;
+    margin-top: 4px;
+  }
 </style>
 {% endblock %}
 
@@ -79,6 +222,14 @@
             {{ p.full_name }}
             {% if has_crisis %}
             <span class="pd-badge pd-badge-crisis" title="Crisis flag active">&#9888;</span>
+            {% endif %}
+            {# Urgency badge #}
+            {% if p.urgency_tier == 0 %}
+            <span class="pd-urgency-badge pd-urgency-0">Crisis</span>
+            {% elif p.urgency_tier == 1 %}
+            <span class="pd-urgency-badge pd-urgency-1">Needs Attention</span>
+            {% elif p.urgency_tier == 2 %}
+            <span class="pd-urgency-badge pd-urgency-2">Watch</span>
             {% endif %}
           </div>
           <div class="pd-card-email">{{ p.email }}</div>
@@ -166,7 +317,7 @@
       </div>
       {% endif %}
 
-      <!-- Last appointment -->
+      <!-- Footer -->
       <div class="pd-card-footer">
         <span class="pd-card-appt">
           {% if p.last_appointment %}
@@ -175,8 +326,15 @@
             No appointments yet
           {% endif %}
         </span>
+        <button class="pd-brief-btn"
+                data-patient-id="{{ p.patient_id }}"
+                data-patient-name="{{ p.full_name }}"
+                onclick="event.preventDefault(); event.stopPropagation(); openBrief(this)">
+          Brief
+        </button>
         <span class="pd-card-arrow">→</span>
       </div>
+
     </a>
     {% endfor %}
   </div><!-- /pd-grid -->
@@ -184,6 +342,21 @@
   <div class="pd-no-results" id="pd-no-results" style="display:none;">
     No patients match your search.
   </div>
+
+  <!-- Shared between-session brief drawer (appears below grid) -->
+  <div class="pd-brief-drawer" id="pd-brief-drawer">
+    <div class="pd-brief-hdr">
+      <div>
+        <div class="pd-brief-title" id="brief-drawer-title">Between-Session Brief</div>
+        <div class="pd-brief-subtitle" id="brief-drawer-subtitle">Loading…</div>
+      </div>
+      <button class="pd-brief-close" onclick="closeBrief()">✕</button>
+    </div>
+    <div id="brief-drawer-body">
+      <!-- populated by JS -->
+    </div>
+  </div>
+
   {% endif %}
 
 </div>
@@ -213,6 +386,154 @@ function setFilter(btn, filter) {
       c.style.display = c.dataset.state === filter ? '' : 'none';
     }
   });
+}
+
+// ── Between-session brief ────────────────────────────────────────────────────
+
+const _briefCache = {};
+let _activePid = null;
+
+function fmtDelta(delta, dir, unit, goodDir) {
+  if (delta === null || delta === undefined || dir === null || dir === undefined) return '';
+  const sign  = delta > 0 ? '+' : '';
+  const arrow = dir === 'up' ? '↑' : (dir === 'down' ? '↓' : '→');
+  const isGood = (dir === goodDir) || dir === 'stable';
+  const cls = dir === 'stable'
+    ? 'pd-delta pd-delta-stable'
+    : isGood ? 'pd-delta pd-delta-up-good'
+             : 'pd-delta pd-delta-up-bad';
+  const label = dir === 'stable' ? '→ stable'
+    : arrow + ' ' + sign + delta + (unit || '');
+  return `<span class="${cls}" style="display:inline-flex;">${label}</span>`;
+}
+
+function renderBriefBody(d) {
+  const subtitle = document.getElementById('brief-drawer-subtitle');
+  const body     = document.getElementById('brief-drawer-body');
+
+  const period = d.has_appointment
+    ? `Since last appointment (${d.appointment_date}) · ${d.days_in_period} days · ${d.checkin_count} check-in${d.checkin_count !== 1 ? 's' : ''}`
+    : `Last 90 days (no prior appointment on record) · ${d.checkin_count} check-in${d.checkin_count !== 1 ? 's' : ''}`;
+  subtitle.textContent = period;
+
+  let html = '';
+
+  if (d.crisis_active) {
+    html += `<div class="pd-brief-crisis-bar">⚠ Active crisis flag — review before appointment</div>`;
+  }
+
+  if (d.checkin_count === 0) {
+    html += `<p style="color:var(--color-text-muted,#888);font-size:0.88rem;margin:0 0 16px;">No check-ins recorded in this period.</p>`;
+  } else {
+    html += `<div class="pd-brief-stat-grid">`;
+
+    // Mood
+    const moodVal  = d.mood_avg  !== null ? d.mood_avg  + '/10' : '—';
+    const moodBase = d.mood_baseline !== null ? `<small>baseline ${d.mood_baseline}</small>` : '';
+    html += `<div class="pd-brief-stat">
+      <div class="pd-brief-stat-label">Mood avg</div>
+      <div class="pd-brief-stat-val">${moodVal} ${moodBase} ${fmtDelta(d.mood_delta, d.mood_dir, '', 'up')}</div>
+    </div>`;
+
+    // Stress
+    const stressVal  = d.stress_avg  !== null ? d.stress_avg  + '/10' : '—';
+    const stressBase = d.stress_baseline !== null ? `<small>baseline ${d.stress_baseline}</small>` : '';
+    html += `<div class="pd-brief-stat">
+      <div class="pd-brief-stat-label">Stress avg</div>
+      <div class="pd-brief-stat-val">${stressVal} ${stressBase} ${fmtDelta(d.stress_delta, d.stress_dir, '', 'down')}</div>
+    </div>`;
+
+    // Sleep
+    const sleepVal  = d.sleep_avg  !== null ? d.sleep_avg  + 'h' : '—';
+    const sleepBase = d.sleep_baseline !== null ? `<small>baseline ${d.sleep_baseline}h</small>` : '';
+    html += `<div class="pd-brief-stat">
+      <div class="pd-brief-stat-label">Sleep avg</div>
+      <div class="pd-brief-stat-val">${sleepVal} ${sleepBase} ${fmtDelta(d.sleep_delta, d.sleep_dir, 'h', 'up')}</div>
+    </div>`;
+
+    // Last check-in
+    const lastCI = d.last_checkin
+      ? (d.days_since_checkin === 0 ? 'Today'
+         : d.days_since_checkin === 1 ? 'Yesterday'
+         : d.days_since_checkin + 'd ago')
+      : 'None';
+    html += `<div class="pd-brief-stat">
+      <div class="pd-brief-stat-label">Last Check-in</div>
+      <div class="pd-brief-stat-val">${lastCI}</div>
+    </div>`;
+
+    if (d.med_doses_logged > 0) {
+      html += `<div class="pd-brief-stat">
+        <div class="pd-brief-stat-label">Doses Logged</div>
+        <div class="pd-brief-stat-val">${d.med_doses_logged} <small>on ${d.med_days_logged} day${d.med_days_logged !== 1 ? 's' : ''}</small></div>
+      </div>`;
+    }
+
+    if (d.journal_count > 0) {
+      html += `<div class="pd-brief-stat">
+        <div class="pd-brief-stat-label">Journal Entries</div>
+        <div class="pd-brief-stat-val">${d.journal_count}</div>
+      </div>`;
+    }
+
+    html += `</div>`; // /pd-brief-stat-grid
+
+    if (d.journal_themes && d.journal_themes.length > 0) {
+      html += `<div class="pd-brief-themes-row">
+        <div class="pd-brief-themes-label">Journal themes</div>`;
+      d.journal_themes.forEach(t => {
+        html += `<span class="pd-brief-theme-chip">${t}</span>`;
+      });
+      html += `</div>`;
+    }
+  }
+
+  html += `<div class="pd-brief-footer-note">Data covers ${d.since_date} through today. Figures derived from patient check-ins and shared journals. Baseline = 90-day window prior to last appointment.</div>`;
+  body.innerHTML = html;
+}
+
+async function openBrief(btn) {
+  const pid  = btn.dataset.patientId;
+  const name = btn.dataset.patientName;
+  const drawer = document.getElementById('pd-brief-drawer');
+
+  // If same patient is open, close
+  if (_activePid === pid && drawer.classList.contains('open')) {
+    closeBrief();
+    return;
+  }
+
+  _activePid = pid;
+  document.getElementById('brief-drawer-title').textContent = 'Between-Session Brief — ' + name;
+  document.getElementById('brief-drawer-subtitle').textContent = 'Loading…';
+  document.getElementById('brief-drawer-body').innerHTML = '';
+  drawer.classList.add('open');
+  drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+
+  if (_briefCache[pid]) {
+    renderBriefBody(_briefCache[pid]);
+    return;
+  }
+
+  try {
+    const res  = await fetch('/api/provider/patient/' + pid + '/brief', { credentials: 'same-origin' });
+    const data = res.ok ? await res.json() : null;
+    if (data) {
+      _briefCache[pid] = data;
+      if (_activePid === pid) renderBriefBody(data);
+    } else {
+      document.getElementById('brief-drawer-body').innerHTML =
+        '<p style="color:#c0392b;font-size:0.88rem;">Failed to load brief — try again.</p>';
+    }
+  } catch (e) {
+    document.getElementById('brief-drawer-body').innerHTML =
+      '<p style="color:#c0392b;font-size:0.88rem;">Failed to load brief — try again.</p>';
+  }
+}
+
+function closeBrief() {
+  document.getElementById('pd-brief-drawer').classList.remove('open');
+  _activePid = null;
 }
 </script>
 {% endblock %}

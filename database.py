@@ -2048,6 +2048,212 @@ def update_provider_appointment(appt_id: str, provider_id: str, updates: dict) -
         return False
 
 
+def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
+    """Return a structured between-session brief for a patient.
+
+    Covers the period since the most recent *completed* appointment for this
+    provider–patient pair, compared against the 90-day window before that
+    appointment.  Template-driven — no AI call.
+
+    Returns a dict with keys:
+        since_date          – ISO date string (appointment date, or 90d ago if none)
+        days_in_period      – int
+        checkin_count       – int
+        last_checkin        – ISO date or None
+        days_since_checkin  – int or None
+        crisis_active       – bool
+        mood_avg            – float or None
+        mood_baseline       – float or None
+        mood_dir            – 'up'|'down'|'stable'|None
+        mood_delta          – float or None
+        stress_avg          – float or None
+        stress_baseline     – float or None
+        stress_dir          – 'up'|'down'|'stable'|None
+        stress_delta        – float or None
+        sleep_avg           – float or None
+        sleep_baseline      – float or None
+        sleep_dir           – 'up'|'down'|'stable'|None
+        sleep_delta         – float or None
+        med_doses_logged    – int (total dose events in period)
+        med_days_logged     – int (unique days with any dose)
+        journal_count       – int (shared journal entries in period)
+        journal_themes      – list[str] (up to 3 brief theme labels extracted from entry text)
+        has_appointment     – bool (whether a prior completed appointment was found)
+        appointment_date    – ISO date or None
+    """
+    today = date.today()
+
+    # ── Find most recent completed appointment ────────────────────────────────
+    try:
+        ar = supabase_admin.table('provider_appointments').select(
+            'id, started_at, completed_at, status'
+        ).eq('provider_id', str(provider_id)).eq(
+            'patient_id', str(patient_id)
+        ).eq('status', 'completed').order('started_at', desc=True).limit(1).execute()
+        appt = ar.data[0] if ar.data else None
+    except Exception:
+        appt = None
+
+    if appt:
+        # Use completed_at if available, otherwise fall back to started_at
+        appt_date_str = (appt.get('completed_at') or appt.get('started_at') or '')[:10]
+        try:
+            since_date = date.fromisoformat(appt_date_str)
+        except Exception:
+            since_date = today - timedelta(days=90)
+        has_appointment = True
+        appointment_date = appt_date_str
+    else:
+        since_date = today - timedelta(days=90)
+        has_appointment = False
+        appointment_date = None
+
+    since_iso = since_date.isoformat()
+    days_in_period = (today - since_date).days
+
+    # ── Baseline window: 90 days before the since_date ───────────────────────
+    baseline_start = (since_date - timedelta(days=90)).isoformat()
+
+    # ── Check-ins in period ───────────────────────────────────────────────────
+    try:
+        ci_resp = supabase_admin.table('checkins').select(
+            'checkin_date, mood_score, stress_score, sleep_hours'
+        ).eq('user_id', str(patient_id)).gte('checkin_date', since_iso).execute()
+        period_rows = ci_resp.data or []
+    except Exception:
+        period_rows = []
+
+    # ── Baseline check-ins ────────────────────────────────────────────────────
+    try:
+        bl_resp = supabase_admin.table('checkins').select(
+            'checkin_date, mood_score, stress_score, sleep_hours'
+        ).eq('user_id', str(patient_id)).gte(
+            'checkin_date', baseline_start
+        ).lt('checkin_date', since_iso).execute()
+        baseline_rows = bl_resp.data or []
+    except Exception:
+        baseline_rows = []
+
+    def _avg(rows, field):
+        vals = [r[field] for r in rows if r.get(field) is not None]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    def _delta_dir(cur, base):
+        if cur is None or base is None:
+            return None, None
+        d = round(cur - base, 1)
+        if abs(d) < 0.5:
+            return d, 'stable'
+        return d, 'up' if d > 0 else 'down'
+
+    mood_avg     = _avg(period_rows, 'mood_score')
+    stress_avg   = _avg(period_rows, 'stress_score')
+    sleep_avg    = _avg(period_rows, 'sleep_hours')
+    mood_base    = _avg(baseline_rows, 'mood_score')
+    stress_base  = _avg(baseline_rows, 'stress_score')
+    sleep_base   = _avg(baseline_rows, 'sleep_hours')
+
+    mood_delta,   mood_dir   = _delta_dir(mood_avg,   mood_base)
+    stress_delta, stress_dir = _delta_dir(stress_avg, stress_base)
+    sleep_delta,  sleep_dir  = _delta_dir(sleep_avg,  sleep_base)
+
+    # ── Last check-in ─────────────────────────────────────────────────────────
+    last_checkin = None
+    days_since_checkin = None
+    if period_rows:
+        dates = sorted([r['checkin_date'][:10] for r in period_rows], reverse=True)
+        last_checkin = dates[0]
+        try:
+            days_since_checkin = (today - date.fromisoformat(last_checkin)).days
+        except Exception:
+            pass
+
+    # ── Crisis flag ───────────────────────────────────────────────────────────
+    try:
+        prof_resp = supabase_admin.table('patient_profiles').select(
+            'crisis_resolved_at'
+        ).eq('user_id', str(patient_id)).limit(1).execute()
+        prof = prof_resp.data[0] if prof_resp.data else {}
+        resolved_at = prof.get('crisis_resolved_at')
+        crisis_context = get_suicide_risk_context(patient_id, since=resolved_at)
+        crisis_active = bool(crisis_context)
+    except Exception:
+        crisis_active = False
+
+    # ── Medication dose events in period ──────────────────────────────────────
+    try:
+        med_resp = supabase_admin.table('medication_events').select(
+            'event_date'
+        ).eq('user_id', str(patient_id)).gte('event_date', since_iso).execute()
+        med_rows = med_resp.data or []
+        med_doses_logged = len(med_rows)
+        med_days_logged  = len({r['event_date'][:10] for r in med_rows if r.get('event_date')})
+    except Exception:
+        med_doses_logged = 0
+        med_days_logged  = 0
+
+    # ── Shared journal entries in period ──────────────────────────────────────
+    try:
+        jrn_resp = supabase_admin.table('journal_entries').select(
+            'entry_date, content'
+        ).eq('user_id', str(patient_id)).eq('share_with_provider', True).gte(
+            'entry_date', since_iso
+        ).order('entry_date', desc=True).limit(10).execute()
+        journal_rows = jrn_resp.data or []
+        journal_count = len(journal_rows)
+    except Exception:
+        journal_rows  = []
+        journal_count = 0
+
+    # Extract simple keyword themes from journal text (no AI — frequency of
+    # common emotion words serves as a lightweight signal for the brief)
+    THEME_WORDS = {
+        'anxious': 'anxiety',  'anxiety': 'anxiety',  'worried': 'anxiety',
+        'stress':  'stress',   'stressed': 'stress',  'overwhelm': 'overwhelm',
+        'sad':     'low mood', 'depressed': 'low mood', 'hopeless': 'low mood',
+        'tired':   'fatigue',  'exhausted': 'fatigue', 'fatigue': 'fatigue',
+        'sleep':   'sleep concerns', 'insomnia': 'sleep concerns',
+        'focus':   'focus/attention', 'distracted': 'focus/attention', 'adhd': 'focus/attention',
+        'work':    'work', 'job': 'work', 'career': 'work',
+        'family':  'family', 'relationship': 'relationships', 'social': 'social',
+        'medication': 'medication', 'meds': 'medication', 'dose': 'medication',
+    }
+    theme_counts: dict = {}
+    for entry in journal_rows:
+        text = (entry.get('content') or '').lower()
+        for word, theme in THEME_WORDS.items():
+            if word in text:
+                theme_counts[theme] = theme_counts.get(theme, 0) + 1
+    journal_themes = [t for t, _ in sorted(theme_counts.items(), key=lambda x: -x[1])[:3]]
+
+    return {
+        'since_date':         since_iso,
+        'days_in_period':     days_in_period,
+        'checkin_count':      len(period_rows),
+        'last_checkin':       last_checkin,
+        'days_since_checkin': days_since_checkin,
+        'crisis_active':      crisis_active,
+        'mood_avg':           mood_avg,
+        'mood_baseline':      mood_base,
+        'mood_dir':           mood_dir,
+        'mood_delta':         mood_delta,
+        'stress_avg':         stress_avg,
+        'stress_baseline':    stress_base,
+        'stress_dir':         stress_dir,
+        'stress_delta':       stress_delta,
+        'sleep_avg':          sleep_avg,
+        'sleep_baseline':     sleep_base,
+        'sleep_dir':          sleep_dir,
+        'sleep_delta':        sleep_delta,
+        'med_doses_logged':   med_doses_logged,
+        'med_days_logged':    med_days_logged,
+        'journal_count':      journal_count,
+        'journal_themes':     journal_themes,
+        'has_appointment':    has_appointment,
+        'appointment_date':   appointment_date,
+    }
+
+
 def _baseline_delta(recent_vals, historical_vals, min_n=5):
     """Compute (recent_avg, delta, direction) for a metric.
 
@@ -2151,5 +2357,41 @@ def get_provider_patients_with_stats(provider_id: str) -> list:
         except Exception:
             p['last_appointment'] = None
             p['last_appointment_status'] = None
+
+    # ── Urgency sort ──────────────────────────────────────────────────────────
+    # Tier 0 (most urgent): active crisis flag
+    # Tier 1: mood declining meaningfully OR mood is acutely low
+    # Tier 2: stress rising into high territory OR no check-in in >7 days
+    # Tier 3: everything else (stable / monitoring)
+    def _urgency_tier(p):
+        if p.get('suicide_risk'):
+            return 0
+        mood_alert = (
+            (p.get('mood_dir') == 'down' and p.get('mood_delta') is not None and p['mood_delta'] <= -1.0)
+            or (p.get('mood_recent') is not None and p['mood_recent'] < 5)
+        )
+        if mood_alert:
+            return 1
+        stress_alert = (
+            p.get('stress_dir') == 'up' and p.get('stress_recent') is not None and p['stress_recent'] > 6
+        )
+        inactive = p.get('days_since_checkin') is not None and p['days_since_checkin'] > 7
+        if stress_alert or inactive:
+            return 2
+        return 3
+
+    def _sort_key(p):
+        tier = _urgency_tier(p)
+        # Within tier, prioritise longest gap first (None gaps sort last)
+        dsc = p.get('days_since_checkin')
+        gap = -(dsc if dsc is not None else -1)  # negate so larger gaps sort first
+        name = (p.get('full_name') or '').lower()
+        return (tier, gap, name)
+
+    base.sort(key=_sort_key)
+
+    # Stamp urgency tier on each patient dict so template can use it
+    for p in base:
+        p['urgency_tier'] = _urgency_tier(p)
 
     return base
