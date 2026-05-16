@@ -41,6 +41,7 @@
       <a href="{{ url_for('summary_page') }}"  class="top-nav-item {% if request.endpoint == 'summary_page' %}active{% endif %}">Pre-Appt Summary</a>
       <a href="{{ url_for('trends_page') }}"   class="top-nav-item {% if request.endpoint == 'trends_page' %}active{% endif %}">Trends</a>
       <a href="{{ url_for('settings_page') }}" class="top-nav-item {% if request.endpoint == 'settings_page' %}active{% endif %}">Settings</a>
+      <a href="{{ url_for('patient_care_team_page') }}" class="top-nav-item {% if request.endpoint == 'patient_care_team_page' %}active{% endif %}">Care Team</a>
       <a href="{{ url_for('help_page') }}" class="top-nav-item {% if request.endpoint == 'help_page' %}active{% endif %}">Help</a>
     {% else %}
       <a href="{{ url_for('provider_dashboard') }}" class="top-nav-item {% if request.endpoint == 'provider_dashboard' %}active{% endif %}">Dashboard</a>
@@ -68,6 +69,7 @@
       <a href="{{ url_for('summary_page') }}"   class="mobile-nav-link {% if request.endpoint == 'summary_page' %}active{% endif %}">Pre-Appt Summary</a>
       <a href="{{ url_for('trends_page') }}"    class="mobile-nav-link {% if request.endpoint == 'trends_page' %}active{% endif %}">Trends</a>
       <a href="{{ url_for('settings_page') }}"  class="mobile-nav-link {% if request.endpoint == 'settings_page' %}active{% endif %}">Settings</a>
+      <a href="{{ url_for('patient_care_team_page') }}" class="mobile-nav-link {% if request.endpoint == 'patient_care_team_page' %}active{% endif %}">Care Team</a>
       <a href="{{ url_for('help_page') }}" class="mobile-nav-link {% if request.endpoint == 'help_page' %}active{% endif %}">Help</a>
     {% else %}
       <a href="{{ url_for('provider_dashboard') }}" class="mobile-nav-link {% if request.endpoint == 'provider_dashboard' %}active{% endif %}">Dashboard</a>

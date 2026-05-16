@@ -180,6 +180,9 @@
     <div class="pd-page-hdr-actions">
       <input type="text" class="pd-search" id="pd-search"
              placeholder="Search by name…" oninput="filterCards(this.value)">
+      <button class="btn btn-primary btn-sm" onclick="openAddPatient()" style="white-space:nowrap;">
+        + Add Patient
+      </button>
     </div>
   </div>
 
@@ -535,5 +538,118 @@ function closeBrief() {
   document.getElementById('pd-brief-drawer').classList.remove('open');
   _activePid = null;
 }
+
+// ── Add Patient modal ─────────────────────────────────────────────────────────
+function openAddPatient() {
+  document.getElementById('add-patient-modal').style.display = 'flex';
+  document.getElementById('ap-email').focus();
+  loadOutboundRequests();
+}
+
+function closeAddPatient() {
+  document.getElementById('add-patient-modal').style.display = 'none';
+  document.getElementById('ap-form').reset();
+  document.getElementById('ap-error').textContent = '';
+  document.getElementById('ap-success').textContent = '';
+}
+
+async function submitAddPatient(e) {
+  e.preventDefault();
+  const email   = document.getElementById('ap-email').value.trim();
+  const role    = document.getElementById('ap-role').value;
+  const message = document.getElementById('ap-message').value.trim();
+  const errEl   = document.getElementById('ap-error');
+  const sucEl   = document.getElementById('ap-success');
+  const btn     = document.getElementById('ap-submit');
+  errEl.textContent = '';
+  sucEl.textContent = '';
+  if (!email) { errEl.textContent = 'Email is required.'; return; }
+  btn.disabled = true;
+  btn.textContent = 'Sending…';
+  try {
+    const res = await fetch('/api/provider/care-team/request', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ patient_email: email, role, message: message || null }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Request failed');
+    sucEl.textContent = `Connection request sent to ${email}. They'll see it in their Care Team page.`;
+    document.getElementById('ap-form').reset();
+    loadOutboundRequests();
+  } catch (err) {
+    errEl.textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Send Request';
+  }
+}
+
+async function loadOutboundRequests() {
+  const el = document.getElementById('ap-pending-list');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/provider/care-team/outbound');
+    const data = await res.json();
+    if (!data.length) { el.innerHTML = '<p style="font-size:0.8rem;color:var(--text-muted);">No pending requests.</p>'; return; }
+    el.innerHTML = data.map(r =>
+      `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-light);">
+        <div>
+          <span style="font-size:0.85rem;font-weight:600;">${r.patient_name}</span>
+          <span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px;">${r.patient_email}</span>
+        </div>
+        <span style="font-size:0.7rem;color:var(--text-muted);">${r.role_label} · Pending</span>
+      </div>`
+    ).join('');
+  } catch (_) {}
+}
 </script>
+
+<!-- Add Patient modal -->
+<div id="add-patient-modal" onclick="if(event.target===this)closeAddPatient()"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1000;
+            align-items:center;justify-content:center;padding:16px;">
+  <div style="background:var(--surface);border:1px solid var(--border);width:100%;max-width:480px;
+              padding:28px;border-radius:var(--radius);font-family:'DM Sans',sans-serif;position:relative;">
+    <button onclick="closeAddPatient()"
+            style="position:absolute;top:14px;right:16px;background:none;border:none;
+                   font-size:18px;cursor:pointer;color:var(--text-muted);">✕</button>
+    <h2 style="font-family:'DM Serif Display',serif;font-size:20px;margin:0 0 4px;">Add Patient</h2>
+    <p style="font-size:0.82rem;color:var(--text-muted);margin:0 0 20px;">
+      Enter the patient's CognaSync email. They'll receive a connection request and must approve it before you can view their data.
+    </p>
+
+    <form id="ap-form" onsubmit="submitAddPatient(event)">
+      <div class="form-group" style="margin-bottom:14px;">
+        <label class="form-label">Patient Email</label>
+        <input id="ap-email" type="email" class="form-control" placeholder="patient@example.com" required>
+      </div>
+      <div class="form-group" style="margin-bottom:14px;">
+        <label class="form-label">Your Role in Their Care</label>
+        <select id="ap-role" class="form-control">
+          <option value="psychiatrist">Psychiatrist</option>
+          <option value="therapist">Therapist</option>
+          <option value="counselor">Counselor</option>
+          <option value="coach">Coach</option>
+          <option value="sleep_specialist">Sleep Specialist</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:18px;">
+        <label class="form-label">Message (optional)</label>
+        <textarea id="ap-message" class="form-control" rows="2"
+                  placeholder="e.g. Hi — I'm sending a connection request so I can view your CognaSync data before our sessions."></textarea>
+      </div>
+      <div id="ap-error" style="font-size:0.82rem;color:#c0392b;margin-bottom:10px;"></div>
+      <div id="ap-success" style="font-size:0.82rem;color:#1a7f3c;margin-bottom:10px;"></div>
+      <button id="ap-submit" type="submit" class="btn btn-primary" style="width:100%;">Send Request</button>
+    </form>
+
+    <div style="margin-top:22px;">
+      <div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+                  color:var(--text-muted);margin-bottom:8px;">Pending Outbound Requests</div>
+      <div id="ap-pending-list"><p style="font-size:0.8rem;color:var(--text-muted);">Loading…</p></div>
+    </div>
+  </div>
+</div>
 {% endblock %}

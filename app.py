@@ -67,9 +67,13 @@ def _session_token():
 
 
 def _provider_owns_patient(provider_id, patient_id):
-    """Return True if patient_id is in the provider's assigned patient list."""
+    """Return True if provider has access to this patient (legacy or care team)."""
+    # Check legacy single-provider assignment
     assigned = db.get_provider_patients(provider_id)
-    return str(patient_id) in [str(p['patient_id']) for p in assigned]
+    if str(patient_id) in [str(p['patient_id']) for p in assigned]:
+        return True
+    # Check care team membership
+    return db.provider_has_care_access(provider_id, patient_id)
 
 
 def _current_user():
@@ -1436,6 +1440,118 @@ def api_between_session_brief(patient_id):
         return jsonify({'error': 'Patient not found'}), 404
     brief = db.get_between_session_brief(patient_id, user['id'])
     return jsonify(brief), 200
+
+
+# ── Care Team API — Provider side ─────────────────────────────────────────────
+
+@app.route('/api/provider/care-team/request', methods=['POST'])
+def api_provider_care_request():
+    """Provider sends a connection request to a patient by email."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    patient_email = (body.get('patient_email') or '').strip()
+    role          = body.get('role', 'psychiatrist')
+    message       = body.get('message', '')
+    if not patient_email:
+        return jsonify({'error': 'patient_email is required'}), 400
+    result = db.send_care_team_request(user['id'], patient_email, role, message or None)
+    if result.get('ok'):
+        return jsonify(result), 200
+    return jsonify({'error': result.get('error', 'Request failed')}), 400
+
+
+@app.route('/api/provider/care-team/outbound', methods=['GET'])
+def api_provider_care_outbound():
+    """Returns provider's pending outbound connection requests."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    return jsonify(db.get_provider_outbound_requests(user['id'])), 200
+
+
+# ── Care Team API — Patient side ──────────────────────────────────────────────
+
+@app.route('/api/patient/care-team', methods=['GET'])
+def api_patient_care_team():
+    """Patient views their full care team (active + pending)."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    return jsonify(db.get_patient_care_team(user['id'])), 200
+
+
+@app.route('/api/patient/care-team/pending', methods=['GET'])
+def api_patient_care_pending():
+    """Patient views only pending connection requests."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    return jsonify(db.get_pending_care_requests(user['id'])), 200
+
+
+@app.route('/api/patient/care-team/<member_id>/approve', methods=['POST'])
+def api_patient_care_approve(member_id):
+    """Patient approves a pending care team request."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    body        = request.get_json(silent=True) or {}
+    permissions = body.get('permissions')
+    result      = db.approve_care_request(user['id'], member_id, permissions)
+    if result.get('ok'):
+        return jsonify({'status': 'approved'}), 200
+    return jsonify({'error': result.get('error')}), 400
+
+
+@app.route('/api/patient/care-team/<member_id>/deny', methods=['POST'])
+def api_patient_care_deny(member_id):
+    """Patient denies a pending care team request."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    result = db.deny_care_request(user['id'], member_id)
+    if result.get('ok'):
+        return jsonify({'status': 'denied'}), 200
+    return jsonify({'error': result.get('error')}), 400
+
+
+@app.route('/api/patient/care-team/<member_id>/revoke', methods=['DELETE'])
+def api_patient_care_revoke(member_id):
+    """Patient revokes an active provider's access."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    result = db.revoke_care_member(user['id'], member_id)
+    if result.get('ok'):
+        return jsonify({'status': 'revoked'}), 200
+    return jsonify({'error': result.get('error')}), 400
+
+
+@app.route('/api/patient/care-team/<member_id>/permissions', methods=['PATCH'])
+def api_patient_care_permissions(member_id):
+    """Patient updates per-provider data permissions."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    permissions = body.get('permissions', {})
+    result = db.update_care_permissions(user['id'], member_id, permissions)
+    if result.get('ok'):
+        return jsonify({'status': 'updated'}), 200
+    return jsonify({'error': result.get('error')}), 400
+
+
+# ── Care Team Page Routes ─────────────────────────────────────────────────────
+
+@app.route('/care-team')
+def patient_care_team_page():
+    """Patient's Care Team management page."""
+    user, redir = _require_patient()
+    if redir:
+        return redir
+    return render_template('patient/care_team.html', user=user)
 
 
 @app.route('/api/provider/generate-summary/<patient_id>', methods=['POST'])

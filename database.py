@@ -2395,3 +2395,313 @@ def get_provider_patients_with_stats(provider_id: str) -> list:
         p['urgency_tier'] = _urgency_tier(p)
 
     return base
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Care Team Network
+# ═══════════════════════════════════════════════════════════════════════════
+
+_DEFAULT_PERMISSIONS = {
+    'journals_raw':      True,
+    'journals_themes':   True,
+    'mood_stress_sleep': True,
+    'medication_data':   True,
+    'system_scores':     True,
+    'advanced_data':     True,
+}
+
+_ROLE_LABELS = {
+    'psychiatrist':    'Psychiatrist',
+    'therapist':       'Therapist',
+    'counselor':       'Counselor',
+    'coach':           'Coach',
+    'sleep_specialist':'Sleep Specialist',
+    'other':           'Provider',
+}
+
+
+def send_care_team_request(provider_id: str, patient_email: str, role: str = 'psychiatrist',
+                           message: str = None) -> dict:
+    """
+    Provider sends a connection request to a patient by email.
+    Returns {'ok': True, 'member_id': ...} or {'ok': False, 'error': '...'}.
+    """
+    role = role if role in _ROLE_LABELS else 'other'
+
+    # Look up patient by email
+    try:
+        pr = supabase_admin.table('profiles').select('id, full_name, role').eq(
+            'email', patient_email.lower().strip()).single().execute()
+        if not pr.data or pr.data.get('role') != 'patient':
+            return {'ok': False, 'error': 'No patient account found with that email.'}
+        patient_id = pr.data['id']
+    except Exception:
+        return {'ok': False, 'error': 'No patient account found with that email.'}
+
+    # Don't allow a provider to connect to themselves
+    if str(patient_id) == str(provider_id):
+        return {'ok': False, 'error': 'Cannot connect to your own account.'}
+
+    # Check for existing relationship
+    try:
+        existing = supabase_admin.table('care_team_members').select('id, status').eq(
+            'patient_id', str(patient_id)).eq('provider_id', str(provider_id)).execute()
+        if existing.data:
+            rec = existing.data[0]
+            if rec['status'] == 'active':
+                return {'ok': False, 'error': 'You already have an active connection with this patient.'}
+            if rec['status'] == 'pending':
+                return {'ok': False, 'error': 'A connection request is already pending for this patient.'}
+            if rec['status'] == 'revoked':
+                # Re-activate as a new pending request
+                supabase_admin.table('care_team_members').update({
+                    'status': 'pending',
+                    'role': role,
+                    'request_message': message,
+                    'requested_by': 'provider',
+                    'requested_at': datetime.utcnow().isoformat(),
+                    'approved_at': None,
+                    'revoked_at': None,
+                }).eq('id', rec['id']).execute()
+                return {'ok': True, 'member_id': rec['id'], 'patient_name': pr.data.get('full_name')}
+    except Exception:
+        pass
+
+    # Create new pending request
+    try:
+        insert_data = {
+            'patient_id': str(patient_id),
+            'provider_id': str(provider_id),
+            'role': role,
+            'status': 'pending',
+            'data_permissions': _DEFAULT_PERMISSIONS,
+            'requested_by': 'provider',
+            'request_message': message,
+        }
+        res = supabase_admin.table('care_team_members').insert(insert_data).execute()
+        member_id = res.data[0]['id'] if res.data else None
+        return {'ok': True, 'member_id': member_id, 'patient_name': pr.data.get('full_name')}
+    except Exception as e:
+        return {'ok': False, 'error': f'Could not create request: {e}'}
+
+
+def get_pending_care_requests(patient_id: str) -> list:
+    """
+    Returns all pending care team requests for a patient, with provider details.
+    """
+    try:
+        res = supabase_admin.table('care_team_members').select(
+            'id, role, requested_by, request_message, requested_at, provider_id'
+        ).eq('patient_id', str(patient_id)).eq('status', 'pending').execute()
+        if not res.data:
+            return []
+
+        requests = []
+        for rec in res.data:
+            # Fetch provider name
+            try:
+                pr = supabase_admin.table('profiles').select(
+                    'full_name, email, provider_type').eq('id', rec['provider_id']).single().execute()
+                provider = pr.data or {}
+            except Exception:
+                provider = {}
+            requests.append({
+                'id':              rec['id'],
+                'provider_id':     rec['provider_id'],
+                'provider_name':   provider.get('full_name') or 'Unknown Provider',
+                'provider_email':  provider.get('email', ''),
+                'role':            rec['role'],
+                'role_label':      _ROLE_LABELS.get(rec['role'], 'Provider'),
+                'requested_by':    rec['requested_by'],
+                'request_message': rec.get('request_message'),
+                'requested_at':    rec['requested_at'],
+            })
+        return requests
+    except Exception:
+        return []
+
+
+def approve_care_request(patient_id: str, member_id: str,
+                         permissions: dict = None) -> dict:
+    """
+    Patient approves a pending care team request.
+    Optionally overrides data_permissions.
+    Returns {'ok': True} or {'ok': False, 'error': '...'}.
+    """
+    try:
+        # Verify the record belongs to this patient and is pending
+        rec = supabase_admin.table('care_team_members').select('id, status').eq(
+            'id', str(member_id)).eq('patient_id', str(patient_id)).eq(
+            'status', 'pending').execute()
+        if not rec.data:
+            return {'ok': False, 'error': 'Request not found or already actioned.'}
+
+        update = {
+            'status': 'active',
+            'approved_at': datetime.utcnow().isoformat(),
+        }
+        if permissions:
+            # Merge with defaults — patient can only restrict, not grant new keys
+            merged = dict(_DEFAULT_PERMISSIONS)
+            merged.update({k: bool(v) for k, v in permissions.items() if k in _DEFAULT_PERMISSIONS})
+            update['data_permissions'] = merged
+
+        supabase_admin.table('care_team_members').update(update).eq('id', str(member_id)).execute()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+def deny_care_request(patient_id: str, member_id: str) -> dict:
+    """
+    Patient denies a pending care team request (sets status to revoked).
+    """
+    try:
+        rec = supabase_admin.table('care_team_members').select('id, status').eq(
+            'id', str(member_id)).eq('patient_id', str(patient_id)).eq(
+            'status', 'pending').execute()
+        if not rec.data:
+            return {'ok': False, 'error': 'Request not found.'}
+        supabase_admin.table('care_team_members').update({
+            'status': 'revoked',
+            'revoked_at': datetime.utcnow().isoformat(),
+        }).eq('id', str(member_id)).execute()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+def revoke_care_member(patient_id: str, member_id: str) -> dict:
+    """
+    Patient revokes an active provider's access.
+    """
+    try:
+        rec = supabase_admin.table('care_team_members').select('id, status').eq(
+            'id', str(member_id)).eq('patient_id', str(patient_id)).eq(
+            'status', 'active').execute()
+        if not rec.data:
+            return {'ok': False, 'error': 'Active relationship not found.'}
+        supabase_admin.table('care_team_members').update({
+            'status': 'revoked',
+            'revoked_at': datetime.utcnow().isoformat(),
+        }).eq('id', str(member_id)).execute()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+def get_patient_care_team(patient_id: str) -> dict:
+    """
+    Returns active care team members and pending requests for a patient.
+    Shape: {'active': [...], 'pending': [...]}
+    """
+    try:
+        res = supabase_admin.table('care_team_members').select(
+            'id, role, status, data_permissions, requested_at, approved_at, provider_id'
+        ).eq('patient_id', str(patient_id)).in_('status', ['active', 'pending']).execute()
+        records = res.data or []
+    except Exception:
+        return {'active': [], 'pending': []}
+
+    active, pending = [], []
+    for rec in records:
+        try:
+            pr = supabase_admin.table('profiles').select(
+                'full_name, email, provider_type').eq('id', rec['provider_id']).single().execute()
+            provider = pr.data or {}
+        except Exception:
+            provider = {}
+
+        entry = {
+            'id':             rec['id'],
+            'provider_id':    rec['provider_id'],
+            'provider_name':  provider.get('full_name') or 'Unknown Provider',
+            'provider_email': provider.get('email', ''),
+            'role':           rec['role'],
+            'role_label':     _ROLE_LABELS.get(rec['role'], 'Provider'),
+            'permissions':    rec.get('data_permissions') or _DEFAULT_PERMISSIONS,
+            'approved_at':    rec.get('approved_at'),
+            'requested_at':   rec.get('requested_at'),
+        }
+        if rec['status'] == 'active':
+            active.append(entry)
+        else:
+            pending.append(entry)
+
+    return {'active': active, 'pending': pending}
+
+
+def get_care_team_permissions(patient_id: str, provider_id: str) -> dict | None:
+    """
+    Returns data_permissions dict for a specific provider-patient pair,
+    or None if no active relationship exists.
+    """
+    try:
+        res = supabase_admin.table('care_team_members').select(
+            'data_permissions').eq('patient_id', str(patient_id)).eq(
+            'provider_id', str(provider_id)).eq('status', 'active').execute()
+        if res.data:
+            return res.data[0].get('data_permissions') or _DEFAULT_PERMISSIONS
+        return None
+    except Exception:
+        return None
+
+
+def provider_has_care_access(provider_id: str, patient_id: str) -> bool:
+    """
+    Returns True if an active care team relationship exists between provider and patient.
+    Used to authorise provider access to patient data.
+    """
+    return get_care_team_permissions(patient_id, provider_id) is not None
+
+
+def get_provider_outbound_requests(provider_id: str) -> list:
+    """
+    Returns all pending outbound connection requests sent by this provider.
+    """
+    try:
+        res = supabase_admin.table('care_team_members').select(
+            'id, role, status, requested_at, patient_id'
+        ).eq('provider_id', str(provider_id)).eq('status', 'pending').execute()
+        if not res.data:
+            return []
+
+        out = []
+        for rec in res.data:
+            try:
+                pr = supabase_admin.table('profiles').select(
+                    'full_name, email').eq('id', rec['patient_id']).single().execute()
+                patient = pr.data or {}
+            except Exception:
+                patient = {}
+            out.append({
+                'id':           rec['id'],
+                'patient_id':   rec['patient_id'],
+                'patient_name': patient.get('full_name') or 'Unknown Patient',
+                'patient_email':patient.get('email', ''),
+                'role':         rec['role'],
+                'role_label':   _ROLE_LABELS.get(rec['role'], 'Provider'),
+                'requested_at': rec['requested_at'],
+            })
+        return out
+    except Exception:
+        return []
+
+
+def update_care_permissions(patient_id: str, member_id: str, permissions: dict) -> dict:
+    """
+    Patient updates per-provider data permissions for an active relationship.
+    """
+    try:
+        rec = supabase_admin.table('care_team_members').select('id').eq(
+            'id', str(member_id)).eq('patient_id', str(patient_id)).eq(
+            'status', 'active').execute()
+        if not rec.data:
+            return {'ok': False, 'error': 'Active relationship not found.'}
+        merged = dict(_DEFAULT_PERMISSIONS)
+        merged.update({k: bool(v) for k, v in permissions.items() if k in _DEFAULT_PERMISSIONS})
+        supabase_admin.table('care_team_members').update(
+            {'data_permissions': merged}).eq('id', str(member_id)).execute()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}

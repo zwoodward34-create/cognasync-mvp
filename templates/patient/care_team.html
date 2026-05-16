@@ -1,0 +1,233 @@
+{% extends "layout.html" %}
+{% block title %}Care Team — CognaSync{% endblock %}
+
+{% block content %}
+<style>
+.ct-section          { margin-bottom: 32px; }
+.ct-section-title    { font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
+                       letter-spacing: .1em; color: var(--text-muted); margin-bottom: 12px; }
+.ct-card             { background: var(--surface); border: 1px solid var(--border);
+                       border-radius: var(--radius); padding: 20px 22px; margin-bottom: 12px; }
+.ct-card-header      { display: flex; align-items: center; gap: 12px; margin-bottom: 4px; }
+.ct-role-badge       { font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+                       letter-spacing: .07em; padding: 2px 8px; border-radius: 3px;
+                       background: #ede9ff; color: #5b4fcf; }
+.ct-role-badge.therapist   { background: #e6f4ea; color: #1a7f3c; }
+.ct-role-badge.counselor   { background: #e6f4ea; color: #1a7f3c; }
+.ct-role-badge.coach       { background: #fff4e0; color: #8a5a00; }
+.ct-role-badge.sleep_specialist { background: #e0f0ff; color: #0057a8; }
+.ct-provider-name    { font-size: 1rem; font-weight: 700; color: var(--text); }
+.ct-provider-email   { font-size: 0.78rem; color: var(--text-muted); }
+.ct-message          { font-size: 0.82rem; color: var(--text); margin: 10px 0 0;
+                       padding: 10px 12px; background: var(--bg); border-radius: 4px;
+                       border-left: 3px solid var(--border); font-style: italic; }
+.ct-actions          { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
+.ct-perms            { margin-top: 14px; border-top: 1px solid var(--border-light); padding-top: 14px; }
+.ct-perms-title      { font-size: 0.7rem; font-weight: 700; text-transform: uppercase;
+                       letter-spacing: .08em; color: var(--text-muted); margin-bottom: 10px; }
+.ct-perms-grid       { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 8px; }
+.ct-perm-item        { display: flex; align-items: center; gap: 8px; }
+.ct-perm-item input  { width: 15px; height: 15px; cursor: pointer; accent-color: var(--accent); }
+.ct-perm-label       { font-size: 0.8rem; color: var(--text); }
+.ct-empty            { text-align: center; padding: 48px 20px; color: var(--text-muted);
+                       font-size: 0.88rem; }
+.ct-since            { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+.ct-saving           { font-size: 0.78rem; color: var(--text-muted); display: none; }
+</style>
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title">Care Team</h1>
+    <p class="page-sub">Manage which providers can see your CognaSync data.</p>
+  </div>
+</div>
+
+<div id="ct-loading" class="loading-panel">
+  <div class="spinner"></div><p>Loading your care team…</p>
+</div>
+<div id="ct-error" class="alert alert-error hidden"></div>
+<div id="ct-content" class="hidden">
+
+  <!-- Pending requests -->
+  <div class="ct-section" id="pending-section" style="display:none;">
+    <div class="ct-section-title">Pending Connection Requests</div>
+    <div id="pending-list"></div>
+  </div>
+
+  <!-- Active providers -->
+  <div class="ct-section">
+    <div class="ct-section-title">Your Active Care Team</div>
+    <div id="active-list">
+      <div class="ct-empty">No providers connected yet. Your providers can send you a connection request.</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const PERM_LABELS = {
+  mood_stress_sleep: 'Mood, stress & sleep data',
+  medication_data:   'Medication information',
+  system_scores:     'System scores (Stability, Crash Risk…)',
+  advanced_data:     'Advanced check-in fields',
+  journals_themes:   'Journal themes (summarised)',
+  journals_raw:      'Full journal entries',
+};
+
+async function loadCareTeam() {
+  try {
+    const data = await apiGet('/api/patient/care-team');
+    document.getElementById('ct-loading').classList.add('hidden');
+    document.getElementById('ct-content').classList.remove('hidden');
+    renderPending(data.pending || []);
+    renderActive(data.active || []);
+  } catch (e) {
+    document.getElementById('ct-loading').classList.add('hidden');
+    const err = document.getElementById('ct-error');
+    err.textContent = 'Could not load care team. Try refreshing.';
+    err.classList.remove('hidden');
+  }
+}
+
+function renderPending(items) {
+  const section = document.getElementById('pending-section');
+  const list    = document.getElementById('pending-list');
+  if (!items.length) { section.style.display = 'none'; return; }
+  section.style.display = '';
+  list.innerHTML = items.map(r => `
+    <div class="ct-card" id="req-${r.id}">
+      <div class="ct-card-header">
+        <span class="ct-role-badge ${r.role}">${r.role_label}</span>
+        <div>
+          <div class="ct-provider-name">${esc(r.provider_name)}</div>
+          <div class="ct-provider-email">${esc(r.provider_email)}</div>
+        </div>
+      </div>
+      ${r.request_message ? `<div class="ct-message">"${esc(r.request_message)}"</div>` : ''}
+      <div class="ct-since">Requested ${fmtDate(r.requested_at)}</div>
+      <div class="ct-actions">
+        <button class="btn btn-primary btn-sm" onclick="approveRequest('${r.id}')">Accept</button>
+        <button class="btn btn-sm" onclick="denyRequest('${r.id}')">Decline</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function renderActive(items) {
+  const list = document.getElementById('active-list');
+  if (!items.length) {
+    list.innerHTML = '<div class="ct-empty">No providers connected yet. Your providers can send you a connection request.</div>';
+    return;
+  }
+  list.innerHTML = items.map(m => `
+    <div class="ct-card" id="member-${m.id}">
+      <div class="ct-card-header">
+        <span class="ct-role-badge ${m.role}">${m.role_label}</span>
+        <div>
+          <div class="ct-provider-name">${esc(m.provider_name)}</div>
+          <div class="ct-provider-email">${esc(m.provider_email)}</div>
+        </div>
+      </div>
+      <div class="ct-since">Connected ${fmtDate(m.approved_at)}</div>
+
+      <div class="ct-perms">
+        <div class="ct-perms-title">What they can see</div>
+        <div class="ct-perms-grid">
+          ${Object.entries(PERM_LABELS).map(([key, label]) => `
+            <label class="ct-perm-item">
+              <input type="checkbox" id="perm-${m.id}-${key}" data-member="${m.id}" data-key="${key}"
+                     ${(m.permissions[key] !== false) ? 'checked' : ''}
+                     onchange="savePerm('${m.id}')">
+              <span class="ct-perm-label">${label}</span>
+            </label>
+          `).join('')}
+        </div>
+        <div class="ct-saving" id="saving-${m.id}">Saving…</div>
+      </div>
+
+      <div class="ct-actions">
+        <button class="btn btn-sm" style="color:#c0392b;border-color:#c0392b;"
+                onclick="revokeMember('${m.id}', '${esc(m.provider_name)}')">
+          Remove from Care Team
+        </button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function approveRequest(memberId) {
+  try {
+    await apiFetch(`/api/patient/care-team/${memberId}/approve`, { method: 'POST' });
+    loadCareTeam();
+  } catch (e) {
+    alert('Could not approve request. Please try again.');
+  }
+}
+
+async function denyRequest(memberId) {
+  if (!confirm('Decline this connection request?')) return;
+  try {
+    await apiFetch(`/api/patient/care-team/${memberId}/deny`, { method: 'POST' });
+    document.getElementById(`req-${memberId}`)?.remove();
+    const remaining = document.querySelectorAll('[id^="req-"]');
+    if (!remaining.length) document.getElementById('pending-section').style.display = 'none';
+  } catch (e) {
+    alert('Could not decline request. Please try again.');
+  }
+}
+
+async function revokeMember(memberId, name) {
+  if (!confirm(`Remove ${name} from your care team? They will no longer be able to see your data.`)) return;
+  try {
+    await apiFetch(`/api/patient/care-team/${memberId}/revoke`, { method: 'DELETE' });
+    loadCareTeam();
+  } catch (e) {
+    alert('Could not remove provider. Please try again.');
+  }
+}
+
+let _permTimers = {};
+function savePerm(memberId) {
+  clearTimeout(_permTimers[memberId]);
+  _permTimers[memberId] = setTimeout(async () => {
+    const saving = document.getElementById(`saving-${memberId}`);
+    if (saving) saving.style.display = '';
+    const perms = {};
+    Object.keys(PERM_LABELS).forEach(key => {
+      const el = document.getElementById(`perm-${memberId}-${key}`);
+      if (el) perms[key] = el.checked;
+    });
+    try {
+      await apiFetch(`/api/patient/care-team/${memberId}/permissions`, {
+        method: 'PATCH',
+        body: JSON.stringify({ permissions: perms }),
+      });
+    } catch (e) {}
+    if (saving) saving.style.display = 'none';
+  }, 600);
+}
+
+function esc(s) {
+  return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function fmtDate(iso) {
+  if (!iso) return '';
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+}
+
+// apiFetch wrapper (uses existing apiGet / common.js pattern)
+function apiFetch(url, opts = {}) {
+  return fetch(url, {
+    headers: { 'Content-Type': 'application/json', ...opts.headers },
+    ...opts,
+  }).then(r => {
+    if (!r.ok) return r.json().then(j => Promise.reject(j));
+    return r.json();
+  });
+}
+
+loadCareTeam();
+</script>
+{% endblock %}
