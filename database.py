@@ -3128,10 +3128,14 @@ _FLAG_TYPES = {'observation', 'concern', 'progress', 'coordination_needed'}
 
 
 def create_care_flag(author_provider_id: str, patient_id: str,
-                     flag_type: str, body: str) -> dict:
+                     flag_type: str, body: str,
+                     visible_to: list = None) -> dict:
     """
-    Provider posts a flag on a patient record. The flag is immediately visible
-    to other active care team providers who have cross_provider_flags permission.
+    Provider posts a flag on a patient record.
+
+    visible_to: optional list of provider_id UUIDs that can see this flag.
+                None / empty = visible to all active care team members who have
+                cross_provider_flags permission (existing behaviour).
 
     Returns {'ok': True, 'flag': {...}} or {'ok': False, 'error': '...'}.
     """
@@ -3152,14 +3156,20 @@ def create_care_flag(author_provider_id: str, patient_id: str,
         except Exception as e:
             return {'ok': False, 'error': str(e)}
 
+    # Normalise visible_to: None or empty list means no restriction
+    visible_to_value = [str(pid) for pid in visible_to] if visible_to else None
+
     try:
-        res = supabase_admin.table('care_flags').insert({
+        insert_data = {
             'patient_id':         str(patient_id),
             'author_provider_id': str(author_provider_id),
             'flag_type':          flag_type,
             'body':               body,
             'visibility':         'care_team',
-        }).execute()
+        }
+        if visible_to_value is not None:
+            insert_data['visible_to_providers'] = json.dumps(visible_to_value)
+        res = supabase_admin.table('care_flags').insert(insert_data).execute()
         flag_row = res.data[0] if res.data else {}
     except Exception as e:
         return {'ok': False, 'error': str(e)}
@@ -3191,6 +3201,9 @@ def create_care_flag(author_provider_id: str, patient_id: str,
             pid = member['provider_id']
             if pid == str(author_provider_id):
                 continue   # don't notify yourself
+            # Respect explicit visibility list if set
+            if visible_to_value is not None and pid not in visible_to_value:
+                continue
             perms = member.get('data_permissions') or {}
             if isinstance(perms, str):
                 try:
@@ -3257,12 +3270,24 @@ def get_care_flags_for_provider(viewing_provider_id: str, patient_id: str) -> li
 
     try:
         res = supabase_admin.table('care_flags').select(
-            'id, flag_type, body, created_at, author_provider_id'
+            'id, flag_type, body, created_at, author_provider_id, visible_to_providers'
         ).eq('patient_id', str(patient_id)).is_('resolved_at', 'null').neq(
             'author_provider_id', str(viewing_provider_id)
         ).order('created_at', desc=True).execute()
 
-        flags = res.data or []
+        # Filter out flags where viewing_provider_id is not in the visible_to_providers list
+        raw_flags = res.data or []
+        flags = []
+        for f in raw_flags:
+            vtp = f.get('visible_to_providers')
+            if isinstance(vtp, str):
+                try:
+                    vtp = json.loads(vtp)
+                except Exception:
+                    vtp = None
+            if vtp is not None and str(viewing_provider_id) not in vtp:
+                continue
+            flags.append(f)
 
         # Annotate with author name + role
         if flags:
@@ -3354,3 +3379,159 @@ def get_unresolved_flag_counts(provider_id: str, patient_ids: list) -> dict:
     except Exception as e:
         print(f"get_unresolved_flag_counts error: {e}")
         return {}
+
+
+def get_care_team_for_provider(provider_id: str, patient_id: str) -> list:
+    """
+    Returns active care team members for a patient (excluding the requesting provider).
+    Used to populate the visibility selector when posting a flag.
+    Each entry: {provider_id, provider_name, role, role_label}
+    """
+    try:
+        res = supabase_admin.table('care_team_members').select(
+            'provider_id, role'
+        ).eq('patient_id', str(patient_id)).eq('status', 'active').neq(
+            'provider_id', str(provider_id)
+        ).execute()
+        members = res.data or []
+        if not members:
+            return []
+        provider_ids = [m['provider_id'] for m in members]
+        prof_res = supabase_admin.table('profiles').select(
+            'id, full_name').in_('id', provider_ids).execute()
+        name_map = {r['id']: r['full_name'] for r in (prof_res.data or [])}
+        return [
+            {
+                'provider_id':  m['provider_id'],
+                'provider_name': name_map.get(m['provider_id'], 'Provider'),
+                'role':          m['role'],
+                'role_label':    _ROLE_LABELS.get(m['role'], 'Provider'),
+            }
+            for m in members
+        ]
+    except Exception as e:
+        print(f"get_care_team_for_provider error: {e}")
+        return []
+
+
+def create_flag_response(flag_id: str, author_provider_id: str,
+                         patient_id: str, body: str) -> dict:
+    """
+    Post a response to a care flag. The responding provider must have access
+    to the patient and the flag must be unresolved.
+    Returns {'ok': True, 'response': {...}} or {'ok': False, 'error': '...'}.
+    """
+    body = (body or '').strip()
+    if not (5 <= len(body) <= 500):
+        return {'ok': False, 'error': 'Response must be between 5 and 500 characters.'}
+
+    # Verify flag exists, belongs to patient, and is unresolved
+    try:
+        flag_rec = supabase_admin.table('care_flags').select(
+            'id, resolved_at, visible_to_providers'
+        ).eq('id', str(flag_id)).eq('patient_id', str(patient_id)).execute()
+        if not flag_rec.data:
+            return {'ok': False, 'error': 'Flag not found.'}
+        if flag_rec.data[0].get('resolved_at'):
+            return {'ok': False, 'error': 'Cannot respond to a resolved flag.'}
+
+        # Verify responder has access to this patient
+        if not provider_has_care_access(author_provider_id, patient_id):
+            try:
+                leg = supabase_admin.table('patient_profiles').select('id').eq(
+                    'patient_id', str(patient_id)).eq(
+                    'provider_id', str(author_provider_id)).execute()
+                if not leg.data:
+                    return {'ok': False, 'error': 'No active relationship with this patient.'}
+            except Exception as e:
+                return {'ok': False, 'error': str(e)}
+
+        res = supabase_admin.table('care_flag_responses').insert({
+            'flag_id':            str(flag_id),
+            'patient_id':         str(patient_id),
+            'author_provider_id': str(author_provider_id),
+            'body':               body,
+        }).execute()
+        return {'ok': True, 'response': res.data[0] if res.data else {}}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+def get_flag_responses(flag_id: str, patient_id: str) -> list:
+    """
+    Returns all responses for a flag, annotated with author name + role.
+    """
+    try:
+        res = supabase_admin.table('care_flag_responses').select(
+            'id, author_provider_id, body, created_at'
+        ).eq('flag_id', str(flag_id)).eq(
+            'patient_id', str(patient_id)
+        ).order('created_at').execute()
+        responses = res.data or []
+        if not responses:
+            return []
+        author_ids = list({r['author_provider_id'] for r in responses})
+        prof_res = supabase_admin.table('profiles').select(
+            'id, full_name').in_('id', author_ids).execute()
+        name_map = {r['id']: r['full_name'] for r in (prof_res.data or [])}
+        role_res = supabase_admin.table('care_team_members').select(
+            'provider_id, role'
+        ).eq('patient_id', str(patient_id)).eq('status', 'active').in_(
+            'provider_id', author_ids).execute()
+        role_map = {r['provider_id']: r['role'] for r in (role_res.data or [])}
+        for r in responses:
+            aid = r['author_provider_id']
+            r['author_name'] = name_map.get(aid, 'Provider')
+            r['author_role'] = _ROLE_LABELS.get(role_map.get(aid, ''), 'Provider')
+        return responses
+    except Exception as e:
+        print(f"get_flag_responses error: {e}")
+        return []
+
+
+def add_medication_by_psychiatrist(provider_id: str, patient_id: str,
+                                   name: str, category: str, dose: float,
+                                   dose_unit: str = 'mg',
+                                   scheduled_times: list = None,
+                                   date_started: str = None) -> dict:
+    """
+    Psychiatrist adds a medication to a patient's record.
+    Enforces that the provider's role for this patient is 'psychiatrist'.
+    Returns {'ok': True, 'medication': {...}} or {'ok': False, 'error': '...'}.
+    """
+    role = get_care_team_member_role(provider_id, patient_id)
+    if role != 'psychiatrist':
+        # Also allow legacy single-provider (assumed psychiatrist)
+        try:
+            leg = supabase_admin.table('patient_profiles').select('id').eq(
+                'patient_id', str(patient_id)).eq(
+                'provider_id', str(provider_id)).execute()
+            if not leg.data:
+                return {'ok': False, 'error': 'Only a psychiatrist can add medications.'}
+        except Exception:
+            return {'ok': False, 'error': 'Only a psychiatrist can add medications.'}
+
+    name = (name or '').strip()
+    if not name:
+        return {'ok': False, 'error': 'Medication name is required.'}
+    if not category:
+        return {'ok': False, 'error': 'Category is required.'}
+    try:
+        dose = float(dose)
+        if dose <= 0:
+            raise ValueError
+    except (TypeError, ValueError):
+        return {'ok': False, 'error': 'Dose must be a positive number.'}
+
+    med = create_medication(
+        user_id=str(patient_id),
+        name=name,
+        category=category,
+        standard_dose=dose,
+        dose_unit=dose_unit or 'mg',
+        scheduled_times=scheduled_times or [],
+        date_started=date_started or None,
+    )
+    if med is None:
+        return {'ok': False, 'error': 'Failed to add medication — please try again.'}
+    return {'ok': True, 'medication': med}

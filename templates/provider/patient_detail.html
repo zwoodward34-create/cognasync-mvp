@@ -343,6 +343,194 @@
     </div>
     {% endif %}
 
+    <!-- ─── CARE TEAM FLAGS ──────────────────────────────────────────────── -->
+    <div class="ah-section" style="margin-top:28px;" id="flags-section">
+      <div class="ah-section-hdr" style="align-items:flex-start;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div class="pv-panel-title" style="margin:0 0 3px;">Care Team Flags</div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            Notes and observations shared across the care team
+          </div>
+        </div>
+        <button class="btn btn-sm" onclick="toggleFlagForm()"
+                style="align-self:center;" id="add-flag-btn">
+          + Post Flag
+        </button>
+      </div>
+
+      <!-- New flag form (hidden by default) -->
+      <div id="flag-form-wrap" style="display:none;margin:16px 0;padding:16px;
+           border:1px solid var(--border-light);background:var(--surface);">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;
+                    letter-spacing:.07em;color:var(--text-muted);margin-bottom:12px;">
+          Post a Flag
+        </div>
+        <div style="display:grid;gap:10px;">
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
+              Type
+            </label>
+            <select id="pd-flag-type"
+                    style="width:100%;font-size:13px;padding:7px 8px;
+                           border:1px solid var(--border-light);background:var(--surface);color:var(--text);">
+              <option value="observation">Observation</option>
+              <option value="concern">Concern</option>
+              <option value="progress">Progress</option>
+              <option value="coordination_needed">Needs Coordination</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
+              Note (10–1000 chars)
+            </label>
+            <textarea id="pd-flag-body" rows="3"
+                      style="width:100%;font-size:13px;padding:7px 8px;
+                             border:1px solid var(--border-light);background:var(--surface);
+                             color:var(--text);resize:vertical;box-sizing:border-box;"
+                      placeholder="What do you want to share with the care team?"></textarea>
+          </div>
+          <div id="pd-flag-visibility-wrap">
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:6px;">
+              Visible to
+            </label>
+            <div id="pd-flag-visibility-options">
+              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+                <input type="radio" name="pd-flag-vis" value="all" checked>
+                All care team members
+              </label>
+            </div>
+            <div id="pd-flag-member-list" style="margin-top:8px;display:none;"></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-primary" style="font-size:13px;padding:8px 18px;"
+                    id="pd-flag-submit-btn" onclick="submitPatientFlag()">Post Flag</button>
+            <button class="btn btn-sm" onclick="toggleFlagForm()" style="font-size:13px;">Cancel</button>
+            <span id="pd-flag-err" style="font-size:12px;color:#dc2626;"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flags list (loaded async) -->
+      <div id="pd-flags-list">
+        <div style="font-size:13px;color:var(--text-muted);padding:12px 0;">Loading flags…</div>
+      </div>
+    </div>
+
+    {% if provider_role == 'psychiatrist' %}
+    <!-- ─── PSYCHIATRIST: ADD MEDICATION ──────────────────────────────── -->
+    <div class="ah-section" style="margin-top:28px;" id="med-add-section">
+      <div class="ah-section-hdr" style="align-items:flex-start;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div class="pv-panel-title" style="margin:0 0 3px;">Medications</div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            Psychiatrist access — you can add medications to this patient's record
+          </div>
+        </div>
+        <button class="btn btn-sm" onclick="toggleMedForm()"
+                style="align-self:center;" id="add-med-btn">
+          + Add Medication
+        </button>
+      </div>
+
+      <!-- Existing medications -->
+      {% if patient.current_medications %}
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+        {% for med in patient.current_medications %}
+        <span class="pd-med-chip">{{ med.name | title }}{% if med.dose %} {{ med.dose }}{% endif %}{% if med.dose_unit %} {{ med.dose_unit }}{% endif %}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+      <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">No medications on record.</div>
+      {% endif %}
+
+      <!-- Add medication form (hidden by default) -->
+      <div id="med-form-wrap" style="display:none;padding:16px;
+           border:1px solid var(--border-light);background:var(--surface);">
+        <div style="font-size:12px;font-weight:700;text-transform:uppercase;
+                    letter-spacing:.07em;color:var(--text-muted);margin-bottom:12px;">
+          Add Medication
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+          <div style="grid-column:1/-1;">
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
+              Medication Name
+            </label>
+            <input id="med-name" type="text" list="med-name-list"
+                   style="width:100%;font-size:13px;padding:7px 8px;
+                          border:1px solid var(--border-light);background:var(--surface);
+                          color:var(--text);box-sizing:border-box;"
+                   placeholder="e.g. Adderall, Lamictal">
+            <datalist id="med-name-list"></datalist>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
+              Category
+            </label>
+            <select id="med-category"
+                    style="width:100%;font-size:13px;padding:7px 8px;
+                           border:1px solid var(--border-light);background:var(--surface);color:var(--text);">
+              <option value="stimulant">Stimulant</option>
+              <option value="antidepressant">Antidepressant</option>
+              <option value="mood_stabilizer">Mood Stabilizer</option>
+              <option value="antipsychotic">Antipsychotic</option>
+              <option value="anxiolytic">Anxiolytic</option>
+              <option value="sleep_aid">Sleep Aid</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div style="display:flex;gap:8px;">
+            <div style="flex:1;">
+              <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                            letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
+                Dose
+              </label>
+              <input id="med-dose" type="number" min="0" step="0.5"
+                     style="width:100%;font-size:13px;padding:7px 8px;
+                            border:1px solid var(--border-light);background:var(--surface);
+                            color:var(--text);box-sizing:border-box;"
+                     placeholder="e.g. 20">
+            </div>
+            <div>
+              <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                            letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
+                Unit
+              </label>
+              <select id="med-dose-unit"
+                      style="font-size:13px;padding:7px 8px;
+                             border:1px solid var(--border-light);background:var(--surface);color:var(--text);">
+                <option value="mg">mg</option>
+                <option value="mcg">mcg</option>
+                <option value="ml">ml</option>
+                <option value="units">units</option>
+              </select>
+            </div>
+          </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
+              Date Started (optional)
+            </label>
+            <input id="med-date-started" type="date"
+                   style="width:100%;font-size:13px;padding:7px 8px;
+                          border:1px solid var(--border-light);background:var(--surface);
+                          color:var(--text);box-sizing:border-box;">
+          </div>
+          <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-primary" style="font-size:13px;padding:8px 18px;"
+                    id="med-submit-btn" onclick="submitAddMedication()">Add Medication</button>
+            <button class="btn btn-sm" onclick="toggleMedForm()" style="font-size:13px;">Cancel</button>
+            <span id="med-err" style="font-size:12px;color:#dc2626;"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
     <div style="padding-top:16px;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-muted);margin-top:24px;">
       All patient data access is logged for HIPAA compliance ·
       Only journals marked "Share with provider" are visible to you
@@ -410,5 +598,364 @@ function filterPatients(q) {
   });
 })();
 {% endif %}
+
+// ── Care Team Flags ────────────────────────────────────────────────────────
+
+const _PATIENT_ID = {{ patient.patient_id | tojson }};
+
+const _FLAG_TYPE_LABELS = {
+  observation:         'Observation',
+  concern:             'Concern',
+  progress:            'Progress',
+  coordination_needed: 'Needs Coordination',
+};
+
+const _FLAG_TYPE_COLORS = {
+  observation:         '#3182ce',
+  concern:             '#e53e3e',
+  progress:            '#38a169',
+  coordination_needed: '#d69e2e',
+};
+
+function _relTime(iso) {
+  if (!iso) return '';
+  const d = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (d < 60)    return 'just now';
+  if (d < 3600)  return Math.floor(d / 60) + 'm ago';
+  if (d < 86400) return Math.floor(d / 3600) + 'h ago';
+  return Math.floor(d / 86400) + 'd ago';
+}
+
+function _escHtml(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function _renderResponse(r) {
+  return `<div style="margin-top:8px;padding:8px 10px;background:#f8f9fa;
+                      border-left:2px solid #ccc;font-size:12px;">
+    <div style="font-weight:600;color:var(--text-muted);margin-bottom:3px;">
+      ${_escHtml(r.author_name)} · ${_escHtml(r.author_role)}
+      <span style="font-weight:400;margin-left:6px;">${_relTime(r.created_at)}</span>
+    </div>
+    <div style="white-space:pre-wrap;">${_escHtml(r.body)}</div>
+  </div>`;
+}
+
+function _renderFlagCard(f, isMine) {
+  const typeLabel = _FLAG_TYPE_LABELS[f.flag_type] || f.flag_type;
+  const accent    = _FLAG_TYPE_COLORS[f.flag_type] || '#aaa';
+  const authorLine = isMine
+    ? '<span style="font-size:11px;color:var(--text-muted);">Posted by you</span>'
+    : `<span style="font-size:11px;color:var(--text-muted);">${_escHtml(f.author_name || 'Provider')} · ${_escHtml(f.author_role || '')}</span>`;
+
+  const responsesHtml = (f.responses || []).map(_renderResponse).join('');
+  const flagId = f.id;
+
+  return `<div id="pd-flag-${flagId}" style="border-left:3px solid ${accent};
+               padding:12px 14px;margin-bottom:12px;background:var(--surface);">
+    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px;">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+        <span style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+                     color:#fff;background:${accent};padding:2px 7px;">${_escHtml(typeLabel)}</span>
+        ${authorLine}
+        <span style="font-size:11px;color:var(--text-muted);">${_relTime(f.created_at)}</span>
+      </div>
+      <button onclick="resolveFlag('${flagId}')"
+              style="font-size:11px;padding:3px 10px;background:none;border:1px solid var(--border-light);
+                     cursor:pointer;color:var(--text-muted);">
+        Resolve
+      </button>
+    </div>
+    <div style="font-size:13px;line-height:1.65;white-space:pre-wrap;margin-bottom:8px;">${_escHtml(f.body)}</div>
+    <div id="pd-flag-responses-${flagId}">${responsesHtml}</div>
+    <div style="margin-top:10px;display:flex;gap:8px;align-items:flex-start;">
+      <textarea id="pd-resp-body-${flagId}" rows="2"
+                style="flex:1;font-size:12px;padding:5px 7px;border:1px solid var(--border-light);
+                       background:var(--surface);color:var(--text);resize:none;box-sizing:border-box;"
+                placeholder="Reply to this flag…"></textarea>
+      <button onclick="submitFlagResponse('${flagId}')"
+              id="pd-resp-btn-${flagId}"
+              style="font-size:12px;padding:6px 12px;background:#111;color:#fff;
+                     border:none;cursor:pointer;white-space:nowrap;align-self:flex-end;">
+        Reply
+      </button>
+    </div>
+    <div id="pd-resp-err-${flagId}" style="font-size:11px;color:#dc2626;margin-top:4px;"></div>
+  </div>`;
+}
+
+async function loadFlags() {
+  const el = document.getElementById('pd-flags-list');
+  if (!el) return;
+  try {
+    const res  = await fetch('/api/provider/patient/' + _PATIENT_ID + '/flags', { credentials: 'same-origin' });
+    const data = res.ok ? await res.json() : null;
+    if (!data) { el.innerHTML = '<p style="font-size:13px;color:#c0392b;">Failed to load flags.</p>'; return; }
+
+    const others = data.from_others || [];
+    const mine   = data.my_flags   || [];
+
+    // Pre-fetch responses for all flags
+    const allFlags = [...others.map(f => ({...f, _mine: false})), ...mine.map(f => ({...f, _mine: true}))];
+    await Promise.all(allFlags.map(async f => {
+      try {
+        const r = await fetch('/api/provider/patient/' + _PATIENT_ID + '/flags/' + f.id + '/responses',
+                              { credentials: 'same-origin' });
+        f.responses = r.ok ? (await r.json()).responses || [] : [];
+      } catch(_) { f.responses = []; }
+    }));
+
+    let html = '';
+    if (others.length === 0 && mine.length === 0) {
+      html = '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">No active flags for this patient.</div>';
+    } else {
+      if (others.length > 0) {
+        html += `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+                             color:var(--text-muted);margin-bottom:8px;">From care team (${others.length})</div>`;
+        others.forEach(f => { html += _renderFlagCard(f, false); });
+      }
+      if (mine.length > 0) {
+        html += `<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+                             color:var(--text-muted);margin:${others.length > 0 ? '16px' : '0'} 0 8px;">
+                   Posted by you (${mine.length})</div>`;
+        mine.forEach(f => { html += _renderFlagCard(f, true); });
+      }
+    }
+    el.innerHTML = html;
+  } catch(e) {
+    document.getElementById('pd-flags-list').innerHTML =
+      '<p style="font-size:13px;color:#c0392b;">Network error loading flags.</p>';
+  }
+}
+
+async function resolveFlag(flagId) {
+  const card = document.getElementById('pd-flag-' + flagId);
+  if (card) { card.style.opacity = '0.4'; card.style.pointerEvents = 'none'; }
+  try {
+    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/flags/' + flagId + '/resolve',
+                            { method: 'PATCH', credentials: 'same-origin' });
+    if (res.ok) { loadFlags(); }
+    else { if (card) { card.style.opacity = ''; card.style.pointerEvents = ''; } }
+  } catch(_) { if (card) { card.style.opacity = ''; card.style.pointerEvents = ''; } }
+}
+
+async function submitFlagResponse(flagId) {
+  const bodyEl = document.getElementById('pd-resp-body-' + flagId);
+  const btnEl  = document.getElementById('pd-resp-btn-' + flagId);
+  const errEl  = document.getElementById('pd-resp-err-' + flagId);
+  const body   = (bodyEl.value || '').trim();
+  errEl.textContent = '';
+  if (body.length < 5) { errEl.textContent = 'At least 5 characters required.'; return; }
+  if (body.length > 500) { errEl.textContent = 'Limit 500 characters.'; return; }
+  btnEl.disabled = true; btnEl.textContent = '…';
+  try {
+    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/flags/' + flagId + '/responses', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ body }),
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      bodyEl.value = '';
+      loadFlags();
+    } else {
+      errEl.textContent = data.error || 'Failed to post — try again.';
+      btnEl.disabled = false; btnEl.textContent = 'Reply';
+    }
+  } catch(_) {
+    errEl.textContent = 'Network error.';
+    btnEl.disabled = false; btnEl.textContent = 'Reply';
+  }
+}
+
+// ── Flag form toggle + visibility selector ────────────────────────────────
+
+let _careTeamMembers = [];
+
+function toggleFlagForm() {
+  const wrap = document.getElementById('flag-form-wrap');
+  const showing = wrap.style.display !== 'none';
+  wrap.style.display = showing ? 'none' : 'block';
+  if (!showing) { loadCareTeamMembers(); }
+}
+
+async function loadCareTeamMembers() {
+  if (_careTeamMembers.length > 0) { _renderVisibilitySelector(); return; }
+  try {
+    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/care-team-members',
+                            { credentials: 'same-origin' });
+    const data = res.ok ? await res.json() : {};
+    _careTeamMembers = data.members || [];
+    _renderVisibilitySelector();
+  } catch(_) {}
+}
+
+function _renderVisibilitySelector() {
+  const optWrap = document.getElementById('pd-flag-visibility-options');
+  const listWrap = document.getElementById('pd-flag-member-list');
+  if (!optWrap) return;
+
+  if (_careTeamMembers.length === 0) {
+    optWrap.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">No other care team members — flag will be visible to all.</div>`;
+    return;
+  }
+
+  optWrap.innerHTML = `
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">
+      <input type="radio" name="pd-flag-vis" value="all" checked onchange="_toggleMemberList(false)">
+      All care team members
+    </label>
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
+      <input type="radio" name="pd-flag-vis" value="select" onchange="_toggleMemberList(true)">
+      Specific members only
+    </label>`;
+
+  listWrap.innerHTML = _careTeamMembers.map(m =>
+    `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">
+       <input type="checkbox" class="pd-flag-member-cb" value="${_escHtml(m.provider_id)}">
+       ${_escHtml(m.provider_name)} <span style="font-size:11px;color:var(--text-muted);">(${_escHtml(m.role_label)})</span>
+     </label>`
+  ).join('');
+}
+
+function _toggleMemberList(show) {
+  const el = document.getElementById('pd-flag-member-list');
+  if (el) el.style.display = show ? 'block' : 'none';
+}
+
+async function submitPatientFlag() {
+  const typeEl   = document.getElementById('pd-flag-type');
+  const bodyEl   = document.getElementById('pd-flag-body');
+  const submitBtn = document.getElementById('pd-flag-submit-btn');
+  const errEl    = document.getElementById('pd-flag-err');
+  errEl.textContent = '';
+
+  const flagType = typeEl.value;
+  const body     = (bodyEl.value || '').trim();
+  if (body.length < 10) { errEl.textContent = 'At least 10 characters required.'; return; }
+  if (body.length > 1000) { errEl.textContent = 'Limit 1000 characters.'; return; }
+
+  // Determine visibility
+  const visMode = document.querySelector('input[name="pd-flag-vis"]:checked');
+  let visible_to = null;
+  if (visMode && visMode.value === 'select') {
+    const checked = [...document.querySelectorAll('.pd-flag-member-cb:checked')].map(cb => cb.value);
+    if (checked.length === 0) { errEl.textContent = 'Select at least one care team member.'; return; }
+    visible_to = checked;
+  }
+
+  submitBtn.disabled = true; submitBtn.textContent = 'Posting…';
+  try {
+    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/flags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flag_type: flagType, body, visible_to }),
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      bodyEl.value = '';
+      document.getElementById('flag-form-wrap').style.display = 'none';
+      loadFlags();
+    } else {
+      errEl.textContent = data.error || 'Failed to post — try again.';
+      submitBtn.disabled = false; submitBtn.textContent = 'Post Flag';
+    }
+  } catch(_) {
+    errEl.textContent = 'Network error.';
+    submitBtn.disabled = false; submitBtn.textContent = 'Post Flag';
+  }
+}
+
+// ── Psychiatrist: Add Medication ───────────────────────────────────────────
+
+function toggleMedForm() {
+  const wrap = document.getElementById('med-form-wrap');
+  if (!wrap) return;
+  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+}
+
+{% if provider_role == 'psychiatrist' %}
+// Medication name autocomplete
+document.addEventListener('DOMContentLoaded', function() {
+  const nameInput = document.getElementById('med-name');
+  if (!nameInput) return;
+  nameInput.addEventListener('input', async function() {
+    const q = this.value.trim();
+    if (q.length < 2) return;
+    try {
+      const res = await fetch('/api/medications/search?q=' + encodeURIComponent(q),
+                              { credentials: 'same-origin' });
+      if (!res.ok) return;
+      const data = await res.json();
+      const dl = document.getElementById('med-name-list');
+      if (!dl) return;
+      dl.innerHTML = '';
+      (Array.isArray(data) ? data : []).forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m.name || m;
+        dl.appendChild(opt);
+      });
+    } catch(_) {}
+  });
+});
+
+async function submitAddMedication() {
+  const nameEl      = document.getElementById('med-name');
+  const categoryEl  = document.getElementById('med-category');
+  const doseEl      = document.getElementById('med-dose');
+  const doseUnitEl  = document.getElementById('med-dose-unit');
+  const dateEl      = document.getElementById('med-date-started');
+  const submitBtn   = document.getElementById('med-submit-btn');
+  const errEl       = document.getElementById('med-err');
+  errEl.textContent = '';
+
+  const name     = (nameEl.value || '').trim();
+  const category = categoryEl.value;
+  const dose     = parseFloat(doseEl.value);
+  const doseUnit = doseUnitEl.value;
+  const dateStr  = (dateEl.value || '').trim();
+
+  if (!name) { errEl.textContent = 'Name is required.'; return; }
+  if (isNaN(dose) || dose <= 0) { errEl.textContent = 'Enter a valid dose.'; return; }
+
+  submitBtn.disabled = true; submitBtn.textContent = 'Adding…';
+  try {
+    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/medications', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name, category, dose, dose_unit: doseUnit,
+        date_started: dateStr || null,
+      }),
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      const med = data.medication;
+      // Append chip to the list
+      const chipWrap = document.querySelector('#med-add-section [style*="flex-wrap:wrap;gap:8px"]');
+      if (chipWrap) {
+        const chip = document.createElement('span');
+        chip.className = 'pd-med-chip';
+        chip.textContent = med.name + (med.standard_dose ? ' ' + med.standard_dose + (med.dose_unit || 'mg') : '');
+        chipWrap.appendChild(chip);
+      }
+      nameEl.value = ''; doseEl.value = ''; dateEl.value = '';
+      document.getElementById('med-form-wrap').style.display = 'none';
+    } else {
+      errEl.textContent = data.error || 'Failed to add — try again.';
+      submitBtn.disabled = false; submitBtn.textContent = 'Add Medication';
+    }
+  } catch(_) {
+    errEl.textContent = 'Network error.';
+    submitBtn.disabled = false; submitBtn.textContent = 'Add Medication';
+  }
+}
+{% endif %}
+
+// Load flags on page ready
+loadFlags();
 </script>
 {% endblock %}

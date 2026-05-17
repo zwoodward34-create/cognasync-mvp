@@ -636,6 +636,8 @@ def provider_patient_detail(patient_id):
             except Exception:
                 pass
 
+        provider_role = db.get_care_team_member_role(user['id'], patient_id) or 'psychiatrist'
+
         return render_template('provider/patient_detail.html',
                                user=user, patient=patient,
                                patients=patients,
@@ -647,7 +649,8 @@ def provider_patient_detail(patient_id):
                                patient_crisis_context=patient_crisis_context,
                                crisis_history=crisis_history,
                                days_since_last_checkin=days_since_last_checkin,
-                               last_checkin_date=last_checkin_date)
+                               last_checkin_date=last_checkin_date,
+                               provider_role=provider_role)
     except Exception:
         app.logger.exception(f"Error rendering patient detail for {patient_id}")
         flash("An error occurred loading this patient's details. The issue has been logged.", 'error')
@@ -1638,15 +1641,19 @@ def api_create_care_flag(patient_id):
         return jsonify({'error': 'Access denied.'}), 403
 
     data = request.get_json(silent=True) or {}
-    flag_type = (data.get('flag_type') or '').strip()
-    body      = (data.get('body') or '').strip()
+    flag_type  = (data.get('flag_type') or '').strip()
+    body       = (data.get('body') or '').strip()
+    visible_to = data.get('visible_to')  # optional list of provider_id strings
 
     if not flag_type:
         return jsonify({'error': 'flag_type is required.'}), 400
     if not body:
         return jsonify({'error': 'body is required.'}), 400
+    if visible_to is not None and not isinstance(visible_to, list):
+        return jsonify({'error': 'visible_to must be a list.'}), 400
 
-    result = db.create_care_flag(user['id'], patient_id, flag_type, body)
+    result = db.create_care_flag(user['id'], patient_id, flag_type, body,
+                                 visible_to=visible_to or None)
     if result.get('ok'):
         return jsonify(result), 201
     return jsonify({'error': result.get('error', 'Failed to create flag.')}), 400
@@ -1665,6 +1672,78 @@ def api_resolve_care_flag(patient_id, flag_id):
     if result.get('ok'):
         return jsonify({'ok': True}), 200
     return jsonify({'error': result.get('error', 'Failed to resolve flag.')}), 400
+
+
+@app.route('/api/provider/patient/<patient_id>/care-team-members', methods=['GET'])
+def api_get_care_team_for_flag(patient_id):
+    """Returns active care team members (excluding the requesting provider) for
+    the flag visibility selector."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+    members = db.get_care_team_for_provider(user['id'], patient_id)
+    return jsonify({'members': members}), 200
+
+
+@app.route('/api/provider/patient/<patient_id>/flags/<flag_id>/responses', methods=['GET'])
+def api_get_flag_responses(patient_id, flag_id):
+    """Returns all responses for a care flag."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+    responses = db.get_flag_responses(flag_id, patient_id)
+    return jsonify({'responses': responses}), 200
+
+
+@app.route('/api/provider/patient/<patient_id>/flags/<flag_id>/responses', methods=['POST'])
+def api_create_flag_response(patient_id, flag_id):
+    """Post a response to a care flag."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+    data = request.get_json(silent=True) or {}
+    body = (data.get('body') or '').strip()
+    if not body:
+        return jsonify({'error': 'body is required.'}), 400
+    result = db.create_flag_response(flag_id, user['id'], patient_id, body)
+    if result.get('ok'):
+        return jsonify(result), 201
+    return jsonify({'error': result.get('error', 'Failed to post response.')}), 400
+
+
+@app.route('/api/provider/patient/<patient_id>/medications', methods=['POST'])
+def api_provider_add_medication(patient_id):
+    """Psychiatrist adds a medication to a patient's record."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+    data = request.get_json(silent=True) or {}
+    name            = (data.get('name') or '').strip()
+    category        = (data.get('category') or '').strip()
+    dose            = data.get('dose')
+    dose_unit       = (data.get('dose_unit') or 'mg').strip()
+    scheduled_times = data.get('scheduled_times') or []
+    date_started    = (data.get('date_started') or '').strip() or None
+    if not name:
+        return jsonify({'error': 'name is required.'}), 400
+    if not category:
+        return jsonify({'error': 'category is required.'}), 400
+    if dose is None:
+        return jsonify({'error': 'dose is required.'}), 400
+    result = db.add_medication_by_psychiatrist(
+        user['id'], patient_id, name, category, dose, dose_unit,
+        scheduled_times, date_started)
+    if result.get('ok'):
+        return jsonify(result), 201
+    return jsonify({'error': result.get('error', 'Failed to add medication.')}), 400
 
 
 # ── Care Team API — Provider side ─────────────────────────────────────────────
