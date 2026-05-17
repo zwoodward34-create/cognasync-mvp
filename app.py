@@ -692,7 +692,12 @@ def provider_appointment_workspace(patient_id, appt_id):
         flash('Appointment not found', 'error')
         return redirect(url_for('provider_patient_detail', patient_id=patient_id))
 
-    days    = appt.get('period_days', 30)
+    try:
+        days = int(request.args.get('days', appt.get('period_days', 30)))
+        if days not in (7, 14, 30, 60, 90):
+            days = appt.get('period_days', 30)
+    except (TypeError, ValueError):
+        days = appt.get('period_days', 30)
     patient = db.get_patient_detail(patient_id, days=days)
     if not patient:
         flash('Patient not found', 'error')
@@ -1717,6 +1722,18 @@ def api_create_flag_response(patient_id, flag_id):
     return jsonify({'error': result.get('error', 'Failed to post response.')}), 400
 
 
+@app.route('/api/provider/patient/<patient_id>/medications', methods=['GET'])
+def api_get_patient_medications(patient_id):
+    """Return the patient's active medications for the Add Medication dropdown."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+    meds = db.get_user_medications(patient_id, active_only=True)
+    return jsonify({'medications': meds}), 200
+
+
 @app.route('/api/provider/patient/<patient_id>/medications', methods=['POST'])
 def api_provider_add_medication(patient_id):
     """Psychiatrist adds a medication to a patient's record."""
@@ -1732,6 +1749,7 @@ def api_provider_add_medication(patient_id):
     dose_unit       = (data.get('dose_unit') or 'mg').strip()
     scheduled_times = data.get('scheduled_times') or []
     date_started    = (data.get('date_started') or '').strip() or None
+    frequency       = (data.get('frequency') or '').strip() or None
     if not name:
         return jsonify({'error': 'name is required.'}), 400
     if not category:
@@ -1740,7 +1758,7 @@ def api_provider_add_medication(patient_id):
         return jsonify({'error': 'dose is required.'}), 400
     result = db.add_medication_by_psychiatrist(
         user['id'], patient_id, name, category, dose, dose_unit,
-        scheduled_times, date_started)
+        scheduled_times, date_started, frequency=frequency)
     if result.get('ok'):
         return jsonify(result), 201
     return jsonify({'error': result.get('error', 'Failed to add medication.')}), 400

@@ -574,19 +574,24 @@ def get_latest_summary(patient_id):
 # MEDICATIONS
 # ═══════════════════════════════════════════════════════════════════════════
 
-def create_medication(user_id: str, name: str, category: str, standard_dose: float, dose_unit: str = 'mg', scheduled_times: list = None, date_started: str = None):
+def create_medication(user_id: str, name: str, category: str, standard_dose: float,
+                      dose_unit: str = 'mg', scheduled_times: list = None,
+                      date_started: str = None, frequency: str = None):
     """Create a medication record for the user."""
     try:
-        result = supabase_admin.table('medications').insert({
-            'user_id': user_id,
-            'name': name,
-            'category': category,
-            'standard_dose': standard_dose,
-            'dose_unit': dose_unit,
+        insert_data = {
+            'user_id':        user_id,
+            'name':           name,
+            'category':       category,
+            'standard_dose':  standard_dose,
+            'dose_unit':      dose_unit,
             'scheduled_times': scheduled_times or [],
-            'date_started': date_started or date.today().isoformat(),
-            'is_active': True
-        }).execute()
+            'date_started':   date_started or date.today().isoformat(),
+            'is_active':      True,
+        }
+        if frequency:
+            insert_data['frequency'] = frequency
+        result = supabase_admin.table('medications').insert(insert_data).execute()
         return result.data[0] if result.data else None
     except Exception as e:
         print(f"Error creating medication: {e}")
@@ -3493,7 +3498,8 @@ def add_medication_by_psychiatrist(provider_id: str, patient_id: str,
                                    name: str, category: str, dose: float,
                                    dose_unit: str = 'mg',
                                    scheduled_times: list = None,
-                                   date_started: str = None) -> dict:
+                                   date_started: str = None,
+                                   frequency: str = None) -> dict:
     """
     Psychiatrist adds a medication to a patient's record.
     Enforces that the provider's role for this patient is 'psychiatrist'.
@@ -3531,6 +3537,7 @@ def add_medication_by_psychiatrist(provider_id: str, patient_id: str,
         dose_unit=dose_unit or 'mg',
         scheduled_times=scheduled_times or [],
         date_started=date_started or None,
+        frequency=frequency or None,
     )
     if med is None:
         return {'ok': False, 'error': 'Failed to add medication — please try again.'}

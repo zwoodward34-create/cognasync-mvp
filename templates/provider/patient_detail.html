@@ -437,13 +437,13 @@
 
       <!-- Existing medications -->
       {% if patient.current_medications %}
-      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
+      <div class="pd-med-chip-wrap" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
         {% for med in patient.current_medications %}
         <span class="pd-med-chip">{{ med.name | title }}{% if med.dose %} {{ med.dose }}{% endif %}{% if med.dose_unit %} {{ med.dose_unit }}{% endif %}</span>
         {% endfor %}
       </div>
       {% else %}
-      <div style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">No medications on record.</div>
+      <div class="no-med-msg" style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">No medications on record.</div>
       {% endif %}
 
       <!-- Add medication form (hidden by default) -->
@@ -454,7 +454,24 @@
           Add Medication
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+
+          <!-- Row 1: select from existing or add new -->
           <div style="grid-column:1/-1;">
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
+              Medication
+            </label>
+            <select id="med-select" onchange="onMedSelect(this)"
+                    style="width:100%;font-size:13px;padding:7px 8px;
+                           border:1px solid var(--border-light);background:var(--surface);
+                           color:var(--text);">
+              <option value="">-- Select existing or add new --</option>
+              <option value="__new__">+ Add new medication…</option>
+            </select>
+          </div>
+
+          <!-- Row 1b: new medication name input (shown only when "__new__" selected) -->
+          <div style="grid-column:1/-1;display:none;" id="med-new-wrap">
             <label style="font-size:11px;font-weight:600;text-transform:uppercase;
                           letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
               Medication Name
@@ -463,9 +480,11 @@
                    style="width:100%;font-size:13px;padding:7px 8px;
                           border:1px solid var(--border-light);background:var(--surface);
                           color:var(--text);box-sizing:border-box;"
-                   placeholder="e.g. Adderall, Lamictal">
+                   placeholder="Type to search medication database…">
             <datalist id="med-name-list"></datalist>
           </div>
+
+          <!-- Row 2: category + frequency -->
           <div>
             <label style="font-size:11px;font-weight:600;text-transform:uppercase;
                           letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
@@ -483,6 +502,27 @@
               <option value="other">Other</option>
             </select>
           </div>
+          <div>
+            <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
+              Frequency / Timing
+            </label>
+            <select id="med-frequency"
+                    style="width:100%;font-size:13px;padding:7px 8px;
+                           border:1px solid var(--border-light);background:var(--surface);color:var(--text);">
+              <option value="">-- Select timing --</option>
+              <option value="once_daily">Once daily</option>
+              <option value="twice_daily">Twice daily</option>
+              <option value="three_times_daily">Three times daily</option>
+              <option value="every_morning">Every morning</option>
+              <option value="at_bedtime">At bedtime</option>
+              <option value="as_needed">As needed (PRN)</option>
+              <option value="every_other_day">Every other day</option>
+              <option value="weekly">Weekly</option>
+            </select>
+          </div>
+
+          <!-- Row 3: dose + unit + date started -->
           <div style="display:flex;gap:8px;">
             <div style="flex:1;">
               <label style="font-size:11px;font-weight:600;text-transform:uppercase;
@@ -520,6 +560,8 @@
                           border:1px solid var(--border-light);background:var(--surface);
                           color:var(--text);box-sizing:border-box;">
           </div>
+
+          <!-- Row 4: actions -->
           <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
             <button class="btn btn-primary" style="font-size:13px;padding:8px 18px;"
                     id="med-submit-btn" onclick="submitAddMedication()">Add Medication</button>
@@ -870,14 +912,92 @@ async function submitPatientFlag() {
 
 // ── Psychiatrist: Add Medication ───────────────────────────────────────────
 
-function toggleMedForm() {
-  const wrap = document.getElementById('med-form-wrap');
-  if (!wrap) return;
-  wrap.style.display = wrap.style.display === 'none' ? 'block' : 'none';
+{% if provider_role == 'psychiatrist' %}
+
+// ── Patient medication data (keyed by id) ─────────────────────────────────
+let _patientMeds = null;  // null = not yet loaded
+
+async function _ensurePatientMeds() {
+  if (_patientMeds !== null) return;
+  _patientMeds = {};
+  try {
+    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/medications',
+                            { credentials: 'same-origin' });
+    const data = res.ok ? await res.json() : {};
+    (data.medications || []).forEach(m => { _patientMeds[m.id] = m; });
+  } catch(_) {}
 }
 
-{% if provider_role == 'psychiatrist' %}
-// Medication name autocomplete
+async function _populateMedSelect() {
+  await _ensurePatientMeds();
+  const sel = document.getElementById('med-select');
+  if (!sel) return;
+  // Remove any previously injected options (keep first blank + last __new__)
+  sel.querySelectorAll('option[data-existing]').forEach(o => o.remove());
+  const newOpt = sel.querySelector('option[value="__new__"]');
+  const meds = Object.values(_patientMeds);
+  if (meds.length === 0) {
+    // No existing meds — jump straight to new medication mode
+    if (newOpt) newOpt.selected = true;
+    _showNewMedInput(true);
+    return;
+  }
+  meds.forEach(m => {
+    const opt = document.createElement('option');
+    opt.value = m.id;
+    opt.setAttribute('data-existing', '1');
+    const doseStr = m.standard_dose ? ` ${m.standard_dose}${m.dose_unit || 'mg'}` : '';
+    const freqStr = m.frequency ? ` · ${_freqLabel(m.frequency)}` : '';
+    opt.textContent = (m.name || '') + doseStr + freqStr;
+    sel.insertBefore(opt, newOpt);
+  });
+}
+
+const _FREQ_LABELS = {
+  once_daily:        'Once daily',
+  twice_daily:       'Twice daily',
+  three_times_daily: 'Three times daily',
+  every_morning:     'Every morning',
+  at_bedtime:        'At bedtime',
+  as_needed:         'As needed (PRN)',
+  every_other_day:   'Every other day',
+  weekly:            'Weekly',
+};
+function _freqLabel(v) { return _FREQ_LABELS[v] || v.replace(/_/g, ' '); }
+
+function _showNewMedInput(show) {
+  const wrap = document.getElementById('med-new-wrap');
+  if (wrap) wrap.style.display = show ? 'block' : 'none';
+}
+
+function onMedSelect(sel) {
+  const val = sel.value;
+  const med = _patientMeds && _patientMeds[val];
+
+  if (val === '__new__') {
+    _showNewMedInput(true);
+    // Clear fields so provider fills them in
+    document.getElementById('med-name').value = '';
+    document.getElementById('med-dose').value = '';
+    document.getElementById('med-date-started').value = '';
+    document.getElementById('med-frequency').value = '';
+  } else if (med) {
+    _showNewMedInput(false);
+    // Auto-fill from existing record
+    const catEl = document.getElementById('med-category');
+    const doseEl = document.getElementById('med-dose');
+    const unitEl = document.getElementById('med-dose-unit');
+    const freqEl = document.getElementById('med-frequency');
+    if (catEl && med.category) catEl.value = med.category;
+    if (doseEl) doseEl.value = med.standard_dose || '';
+    if (unitEl && med.dose_unit) unitEl.value = med.dose_unit;
+    if (freqEl && med.frequency) freqEl.value = med.frequency;
+  } else {
+    _showNewMedInput(false);
+  }
+}
+
+// Wire autocomplete for the new-medication text input
 document.addEventListener('DOMContentLoaded', function() {
   const nameInput = document.getElementById('med-name');
   if (!nameInput) return;
@@ -901,48 +1021,84 @@ document.addEventListener('DOMContentLoaded', function() {
   });
 });
 
+function toggleMedForm() {
+  const wrap = document.getElementById('med-form-wrap');
+  if (!wrap) return;
+  const opening = wrap.style.display === 'none';
+  wrap.style.display = opening ? 'block' : 'none';
+  if (opening) _populateMedSelect();
+}
+
 async function submitAddMedication() {
-  const nameEl      = document.getElementById('med-name');
-  const categoryEl  = document.getElementById('med-category');
-  const doseEl      = document.getElementById('med-dose');
-  const doseUnitEl  = document.getElementById('med-dose-unit');
-  const dateEl      = document.getElementById('med-date-started');
-  const submitBtn   = document.getElementById('med-submit-btn');
-  const errEl       = document.getElementById('med-err');
+  const selectEl  = document.getElementById('med-select');
+  const categoryEl = document.getElementById('med-category');
+  const doseEl    = document.getElementById('med-dose');
+  const doseUnitEl = document.getElementById('med-dose-unit');
+  const freqEl    = document.getElementById('med-frequency');
+  const dateEl    = document.getElementById('med-date-started');
+  const submitBtn = document.getElementById('med-submit-btn');
+  const errEl     = document.getElementById('med-err');
   errEl.textContent = '';
 
-  const name     = (nameEl.value || '').trim();
-  const category = categoryEl.value;
-  const dose     = parseFloat(doseEl.value);
-  const doseUnit = doseUnitEl.value;
-  const dateStr  = (dateEl.value || '').trim();
+  const val = selectEl.value;
+  const existingMed = _patientMeds && _patientMeds[val];
 
-  if (!name) { errEl.textContent = 'Name is required.'; return; }
+  let name, category, dose, doseUnit;
+
+  if (val === '__new__') {
+    name = (document.getElementById('med-name').value || '').trim();
+    category = categoryEl.value;
+    dose = parseFloat(doseEl.value);
+    doseUnit = doseUnitEl.value;
+    if (!name) { errEl.textContent = 'Medication name is required.'; return; }
+  } else if (existingMed) {
+    name     = existingMed.name;
+    category = categoryEl.value || existingMed.category || 'other';
+    dose     = parseFloat(doseEl.value) || existingMed.standard_dose;
+    doseUnit = doseUnitEl.value || existingMed.dose_unit || 'mg';
+  } else {
+    errEl.textContent = 'Select a medication.'; return;
+  }
+
   if (isNaN(dose) || dose <= 0) { errEl.textContent = 'Enter a valid dose.'; return; }
+
+  const frequency = freqEl.value || null;
+  const dateStr   = (dateEl.value || '').trim() || null;
 
   submitBtn.disabled = true; submitBtn.textContent = 'Adding…';
   try {
     const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/medications', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name, category, dose, dose_unit: doseUnit,
-        date_started: dateStr || null,
-      }),
+      body: JSON.stringify({ name, category, dose, dose_unit: doseUnit,
+                             frequency, date_started: dateStr }),
       credentials: 'same-origin',
     });
     const data = await res.json();
     if (res.ok && data.ok) {
       const med = data.medication;
-      // Append chip to the list
-      const chipWrap = document.querySelector('#med-add-section [style*="flex-wrap:wrap;gap:8px"]');
-      if (chipWrap) {
-        const chip = document.createElement('span');
-        chip.className = 'pd-med-chip';
-        chip.textContent = med.name + (med.standard_dose ? ' ' + med.standard_dose + (med.dose_unit || 'mg') : '');
-        chipWrap.appendChild(chip);
+      const doseStr = med.standard_dose ? ` ${med.standard_dose}${med.dose_unit || 'mg'}` : '';
+      const freqStr = med.frequency ? ` · ${_freqLabel(med.frequency)}` : '';
+      // Add to existing-medications display
+      let chipWrap = document.querySelector('#med-add-section .pd-med-chip-wrap');
+      if (!chipWrap) {
+        // Create chip container if it didn't exist (no prior meds)
+        const noMedDiv = document.querySelector('#med-add-section .no-med-msg');
+        if (noMedDiv) noMedDiv.remove();
+        chipWrap = document.createElement('div');
+        chipWrap.className = 'pd-med-chip-wrap';
+        chipWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;';
+        document.getElementById('med-form-wrap').insertAdjacentElement('beforebegin', chipWrap);
       }
-      nameEl.value = ''; doseEl.value = ''; dateEl.value = '';
+      const chip = document.createElement('span');
+      chip.className = 'pd-med-chip';
+      chip.textContent = (med.name || name) + doseStr + freqStr;
+      chipWrap.appendChild(chip);
+      // Refresh dropdown so the newly added med appears
+      _patientMeds = null;
+      selectEl.value = '';
+      _showNewMedInput(false);
+      doseEl.value = ''; freqEl.value = ''; dateEl.value = '';
       document.getElementById('med-form-wrap').style.display = 'none';
     } else {
       errEl.textContent = data.error || 'Failed to add — try again.';
