@@ -61,6 +61,56 @@
   }
   .pd-card-footer .pd-card-appt { flex: 1; }
 
+  .pd-appt-active-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    color: #2a7a2a;
+    background: #edfaed;
+    border: 1px solid #b6e8b6;
+    padding: 2px 7px;
+    border-radius: 3px;
+  }
+
+  .pd-brief-appt-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 14px 0 2px;
+    border-top: 1px solid var(--color-border, #ececec);
+    margin-top: 6px;
+    flex-wrap: wrap;
+  }
+  .pd-brief-appt-btn {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 14px;
+    background: var(--color-primary, #111);
+    color: #fff;
+    text-decoration: none;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .pd-brief-appt-btn:hover { opacity: .85; }
+  .pd-brief-appt-btn-ghost {
+    display: inline-block;
+    font-size: 12px;
+    font-weight: 600;
+    padding: 7px 14px;
+    background: transparent;
+    color: var(--color-text, #111);
+    border: 1px solid var(--color-border, #ccc);
+    text-decoration: none;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .pd-brief-appt-btn-ghost:hover { background: var(--color-surface-alt, #f5f5f5); }
+
   /* ── Between-session brief drawer ───────────────────────────────────── */
   .pd-brief-drawer {
     display: none;
@@ -617,7 +667,9 @@
       <!-- Footer -->
       <div class="pd-card-footer">
         <span class="pd-card-appt">
-          {% if p.last_appointment %}
+          {% if p.last_appointment_status == 'active' %}
+            <span class="pd-appt-active-pill">● Active Session</span>
+          {% elif p.last_appointment %}
             Last appt: {{ p.last_appointment }}
           {% else %}
             No appointments yet
@@ -627,6 +679,8 @@
                 data-patient-id="{{ p.patient_id }}"
                 data-patient-name="{{ p.full_name }}"
                 data-provider-role="{{ p.provider_role or 'psychiatrist' }}"
+                data-last-appt-status="{{ p.last_appointment_status or '' }}"
+                data-last-appt-id="{{ p.last_appointment_id or '' }}"
                 onclick="event.preventDefault(); event.stopPropagation(); openBrief(this)">
           Brief
         </button>
@@ -853,8 +907,11 @@ function renderBriefBody(d, patientId) {
   const hasActions = d.session_actions && d.session_actions.length > 0;
 
   if (hasNotes || hasPlan || hasActions) {
+    const _apptDateFmt = d.appointment_date
+      ? new Date(d.appointment_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '';
     html += `<div class="pd-session-notes-section">
-      <div class="pd-session-notes-title">Last Session Notes <span class="pd-session-notes-date">${d.appointment_date || ''}</span></div>`;
+      <div class="pd-session-notes-title">Last Session Notes <span class="pd-session-notes-date">${_apptDateFmt}</span></div>`;
 
     if (hasNotes) {
       const notesEsc = d.session_notes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
@@ -893,6 +950,25 @@ function renderBriefBody(d, patientId) {
   </div>`;
 
   html += `<div class="pd-brief-footer-note">Data covers ${d.since_date} through today. Figures from patient check-ins and shared journals. Baseline = 90-day window prior to last appointment.</div>`;
+
+  // ── Appointment CTA bar ───────────────────────────────────────────────
+  const meta = _apptMeta[patientId] || {};
+  if (meta.status === 'active' && meta.id) {
+    html += `<div class="pd-brief-appt-bar">
+      <span style="font-size:12px;color:var(--color-text-muted,#888);flex:1;">Active session in progress</span>
+      <a href="/provider/patient/${patientId}/appointment/${meta.id}"
+         class="pd-brief-appt-btn">Continue Active Session →</a>
+      <a href="/provider/patient/${patientId}"
+         class="pd-brief-appt-btn-ghost">Patient Profile</a>
+    </div>`;
+  } else {
+    html += `<div class="pd-brief-appt-bar">
+      <span style="font-size:12px;color:var(--color-text-muted,#888);flex:1;">Ready to document a session?</span>
+      <a href="/provider/patient/${patientId}"
+         class="pd-brief-appt-btn">Start New Appointment →</a>
+    </div>`;
+  }
+
   body.innerHTML = html;
   // Async: load care flags after DOM is updated
   loadCareFlags(patientId);
@@ -1046,10 +1122,19 @@ async function submitCareFlag(patientId) {
   }
 }
 
+// Stores appointment meta per patient so renderBriefBody can build CTAs
+const _apptMeta = {};
+
 async function openBrief(btn) {
   const pid  = btn.dataset.patientId;
   const name = btn.dataset.patientName;
   const drawer = document.getElementById('pd-brief-drawer');
+
+  // Capture appointment meta from the card button
+  _apptMeta[pid] = {
+    status: btn.dataset.lastApptStatus || '',
+    id:     btn.dataset.lastApptId     || '',
+  };
 
   // If same patient is open, close
   if (_activePid === pid && drawer.classList.contains('open')) {

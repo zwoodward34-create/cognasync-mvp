@@ -424,7 +424,7 @@
           </div>
           <textarea id="notes-field" class="aw-textarea" rows="12"
                     placeholder="Enter session notes…"
-                    oninput="scheduleSave()">{{ appt.notes or '' }}</textarea>
+                    {% if appt.status == 'completed' %}readonly style="opacity:0.75;background:var(--surface-alt,#f8f8f8);"{% else %}oninput="scheduleSave()"{% endif %}>{{ appt.notes or '' }}</textarea>
         </div>
 
         <!-- Care plan -->
@@ -435,20 +435,29 @@
           </div>
           <textarea id="care-plan-field" class="aw-textarea" rows="12"
                     placeholder="Document any care plan changes…"
-                    oninput="scheduleSave()">{{ appt.care_plan_changes or '' }}</textarea>
+                    {% if appt.status == 'completed' %}readonly style="opacity:0.75;background:var(--surface-alt,#f8f8f8);"{% else %}oninput="scheduleSave()"{% endif %}>{{ appt.care_plan_changes or '' }}</textarea>
         </div>
       </div>
+
+      {% if appt.status == 'completed' %}
+      <div style="margin-top:16px;padding:10px 14px;background:#f0f7f0;border:1px solid #c3e0c3;
+                  font-size:12px;color:#2a6b2a;border-radius:4px;">
+        ✓ This appointment is complete. Notes are locked and have been carried forward to the between-session brief.
+      </div>
+      {% endif %}
 
       <!-- Action items -->
       <div style="margin-top:24px;">
         <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
           <label class="aw-field-label" style="margin:0;">Action Items</label>
+          {% if appt.status != 'completed' %}
           <div style="display:flex;gap:8px;">
             <input type="text" id="action-input" placeholder="Add an action item…"
                    class="gq-custom-input" style="width:300px;"
                    onkeydown="if(event.key==='Enter')addAction()">
             <button class="btn btn-sm" onclick="addAction()">Add</button>
           </div>
+          {% endif %}
         </div>
         <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">
           Tasks to be completed before the next appointment.
@@ -456,6 +465,7 @@
         <div id="actions-list" class="aw-actions-list">
           <!-- Populated by JS -->
         </div>
+        {% if appt.status != 'completed' %}
         <div class="aw-action-templates">
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;margin-bottom:8px;">
             Common Actions
@@ -477,6 +487,7 @@
             {% endfor %}
           </div>
         </div>
+        {% endif %}
       </div>
 
     </div><!-- /tab-notes -->
@@ -845,12 +856,13 @@ function renderActions() {
     list.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">No action items yet.</div>';
     return;
   }
+  const locked = {{ 'true' if appt.status == 'completed' else 'false' }};
   list.innerHTML = actions.map((a, i) => `
     <div class="aw-action-item ${a.done ? 'aw-action-done' : ''}">
       <input type="checkbox" class="aw-action-check" ${a.done ? 'checked' : ''}
-             onchange="toggleAction(${i}, this.checked)">
+             ${locked ? 'disabled' : `onchange="toggleAction(${i}, this.checked)"`}>
       <span class="aw-action-text">${escHtml(a.text)}</span>
-      <button class="aw-action-remove" onclick="removeAction(${i})">✕</button>
+      ${locked ? '' : `<button class="aw-action-remove" onclick="removeAction(${i})">✕</button>`}
     </div>
   `).join('');
 }
@@ -987,8 +999,10 @@ function filterPatients(q) {
 renderQA();
 renderActions();
 
-// Autosave every 30s
+// Autosave every 30s — only for active appointments
+{% if appt.status != 'completed' %}
 setInterval(doSave, 30000);
+{% endif %}
 
 // ── Journal sidebar ───────────────────────────────────────────────────
 function toggleJournalEntry(idx) {
