@@ -1663,18 +1663,94 @@ def get_paired_values(patient_id, var_a, var_b, days=60, _checkins=None):
         return []
 
 
-def compute_correlation_evidence(pairs, user_direction):
-    """Compute correlation evidence between two variables."""
-    if not pairs or len(pairs) < 3:
-        return {'r': None, 'p': None, 'evidence': 0.0}
+def compute_correlation_evidence(pairs, user_direction, var_a=None, var_b=None):
+    """Compute correlation evidence between two variables.
+
+    Tests all three directions (positive, negative, null) simultaneously and
+    returns the ranked result shape that renderResult() in hypothesis-tester.js
+    expects:
+      ranked            – list of {rank, direction, statement, evidence}
+      winner            – the highest-evidence direction object
+      divergence        – bool: winner != user_direction
+      divergence_message – plain-English explanation when diverged
+      n                 – number of matched check-in pairs used
+      r                 – Pearson correlation coefficient
+      p_value           – stringified p-value threshold ('0.001'…'0.20')
+    """
+    DIR_PHRASES = {
+        'positive': 'helps / increases',
+        'negative': 'hurts / decreases',
+        'null':     'has no effect on',
+    }
+    la = _CORRELATION_VAR_LABELS.get(var_a, var_a or 'Variable A') if var_a else 'Variable A'
+    lb = _CORRELATION_VAR_LABELS.get(var_b, var_b or 'Variable B') if var_b else 'Variable B'
+    n  = len(pairs) if pairs else 0
+
+    _empty_winner = {
+        'direction': 'null',
+        'statement': f'{la} {DIR_PHRASES["null"]} {lb}',
+        'evidence':  0.0,
+        'rank':      1,
+    }
+
+    if not pairs or n < 3:
+        return {
+            'ranked':            [_empty_winner],
+            'winner':            _empty_winner,
+            'divergence':        user_direction != 'null',
+            'divergence_message': 'Not enough matched data to determine a direction.',
+            'n':                 n,
+            'r':                 None,
+            'p_value':           None,
+        }
+
     r, p = _pearson([pair[1] for pair in pairs], [pair[2] for pair in pairs])
     if r is None:
-        return {'r': 0, 'p': None, 'evidence': 0.0}
-    evidence = abs(r) * (len(pairs) / 10.0)
+        return {
+            'ranked':            [_empty_winner],
+            'winner':            _empty_winner,
+            'divergence':        user_direction != 'null',
+            'divergence_message': 'Insufficient data variance to determine direction.',
+            'n':                 n,
+            'r':                 0,
+            'p_value':           None,
+        }
+
+    # Evidence per direction: scales with how well the observed r supports each claim.
+    # positive: r > 0 supports this; negative: r < 0; null: |r| ≈ 0.
+    pos_ev   = round(min(max(0.0,  r) * (n / 10.0), 1.0), 3)
+    neg_ev   = round(min(max(0.0, -r) * (n / 10.0), 1.0), 3)
+    null_ev  = round(min((1.0 - abs(r)) * (n / 20.0), 1.0), 3)
+
+    directions = [
+        {'direction': 'positive', 'statement': f'{la} {DIR_PHRASES["positive"]} {lb}', 'evidence': pos_ev},
+        {'direction': 'negative', 'statement': f'{la} {DIR_PHRASES["negative"]} {lb}', 'evidence': neg_ev},
+        {'direction': 'null',     'statement': f'{la} {DIR_PHRASES["null"]} {lb}',     'evidence': null_ev},
+    ]
+    directions.sort(key=lambda x: x['evidence'], reverse=True)
+    for i, d in enumerate(directions):
+        d['rank'] = i + 1
+
+    winner = directions[0]
+    divergence = (winner['direction'] != user_direction)
+
+    if divergence:
+        user_stmt = f'{la} {DIR_PHRASES[user_direction]} {lb}'
+        divergence_message = (
+            f'You predicted "{user_stmt}" — but the data points to '
+            f'"{winner["statement"]}" (r={round(r, 3)}, n={n}).'
+        )
+    else:
+        divergence_message = ''
+
     return {
-        'r': round(r, 3),
-        'p': p,
-        'evidence': round(min(evidence, 1.0), 3),
+        'ranked':            directions,
+        'winner':            winner,
+        'divergence':        divergence,
+        'divergence_message': divergence_message,
+        'n':                 n,
+        'r':                 round(r, 3),
+        'p_value':           str(p) if p is not None else None,
     }
 
 
@@ -1683,16 +1759,28 @@ def compute_correlation_evidence(pairs, user_direction):
 # ═══════════════════════════════════════════════════════════════════════════
 
 def save_hypothesis_result(patient_id, var_a, var_b, user_direction, result):
-    """Save hypothesis test result."""
+    """Save hypothesis test result.
+
+    The result blob is augmented with variable_a, variable_b, user_direction, and
+    result_direction so that get_hypothesis_history() can reconstruct the flat
+    shape renderHistory() expects without a schema migration.
+    """
     try:
-        hyp_data = {
-            'user_id': str(patient_id),
-            'hypothesis': f"{var_a} -> {var_b}",
-            'tested_at': datetime.utcnow().isoformat(),
-            'result': json.dumps(result),
-            'created_at': datetime.utcnow().isoformat()
+        winner_dir = (result.get('winner') or {}).get('direction', 'null')
+        result_to_store = {
+            **result,
+            'variable_a':     var_a,
+            'variable_b':     var_b,
+            'user_direction':  user_direction,
+            'result_direction': winner_dir,
         }
-        
+        hyp_data = {
+            'user_id':    str(patient_id),
+            'hypothesis': f"{var_a} -> {var_b}",
+            'tested_at':  datetime.utcnow().isoformat(),
+            'result':     json.dumps(result_to_store),
+            'created_at': datetime.utcnow().isoformat(),
+        }
         response = supabase_admin.table('user_hypotheses').insert(hyp_data).execute()
         if response.data and len(response.data) > 0:
             return response.data[0]['id']
@@ -1703,10 +1791,57 @@ def save_hypothesis_result(patient_id, var_a, var_b, user_direction, result):
 
 
 def get_hypothesis_history(patient_id, limit=20):
-    """Get hypothesis test history."""
+    """Get hypothesis test history.
+
+    Returns rows with the flat shape renderHistory() in hypothesis-tester.js
+    expects: variable_a, variable_b, user_direction, result_direction,
+    divergence, created_at.  Fields are extracted from the embedded JSON blob;
+    legacy rows that pre-date the enriched blob fall back gracefully.
+    """
     try:
-        response = supabase_admin.table('user_hypotheses').select('*').eq('user_id', str(patient_id)).order('tested_at', desc=True).limit(limit).execute()
-        return response.data if response.data else []
+        response = (
+            supabase_admin.table('user_hypotheses')
+            .select('*')
+            .eq('user_id', str(patient_id))
+            .order('tested_at', desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = response.data if response.data else []
+
+        normalized = []
+        for h in rows:
+            blob = {}
+            raw = h.get('result')
+            if raw:
+                try:
+                    blob = json.loads(raw) if isinstance(raw, str) else raw
+                except Exception:
+                    pass
+
+            # Prefer fields embedded in the blob; fall back to parsing hypothesis string
+            var_a = blob.get('variable_a')
+            var_b = blob.get('variable_b')
+            if not var_a or not var_b:
+                hyp_text = h.get('hypothesis', '')
+                if '->' in hyp_text:
+                    parts = hyp_text.split('->', 1)
+                    var_a = parts[0].strip()
+                    var_b = parts[1].strip()
+
+            result_dir = blob.get('result_direction') or (blob.get('winner') or {}).get('direction', 'unknown')
+
+            normalized.append({
+                'id':              h.get('id'),
+                'variable_a':      var_a,
+                'variable_b':      var_b,
+                'user_direction':  blob.get('user_direction', 'unknown'),
+                'result_direction': result_dir,
+                'divergence':      blob.get('divergence', False),
+                'created_at':      h.get('tested_at') or h.get('created_at', ''),
+            })
+
+        return normalized
     except Exception as e:
         print(f"Error getting hypothesis history: {e}")
         return []
@@ -2465,17 +2600,20 @@ def get_provider_patients_with_stats(provider_id: str) -> list:
         # ── Last appointment date ─────────────────────────────────────────────
         try:
             ar = supabase_admin.table('provider_appointments').select(
-                'started_at, status').eq('provider_id', str(provider_id)).eq(
+                'id, started_at, status').eq('provider_id', str(provider_id)).eq(
                 'patient_id', uid).order('started_at', desc=True).limit(1).execute()
             if ar.data:
                 p['last_appointment'] = ar.data[0]['started_at'][:10]
                 p['last_appointment_status'] = ar.data[0]['status']
+                p['last_appointment_id'] = ar.data[0]['id']
             else:
                 p['last_appointment'] = None
                 p['last_appointment_status'] = None
+                p['last_appointment_id'] = None
         except Exception:
             p['last_appointment'] = None
             p['last_appointment_status'] = None
+            p['last_appointment_id'] = None
 
     # ── Care flag counts — unresolved flags from other providers ─────────────
     all_patient_ids = [str(p.get('patient_id') or p.get('id', '')) for p in base]

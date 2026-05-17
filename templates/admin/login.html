@@ -1,0 +1,34 @@
+{% extends "layout.html" %}
+{% block title %}Admin Login — CognaSync{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block full_page %}
+<div class="auth-shell">
+  <div class="auth-brand">
+    <div class="auth-logo">CS</div>
+    <h1 class="auth-title">CognaSync</h1>
+    <p class="auth-subtitle">Admin access</p>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div class="flash flash-{{ category }}">{{ message }}</div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <div class="auth-card">
+    <h2 class="auth-card-title">Admin Sign In</h2>
+    <form method="POST" action="{{ url_for('admin_login_post') }}" class="auth-form">
+      <div class="form-group">
+        <label for="secret">Admin password</label>
+        <input type="password" id="secret" name="secret" required
+               placeholder="Internal secret" autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary btn-full">Sign in</button>
+    </form>
+  </div>
+</div>
+{% endblock %}

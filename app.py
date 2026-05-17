@@ -1,9 +1,11 @@
 import os
+import csv
+import io
 import json
 import re
 import hmac
 from datetime import date, timedelta
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash
+from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, Response
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -309,6 +311,114 @@ def admin_approve():
     db.supabase_admin.table('profiles').update({'status': 'approved'}).eq('id', user_id).execute()
     email_utils.send_account_approved_email(profile['email'], profile['full_name'], profile.get('role', 'patient'))
     return render_template('auth/approval_done.html', already=False, email=profile['email'])
+
+
+# ── Admin Panel ───────────────────────────────────────────────────────────────
+
+def _require_admin():
+    """Return a redirect if the admin session is not authenticated."""
+    if not session.get('admin_authed'):
+        return redirect(url_for('admin_login_page'))
+    return None
+
+
+@app.route('/admin/login', methods=['GET'])
+def admin_login_page():
+    if session.get('admin_authed'):
+        return redirect(url_for('admin_panel'))
+    return render_template('admin/login.html')
+
+
+@app.route('/admin/login', methods=['POST'])
+def admin_login_post():
+    secret = request.form.get('secret', '').strip()
+    expected = os.environ.get('INTERNAL_SECRET', '')
+    if not expected:
+        flash('Admin access is not configured on this server.', 'error')
+        return redirect(url_for('admin_login_page'))
+    if not hmac.compare_digest(secret, expected):
+        flash('Incorrect password.', 'error')
+        return redirect(url_for('admin_login_page'))
+    session['admin_authed'] = True
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin/logout')
+def admin_logout():
+    session.pop('admin_authed', None)
+    return redirect(url_for('admin_login_page'))
+
+
+@app.route('/admin')
+def admin_panel():
+    redir = _require_admin()
+    if redir:
+        return redir
+    pending_res = (
+        db.supabase_admin.table('profiles')
+        .select('id, full_name, email, role, status, created_at')
+        .eq('status', 'pending_approval')
+        .order('created_at', desc=False)
+        .execute()
+    )
+    approved_res = (
+        db.supabase_admin.table('profiles')
+        .select('id, full_name, email, role, status, created_at, updated_at')
+        .eq('status', 'approved')
+        .order('created_at', desc=True)
+        .limit(20)
+        .execute()
+    )
+    return render_template(
+        'admin/panel.html',
+        pending=pending_res.data or [],
+        approved=approved_res.data or [],
+    )
+
+
+@app.route('/admin/approve/<user_id>', methods=['POST'])
+def admin_approve_user(user_id):
+    import email_utils
+    redir = _require_admin()
+    if redir:
+        return redir
+    profile_res = (
+        db.supabase_admin.table('profiles')
+        .select('id, email, full_name, status, role')
+        .eq('id', user_id)
+        .execute()
+    )
+    if not profile_res.data:
+        flash('User not found.', 'error')
+        return redirect(url_for('admin_panel'))
+    profile = profile_res.data[0]
+    if profile['status'] == 'approved':
+        flash(f'{profile["email"]} is already approved.', 'error')
+        return redirect(url_for('admin_panel'))
+    db.supabase_admin.table('profiles').update({'status': 'approved'}).eq('id', user_id).execute()
+    email_utils.send_account_approved_email(profile['email'], profile['full_name'], profile.get('role', 'patient'))
+    flash(f'Approved {profile["email"]}.', 'success')
+    return redirect(url_for('admin_panel'))
+
+
+@app.route('/admin/reject/<user_id>', methods=['POST'])
+def admin_reject_user(user_id):
+    redir = _require_admin()
+    if redir:
+        return redir
+    profile_res = (
+        db.supabase_admin.table('profiles')
+        .select('id, email, full_name, status')
+        .eq('id', user_id)
+        .execute()
+    )
+    if not profile_res.data:
+        flash('User not found.', 'error')
+        return redirect(url_for('admin_panel'))
+    profile = profile_res.data[0]
+    db.supabase_admin.table('profiles').update({'status': 'rejected'}).eq('id', user_id).execute()
+    flash(f'Rejected {profile["email"]}.', 'success')
+    return redirect(url_for('admin_panel'))
 
 
 @app.route('/logout')
@@ -2067,7 +2177,7 @@ def api_test_hypothesis():
             'error': f'Not enough matched data ({len(pairs)} check-ins have both {var_a} and {var_b}; need at least 5)'
         }), 400
 
-    result = db.compute_correlation_evidence(pairs, user_dir)
+    result = db.compute_correlation_evidence(pairs, user_dir, var_a, var_b)
     db.save_hypothesis_result(user['id'], var_a, var_b, user_dir, result)
     return jsonify(result), 200
 
@@ -2089,6 +2199,102 @@ def api_unexpected_pattern():
     days = min(int(request.args.get('days', 30)), 180)
     patterns = db.find_top_patterns(user['id'], days)
     return jsonify({'patterns': patterns}), 200
+
+
+# ── Data Export ──────────────────────────────────────────────────────────────
+
+@app.route('/api/export/checkins', methods=['GET'])
+def api_export_checkins():
+    """Download all check-ins as CSV."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+
+    checkins = db.get_checkins(user['id'], days=36500)  # all-time
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+
+    # Header row
+    writer.writerow([
+        'date', 'mood', 'stress', 'sleep_hours',
+        'stim_load', 'stability_score', 'crash_risk',
+        'energy', 'focus', 'irritability', 'motivation', 'perceived_stress',
+        'alcohol_units', 'exercise_minutes', 'sunlight_hours',
+        'screen_time_hours', 'social_quality', 'workload_friction',
+    ])
+
+    for c in reversed(checkins):  # chronological order
+        ext = c.get('extended_data') or {}
+        if isinstance(ext, str):
+            try:
+                ext = json.loads(ext)
+            except Exception:
+                ext = {}
+
+        def _ext(key):
+            v = ext.get(key)
+            return '' if v is None else v
+
+        writer.writerow([
+            c.get('checkin_date', ''),
+            c.get('mood_score', ''),
+            c.get('stress_score', ''),
+            c.get('sleep_hours', ''),
+            c.get('stim_load', ''),
+            c.get('stability_score', ''),
+            c.get('crash_risk', ''),
+            _ext('energy'),
+            _ext('focus'),
+            _ext('irritability'),
+            _ext('motivation'),
+            _ext('perceived_stress'),
+            _ext('alcohol_units'),
+            _ext('exercise_minutes'),
+            _ext('sunlight_hours'),
+            _ext('screen_time_hours'),
+            _ext('social_quality'),
+            _ext('workload_friction'),
+        ])
+
+    csv_bytes = out.getvalue().encode('utf-8')
+    filename = f"cognasync-checkins-{date.today().isoformat()}.csv"
+    return Response(
+        csv_bytes,
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
+
+
+@app.route('/api/export/journals', methods=['GET'])
+def api_export_journals():
+    """Download all journal entries as CSV."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+
+    journals = db.get_journals(user['id'], limit=10000)
+
+    out = io.StringIO()
+    writer = csv.writer(out)
+    writer.writerow(['date', 'title', 'content', 'shared_with_provider', 'ai_insight'])
+
+    for j in reversed(journals):  # chronological order
+        writer.writerow([
+            j.get('entry_date', ''),
+            j.get('title', ''),
+            j.get('content', '') or j.get('entry_text', ''),
+            'yes' if j.get('share_with_provider') else 'no',
+            j.get('ai_insight', '') or '',
+        ])
+
+    csv_bytes = out.getvalue().encode('utf-8')
+    filename = f"cognasync-journals-{date.today().isoformat()}.csv"
+    return Response(
+        csv_bytes,
+        mimetype='text/csv',
+        headers={'Content-Disposition': f'attachment; filename="{filename}"'},
+    )
 
 
 # ── AI Feedback ───────────────────────────────────────────────────────────────

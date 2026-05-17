@@ -1,0 +1,134 @@
+{% extends "layout.html" %}
+{% block title %}Admin Panel — CognaSync{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block full_page %}
+<div style="max-width:820px;margin:0 auto;padding:40px 20px;">
+
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:32px;">
+    <div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);margin-bottom:4px;">
+        CognaSync
+      </div>
+      <h1 style="font-size:20px;font-weight:700;margin:0;">Admin Panel</h1>
+    </div>
+    <a href="{{ url_for('admin_logout') }}"
+       style="font-size:12px;color:var(--text-muted);text-decoration:none;border:1px solid var(--border);
+              padding:5px 12px;border-radius:3px;">
+      Sign out
+    </a>
+  </div>
+
+  {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      {% for category, message in messages %}
+        <div style="padding:10px 14px;margin-bottom:16px;font-size:13px;
+                    {% if category == 'success' %}background:#f0faf0;border:1px solid #c3e0c3;color:#2a6b2a;
+                    {% else %}background:#fff0f0;border:1px solid #f0c0c0;color:#8b1a1a;{% endif %}">
+          {{ message }}
+        </div>
+      {% endfor %}
+    {% endif %}
+  {% endwith %}
+
+  <!-- Pending Approvals -->
+  <div style="border:1px solid var(--border);margin-bottom:24px;">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
+      <span style="font-size:13px;font-weight:600;">Pending Approval</span>
+      {% if pending %}
+        <span style="font-size:11px;background:#8b1a1a;color:#fff;padding:2px 8px;border-radius:10px;">
+          {{ pending|length }}
+        </span>
+      {% endif %}
+    </div>
+
+    {% if pending %}
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:var(--surface-alt);">
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Name</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Email</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Role</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Requested</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in pending %}
+          <tr style="border-top:1px solid var(--border-light);">
+            <td style="padding:10px 14px;font-size:13px;">{{ u.full_name }}</td>
+            <td style="padding:10px 14px;font-size:13px;">{{ u.email }}</td>
+            <td style="padding:10px 14px;font-size:13px;">
+              <span style="font-size:11px;border:1px solid var(--border);padding:2px 7px;text-transform:capitalize;">{{ u.role }}</span>
+            </td>
+            <td style="padding:10px 14px;font-size:12px;color:var(--text-muted);">
+              {{ u.created_at[:10] if u.created_at else '—' }}
+            </td>
+            <td style="padding:10px 14px;">
+              <div style="display:flex;gap:8px;">
+                <form method="POST" action="{{ url_for('admin_approve_user', user_id=u.id) }}" style="margin:0;">
+                  <button type="submit" class="btn btn-primary btn-sm">Approve</button>
+                </form>
+                <form method="POST" action="{{ url_for('admin_reject_user', user_id=u.id) }}"
+                      style="margin:0;"
+                      onsubmit="return confirm('Reject account for {{ u.email }}?')">
+                  <button type="submit" class="btn btn-ghost btn-sm"
+                          style="color:#8b1a1a;border-color:#8b1a1a;">
+                    Reject
+                  </button>
+                </form>
+              </div>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px;">
+        No pending approvals.
+      </div>
+    {% endif %}
+  </div>
+
+  <!-- Recently Approved -->
+  <div style="border:1px solid var(--border);">
+    <div style="padding:14px 18px;border-bottom:1px solid var(--border);">
+      <span style="font-size:13px;font-weight:600;">Recently Approved</span>
+      <span style="font-size:12px;color:var(--text-muted);margin-left:8px;">(last 20)</span>
+    </div>
+
+    {% if approved %}
+      <table style="width:100%;border-collapse:collapse;">
+        <thead>
+          <tr style="background:var(--surface-alt);">
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Name</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Email</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Role</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Approved</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for u in approved %}
+          <tr style="border-top:1px solid var(--border-light);">
+            <td style="padding:10px 14px;font-size:13px;">{{ u.full_name }}</td>
+            <td style="padding:10px 14px;font-size:13px;">{{ u.email }}</td>
+            <td style="padding:10px 14px;font-size:13px;">
+              <span style="font-size:11px;border:1px solid var(--border);padding:2px 7px;text-transform:capitalize;">{{ u.role }}</span>
+            </td>
+            <td style="padding:10px 14px;font-size:12px;color:var(--text-muted);">
+              {{ u.updated_at[:10] if u.get('updated_at') else u.created_at[:10] if u.created_at else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <div style="padding:32px;text-align:center;color:var(--text-muted);font-size:13px;">
+        No approved users yet.
+      </div>
+    {% endif %}
+  </div>
+
+</div>
+{% endblock %}

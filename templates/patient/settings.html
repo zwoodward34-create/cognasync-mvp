@@ -132,6 +132,21 @@
     <div id="reminder-msg" style="font-size:12px;margin-top:8px;display:none;"></div>
   </div>
 
+  <div class="settings-card">
+    <h2 class="settings-heading">Your Data</h2>
+    <p class="text-muted" style="margin-bottom:14px;font-size:13px;">
+      Download your complete history as CSV files you can open in any spreadsheet app.
+    </p>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;">
+      <a href="/api/export/checkins" class="btn btn-ghost btn-sm" download>
+        ↓ Check-in History
+      </a>
+      <a href="/api/export/journals" class="btn btn-ghost btn-sm" download>
+        ↓ Journal Entries
+      </a>
+    </div>
+  </div>
+
   <div class="settings-card settings-card--danger">
     <h2 class="settings-heading">Session</h2>
     <p class="text-muted">Signing out will end your current session on this device.</p>
