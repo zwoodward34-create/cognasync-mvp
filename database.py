@@ -3737,8 +3737,10 @@ def update_care_permissions(patient_id: str, member_id: str, permissions: dict) 
         merged.update({k: bool(v) for k, v in permissions.items() if k in _DEFAULT_PERMISSIONS})
         supabase_admin.table('care_team_members').update(
             {'data_permissions': merged}).eq('id', str(member_id)).execute()
+        print(f"[perms] SAVED member={member_id} permissions={merged}", flush=True)
         return {'ok': True}
     except Exception as e:
+        print(f"[perms] SAVE FAILED member={member_id} error={e}", flush=True)
         return {'ok': False, 'error': str(e)}
 
 

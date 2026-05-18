@@ -92,7 +92,12 @@ def _get_provider_perms(provider_id: str, patient_id: str) -> dict:
     model and get full access by default.
     """
     perms = db.get_care_team_permissions(patient_id, provider_id)
-    return perms if perms is not None else dict(_ALL_PERMS_TRUE)
+    if perms is None:
+        print(f"[perms] FALLBACK all-true: provider={provider_id} patient={patient_id} "
+              f"(no active care_team_members row)", flush=True)
+        return dict(_ALL_PERMS_TRUE)
+    print(f"[perms] OK: provider={provider_id} patient={patient_id} perms={perms}", flush=True)
+    return perms
 
 
 def _strip_checkin_fields(checkins: list, perms: dict) -> list:
@@ -1586,6 +1591,27 @@ def api_provider_patients():
         return err
     patients = db.get_provider_patients(user['id'])
     return jsonify({'provider_id': user['id'], 'patients': patients}), 200
+
+
+@app.route('/api/provider/patient/<patient_id>/perms-debug', methods=['GET'])
+def api_provider_perms_debug(patient_id):
+    """Diagnostic: show what permissions this provider has for a patient."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    raw = db.get_care_team_permissions(patient_id, user['id'])
+    perms = _get_provider_perms(user['id'], patient_id)
+    is_legacy = user['id'] in [
+        str(p['patient_id']) for p in db.get_provider_patients(user['id'])
+    ]
+    return jsonify({
+        'provider_id': user['id'],
+        'patient_id': patient_id,
+        'raw_db_permissions': raw,
+        'effective_permissions': perms,
+        'fallback_triggered': raw is None,
+        'is_legacy_patient': is_legacy,
+    }), 200
 
 
 @app.route('/api/provider/patient/<patient_id>/trends', methods=['GET'])
