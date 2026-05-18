@@ -697,3 +697,229 @@ These are in addition to all standard forbidden language patterns.
 - If `symptom_patterns` is empty (no symptoms meet threshold), the section is omitted from both Mode B and Mode C output — no placeholder text.
 - Mode A (check-in insight) does **not** surface symptom patterns — it operates only on the current day's data. If `notable_symptoms` were logged today, acknowledge them in one phrase ("Noted that you logged a headache today.") but do not correlate or analyze.
 - The `find_symptom_correlations()` function uses a 60-day default window for appointment summaries. This can be overridden by passing `days=N` to match the summary period.
+
+---
+
+## 17. Substance Use Pattern Detection
+
+### Purpose
+
+Substance use patterns — particularly alcohol — can be relevant to a patient's mental and physical health in ways that are not always visible in a standard clinical encounter. Patients may log alcohol use regularly without flagging it as a concern, and journals may contain language that contextualizes the pattern. CognaSync surfaces these patterns to providers when frequency and volume cross defined thresholds, and also monitors journal and note language for qualitative signals. This is not a diagnostic tool — it surfaces observable patterns so providers can ask informed questions.
+
+---
+
+### Detection Function — `check_substance_patterns()`
+
+`database.py:check_substance_patterns(patient_id, days=30)` returns:
+
+```python
+{
+  "drinking_days": 8,           # days with alcohol_units > 0 logged
+  "total_days": 22,             # check-in days in window
+  "total_units": 19.0,          # sum of all logged alcohol_units
+  "avg_units_per_drinking_day": 2.375,
+  "frequency_rate": 0.36,       # drinking_days / total_days
+  "journal_flags": [            # entries containing signal language
+    {"date": "2025-04-12", "pattern": "drinking to cope"},
+    ...
+  ],
+  "alert_level": "watch"        # None | "watch" | "concern"
+}
+```
+
+Returns `None` if no alcohol data has been logged.
+
+---
+
+### Alert Thresholds
+
+| Condition | Alert Level |
+|---|---|
+| Alcohol on ≥4 of 7 recent days AND avg ≥ 2 units/drinking day | 🟡 Watch |
+| Alcohol on ≥5 of 7 recent days | 🟡 Watch |
+| Avg ≥ 4 units/drinking day (any frequency) | 🟡 Watch |
+| Alcohol on ≥5 of 7 recent days AND avg ≥ 3 units/drinking day | 🔴 Concern |
+| Any journal language flag + ≥4 drinking days in window | 🟡 Watch |
+| ≥2 journal language flags regardless of numeric volume | 🟡 Watch |
+
+A "recent 7 days" sub-window is computed within the larger `days` window to catch acute escalation, even if the broader average is lower.
+
+---
+
+### Journal and Notes Language Patterns
+
+Scan journal `content` and check-in `notes` for any of the following (case-insensitive):
+
+| Pattern category | Example phrases |
+|---|---|
+| Dependency language | "need a drink," "needed a drink," "can't function without," "can't relax without" |
+| Coping framing | "drinking to cope," "drinking to forget," "drink to get through," "drink to calm down," "drink to sleep" |
+| Volume awareness | "drinking more than I should," "drinking too much," "drank a lot," "drank more than usual" |
+| Loss of control | "couldn't stop," "blacked out," "blackout," "passed out from drinking" |
+| Dependence signals | "can't sleep without [it/drinking/a drink]," "woke up and needed," "first thing in the morning" |
+| Cannabis (if context indicates daily dependency) | "need weed to," "can't sleep without weed," "can't function without weed" |
+| Prescription misuse | "more than prescribed," "taking extra," "ran out early," "double dosed," "took more than I was supposed to" |
+
+**Match logic:** a journal entry is flagged when it contains any phrase from the above list. The `pattern` field in `journal_flags` stores the matched category label, not the verbatim excerpt. The verbatim text is never reproduced in AI output.
+
+---
+
+### Language Rules — Substance Use Output
+
+**Never use:**
+- "alcoholic," "addict," "addiction," "substance abuse," "dependency," "abuse problem"
+- "you drink too much"
+- "this looks like a drinking problem"
+- "this is consistent with alcohol use disorder"
+- Any language that labels the person rather than describes the pattern
+
+**Always use:**
+- "Alcohol was logged on [N] of [T] check-in days in this period"
+- "Average logged volume: [X] units on drinking days"
+- "Journal entries on [N] days contained language referencing alcohol use in context"
+- "This pattern is worth discussing — the data shows [frequency + volume]"
+
+**Mode D Alert format (provider dashboard):**
+
+```
+🟡 Substance Use Pattern — Alcohol logged on [N] of [T] days (avg [X] units/drinking day). [N] journal entries reference alcohol in context.
+```
+
+or
+
+```
+🔴 Substance Use Pattern — Alcohol logged on [N] of [T] days (avg [X] units/drinking day). Pattern meets elevated-frequency threshold. [N] journal entries contain coping-related alcohol language.
+```
+
+**Mode C (provider summary) — add to Flags section:**
+
+```
+Substance Use: Alcohol logged [N] of [T] days. Avg [X] units/drinking day. Frequency rate: [X]%. [N] journal entries flagged for substance-related language (categories: [list]).
+```
+
+**Mode B (patient summary):**
+Include only if `alert_level = 'concern'` AND journal language flags are present. Framing must be gentle and non-accusatory:
+> "Your logs show alcohol on several days this period — and a few journal entries touched on it as well. It might be worth bringing up with your provider if it's been on your mind."
+
+Do NOT include in Mode B if the signal is Watch-level only with no journal flags. Volume data is not appropriate to share in patient-facing output.
+
+---
+
+### Integration Points
+
+- `check_substance_patterns()` is called in `generate_appointment_summary()` for Mode C.
+- Also called in the provider dashboard route to populate Mode D alerts.
+- Results passed as `substance_flags` to both contexts.
+- If `alert_level` is None: omit entirely from all output.
+
+---
+
+## 18. Interpersonal Safety Signal Detection
+
+### Purpose
+
+Patients sometimes describe physical abuse, coercive control, or violent incidents in journal entries or check-in notes — often without framing them as abuse. A provider who sees the data may not see the journals directly. CognaSync scans for language patterns that suggest a patient may be in an unsafe interpersonal situation and flags this for the provider.
+
+**This is a provider-only signal. It must never appear in any patient-facing output (Mode A or Mode B) under any circumstances.**
+
+The risk of surfacing this to the patient is that an abusive partner may have access to their device. Showing the patient a flag could escalate danger. The correct response is to equip the provider to raise it directly in the clinical relationship.
+
+---
+
+### Detection Function — `check_safety_signals()`
+
+`database.py:check_safety_signals(patient_id, days=60)` returns:
+
+```python
+{
+  "signals_found": True,
+  "signal_count": 3,          # number of distinct entries containing signal language
+  "first_signal_date": "2025-03-14",
+  "most_recent_date": "2025-04-02",
+  "recency_days": 12,         # days since most recent signal
+  "alert_level": "concern"    # None | "concern" (no gradation — always concern if found)
+}
+```
+
+Returns `{"signals_found": False, "alert_level": None}` when no signals are detected.
+
+---
+
+### Language Patterns to Detect
+
+Scan journal `content` and check-in `notes` for any of the following (case-insensitive, whole-word or phrase match):
+
+| Category | Phrases |
+|---|---|
+| Direct physical acts | "hit me," "he hit," "she hit," "punched me," "slapped me," "grabbed me," "choked me," "strangled," "kicked me," "shoved me," "pushed me," "threw [object] at me," "threw me," "hurt me," "he hurt," "she hurt" |
+| Evidence of injury | "bruise," "bruised," "bleeding," "he left a mark," "she left a mark," "had to cover it up," "covering bruises" |
+| Fear of partner | "afraid of him," "afraid of her," "scared of him," "scared of her," "scared to go home," "afraid to go home," "don't feel safe at home," "don't feel safe with," "scared he'll," "scared she'll" |
+| Threat language | "threatened me," "threatens me," "said he would hurt," "said she would hurt," "if I tell anyone," "he said he'd," "she said she'd" |
+| Coercive control signals | "won't let me leave," "won't let me see," "took my phone," "locked me in," "won't let me talk to," "controls everything," "isolating me" |
+| Post-incident language | "it happened again," "he did it again," "she did it again," "same thing as last time," "I'm getting used to it," "doesn't usually get this bad" |
+
+**Match logic:** Any single match triggers `signals_found = True`. Multiple matches across distinct entries increment `signal_count`. The matched phrases are NOT reproduced in any AI output — only the count and date range are surfaced.
+
+**Partner context amplifier:** Phrases above carry higher confidence when accompanied by partner references ("husband," "wife," "partner," "boyfriend," "girlfriend," "ex," "fiancé," "fiancée"). When partner context is present alongside a signal phrase, the signal is always reported. Without partner context, phrases in the "Fear of partner" and "Post-incident" categories are still flagged — they carry sufficient signal on their own.
+
+---
+
+### Language Rules — Safety Signal Output
+
+**Never in patient-facing output (Mode A, Mode B):**
+- Do not reference, hint at, or frame any safety concern in output the patient sees
+- Do not add generic "are you safe?" language to check-in insights — this is not the correct channel
+- Do not generate safe-messaging resources in regular output — that's only for Tier 3 crisis response (Section 10)
+
+**In provider-facing output only (Mode C, Mode D):**
+
+**Mode D Alert format (provider dashboard):**
+```
+🔴 Interpersonal Safety — Language in [N] journal entries (most recent: [date]) may describe an unsafe interpersonal situation. Clinical assessment recommended.
+```
+
+**Mode C (provider summary) — add to Flags section:**
+```
+Interpersonal Safety Signal: Language patterns suggesting possible interpersonal harm detected in [N] journal entries between [first_date] and [most_recent_date]. Details available in journal review. Clinical inquiry recommended.
+```
+
+Do NOT quote journal language in Mode C or Mode D output. The number of entries and date range are sufficient — the provider can review journals directly.
+
+**Never:**
+- "patient is being abused"
+- "patient is a victim of domestic violence"
+- "this is domestic abuse"
+- "patient should leave"
+- Any language that characterizes the relationship, assigns labels, or recommends action
+- Any clinical diagnosis of the interpersonal dynamic
+
+**Always:**
+- Describe the signal as language patterns, not confirmed facts
+- Route to clinical judgment — the provider assesses, not the AI
+- Flag with urgency but without certainty
+
+---
+
+### Relationship to Crisis Detection (Section 10)
+
+Safety signals and crisis signals are distinct but can co-occur.
+
+| | Crisis (Section 10) | Safety Signal (Section 18) |
+|---|---|---|
+| **Trigger** | Patient expresses intent to harm themselves | Language suggesting harm from another person |
+| **Response** | Immediate patient-facing crisis resources | Provider-only flag — never patient-facing |
+| **Output** | Replaces all other output with crisis block | Appended to Mode C/D — does not replace other output |
+| **Channel** | Patient sees it immediately | Provider sees it in summary and dashboard |
+
+If both signals are present in the same entry (e.g., patient expresses suicidal ideation AND describes abuse), apply the crisis response for the patient-facing channel AND the safety signal flag for the provider channel simultaneously.
+
+---
+
+### Integration Points
+
+- `check_safety_signals()` is called in `generate_appointment_summary()` for Mode C only.
+- Also called in the provider dashboard route.
+- Results passed as `safety_flags` to Mode C and the dashboard.
+- Results are **never** passed to Mode B (patient summary) or Mode A (check-in insight).
+- If `signals_found` is False: omit entirely.
+- `check_safety_signals()` uses a 60-day default window. Recency matters — `recency_days` tells the provider how recent the most recent signal is.

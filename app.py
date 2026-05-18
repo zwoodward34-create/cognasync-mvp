@@ -514,6 +514,19 @@ def provider_dashboard():
     if redir:
         return redir
     patients = db.get_provider_patients_with_stats(user['id'])
+
+    # Attach Mode D flags (substance + safety) to each patient record
+    for p in patients:
+        pid = p.get('id') or p.get('user_id') or p.get('patient_id', '')
+        if pid:
+            try:
+                flags = db.get_patient_flags(pid, days=30)
+                p['flags'] = flags
+            except Exception:
+                p['flags'] = {'substance': None, 'safety': None}
+        else:
+            p['flags'] = {'substance': None, 'safety': None}
+
     return render_template('provider/dashboard.html', user=user, patients=patients,
                            today_str=date.today().isoformat())
 
@@ -1390,11 +1403,15 @@ def api_create_summary():
         return jsonify({'error': 'No data found for the requested period'}), 400
 
     symptom_patterns = db.find_symptom_correlations(user['id'], days=days)
+    # Substance flags surfaced to patient only at concern level (see claude_api.py)
+    flags = db.get_patient_flags(user['id'], days=days)
 
     try:
         result = claude_api.generate_appointment_summary(
             checkins, journals, days=days, audience='patient',
-            symptom_patterns=symptom_patterns)
+            symptom_patterns=symptom_patterns,
+            substance_flags=flags.get('substance'),
+            safety_flags=None)  # safety flags are provider-only — never passed to patient route
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
 
@@ -1966,6 +1983,7 @@ def api_provider_generate_summary(patient_id):
 
     summary_days = days or (date.fromisoformat(period_end) - date.fromisoformat(period_start)).days
     symptom_patterns = db.find_symptom_correlations(patient_id, days=summary_days)
+    flags = db.get_patient_flags(patient_id, days=summary_days)
 
     try:
         result = claude_api.generate_appointment_summary(
@@ -1976,6 +1994,8 @@ def api_provider_generate_summary(patient_id):
             appointment_date=appointment_date,
             audience='provider',
             symptom_patterns=symptom_patterns,
+            substance_flags=flags.get('substance'),
+            safety_flags=flags.get('safety'),
         )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503

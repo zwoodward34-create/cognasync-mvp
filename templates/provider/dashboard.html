@@ -596,6 +596,20 @@
             {% if p.flag_count and p.flag_count > 0 %}
             <span class="pd-flag-indicator" title="{{ p.flag_count }} care flag{{ 's' if p.flag_count != 1 }} from team">{{ p.flag_count }}🚩</span>
             {% endif %}
+            {# Substance use pattern flag (Mode D) #}
+            {% if p.flags and p.flags.substance and p.flags.substance.alert_level %}
+            <span class="pd-urgency-badge {{ 'pd-urgency-0' if p.flags.substance.alert_level == 'concern' else 'pd-urgency-2' }}"
+                  title="Substance pattern: alcohol logged {{ p.flags.substance.drinking_days }} of {{ p.flags.substance.total_days }} days&#10;Avg {{ p.flags.substance.avg_units_per_drinking_day }} units/drinking day&#10;{{ p.flags.substance.journal_flags | length }} journal language flag(s)">
+              {{ '🔴' if p.flags.substance.alert_level == 'concern' else '🟡' }} Substance
+            </span>
+            {% endif %}
+            {# Interpersonal safety signal flag (Mode D) — provider-only, never patient-facing #}
+            {% if p.flags and p.flags.safety and p.flags.safety.signals_found %}
+            <span class="pd-urgency-badge pd-urgency-0"
+                  title="Safety signal: {{ p.flags.safety.signal_count }} entr{{ 'y' if p.flags.safety.signal_count == 1 else 'ies' }} with concerning language&#10;Most recent: {{ p.flags.safety.most_recent_date }}&#10;Clinical assessment recommended">
+              🔴 Safety
+            </span>
+            {% endif %}
           </div>
           <div class="pd-card-email">{{ p.email }}</div>
         </div>
@@ -699,6 +713,7 @@
                 data-provider-role="{{ p.provider_role or 'psychiatrist' }}"
                 data-last-appt-status="{{ p.last_appointment_status or '' }}"
                 data-last-appt-id="{{ p.last_appointment_id or '' }}"
+                data-mode-d-flags="{{ (p.flags or {}) | tojson | e }}"
                 onclick="event.preventDefault(); event.stopPropagation(); openBrief(this)">
           Brief
         </button>
@@ -794,6 +809,61 @@ function renderBriefBody(d, patientId) {
 
   if (d.crisis_active) {
     html += `<div class="pd-brief-crisis-bar">⚠ Active crisis flag — review before appointment</div>`;
+  }
+
+  // ── Mode D: AI-detected substance and safety signals ─────────────────────
+  const mdf = _modeDFlags[patientId] || {};
+  const substanceFlag = mdf.substance || null;
+  const safetyFlag    = mdf.safety    || null;
+
+  if ((substanceFlag && substanceFlag.alert_level) || (safetyFlag && safetyFlag.signals_found)) {
+    html += `<div style="margin-bottom:16px;">`;
+
+    if (safetyFlag && safetyFlag.signals_found) {
+      const sigCount  = safetyFlag.signal_count || 0;
+      const lastSeen  = safetyFlag.most_recent_date || '—';
+      const recency   = safetyFlag.recency_days != null ? safetyFlag.recency_days + 'd ago' : '';
+      html += `<div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:8px;">
+        <div style="font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:#c0392b;margin-bottom:6px;">
+          🔴 Interpersonal Safety Signal
+        </div>
+        <div style="font-size:0.82rem;color:#721c24;line-height:1.5;">
+          Language patterns suggesting possible interpersonal harm detected in
+          <strong>${sigCount}</strong> journal/note entr${sigCount === 1 ? 'y' : 'ies'}.
+          Most recent: <strong>${lastSeen}</strong>${recency ? ' (' + recency + ')' : ''}.
+        </div>
+        <div style="font-size:0.75rem;color:#a52834;margin-top:5px;font-style:italic;">
+          Clinical safety assessment recommended. This signal is not shown to the patient.
+        </div>
+      </div>`;
+    }
+
+    if (substanceFlag && substanceFlag.alert_level) {
+      const isRed   = substanceFlag.alert_level === 'concern';
+      const bg      = isRed ? '#fdecea' : '#fff8e1';
+      const border  = isRed ? '#f5c6cb' : '#ffe082';
+      const txtClr  = isRed ? '#721c24' : '#5d4037';
+      const lblClr  = isRed ? '#c0392b' : '#e65100';
+      const icon    = isRed ? '🔴' : '🟡';
+      const label   = isRed ? 'Substance Use — Concern' : 'Substance Use — Watch';
+      const ddays   = substanceFlag.drinking_days   || 0;
+      const tdays   = substanceFlag.total_days      || '?';
+      const avgU    = substanceFlag.avg_units_per_drinking_day != null
+                        ? substanceFlag.avg_units_per_drinking_day.toFixed(1) : '—';
+      const jFlags  = (substanceFlag.journal_flags || []).length;
+      html += `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 16px;">
+        <div style="font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:${lblClr};margin-bottom:6px;">
+          ${icon} ${label}
+        </div>
+        <div style="font-size:0.82rem;color:${txtClr};line-height:1.5;">
+          Alcohol logged on <strong>${ddays}</strong> of ${tdays} tracked days
+          (avg <strong>${avgU} units</strong>/drinking day).
+          ${jFlags > 0 ? `<strong>${jFlags}</strong> journal entr${jFlags === 1 ? 'y' : 'ies'} flagged language patterns.` : ''}
+        </div>
+      </div>`;
+    }
+
+    html += `</div>`;
   }
 
   if (d.checkin_count === 0) {
@@ -1143,6 +1213,9 @@ async function submitCareFlag(patientId) {
 // Stores appointment meta per patient so renderBriefBody can build CTAs
 const _apptMeta = {};
 
+// Stores Mode D (AI-detected) substance/safety flags per patient
+const _modeDFlags = {};
+
 async function openBrief(btn) {
   const pid  = btn.dataset.patientId;
   const name = btn.dataset.patientName;
@@ -1153,6 +1226,13 @@ async function openBrief(btn) {
     status: btn.dataset.lastApptStatus || '',
     id:     btn.dataset.lastApptId     || '',
   };
+
+  // Capture Mode D AI-detected flags embedded at render time
+  try {
+    _modeDFlags[pid] = btn.dataset.modeDFlags ? JSON.parse(btn.dataset.modeDFlags) : {};
+  } catch (_) {
+    _modeDFlags[pid] = {};
+  }
 
   // If same patient is open, close
   if (_activePid === pid && drawer.classList.contains('open')) {

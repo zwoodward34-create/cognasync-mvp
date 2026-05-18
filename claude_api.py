@@ -222,7 +222,9 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                                   period_start=None, period_end=None,
                                   appointment_date=None,
                                   audience='patient',
-                                  symptom_patterns=None):
+                                  symptom_patterns=None,
+                                  substance_flags=None,
+                                  safety_flags=None):
     """Synthesize check-in and journal data into a pre-appointment summary.
 
     audience='patient'  → humanized, conversational (Mode B)
@@ -494,6 +496,79 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         if adv_stats else ""
     )
 
+    # ── Substance use flags section (provider-only) ───────────────────────
+    substance_section = ''
+    substance_patient_note = ''
+    if substance_flags and substance_flags.get('alert_level'):
+        sf = substance_flags
+        level  = sf['alert_level'].upper()
+        dd     = sf.get('drinking_days', 0)
+        td     = sf.get('total_days', 0)
+        avg    = sf.get('avg_units_per_drinking_day', 0)
+        jflags = sf.get('journal_flags') or []
+        pat_labels = list({f['pattern'] for f in jflags})
+
+        if audience == 'provider':
+            substance_section = (
+                f"\n\nSUBSTANCE USE FLAGS [{level}]:\n"
+                f"- Alcohol logged on {dd} of {td} check-in days\n"
+                f"- Avg {avg} units/drinking day\n"
+                f"- Journal/notes entries with substance-related language: {len(jflags)}"
+                + (f" (categories: {', '.join(pat_labels)})" if pat_labels else "") + "\n"
+            )
+        elif audience == 'patient' and sf['alert_level'] == 'concern' and len(jflags) >= 1:
+            # Only surface gently to patient at concern level with journal language present
+            substance_patient_note = (
+                "\n\nSUBSTANCE NOTE (patient-facing — gentle framing only): "
+                "Alcohol was logged on several days this period, and journal entries referenced it as well. "
+                "Suggest framing as: 'Your logs show alcohol came up on a few days, and it appeared in some journal entries too — "
+                "might be worth mentioning to your provider if it's been on your mind.'\n"
+            )
+
+    # ── Safety signal section (provider-only — NEVER patient-facing) ──────
+    safety_section = ''
+    if audience == 'provider' and safety_flags and safety_flags.get('signals_found'):
+        sig = safety_flags
+        safety_section = (
+            f"\n\nINTERPERSONAL SAFETY SIGNALS [CONCERN]:\n"
+            f"- Language patterns suggesting possible interpersonal harm detected in {sig['signal_count']} "
+            f"journal/note entries\n"
+            f"- Date range: {sig['first_signal_date']} to {sig['most_recent_date']} "
+            f"({sig['recency_days']} days since most recent)\n"
+            f"- Clinical inquiry recommended. Do NOT reproduce journal language in output.\n"
+        )
+
+    # Inject provider-only flag instructions into Mode C system prompt
+    if audience == 'provider':
+        flag_instructions = ''
+        if substance_section:
+            flag_instructions += (
+                "\nFor SUBSTANCE USE FLAGS: include in the **Flags** section. "
+                "Format: 'Substance Use: Alcohol logged [N] of [T] days. Avg [X] units/drinking day. "
+                "[N] entries flagged for substance-related language (categories: [list]).' "
+                "NEVER use 'alcoholic,' 'addict,' or 'substance abuse.' "
+                "Describe the frequency and volume pattern only.\n"
+            )
+        if safety_section:
+            flag_instructions += (
+                "\nFor INTERPERSONAL SAFETY SIGNALS: include in the **Flags** section as the FIRST flag. "
+                "Format: 'Interpersonal Safety Signal: Language patterns suggesting possible interpersonal harm detected in "
+                "[N] journal entries between [first_date] and [most_recent_date]. Clinical inquiry recommended.' "
+                "NEVER quote journal language. NEVER say 'patient is being abused' or assign any label. "
+                "Describe the signal count and recency only.\n"
+            )
+        if flag_instructions:
+            # Append to existing system prompt
+            summary_system += flag_instructions
+
+    elif audience == 'patient' and substance_patient_note:
+        summary_system += (
+            "\nSUBSTANCE USE NOTE: If the SUBSTANCE NOTE block is present in the data, "
+            "include a single gentle sentence in the 'Things worth bringing to your appointment' section — "
+            "framed as the patient's choice to raise, not a concern you're flagging. "
+            "Do not use clinical or judgmental language.\n"
+        )
+
     user_content = (
         f"REVIEW PERIOD: {period_label}\n\n"
         f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}"
@@ -501,6 +576,8 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         f"DAILY CHECK-INS ({n} total):\n{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
         f"JOURNAL ENTRIES ({len(journal_rows)} total):\n{json.dumps(journal_rows, indent=2, default=str)}"
         f"{symptom_section}"
+        f"{substance_section if audience == 'provider' else substance_patient_note}"
+        f"{safety_section}"
     )
 
     raw = _call_claude(summary_system, user_content, max_tokens=1000)
