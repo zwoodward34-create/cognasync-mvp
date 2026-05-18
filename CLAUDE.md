@@ -704,7 +704,24 @@ These are in addition to all standard forbidden language patterns.
 
 ### Purpose
 
-Substance use patterns — particularly alcohol — can be relevant to a patient's mental and physical health in ways that are not always visible in a standard clinical encounter. Patients may log alcohol use regularly without flagging it as a concern, and journals may contain language that contextualizes the pattern. CognaSync surfaces these patterns to providers when frequency and volume cross defined thresholds, and also monitors journal and note language for qualitative signals. This is not a diagnostic tool — it surfaces observable patterns so providers can ask informed questions.
+Substance use patterns can be relevant to a patient's mental and physical health in ways that are not always visible in a standard clinical encounter. Patients may log substance use regularly without flagging it as a concern, and journals may contain language that contextualizes the pattern. CognaSync tracks four substance categories — alcohol, cannabis, nicotine, and other — surfacing frequency patterns to providers when thresholds are crossed and scanning journal and note language for qualitative signals. This is not a diagnostic tool — it surfaces observable patterns so providers can ask informed questions.
+
+---
+
+### Data Fields
+
+Substance use is stored as flat fields in `extended_data` on the `checkins` table:
+
+| Field | Type | Description |
+|---|---|---|
+| `alcohol_units` | integer | Standard drink units logged for the day |
+| `cannabis_sessions` | integer | Cannabis use sessions logged for the day |
+| `nicotine_count` | integer | Cigarettes or nicotine use events logged for the day |
+| `other_substance_uses` | integer | Unnamed substance use events logged for the day |
+
+All four fields default to 0 when not logged. `check_substance_patterns()` returns `None` only when all four fields are 0 across every check-in in the window — distinguishing "no substance data at all" from "substances tracked at zero."
+
+**Stim Load note:** Cannabis is explicitly excluded from the Stim Load calculation. Stim Load remains: `MIN(caffeine_tier + stimulant_meds + booster_used, 10)`. Cannabis affects patients differently and is tracked separately for pattern detection only.
 
 ---
 
@@ -714,41 +731,95 @@ Substance use patterns — particularly alcohol — can be relevant to a patient
 
 ```python
 {
-  "drinking_days": 8,           # days with alcohol_units > 0 logged
   "total_days": 22,             # check-in days in window
-  "total_units": 19.0,          # sum of all logged alcohol_units
-  "avg_units_per_drinking_day": 2.375,
-  "frequency_rate": 0.36,       # drinking_days / total_days
-  "journal_flags": [            # entries containing signal language
+  "journal_flags": [            # entries containing any signal language
     {"date": "2025-04-12", "pattern": "drinking to cope"},
     ...
   ],
-  "alert_level": "watch"        # None | "watch" | "concern"
+  "alert_level": "watch",       # None | "watch" | "concern" — highest across all substances
+  "alcohol": {
+    "use_days": 8,
+    "total_units": 19.0,
+    "avg_per_use_day": 2.375,
+    "frequency_rate": 0.36,
+    "alert_level": "watch"      # None | "watch" | "concern"
+  },
+  "cannabis": {
+    "use_days": 5,
+    "total_sessions": 12,
+    "avg_sessions_per_use_day": 2.4,
+    "frequency_rate": 0.23,
+    "alert_level": "watch"      # None | "watch" | "concern"
+  },
+  "nicotine": {
+    "use_days": 14,
+    "total_count": 98,
+    "avg_per_use_day": 7.0,
+    "frequency_rate": 0.64,
+    "alert_level": "watch"      # None | "watch" | "concern"
+  },
+  "other": {
+    "use_days": 2,
+    "total_count": 3,
+    "frequency_rate": 0.09,
+    "alert_level": None
+  }
 }
 ```
 
-Returns `None` if no alcohol data has been logged.
+Returns `None` if no substance data has been logged across any field.
 
 ---
 
 ### Alert Thresholds
 
+#### Alcohol
+
 | Condition | Alert Level |
 |---|---|
-| Alcohol on ≥4 of 7 recent days AND avg ≥ 2 units/drinking day | 🟡 Watch |
+| Alcohol on ≥4 of 7 recent days AND avg ≥ 2 units/use day | 🟡 Watch |
 | Alcohol on ≥5 of 7 recent days | 🟡 Watch |
-| Avg ≥ 4 units/drinking day (any frequency) | 🟡 Watch |
-| Alcohol on ≥5 of 7 recent days AND avg ≥ 3 units/drinking day | 🔴 Concern |
+| Avg ≥ 4 units/use day (any frequency) | 🟡 Watch |
+| Alcohol on ≥5 of 7 recent days AND avg ≥ 3 units/use day | 🔴 Concern |
 | Any journal language flag + ≥4 drinking days in window | 🟡 Watch |
 | ≥2 journal language flags regardless of numeric volume | 🟡 Watch |
 
-A "recent 7 days" sub-window is computed within the larger `days` window to catch acute escalation, even if the broader average is lower.
+#### Cannabis
+
+| Condition | Alert Level |
+|---|---|
+| Cannabis on ≥4 of 7 recent days | 🟡 Watch |
+| Cannabis on ≥6 of 7 recent days AND avg ≥ 2 sessions/use day | 🔴 Concern |
+| Any cannabis journal language flag + ≥4 use days in window | 🟡 Watch |
+
+#### Nicotine
+
+| Condition | Alert Level |
+|---|---|
+| Nicotine on ≥5 of 7 recent days | 🟡 Watch |
+| Nicotine on ≥7 of 7 recent days (daily use, every logged day) | 🔴 Concern |
+
+Nicotine alerts are informational — daily use is common and expected in smokers. The value is surfacing it as a data point for the provider, not as an escalating concern.
+
+#### Other
+
+| Condition | Alert Level |
+|---|---|
+| Other substance use on ≥3 days in the 30-day window | 🟡 Watch |
+
+"Other" uses are unspecified — the provider should inquire directly. No Concern-level threshold is defined; Watch is sufficient to prompt clinical follow-up.
+
+A "recent 7 days" sub-window is computed within the larger `days` window for alcohol and cannabis to catch acute escalation even if the broader average is lower.
+
+The top-level `alert_level` in the return dict is the highest alert level found across any substance — used to set the Mode D badge color.
 
 ---
 
 ### Journal and Notes Language Patterns
 
 Scan journal `content` and check-in `notes` for any of the following (case-insensitive):
+
+#### Alcohol patterns
 
 | Pattern category | Example phrases |
 |---|---|
@@ -757,8 +828,28 @@ Scan journal `content` and check-in `notes` for any of the following (case-insen
 | Volume awareness | "drinking more than I should," "drinking too much," "drank a lot," "drank more than usual" |
 | Loss of control | "couldn't stop," "blacked out," "blackout," "passed out from drinking" |
 | Dependence signals | "can't sleep without [it/drinking/a drink]," "woke up and needed," "first thing in the morning" |
-| Cannabis (if context indicates daily dependency) | "need weed to," "can't sleep without weed," "can't function without weed" |
+
+#### Cannabis patterns
+
+| Pattern category | Example phrases |
+|---|---|
+| Dependency language | "need weed to," "can't sleep without weed," "can't function without weed," "need to smoke to," "have to smoke before" |
+| Coping framing | "smoking to cope," "smoke to calm down," "smoke to get through," "smoke to forget" |
+| Escalation signals | "smoking more than usual," "smoking more than I should," "too much weed," "smoking all day" |
+
+#### Nicotine patterns
+
+| Pattern category | Example phrases |
+|---|---|
+| Stress-linked use | "smoke when stressed," "need a cigarette when," "smoking more because of stress," "chain smoking" |
+| Escalation signals | "smoking more than usual," "can't go without," "need to smoke," "going through a pack a day" |
+
+#### Cross-substance patterns
+
+| Pattern category | Example phrases |
+|---|---|
 | Prescription misuse | "more than prescribed," "taking extra," "ran out early," "double dosed," "took more than I was supposed to" |
+| General coping | "using to cope," "need something to take the edge off," "can't get through the day without" |
 
 **Match logic:** a journal entry is flagged when it contains any phrase from the above list. The `pattern` field in `journal_flags` stores the matched category label, not the verbatim excerpt. The verbatim text is never reproduced in AI output.
 
@@ -768,40 +859,53 @@ Scan journal `content` and check-in `notes` for any of the following (case-insen
 
 **Never use:**
 - "alcoholic," "addict," "addiction," "substance abuse," "dependency," "abuse problem"
-- "you drink too much"
-- "this looks like a drinking problem"
-- "this is consistent with alcohol use disorder"
+- "you drink too much," "you smoke too much," "you use too much"
+- "this looks like a [substance] problem"
+- "this is consistent with [substance] use disorder"
 - Any language that labels the person rather than describes the pattern
 
-**Always use:**
+**Always use (per substance):**
 - "Alcohol was logged on [N] of [T] check-in days in this period"
-- "Average logged volume: [X] units on drinking days"
-- "Journal entries on [N] days contained language referencing alcohol use in context"
-- "This pattern is worth discussing — the data shows [frequency + volume]"
+- "Cannabis was logged on [N] of [T] check-in days"
+- "Nicotine was logged on [N] of [T] check-in days"
+- "Other substance use was logged on [N] of [T] check-in days"
+- "Journal entries on [N] days contained language referencing [substance] use in context"
 
 **Mode D Alert format (provider dashboard):**
 
+Single-substance (most common case):
 ```
-🟡 Substance Use Pattern — Alcohol logged on [N] of [T] days (avg [X] units/drinking day). [N] journal entries reference alcohol in context.
+🟡 Substance Use Pattern — Alcohol logged on [N] of [T] days (avg [X] units/use day). [N] journal entries reference alcohol in context.
 ```
 
-or
-
+Multi-substance (when ≥2 substances trigger alerts):
 ```
-🔴 Substance Use Pattern — Alcohol logged on [N] of [T] days (avg [X] units/drinking day). Pattern meets elevated-frequency threshold. [N] journal entries contain coping-related alcohol language.
+🟡 Substance Use Pattern — Multiple substances flagged: Alcohol [N] of [T] days; Cannabis [N] of [T] days. See summary for detail.
+```
+
+Concern level:
+```
+🔴 Substance Use Pattern — [Substance] logged on [N] of [T] days. Pattern meets elevated-frequency threshold. [N] journal entries contain coping-related language.
 ```
 
 **Mode C (provider summary) — add to Flags section:**
 
 ```
-Substance Use: Alcohol logged [N] of [T] days. Avg [X] units/drinking day. Frequency rate: [X]%. [N] journal entries flagged for substance-related language (categories: [list]).
+Substance Use:
+  Alcohol: [N] of [T] days. Avg [X] units/use day. Frequency [X]%.
+  Cannabis: [N] of [T] days. Avg [X] sessions/use day. Frequency [X]%.
+  Nicotine: [N] of [T] days. Frequency [X]%.
+  Other: [N] of [T] days.
+  [N] journal entries flagged for substance-related language (categories: [list]).
 ```
 
-**Mode B (patient summary):**
-Include only if `alert_level = 'concern'` AND journal language flags are present. Framing must be gentle and non-accusatory:
-> "Your logs show alcohol on several days this period — and a few journal entries touched on it as well. It might be worth bringing up with your provider if it's been on your mind."
+Omit any substance row where `use_days = 0`.
 
-Do NOT include in Mode B if the signal is Watch-level only with no journal flags. Volume data is not appropriate to share in patient-facing output.
+**Mode B (patient summary):**
+Include only if the top-level `alert_level = 'concern'` AND journal language flags are present. Framing must be gentle and non-accusatory:
+> "Your logs show [substance] use on several days this period — and a few journal entries touched on it as well. It might be worth bringing up with your provider if it's been on your mind."
+
+Do NOT include in Mode B if the signal is Watch-level only with no journal flags.
 
 ---
 
@@ -810,7 +914,7 @@ Do NOT include in Mode B if the signal is Watch-level only with no journal flags
 - `check_substance_patterns()` is called in `generate_appointment_summary()` for Mode C.
 - Also called in the provider dashboard route to populate Mode D alerts.
 - Results passed as `substance_flags` to both contexts.
-- If `alert_level` is None: omit entirely from all output.
+- If the return value is `None` or top-level `alert_level` is None: omit entirely from all output.
 
 ---
 

@@ -2392,20 +2392,37 @@ def find_symptom_correlations(patient_id, days=60):
 # ═══════════════════════════════════════════════════════════════════════════
 
 # Substance use journal/notes language patterns (CLAUDE.md §17)
+# Keys are category labels stored in journal_flags; verbatim text is never reproduced in output.
 _SUBSTANCE_PATTERNS = {
-    'dependency':    ['need a drink', 'needed a drink', "can't function without", "can't relax without",
-                      "can't sleep without", 'wake up and need', 'first thing in the morning'],
-    'coping':        ['drinking to cope', 'drinking to forget', 'drink to get through',
-                      'drink to calm', 'drink to sleep', 'drink to relax', 'drink to unwind'],
-    'volume_aware':  ['drinking more than i should', 'drinking too much', 'drank a lot',
-                      'drank more than usual', 'too much last night'],
-    'loss_control':  ["couldn't stop", 'blacked out', 'blackout', 'passed out from drinking',
-                      'can\'t stop drinking'],
-    'cannabis_dep':  ['need weed to', "can't sleep without weed", "can't function without weed",
-                      'need cannabis to', "can't get through without weed"],
-    'rx_misuse':     ['more than prescribed', 'taking extra', 'ran out early', 'double dosed',
-                      'took more than i was supposed to', 'took more than prescribed',
-                      'extra dose', 'taking more than i should'],
+    # Alcohol
+    'alcohol_dependency':   ['need a drink', 'needed a drink', "can't function without",
+                             "can't relax without", "can't sleep without a drink",
+                             'wake up and need', 'first thing in the morning'],
+    'alcohol_coping':       ['drinking to cope', 'drinking to forget', 'drink to get through',
+                             'drink to calm', 'drink to sleep', 'drink to relax', 'drink to unwind'],
+    'alcohol_volume':       ['drinking more than i should', 'drinking too much', 'drank a lot',
+                             'drank more than usual', 'too much last night'],
+    'alcohol_loss_control': ["couldn't stop drinking", 'blacked out', 'blackout',
+                             'passed out from drinking', "can't stop drinking"],
+    # Cannabis
+    'cannabis_dependency':  ['need weed to', "can't sleep without weed", "can't function without weed",
+                             'need cannabis to', "can't get through without weed",
+                             'need to smoke to', 'have to smoke before'],
+    'cannabis_coping':      ['smoking to cope', 'smoke to calm down', 'smoke to get through',
+                             'smoke to forget', 'smoke to relax', 'smoke to unwind'],
+    'cannabis_escalation':  ['smoking more than usual', 'smoking more than i should', 'too much weed',
+                             'smoking all day', 'way too much weed'],
+    # Nicotine
+    'nicotine_stress':      ['smoke when stressed', 'need a cigarette when',
+                             'smoking more because of stress', 'chain smoking', 'chain smoked'],
+    'nicotine_escalation':  ['smoking more than usual', "can't go without a cigarette",
+                             'need to smoke', 'going through a pack a day', 'pack a day'],
+    # Cross-substance / prescription misuse
+    'rx_misuse':            ['more than prescribed', 'taking extra', 'ran out early', 'double dosed',
+                             'took more than i was supposed to', 'took more than prescribed',
+                             'extra dose', 'taking more than i should'],
+    'general_coping':       ['using to cope', 'need something to take the edge off',
+                             "can't get through the day without"],
 }
 
 # Interpersonal safety signal patterns (CLAUDE.md §18)
@@ -2448,28 +2465,84 @@ def _has_partner_context(text):
     return any(word in lower for word in _PARTNER_WORDS)
 
 
-def check_substance_patterns(patient_id, days=30):
-    """Detect recurring alcohol/substance use patterns from check-in data and journal language.
+def _substance_alert_level_alcohol(use_days_recent, avg_per_use_day, use_days_total,
+                                    journal_flags_count):
+    """Compute alert level for alcohol using CLAUDE.md §17 thresholds."""
+    if (use_days_recent >= 5 and avg_per_use_day >= 3.0) or \
+       (use_days_recent >= 5 and journal_flags_count >= 1):
+        return 'concern'
+    if (use_days_recent >= 4 and avg_per_use_day >= 2.0) or \
+       (use_days_recent >= 5) or \
+       (avg_per_use_day >= 4.0) or \
+       (journal_flags_count >= 2) or \
+       (journal_flags_count >= 1 and use_days_total >= 4):
+        return 'watch'
+    return None
 
-    Returns dict with drinking_days, total_days, total_units, avg_units_per_drinking_day,
-    frequency_rate, journal_flags [{date, pattern}], alert_level (None|'watch'|'concern').
-    Returns None if no alcohol data has ever been logged for this patient in the window.
+
+def _substance_alert_level_cannabis(use_days_recent, avg_per_use_day, journal_flags_count):
+    """Compute alert level for cannabis using CLAUDE.md §17 thresholds."""
+    if use_days_recent >= 6 and avg_per_use_day >= 2.0:
+        return 'concern'
+    if (use_days_recent >= 4) or \
+       (journal_flags_count >= 1 and use_days_recent >= 4):
+        return 'watch'
+    return None
+
+
+def _substance_alert_level_nicotine(use_days_recent):
+    """Compute alert level for nicotine using CLAUDE.md §17 thresholds."""
+    if use_days_recent >= 7:
+        return 'concern'
+    if use_days_recent >= 5:
+        return 'watch'
+    return None
+
+
+def _substance_alert_level_other(use_days_total):
+    """Compute alert level for other substances using CLAUDE.md §17 thresholds."""
+    if use_days_total >= 3:
+        return 'watch'
+    return None
+
+
+def _highest_alert(levels):
+    """Return the highest alert level from a list of None|'watch'|'concern' values."""
+    if 'concern' in levels:
+        return 'concern'
+    if 'watch' in levels:
+        return 'watch'
+    return None
+
+
+def check_substance_patterns(patient_id, days=30):
+    """Detect recurring substance use patterns from check-in data and journal language.
+
+    Tracks four substances: alcohol, cannabis, nicotine, other (CLAUDE.md §17).
+    Returns None only if no substance data has been logged for any field in the window.
+
+    Return structure:
+      {
+        total_days, journal_flags, alert_level,   # top-level (highest across substances)
+        alcohol: {use_days, total_units, avg_per_use_day, frequency_rate, alert_level},
+        cannabis: {use_days, total_sessions, avg_sessions_per_use_day, frequency_rate, alert_level},
+        nicotine: {use_days, total_count, avg_per_use_day, frequency_rate, alert_level},
+        other:    {use_days, total_count, frequency_rate, alert_level},
+      }
     """
     try:
         checkins = get_checkins(patient_id, days)
         if not checkins:
             return None
 
-        # ── Numeric alcohol analysis ──────────────────────────────────────
-        drinking_days = 0
-        total_units   = 0.0
-        total_days    = len(checkins)
-        units_per_drinking_day = []
+        total_days = len(checkins)
+        cutoff_7   = (date.today() - timedelta(days=7)).isoformat()
 
-        # Also compute a 7-day sub-window for acute escalation check
-        cutoff_7 = (date.today() - timedelta(days=7)).isoformat()
-        recent_drinking_days = 0
-        recent_total_days = 0
+        # ── Per-substance accumulators ────────────────────────────────────
+        alc_use_days = alc_total = alc_recent = 0
+        can_use_days = can_total = can_recent = 0
+        nic_use_days = nic_total = nic_recent = 0
+        oth_use_days = oth_total = 0
 
         for row in checkins:
             ext = row.get('extended_data') or {}
@@ -2478,37 +2551,53 @@ def check_substance_patterns(patient_id, days=30):
                     ext = json.loads(ext)
                 except Exception:
                     ext = {}
+            d_date  = row.get('checkin_date', '')
+            recent  = d_date >= cutoff_7
+
+            # Alcohol
             units = _to_float(ext.get('alcohol_units'))
-            d_date = row.get('checkin_date', '')
+            if units and units > 0:
+                alc_use_days += 1
+                alc_total    += units
+                if recent:
+                    alc_recent += 1
 
-            if d_date >= cutoff_7:
-                recent_total_days += 1
+            # Cannabis
+            sessions = _to_float(ext.get('cannabis_sessions'))
+            if sessions and sessions > 0:
+                can_use_days += 1
+                can_total    += sessions
+                if recent:
+                    can_recent += 1
 
-            if units is not None and units > 0:
-                drinking_days += 1
-                total_units   += units
-                units_per_drinking_day.append(units)
-                if d_date >= cutoff_7:
-                    recent_drinking_days += 1
+            # Nicotine
+            nic_count = _to_float(ext.get('nicotine_count'))
+            if nic_count and nic_count > 0:
+                nic_use_days += 1
+                nic_total    += nic_count
+                if recent:
+                    nic_recent += 1
 
-        # No alcohol ever logged → None (not 'no problem', just no data)
-        if drinking_days == 0:
+            # Other
+            oth_count = _to_float(ext.get('other_substance_uses'))
+            if oth_count and oth_count > 0:
+                oth_use_days += 1
+                oth_total    += oth_count
+
+        # No substance data at all → None
+        if alc_use_days + can_use_days + nic_use_days + oth_use_days == 0:
             return None
 
-        avg_per_drinking_day = round(total_units / drinking_days, 2) if drinking_days else 0.0
-        frequency_rate       = round(drinking_days / total_days, 3) if total_days else 0.0
-
         # ── Journal and notes language scan ───────────────────────────────
-        journals = get_journals(patient_id, limit=200)
+        journals      = get_journals(patient_id, limit=200)
         journal_flags = []
         for j in journals:
-            content   = (j.get('content') or j.get('raw_entry') or '')
+            content    = (j.get('content') or j.get('raw_entry') or '')
             entry_date = (j.get('entry_date') or j.get('created_at', ''))[:10]
-            matches = _scan_text_for_patterns(content, _SUBSTANCE_PATTERNS)
+            matches    = _scan_text_for_patterns(content, _SUBSTANCE_PATTERNS)
             if matches:
                 journal_flags.append({'date': entry_date, 'pattern': ', '.join(matches)})
 
-        # Also scan check-in notes
         for row in checkins:
             notes = row.get('notes') or ''
             if notes:
@@ -2520,38 +2609,60 @@ def check_substance_patterns(patient_id, days=30):
                     })
 
         # Deduplicate by date
-        seen_dates  = set()
-        unique_flags = []
+        seen_dates, unique_flags = set(), []
         for f in sorted(journal_flags, key=lambda x: x['date'], reverse=True):
             if f['date'] not in seen_dates:
                 unique_flags.append(f)
                 seen_dates.add(f['date'])
         journal_flags = unique_flags
 
-        # ── Alert level logic (CLAUDE.md §17) ────────────────────────────
-        alert_level = None
+        # ── Per-substance stats and alert levels ──────────────────────────
+        alc_avg  = round(alc_total / alc_use_days, 2) if alc_use_days else 0.0
+        can_avg  = round(can_total / can_use_days, 2) if can_use_days else 0.0
+        nic_avg  = round(nic_total / nic_use_days, 2) if nic_use_days else 0.0
 
-        # Concern level
-        if (recent_drinking_days >= 5 and avg_per_drinking_day >= 3.0) or \
-           (recent_drinking_days >= 5 and len(journal_flags) >= 1):
-            alert_level = 'concern'
+        alc_alert = _substance_alert_level_alcohol(
+            alc_recent, alc_avg, alc_use_days, len(journal_flags))
+        can_alert = _substance_alert_level_cannabis(can_recent, can_avg, len(journal_flags))
+        nic_alert = _substance_alert_level_nicotine(nic_recent)
+        oth_alert = _substance_alert_level_other(oth_use_days)
 
-        # Watch level
-        elif (recent_drinking_days >= 4 and avg_per_drinking_day >= 2.0) or \
-             (recent_drinking_days >= 5) or \
-             (avg_per_drinking_day >= 4.0) or \
-             (len(journal_flags) >= 2) or \
-             (len(journal_flags) >= 1 and drinking_days >= 4):
-            alert_level = 'watch'
+        top_alert = _highest_alert([alc_alert, can_alert, nic_alert, oth_alert])
+
+        def _freq(use_days):
+            return round(use_days / total_days, 3) if total_days else 0.0
 
         return {
-            'drinking_days':             drinking_days,
-            'total_days':                total_days,
-            'total_units':               round(total_units, 1),
-            'avg_units_per_drinking_day': avg_per_drinking_day,
-            'frequency_rate':            frequency_rate,
-            'journal_flags':             journal_flags,
-            'alert_level':               alert_level,
+            'total_days':    total_days,
+            'journal_flags': journal_flags,
+            'alert_level':   top_alert,
+            'alcohol': {
+                'use_days':         alc_use_days,
+                'total_units':      round(alc_total, 1),
+                'avg_per_use_day':  alc_avg,
+                'frequency_rate':   _freq(alc_use_days),
+                'alert_level':      alc_alert,
+            },
+            'cannabis': {
+                'use_days':                 can_use_days,
+                'total_sessions':           round(can_total, 1),
+                'avg_sessions_per_use_day': can_avg,
+                'frequency_rate':           _freq(can_use_days),
+                'alert_level':              can_alert,
+            },
+            'nicotine': {
+                'use_days':       nic_use_days,
+                'total_count':    round(nic_total, 0),
+                'avg_per_use_day': nic_avg,
+                'frequency_rate': _freq(nic_use_days),
+                'alert_level':    nic_alert,
+            },
+            'other': {
+                'use_days':       oth_use_days,
+                'total_count':    round(oth_total, 0),
+                'frequency_rate': _freq(oth_use_days),
+                'alert_level':    oth_alert,
+            },
         }
 
     except Exception as e:

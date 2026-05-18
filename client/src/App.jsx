@@ -296,7 +296,10 @@ export default function App() {
     caffeine: { coffee: 0, tea: 0, soda: 0, energy: 0 },
     meds: {}, notes: '',
     // ── Substances & lifestyle (advanced) ─────────────────
-    alcoholUnits: 0,        // drinks today
+    alcoholUnits: 0,        // standard drinks today
+    cannabisSessions: 0,    // cannabis use sessions today
+    nicotineCount: 0,       // cigarettes / nicotine uses today
+    otherSubstanceUses: 0,  // unnamed substance uses today
     hydrated: true,         // self-assessed hydration
     exerciseMinutes: 0,     // physical activity
     sunlightHours: 1,       // outdoor/sunlight exposure
@@ -356,8 +359,11 @@ export default function App() {
         updates.caffeine = { coffee: bd.coffee || 0, tea: bd.tea || 0,
                              soda: bd.soda || 0, energy: bd.energy || 0 };
 
-        // Alcohol
-        if (todaySummary.alcohol_units > 0) updates.alcoholUnits = todaySummary.alcohol_units;
+        // Substances (carry running totals from earlier check-ins today)
+        if (todaySummary.alcohol_units         > 0) updates.alcoholUnits        = todaySummary.alcohol_units;
+        if (todaySummary.cannabis_sessions     > 0) updates.cannabisSessions    = todaySummary.cannabis_sessions;
+        if (todaySummary.nicotine_count        > 0) updates.nicotineCount       = todaySummary.nicotine_count;
+        if (todaySummary.other_substance_uses  > 0) updates.otherSubstanceUses  = todaySummary.other_substance_uses;
 
         // Physical activity, sunlight, screen time (cumulative running totals)
         if (todaySummary.exercise_minutes  > 0) updates.exerciseMinutes  = todaySummary.exercise_minutes;
@@ -408,6 +414,9 @@ export default function App() {
         night_awakenings: d.nightAwakenings, sleep_latency_minutes: d.sleepLatencyMinutes,
         caffeine_mg: sc.caffeineMg, caffeine_breakdown: d.caffeine,
         alcohol_units: d.alcoholUnits,
+        cannabis_sessions: d.cannabisSessions,
+        nicotine_count: d.nicotineCount,
+        other_substance_uses: d.otherSubstanceUses,
         scores: { stability: sc.stability, crash_risk: sc.crashRisk, nervous_system_load: sc.nsLoad, dopamine_efficiency: sc.dopamine },
       };
 
@@ -840,21 +849,30 @@ export default function App() {
         {advancedMode && (
           <AdvancedSection title="Substances & hydration">
             <div style={{ marginBottom: 20 }}>
-              <p style={{ color: '#5B21B6', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>Alcohol / Substances</p>
-              <p style={{ color: '#7C3AED', fontSize: 11, margin: '0 0 12px', lineHeight: 1.4 }}>Alcohol disrupts sleep architecture and amplifies depressive slumps the next day. Log standard drinks.</p>
-              <div style={{ display: 'flex', alignItems: 'center', border: `1px solid ${P.advBorder}`, background: P.surface, marginBottom: 10 }}>
-                <div style={{ flex: 1, padding: '10px 14px', borderRight: `1px solid ${P.advBorder}` }}>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: P.ink }}>Standard Drinks</div>
-                  <div style={{ fontSize: 11, color: P.inkFaint }}>Beer (12oz), wine (5oz), or 1.5oz spirit</div>
+              <p style={{ color: '#5B21B6', fontSize: 11, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.06em', margin: '0 0 6px' }}>Substances</p>
+              <p style={{ color: '#7C3AED', fontSize: 11, margin: '0 0 12px', lineHeight: 1.4 }}>Log any substances used today. Your provider sees frequency and pattern data — specific entries are not shared in basic reports.</p>
+
+              {/* ── Substance stepper helper ── */}
+              {[
+                { key: 'alcoholUnits',       label: 'Alcohol',  sub: 'Standard drinks (beer, wine, spirits)' },
+                { key: 'cannabisSessions',   label: 'Cannabis', sub: 'Sessions (smoke, vape, edible, etc.)' },
+                { key: 'nicotineCount',      label: 'Nicotine', sub: 'Cigarettes or nicotine uses' },
+                { key: 'otherSubstanceUses', label: 'Other',    sub: 'Any other substance use' },
+              ].map(({ key, label, sub }) => (
+                <div key={key} style={{ display: 'flex', alignItems: 'center', border: `1px solid ${P.advBorder}`, background: P.surface, marginBottom: 8 }}>
+                  <div style={{ flex: 1, padding: '10px 14px', borderRight: `1px solid ${P.advBorder}` }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: P.ink }}>{label}</div>
+                    <div style={{ fontSize: 11, color: P.inkFaint }}>{sub}</div>
+                  </div>
+                  <button onClick={() => set(key, Math.max(0, d[key] - 1))}
+                    style={{ width: 40, height: 52, border: 'none', borderRight: `1px solid ${P.advBorder}`,
+                      background: 'transparent', fontSize: 18, cursor: 'pointer', color: P.inkMid }}>−</button>
+                  <div style={{ width: 44, textAlign: 'center', fontSize: 16, fontWeight: 700, color: d[key] > 0 ? '#5B21B6' : P.ink }}>{d[key]}</div>
+                  <button onClick={() => set(key, d[key] + 1)}
+                    style={{ width: 40, height: 52, border: 'none', borderLeft: `1px solid ${P.advBorder}`,
+                      background: 'transparent', fontSize: 18, cursor: 'pointer', color: P.inkMid }}>+</button>
                 </div>
-                <button onClick={() => set('alcoholUnits', Math.max(0, d.alcoholUnits - 1))}
-                  style={{ width: 40, height: 52, border: 'none', borderRight: `1px solid ${P.advBorder}`,
-                    background: 'transparent', fontSize: 18, cursor: 'pointer', color: P.inkMid }}>−</button>
-                <div style={{ width: 44, textAlign: 'center', fontSize: 16, fontWeight: 700, color: P.ink }}>{d.alcoholUnits}</div>
-                <button onClick={() => set('alcoholUnits', d.alcoholUnits + 1)}
-                  style={{ width: 40, height: 52, border: 'none', borderLeft: `1px solid ${P.advBorder}`,
-                    background: 'transparent', fontSize: 18, cursor: 'pointer', color: P.inkMid }}>+</button>
-              </div>
+              ))}
             </div>
 
             <PaperToggle
