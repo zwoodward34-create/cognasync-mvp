@@ -1,5 +1,5 @@
 -- Migration: add missing care_team_members columns
--- Safe to run on existing tables — all statements use IF NOT EXISTS / no-op defaults.
+-- Safe to run on existing tables — all statements use IF NOT EXISTS.
 
 ALTER TABLE care_team_members
   ADD COLUMN IF NOT EXISTS data_permissions JSONB,
@@ -10,10 +10,26 @@ ALTER TABLE care_team_members
 
 -- Backfill: give all existing rows full access so nothing breaks for legacy relationships.
 UPDATE care_team_members
-SET data_permissions = '{"journals_raw":true,"journals_themes":true,"mood_stress_sleep":true,"medication_data":true,"system_scores":true,"advanced_data":true,"cross_provider_flags":true}'::jsonb
+SET data_permissions = jsonb_build_object(
+  'journals_raw',        true,
+  'journals_themes',     true,
+  'mood_stress_sleep',   true,
+  'medication_data',     true,
+  'system_scores',       true,
+  'advanced_data',       true,
+  'cross_provider_flags', true
+)
 WHERE data_permissions IS NULL;
 
 -- Set a non-null default for future inserts.
 ALTER TABLE care_team_members
   ALTER COLUMN data_permissions SET DEFAULT
-    '{"journals_raw":true,"journals_themes":true,"mood_stress_sleep":true,"medication_data":true,"system_scores":true,"advanced_data":true,"cross_provider_flags":true}'::jsonb;
+    jsonb_build_object(
+      'journals_raw',        true,
+      'journals_themes',     true,
+      'mood_stress_sleep',   true,
+      'medication_data',     true,
+      'system_scores',       true,
+      'advanced_data',       true,
+      'cross_provider_flags', true
+    );
