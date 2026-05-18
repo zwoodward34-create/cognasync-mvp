@@ -507,6 +507,20 @@
 {% block content %}
 <div class="pd-page">
 
+  <!-- Inbound patient request banner -->
+  <div id="inbound-banner" style="display:none;background:var(--surface);border:1px solid var(--border);
+       border-left:3px solid var(--color-primary,#6c47ff);border-radius:var(--radius);
+       padding:12px 16px;margin-bottom:16px;align-items:center;
+       justify-content:space-between;gap:12px;">
+    <div style="font-size:0.85rem;">
+      <span id="inbound-banner-text" style="font-weight:600;"></span>
+      <span style="color:var(--text-muted);margin-left:6px;">— patient-initiated connection request(s) waiting for your response.</span>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="openAddPatient()" style="white-space:nowrap;flex-shrink:0;">
+      Review Requests
+    </button>
+  </div>
+
   <!-- Page header -->
   <div class="pd-page-hdr">
     <div>
@@ -516,8 +530,12 @@
     <div class="pd-page-hdr-actions">
       <input type="text" class="pd-search" id="pd-search"
              placeholder="Search by name…" oninput="filterCards(this.value)">
-      <button class="btn btn-primary btn-sm" onclick="openAddPatient()" style="white-space:nowrap;">
+      <button class="btn btn-primary btn-sm" onclick="openAddPatient()" style="white-space:nowrap;position:relative;" id="add-patient-btn">
         + Add Patient
+        <span id="inbound-badge" style="display:none;position:absolute;top:-6px;right:-6px;
+              background:#e53e3e;color:#fff;border-radius:999px;font-size:0.65rem;
+              font-weight:700;min-width:16px;height:16px;line-height:16px;
+              text-align:center;padding:0 4px;"></span>
       </button>
     </div>
   </div>
@@ -1212,6 +1230,7 @@ function closeBrief() {
 function openAddPatient() {
   document.getElementById('add-patient-modal').style.display = 'flex';
   document.getElementById('ap-email').focus();
+  loadInboundRequests();
   loadOutboundRequests();
 }
 
@@ -1254,6 +1273,72 @@ async function submitAddPatient(e) {
   }
 }
 
+async function loadInboundRequests() {
+  const el = document.getElementById('ap-inbound-list');
+  if (!el) return;
+  try {
+    const res  = await fetch('/api/provider/care-team/inbound');
+    const data = await res.json();
+    if (!data.length) {
+      el.innerHTML = '<p style="font-size:0.8rem;color:var(--text-muted);">No pending requests from patients.</p>';
+      return;
+    }
+    el.innerHTML = data.map(r => `
+      <div id="inbound-row-${r.id}" style="padding:8px 0;border-bottom:1px solid var(--border-light);">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
+          <div>
+            <span style="font-size:0.85rem;font-weight:600;">${r.patient_name}</span>
+            <span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px;">${r.patient_email}</span>
+            <span style="font-size:0.7rem;color:var(--text-muted);margin-left:6px;">· ${r.role_label}</span>
+          </div>
+          <div style="display:flex;gap:6px;flex-shrink:0;">
+            <button onclick="respondInbound('${r.id}','accept')"
+                    style="font-size:0.75rem;padding:4px 10px;border-radius:6px;border:none;
+                           background:#1a7f3c;color:#fff;cursor:pointer;font-weight:600;">Accept</button>
+            <button onclick="respondInbound('${r.id}','decline')"
+                    style="font-size:0.75rem;padding:4px 10px;border-radius:6px;border:1px solid var(--border);
+                           background:transparent;color:var(--text-muted);cursor:pointer;">Decline</button>
+          </div>
+        </div>
+        ${r.request_message ? `<p style="font-size:0.78rem;color:var(--text-muted);margin:4px 0 0;font-style:italic;">"${r.request_message}"</p>` : ''}
+      </div>`).join('');
+  } catch (_) {}
+}
+
+async function respondInbound(memberId, action) {
+  try {
+    const res = await fetch(`/api/provider/care-team/${memberId}/${action}`, { method: 'POST' });
+    if (!res.ok) { const d = await res.json(); alert(d.error || 'Action failed.'); return; }
+    const row = document.getElementById('inbound-row-' + memberId);
+    if (row) {
+      const label = action === 'accept' ? 'Accepted' : 'Declined';
+      row.innerHTML = `<p style="font-size:0.8rem;color:var(--text-muted);padding:6px 0;">${label}</p>`;
+    }
+    updateInboundBadge();
+    if (action === 'accept') setTimeout(() => location.reload(), 800);
+  } catch (_) { alert('Action failed.'); }
+}
+
+async function updateInboundBadge() {
+  try {
+    const res  = await fetch('/api/provider/care-team/inbound');
+    const data = await res.json();
+    const badge  = document.getElementById('inbound-badge');
+    const banner = document.getElementById('inbound-banner');
+    if (data.length) {
+      if (badge)  { badge.textContent = data.length; badge.style.display = 'inline-block'; }
+      if (banner) {
+        document.getElementById('inbound-banner-text').textContent =
+          `${data.length} patient request${data.length > 1 ? 's' : ''}`;
+        banner.style.display = 'flex';
+      }
+    } else {
+      if (badge)  badge.style.display  = 'none';
+      if (banner) banner.style.display = 'none';
+    }
+  } catch (_) {}
+}
+
 async function loadOutboundRequests() {
   const el = document.getElementById('ap-pending-list');
   if (!el) return;
@@ -1272,6 +1357,9 @@ async function loadOutboundRequests() {
     ).join('');
   } catch (_) {}
 }
+
+// Check for inbound requests on every page load
+updateInboundBadge();
 </script>
 
 <!-- Add Patient modal -->
@@ -1316,7 +1404,13 @@ async function loadOutboundRequests() {
 
     <div style="margin-top:22px;">
       <div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
-                  color:var(--text-muted);margin-bottom:8px;">Pending Outbound Requests</div>
+                  color:var(--text-muted);margin-bottom:8px;">Requests From Patients</div>
+      <div id="ap-inbound-list"><p style="font-size:0.8rem;color:var(--text-muted);">Loading…</p></div>
+    </div>
+
+    <div style="margin-top:18px;">
+      <div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+                  color:var(--text-muted);margin-bottom:8px;">Your Pending Outbound Requests</div>
       <div id="ap-pending-list"><p style="font-size:0.8rem;color:var(--text-muted);">Loading…</p></div>
     </div>
   </div>

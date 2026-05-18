@@ -3325,12 +3325,13 @@ def provider_has_care_access(provider_id: str, patient_id: str) -> bool:
 
 def get_provider_outbound_requests(provider_id: str) -> list:
     """
-    Returns all pending outbound connection requests sent by this provider.
+    Returns pending connection requests sent BY this provider (requested_by='provider').
     """
     try:
         res = supabase_admin.table('care_team_members').select(
             'id, role, status, requested_at, patient_id'
-        ).eq('provider_id', str(provider_id)).eq('status', 'pending').execute()
+        ).eq('provider_id', str(provider_id)).eq('status', 'pending').eq(
+            'requested_by', 'provider').execute()
         if not res.data:
             return []
 
@@ -3354,6 +3355,73 @@ def get_provider_outbound_requests(provider_id: str) -> list:
         return out
     except Exception:
         return []
+
+
+def get_provider_inbound_requests(provider_id: str) -> list:
+    """
+    Returns pending connection requests sent BY a patient to this provider (requested_by='patient').
+    """
+    try:
+        res = supabase_admin.table('care_team_members').select(
+            'id, role, status, request_message, patient_id'
+        ).eq('provider_id', str(provider_id)).eq('status', 'pending').eq(
+            'requested_by', 'patient').execute()
+        if not res.data:
+            return []
+        out = []
+        for rec in res.data:
+            try:
+                pr = supabase_admin.table('profiles').select(
+                    'full_name, email').eq('id', rec['patient_id']).single().execute()
+                patient = pr.data or {}
+            except Exception:
+                patient = {}
+            out.append({
+                'id':             rec['id'],
+                'patient_id':     rec['patient_id'],
+                'patient_name':   patient.get('full_name') or 'Unknown Patient',
+                'patient_email':  patient.get('email', ''),
+                'role':           rec['role'],
+                'role_label':     _ROLE_LABELS.get(rec['role'], 'Provider'),
+                'request_message': rec.get('request_message'),
+            })
+        return out
+    except Exception:
+        return []
+
+
+def accept_inbound_care_request(provider_id: str, member_id: str) -> dict:
+    """Provider accepts a patient-initiated pending request."""
+    try:
+        rec = supabase_admin.table('care_team_members').select('id, status').eq(
+            'id', str(member_id)).eq('provider_id', str(provider_id)).eq(
+            'status', 'pending').execute()
+        if not rec.data:
+            return {'ok': False, 'error': 'Request not found.'}
+        supabase_admin.table('care_team_members').update({
+            'status': 'active',
+            'approved_at': datetime.utcnow().isoformat(),
+        }).eq('id', str(member_id)).execute()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
+
+
+def decline_inbound_care_request(provider_id: str, member_id: str) -> dict:
+    """Provider declines a patient-initiated pending request."""
+    try:
+        rec = supabase_admin.table('care_team_members').select('id, status').eq(
+            'id', str(member_id)).eq('provider_id', str(provider_id)).eq(
+            'status', 'pending').execute()
+        if not rec.data:
+            return {'ok': False, 'error': 'Request not found.'}
+        supabase_admin.table('care_team_members').update({
+            'status': 'revoked',
+            'revoked_at': datetime.utcnow().isoformat(),
+        }).eq('id', str(member_id)).execute()
+        return {'ok': True}
+    except Exception as e:
+        return {'ok': False, 'error': str(e)}
 
 
 def update_care_permissions(patient_id: str, member_id: str, permissions: dict) -> dict:

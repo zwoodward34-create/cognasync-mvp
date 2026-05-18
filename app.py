@@ -1796,6 +1796,39 @@ def api_provider_care_outbound():
     return jsonify(db.get_provider_outbound_requests(user['id'])), 200
 
 
+@app.route('/api/provider/care-team/inbound', methods=['GET'])
+def api_provider_care_inbound():
+    """Returns pending patient-initiated requests for this provider."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    return jsonify(db.get_provider_inbound_requests(user['id'])), 200
+
+
+@app.route('/api/provider/care-team/<member_id>/accept', methods=['POST'])
+def api_provider_accept_inbound(member_id):
+    """Provider accepts a patient-initiated care team request."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    result = db.accept_inbound_care_request(user['id'], member_id)
+    if result.get('ok'):
+        return jsonify({'status': 'accepted'}), 200
+    return jsonify({'error': result.get('error')}), 400
+
+
+@app.route('/api/provider/care-team/<member_id>/decline', methods=['POST'])
+def api_provider_decline_inbound(member_id):
+    """Provider declines a patient-initiated care team request."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    result = db.decline_inbound_care_request(user['id'], member_id)
+    if result.get('ok'):
+        return jsonify({'status': 'declined'}), 200
+    return jsonify({'error': result.get('error')}), 400
+
+
 # ── Care Team API — Patient side ──────────────────────────────────────────────
 
 @app.route('/api/patient/care-team', methods=['GET'])
