@@ -885,14 +885,9 @@ body.pv-body .main-content {
   flex-direction: column;
 }
 
-/* Appointment workspace keeps locked 3-col layout */
-body.pv-body-appt .main-content {
-  height: calc(100vh - var(--nav-h));
-  overflow: hidden;
-}
+/* Appointment workspace: natural page scrolling with sticky sidebars */
 body.pv-body-appt .pv-shell {
-  height: 100%;
-  overflow: hidden;
+  align-items: flex-start;
 }
 
 .pv-sidebar {
@@ -961,9 +956,9 @@ body.pv-body-appt .pv-shell {
   background: var(--bg);
 }
 
-/* Appointment workspace: main panel scrolls independently */
+/* Appointment workspace: main panel fills full page height */
 body.pv-body-appt .pv-main {
-  overflow-y: auto;
+  min-height: calc(100vh - var(--nav-h));
 }
 
 /* Patient header */
@@ -2442,7 +2437,7 @@ body.pv-body-appt .pv-shell {
   flex-direction: row;
 }
 
-/* Journal sidebar — right panel */
+/* Journal sidebar — right panel, sticky alongside scrolling main */
 .js-sidebar {
   width: 280px;
   flex-shrink: 0;
@@ -2452,7 +2447,10 @@ body.pv-body-appt .pv-shell {
   flex-direction: column;
   overflow: hidden;
   transition: width 0.2s ease, opacity 0.2s ease;
-  position: relative;
+  position: sticky;
+  top: var(--nav-h);
+  height: calc(100vh - var(--nav-h));
+  align-self: flex-start;
 }
 
 .js-sidebar-collapsed {

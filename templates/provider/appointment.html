@@ -92,6 +92,7 @@
         {% if appt.status == 'active' %}
         <button class="btn btn-sm" id="complete-btn" onclick="completeAppointment()">Mark Complete</button>
         {% endif %}
+        <button class="btn btn-sm" onclick="exportRecap()">Export Recap</button>
         <span id="save-status" style="font-size:11px;color:var(--text-muted);display:none;"></span>
       </div>
     </div>
@@ -782,8 +783,18 @@ if (trendsData.energy?.daily_scores?.length)
   });
 
 function renderInsights() {
-  if (typeof renderProviderInsights === 'function')
-    renderProviderInsights(trendsData, 'pv-insights-container', 65);
+  const container = document.getElementById('pv-insights-container');
+  if (!container) return;
+  try {
+    if (typeof renderProviderInsights === 'function') {
+      renderProviderInsights(trendsData, 'pv-insights-container', 50);
+    } else {
+      container.innerHTML = '<p style="font-size:13px;color:var(--text-muted);padding:8px 0;">Insight engine failed to load. Check browser console.</p>';
+    }
+  } catch(e) {
+    console.error('Insight render error:', e);
+    container.innerHTML = '<p style="font-size:13px;color:var(--text-muted);padding:8px 0;">Unable to compute insights for this period.</p>';
+  }
 }
 renderInsights();
 
@@ -1027,6 +1038,133 @@ function toggleJournalSidebar() {
   const expandTab = document.getElementById('js-expand-tab');
   const collapsed = sidebar.classList.toggle('js-sidebar-collapsed');
   if (expandTab) expandTab.style.display = collapsed ? 'flex' : 'none';
+}
+
+// ── Export Recap ──────────────────────────────────────────────────────
+function exportRecap() {
+  const patientName = document.querySelector('.aw-header-name')?.textContent?.trim() || 'Patient';
+  const apptDate    = '{{ appt.started_at[:10] if appt.started_at else "" }}';
+  const period      = '{{ selected_days }}';
+  const notes       = document.getElementById('notes-field')?.value || '';
+  const carePlan    = document.getElementById('care-plan-field')?.value || '';
+  const nextDate    = document.getElementById('next-appt-date')?.value || '';
+  const nextNotes   = document.getElementById('next-appt-notes')?.value || '';
+
+  const mood  = trendsData.mood?.average  ?? '—';
+  const sleep = trendsData.sleep?.average ?? '—';
+  const stress= trendsData.stress?.average?? '—';
+  const adh   = trendsData.medication_adherence || '—';
+  const checkins = trendsData.checkin_count || 0;
+
+  // Collect the most recent generated or existing summary text
+  let summaryText = '';
+  const newSummaryEl = document.querySelector('#new-summary .pv-summary-body');
+  const existingSummaryEl = document.querySelector('.pv-summary-body');
+  const summaryEl = newSummaryEl || existingSummaryEl;
+  if (summaryEl) summaryText = summaryEl.innerText || summaryEl.textContent || '';
+
+  const qaRows = qAndA.map(item => `
+    <div class="qa-item">
+      <div class="qa-cat">${escHtml(item.category || 'Custom')}</div>
+      <div class="qa-q"><strong>Q:</strong> ${escHtml(item.question)}</div>
+      ${item.answer ? `<div class="qa-a"><strong>A:</strong> ${escHtml(item.answer)}</div>` : '<div class="qa-a qa-empty">No answer recorded</div>'}
+    </div>`).join('');
+
+  const actionRows = actions.map(a =>
+    `<div class="action-item ${a.done ? 'done' : ''}">
+       <span class="chk">${a.done ? '✓' : '○'}</span> ${escHtml(a.text)}
+     </div>`
+  ).join('') || '<div style="color:#888;font-size:13px;">No action items.</div>';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Appointment Recap — ${patientName}</title>
+<style>
+  body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 13px; color: #1a1a1a; max-width: 780px; margin: 0 auto; padding: 32px 40px; }
+  h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+  .meta { font-size: 12px; color: #666; margin-bottom: 28px; }
+  .section { margin-bottom: 28px; }
+  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #666; border-bottom: 1px solid #e0e0e0; padding-bottom: 5px; margin-bottom: 12px; }
+  .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 8px; }
+  .stat-box { border: 1px solid #e0e0e0; padding: 10px 12px; }
+  .stat-label { font-size: 10px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
+  .stat-val { font-size: 22px; font-weight: 700; }
+  .stat-unit { font-size: 11px; color: #888; }
+  .summary-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; background: #f8f8f8; border: 1px solid #e8e8e8; padding: 14px 16px; }
+  .notes-text { white-space: pre-wrap; font-size: 13px; line-height: 1.65; }
+  .qa-item { margin-bottom: 14px; padding-bottom: 14px; border-bottom: 1px solid #f0f0f0; }
+  .qa-cat { font-size: 10px; text-transform: uppercase; color: #888; margin-bottom: 3px; }
+  .qa-q { margin-bottom: 4px; }
+  .qa-a { color: #333; }
+  .qa-empty { color: #aaa; font-style: italic; }
+  .action-item { display: flex; gap: 8px; padding: 6px 0; font-size: 13px; }
+  .action-item.done { color: #888; text-decoration: line-through; }
+  .chk { font-size: 14px; flex-shrink: 0; color: #333; }
+  .next-box { border: 1px solid #e0e0e0; padding: 14px 16px; }
+  .next-date { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 11px; color: #aaa; }
+  @media print { body { padding: 0; } }
+</style>
+</head>
+<body>
+<h1>Appointment Recap</h1>
+<div class="meta">${patientName} &nbsp;·&nbsp; ${apptDate || 'No date'} &nbsp;·&nbsp; ${period}-day data window</div>
+
+<div class="section">
+  <div class="section-title">Summary Stats</div>
+  <div class="stats-grid">
+    <div class="stat-box"><div class="stat-label">Avg Mood</div><div class="stat-val">${mood}</div><div class="stat-unit">/10</div></div>
+    <div class="stat-box"><div class="stat-label">Avg Sleep</div><div class="stat-val">${sleep}</div><div class="stat-unit">hrs</div></div>
+    <div class="stat-box"><div class="stat-label">Avg Stress</div><div class="stat-val">${stress}</div><div class="stat-unit">/10</div></div>
+    <div class="stat-box"><div class="stat-label">Adherence</div><div class="stat-val">${adh}</div><div class="stat-unit">%</div></div>
+    <div class="stat-box"><div class="stat-label">Check-ins</div><div class="stat-val">${checkins}</div><div class="stat-unit">this period</div></div>
+  </div>
+</div>
+
+${summaryText ? `<div class="section">
+  <div class="section-title">Clinical Summary</div>
+  <div class="summary-text">${summaryText.trim()}</div>
+</div>` : ''}
+
+${notes ? `<div class="section">
+  <div class="section-title">Session Notes</div>
+  <div class="notes-text">${escHtml(notes)}</div>
+</div>` : ''}
+
+${carePlan ? `<div class="section">
+  <div class="section-title">Care Plan Changes</div>
+  <div class="notes-text">${escHtml(carePlan)}</div>
+</div>` : ''}
+
+${actions.length ? `<div class="section">
+  <div class="section-title">Action Items</div>
+  ${actionRows}
+</div>` : ''}
+
+${qAndA.length ? `<div class="section">
+  <div class="section-title">Guided Q&amp;A</div>
+  ${qaRows}
+</div>` : ''}
+
+${nextDate ? `<div class="section">
+  <div class="section-title">Next Appointment</div>
+  <div class="next-box">
+    <div class="next-date">${nextDate}</div>
+    ${nextNotes ? `<div class="notes-text" style="margin-top:6px;">${escHtml(nextNotes)}</div>` : ''}
+  </div>
+</div>` : ''}
+
+<div class="footer">Generated by CognaSync &nbsp;·&nbsp; ${new Date().toLocaleString()}</div>
+</body>
+</html>`;
+
+  const w = window.open('', '_blank');
+  w.document.write(html);
+  w.document.close();
+  w.focus();
+  setTimeout(() => w.print(), 400);
 }
 </script>
 {% endblock %}
