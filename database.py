@@ -3609,7 +3609,8 @@ def get_care_team_permissions(patient_id: str, provider_id: str) -> dict | None:
         if res.data:
             return res.data[0].get('data_permissions') or _DEFAULT_PERMISSIONS
         return None
-    except Exception:
+    except Exception as e:
+        print(f"[db] get_care_team_permissions error: {e}", flush=True)
         return None
 
 

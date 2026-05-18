@@ -299,8 +299,27 @@ function savePerm(memberId) {
         method: 'PATCH',
         body: JSON.stringify({ permissions: perms }),
       });
-    } catch (e) {}
-    if (saving) saving.style.display = 'none';
+    } catch (e) {
+      if (saving) {
+        saving.textContent = 'Save failed — please try again.';
+        saving.style.color = '#c0392b';
+        setTimeout(() => {
+          saving.textContent = 'Saving…';
+          saving.style.color = '';
+          saving.style.display = 'none';
+        }, 3000);
+      }
+      return;
+    }
+    if (saving) {
+      saving.textContent = 'Saved';
+      saving.style.color = '#27ae60';
+      setTimeout(() => {
+        saving.textContent = 'Saving…';
+        saving.style.color = '';
+        saving.style.display = 'none';
+      }, 1500);
+    }
   }, 600);
 }
 
