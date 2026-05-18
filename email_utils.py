@@ -229,6 +229,36 @@ def send_care_team_request_email(to_email: str, to_name: str,
     _send(to_email, f"Care team request from {provider_name}", html)
 
 
+def send_patient_care_invite_email(to_email: str, to_name: str,
+                                    patient_name: str, role_label: str,
+                                    message: str | None = None) -> None:
+    """Notify a provider that a patient has invited them to their care team."""
+    dashboard_url = f"{APP_URL}/provider"
+    msg_block = f"""
+    <p style="background:#f5f5f5;border-left:3px solid #ccc;padding:10px 14px;
+              font-size:13px;color:#444;margin:16px 0;">
+      "{message}"
+    </p>""" if message else ""
+    html = f"""
+    <p>Hi {to_name},</p>
+    <p><strong>{patient_name}</strong> has invited you to join their CognaSync care team
+    as their <strong>{role_label}</strong>.</p>
+    {msg_block}
+    <p>You can accept or decline this request from your provider dashboard:</p>
+    <p style="margin:24px 0">
+      <a href="{dashboard_url}"
+         style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">
+        Review request →
+      </a>
+    </p>
+    <p style="color:#888;font-size:12px;margin-top:32px;">
+      Once accepted, you'll have access to {patient_name}'s check-in data and
+      session notes within CognaSync.
+    </p>
+    """
+    _send(to_email, f"Care team invitation from {patient_name}", html)
+
+
 def send_checkin_reminder(to_email: str, to_name: str, days_since: int) -> None:
     """Gentle reminder email to a patient who hasn't checked in recently."""
     checkin_url = f"{APP_URL}/checkin"

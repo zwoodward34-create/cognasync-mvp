@@ -2388,6 +2388,254 @@ def find_symptom_correlations(patient_id, days=60):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# SUBSTANCE USE & SAFETY SIGNAL DETECTION
+# ═══════════════════════════════════════════════════════════════════════════
+
+# Substance use journal/notes language patterns (CLAUDE.md §17)
+_SUBSTANCE_PATTERNS = {
+    'dependency':    ['need a drink', 'needed a drink', "can't function without", "can't relax without",
+                      "can't sleep without", 'wake up and need', 'first thing in the morning'],
+    'coping':        ['drinking to cope', 'drinking to forget', 'drink to get through',
+                      'drink to calm', 'drink to sleep', 'drink to relax', 'drink to unwind'],
+    'volume_aware':  ['drinking more than i should', 'drinking too much', 'drank a lot',
+                      'drank more than usual', 'too much last night'],
+    'loss_control':  ["couldn't stop", 'blacked out', 'blackout', 'passed out from drinking',
+                      'can\'t stop drinking'],
+    'cannabis_dep':  ['need weed to', "can't sleep without weed", "can't function without weed",
+                      'need cannabis to', "can't get through without weed"],
+    'rx_misuse':     ['more than prescribed', 'taking extra', 'ran out early', 'double dosed',
+                      'took more than i was supposed to', 'took more than prescribed',
+                      'extra dose', 'taking more than i should'],
+}
+
+# Interpersonal safety signal patterns (CLAUDE.md §18)
+_SAFETY_PATTERNS = {
+    'physical':      ['hit me', 'he hit', 'she hit', 'punched me', 'slapped me', 'grabbed me',
+                      'choked me', 'strangled', 'kicked me', 'shoved me', 'pushed me',
+                      'threw at me', 'threw me', 'hurt me', 'he hurt', 'she hurt'],
+    'injury':        ['bruise', 'bruised', 'bleeding', 'left a mark', 'had to cover it up',
+                      'covering bruises'],
+    'fear':          ['afraid of him', 'afraid of her', 'scared of him', 'scared of her',
+                      'scared to go home', 'afraid to go home', "don't feel safe at home",
+                      "don't feel safe with", "scared he'll", "scared she'll"],
+    'threat':        ['threatened me', 'threatens me', 'said he would hurt', 'said she would hurt',
+                      'if i tell anyone', "he said he'd", "she said she'd"],
+    'control':       ["won't let me leave", "won't let me see", 'took my phone', 'locked me in',
+                      "won't let me talk to", 'controls everything', 'isolating me'],
+    'recurrence':    ['it happened again', 'he did it again', 'she did it again',
+                      'same thing as last time', "i'm getting used to it",
+                      "doesn't usually get this bad"],
+}
+
+_PARTNER_WORDS = {'husband', 'wife', 'partner', 'boyfriend', 'girlfriend', 'ex', 'fiancé', 'fiancee', 'fiance'}
+
+
+def _scan_text_for_patterns(text, pattern_dict):
+    """Return a list of matched category labels for any phrase found in text.
+    Text is lowercased before matching. Returns empty list if no matches."""
+    if not text:
+        return []
+    lower = text.lower()
+    return [cat for cat, phrases in pattern_dict.items()
+            if any(phrase in lower for phrase in phrases)]
+
+
+def _has_partner_context(text):
+    """Return True if text contains any partner reference word."""
+    if not text:
+        return False
+    lower = text.lower()
+    return any(word in lower for word in _PARTNER_WORDS)
+
+
+def check_substance_patterns(patient_id, days=30):
+    """Detect recurring alcohol/substance use patterns from check-in data and journal language.
+
+    Returns dict with drinking_days, total_days, total_units, avg_units_per_drinking_day,
+    frequency_rate, journal_flags [{date, pattern}], alert_level (None|'watch'|'concern').
+    Returns None if no alcohol data has ever been logged for this patient in the window.
+    """
+    try:
+        checkins = get_checkins(patient_id, days)
+        if not checkins:
+            return None
+
+        # ── Numeric alcohol analysis ──────────────────────────────────────
+        drinking_days = 0
+        total_units   = 0.0
+        total_days    = len(checkins)
+        units_per_drinking_day = []
+
+        # Also compute a 7-day sub-window for acute escalation check
+        cutoff_7 = (date.today() - timedelta(days=7)).isoformat()
+        recent_drinking_days = 0
+        recent_total_days = 0
+
+        for row in checkins:
+            ext = row.get('extended_data') or {}
+            if isinstance(ext, str):
+                try:
+                    ext = json.loads(ext)
+                except Exception:
+                    ext = {}
+            units = _to_float(ext.get('alcohol_units'))
+            d_date = row.get('checkin_date', '')
+
+            if d_date >= cutoff_7:
+                recent_total_days += 1
+
+            if units is not None and units > 0:
+                drinking_days += 1
+                total_units   += units
+                units_per_drinking_day.append(units)
+                if d_date >= cutoff_7:
+                    recent_drinking_days += 1
+
+        # No alcohol ever logged → None (not 'no problem', just no data)
+        if drinking_days == 0:
+            return None
+
+        avg_per_drinking_day = round(total_units / drinking_days, 2) if drinking_days else 0.0
+        frequency_rate       = round(drinking_days / total_days, 3) if total_days else 0.0
+
+        # ── Journal and notes language scan ───────────────────────────────
+        journals = get_journals(patient_id, limit=200)
+        journal_flags = []
+        for j in journals:
+            content   = (j.get('content') or j.get('raw_entry') or '')
+            entry_date = (j.get('entry_date') or j.get('created_at', ''))[:10]
+            matches = _scan_text_for_patterns(content, _SUBSTANCE_PATTERNS)
+            if matches:
+                journal_flags.append({'date': entry_date, 'pattern': ', '.join(matches)})
+
+        # Also scan check-in notes
+        for row in checkins:
+            notes = row.get('notes') or ''
+            if notes:
+                matches = _scan_text_for_patterns(notes, _SUBSTANCE_PATTERNS)
+                if matches:
+                    journal_flags.append({
+                        'date':    row.get('checkin_date', ''),
+                        'pattern': ', '.join(matches),
+                    })
+
+        # Deduplicate by date
+        seen_dates  = set()
+        unique_flags = []
+        for f in sorted(journal_flags, key=lambda x: x['date'], reverse=True):
+            if f['date'] not in seen_dates:
+                unique_flags.append(f)
+                seen_dates.add(f['date'])
+        journal_flags = unique_flags
+
+        # ── Alert level logic (CLAUDE.md §17) ────────────────────────────
+        alert_level = None
+
+        # Concern level
+        if (recent_drinking_days >= 5 and avg_per_drinking_day >= 3.0) or \
+           (recent_drinking_days >= 5 and len(journal_flags) >= 1):
+            alert_level = 'concern'
+
+        # Watch level
+        elif (recent_drinking_days >= 4 and avg_per_drinking_day >= 2.0) or \
+             (recent_drinking_days >= 5) or \
+             (avg_per_drinking_day >= 4.0) or \
+             (len(journal_flags) >= 2) or \
+             (len(journal_flags) >= 1 and drinking_days >= 4):
+            alert_level = 'watch'
+
+        return {
+            'drinking_days':             drinking_days,
+            'total_days':                total_days,
+            'total_units':               round(total_units, 1),
+            'avg_units_per_drinking_day': avg_per_drinking_day,
+            'frequency_rate':            frequency_rate,
+            'journal_flags':             journal_flags,
+            'alert_level':               alert_level,
+        }
+
+    except Exception as e:
+        print(f"Error checking substance patterns: {e}")
+        return None
+
+
+def check_safety_signals(patient_id, days=60):
+    """Scan journals and check-in notes for language suggesting interpersonal physical harm.
+
+    PROVIDER-ONLY — results must never appear in patient-facing output (Mode A/B).
+
+    Returns dict: signals_found, signal_count, first_signal_date, most_recent_date,
+    recency_days, alert_level (None|'concern').
+    """
+    try:
+        journals = get_journals(patient_id, limit=500)
+        checkins = get_checkins(patient_id, days)
+
+        signal_dates = []
+
+        # ── Journal scan ──────────────────────────────────────────────────
+        for j in journals:
+            content    = (j.get('content') or j.get('raw_entry') or '')
+            entry_date = (j.get('entry_date') or j.get('created_at', ''))[:10]
+            matches    = _scan_text_for_patterns(content, _SAFETY_PATTERNS)
+            if not matches:
+                continue
+            # 'injury' category only counts if there's also partner context
+            # (bruises alone could be from many causes)
+            if matches == ['injury'] and not _has_partner_context(content):
+                continue
+            signal_dates.append(entry_date)
+
+        # ── Check-in notes scan ───────────────────────────────────────────
+        for row in checkins:
+            notes = row.get('notes') or ''
+            if not notes:
+                continue
+            matches = _scan_text_for_patterns(notes, _SAFETY_PATTERNS)
+            if not matches:
+                continue
+            if matches == ['injury'] and not _has_partner_context(notes):
+                continue
+            signal_dates.append(row.get('checkin_date', ''))
+
+        # Deduplicate and sort
+        signal_dates = sorted(set(d for d in signal_dates if d))
+
+        if not signal_dates:
+            return {'signals_found': False, 'alert_level': None}
+
+        most_recent   = signal_dates[-1]
+        first_signal  = signal_dates[0]
+        today_str     = date.today().isoformat()
+        recency_days  = (date.today() - datetime.strptime(most_recent, '%Y-%m-%d').date()).days
+
+        return {
+            'signals_found':      True,
+            'signal_count':       len(signal_dates),
+            'first_signal_date':  first_signal,
+            'most_recent_date':   most_recent,
+            'recency_days':       recency_days,
+            'alert_level':        'concern',
+        }
+
+    except Exception as e:
+        print(f"Error checking safety signals: {e}")
+        return {'signals_found': False, 'alert_level': None}
+
+
+def get_patient_flags(patient_id, days=30):
+    """Aggregate all active Mode D flags for a patient.
+
+    Returns dict: {substance: {...}|None, safety: {...}|None}
+    Used by provider dashboard route and Mode C summary generation.
+    """
+    return {
+        'substance': check_substance_patterns(patient_id, days=days),
+        'safety':    check_safety_signals(patient_id, days=days),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # AI FEEDBACK
 # ═══════════════════════════════════════════════════════════════════════════
 
@@ -2797,6 +3045,39 @@ def get_provider_patients_with_stats(provider_id: str) -> list:
     except Exception:
         ct_roles = {}
 
+    # ── Add care-team-only patients not already in base ───────────────────────
+    # base comes from patient_profiles.provider_id (legacy single-provider model).
+    # Providers added only via care_team_members never appear there — merge them in.
+    existing_ids = {str(p['patient_id']) for p in base}
+    for ct_pid in list(ct_roles):
+        if ct_pid in existing_ids:
+            continue
+        user_rec = get_user_by_id(ct_pid)
+        if not user_rec:
+            continue
+        try:
+            ci_r = supabase_admin.table('checkins').select('checkin_date').eq(
+                'user_id', ct_pid).order('checkin_date', desc=True).limit(1).execute()
+            last_ci = ci_r.data[0]['checkin_date'][:10] if ci_r.data else None
+        except Exception:
+            last_ci = None
+        try:
+            pp_r = supabase_admin.table('patient_profiles').select(
+                'current_medications').eq('user_id', ct_pid).execute()
+            meds = (pp_r.data[0].get('current_medications') or []) if pp_r.data else []
+        except Exception:
+            meds = []
+        base.append({
+            'patient_id':          ct_pid,
+            'full_name':           user_rec.get('full_name', 'Unknown'),
+            'email':               user_rec.get('email', ''),
+            'last_checkin':        last_ci,
+            'has_summary':         False,
+            'current_medications': meds,
+            'crisis_resolved_at':  None,
+        })
+        existing_ids.add(ct_pid)
+
     for p in base:
         uid = p['patient_id']
 
@@ -3146,6 +3427,23 @@ def send_patient_care_request(patient_id: str, provider_email: str,
             'request_message': message,
         }).execute()
         member_id = res.data[0]['id'] if res.data else None
+
+        # Email the provider so they know they have a pending invite
+        try:
+            import email_utils as _eu
+            pat_pr = supabase_admin.table('profiles').select(
+                'full_name').eq('id', str(patient_id)).limit(1).execute()
+            patient_name = pat_pr.data[0]['full_name'] if pat_pr.data else 'A patient'
+            _eu.send_patient_care_invite_email(
+                provider_email,
+                pr.data.get('full_name', 'there'),
+                patient_name,
+                _ROLE_LABELS.get(role, 'Provider'),
+                message,
+            )
+        except Exception:
+            pass  # Email failure never blocks the invite
+
         return {'ok': True, 'member_id': member_id, 'provider_name': pr.data.get('full_name')}
     except Exception as e:
         return {'ok': False, 'error': f'Could not send invite: {e}'}
