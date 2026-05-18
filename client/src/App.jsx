@@ -307,6 +307,8 @@ export default function App() {
     didBreathing: false,
     didMeditation: false,
     didMovement: false,
+    // ── Notable symptoms (always available) ───────────────
+    notableSymptoms: [],   // array of strings
   });
 
   useEffect(() => {
@@ -408,6 +410,11 @@ export default function App() {
         alcohol_units: d.alcoholUnits,
         scores: { stability: sc.stability, crash_risk: sc.crashRisk, nervous_system_load: sc.nsLoad, dopamine_efficiency: sc.dopamine },
       };
+
+      // Notable symptoms always logged when present (not gated behind advancedMode)
+      if (d.notableSymptoms && d.notableSymptoms.length > 0) {
+        extendedData.notable_symptoms = d.notableSymptoms;
+      }
 
       if (advancedMode) {
         Object.assign(extendedData, {
@@ -918,6 +925,89 @@ export default function App() {
               checked={d.didMovement} onChange={v => set('didMovement', v)} color="#7C3AED" />
           </AdvancedSection>
         )}
+
+        <Divider />
+        {/* Notable symptoms — available in all modes */}
+        <div>
+          <label style={{ color: P.inkMid, fontSize: 12, fontWeight: 600, letterSpacing: '0.06em', textTransform: 'uppercase', display: 'block', marginBottom: 4 }}>Any physical symptoms today?</label>
+          <p style={{ color: P.inkFaint, fontSize: 11, margin: '0 0 10px', lineHeight: 1.4 }}>Optional — select anything you noticed. These get tracked over time so patterns can surface in your appointment summaries.</p>
+          {(() => {
+            const SYMPTOM_OPTIONS = [
+              'Headache', 'Brain fog', 'Fatigue', 'Nausea', 'Dizziness',
+              'Body aches', 'Appetite changes', 'Palpitations', 'Sweating', 'Insomnia',
+            ];
+            const toggleSymptom = (sym) => {
+              const lower = sym.toLowerCase();
+              const current = d.notableSymptoms || [];
+              const next = current.includes(lower)
+                ? current.filter(s => s !== lower)
+                : [...current, lower];
+              set('notableSymptoms', next);
+            };
+            return (
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 7, marginBottom: 8 }}>
+                {SYMPTOM_OPTIONS.map(sym => {
+                  const isSelected = (d.notableSymptoms || []).includes(sym.toLowerCase());
+                  return (
+                    <button
+                      key={sym}
+                      type="button"
+                      onClick={() => toggleSymptom(sym)}
+                      style={{
+                        padding: '5px 11px',
+                        borderRadius: 2,
+                        border: `1px solid ${isSelected ? '#7C3AED' : P.border}`,
+                        background: isSelected ? '#EDE9FE' : P.surface,
+                        color: isSelected ? '#5B21B6' : P.inkMid,
+                        fontSize: 12,
+                        fontFamily: 'DM Sans',
+                        fontWeight: isSelected ? 600 : 400,
+                        cursor: 'pointer',
+                        transition: 'all 0.15s',
+                      }}
+                    >
+                      {sym}
+                    </button>
+                  );
+                })}
+              </div>
+            );
+          })()}
+          {/* Free-text for unlisted symptoms */}
+          {(() => {
+            const presets = ['headache','brain fog','fatigue','nausea','dizziness','body aches','appetite changes','palpitations','sweating','insomnia'];
+            const custom = (d.notableSymptoms || []).filter(s => !presets.includes(s));
+            const [inputVal, setInputVal] = React.useState('');
+            return (
+              <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                {custom.map(s => (
+                  <span key={s} style={{ padding: '4px 10px', background: '#EDE9FE', border: '1px solid #7C3AED', color: '#5B21B6', fontSize: 12, borderRadius: 2, display: 'flex', alignItems: 'center', gap: 5 }}>
+                    {s}
+                    <button type="button" onClick={() => set('notableSymptoms', (d.notableSymptoms||[]).filter(x => x !== s))}
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#7C3AED', padding: 0, fontSize: 13, lineHeight: 1 }}>×</button>
+                  </span>
+                ))}
+                <input
+                  type="text"
+                  value={inputVal}
+                  onChange={e => setInputVal(e.target.value)}
+                  onKeyDown={e => {
+                    if ((e.key === 'Enter' || e.key === ',') && inputVal.trim()) {
+                      e.preventDefault();
+                      const val = inputVal.trim().toLowerCase();
+                      if (val && !(d.notableSymptoms||[]).includes(val)) {
+                        set('notableSymptoms', [...(d.notableSymptoms||[]), val]);
+                      }
+                      setInputVal('');
+                    }
+                  }}
+                  placeholder="Other symptom…"
+                  style={{ padding: '5px 10px', border: `1px solid ${P.border}`, background: P.surface, color: P.ink, fontSize: 12, fontFamily: 'DM Sans', borderRadius: 2, outline: 'none', minWidth: 120 }}
+                />
+              </div>
+            );
+          })()}
+        </div>
 
         <Divider />
         <div>

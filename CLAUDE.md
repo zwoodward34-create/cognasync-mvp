@@ -342,6 +342,14 @@ The advanced check-in captures fields beyond the core. These fields are stored i
 - Track frequency, not quality
 - If coping activity use is high on low-mood days, note the pattern neutrally (not as "effective coping" — that's a clinical interpretation)
 
+**Notable Symptoms** (array of strings, free-entry per day)
+- Patient-reported symptoms logged at check-in (e.g., "headache", "nausea", "brain fog", "fatigue", "dizziness")
+- These are observations, not complaints requiring medical response — treat them as trackable data points
+- Do not interpret symptoms clinically; surface them as patterns when they recur
+- Threshold for surfacing: a symptom must appear on ≥3 check-in days before it is mentioned in any AI output
+- When a symptom meets threshold, pass it to `find_symptom_correlations()` to check co-occurrence with other variables
+- If no notable_symptoms are logged: treat as absent, not as "symptom-free" — the patient may not have logged
+
 ---
 
 ## 7. Medication Timing Intelligence
@@ -506,10 +514,13 @@ Context decay happens when the AI makes statements based on stale assumptions ra
 **What your journals reflected**
 [1-2 sentences on themes, recurring subjects, tone. Quote only if a phrase is clearly representative.]
 
+**Something worth tracking** *(include only if symptom_patterns data is present and ≥1 symptom meets threshold)*
+[1-2 sentences. Name the symptom, how many days it appeared, and what else was happening in the data around those days — without inferring cause. Frame as a pattern to mention at the appointment, not a conclusion.]
+
 **Things worth bringing to your appointment**
 - [Specific question or topic, framed as something the patient might raise]
 - [Specific question or topic]
-- [Optional third]
+- [Optional third: add a symptom-related question if symptom_patterns data is present]
 
 ---
 
@@ -533,6 +544,9 @@ Context decay happens when the AI makes statements based on stale assumptions ra
 **Qualitative Themes:**
 [2-3 patterns from journal content. Language-level observations only.]
 
+**Symptom Patterns** *(include only if symptom_patterns data is present)*
+[One line per symptom meeting threshold. Format: `[Symptom]: reported on N of T days. Co-occurring signals: [variable changes].` If no symptoms meet threshold: omit this section entirely.]
+
 **🚨 Flags:**
 [List threshold crossings with supporting data. If none: "No threshold alerts for this period."]
 
@@ -554,4 +568,132 @@ When modifying any function in `claude_api.py`, verify:
 - [ ] Data is passed as structured context — the AI is not asked to retrieve or infer data
 - [ ] The advanced check-in fields in `extended_data` are extracted and passed explicitly when available
 - [ ] Medication timing stats are passed to provider summaries when `timing_stats` is available
+- [ ] Symptom pattern data from `find_symptom_correlations()` is passed when ≥1 symptom meets threshold
 - [ ] Output stays within the appropriate max_tokens limit: 200 for Mode A, 900 for Mode B/C
+
+---
+
+## 16. Symptom Pattern Detection
+
+### Purpose
+
+Patients often notice physical or cognitive symptoms — headaches, nausea, brain fog, fatigue, dizziness — without connecting them to changes in their routines, medications, or sleep. CognaSync surfaces recurring symptoms alongside co-occurring data patterns so patients can bring a fuller picture to their provider. The AI describes co-occurrence; the provider draws clinical conclusions.
+
+This is not a differential diagnosis tool. It is a pattern-detection and conversation-starter tool.
+
+---
+
+### Data Source
+
+Symptoms are logged by the patient in the `notable_symptoms` field of `extended_data` on the `checkins` table. The field stores an array of lowercase strings: `["headache", "brain fog"]`.
+
+The detection function is `find_symptom_correlations(patient_id, days=60)` in `database.py`. It returns:
+
+```python
+[
+  {
+    "symptom": "headache",
+    "days_reported": 7,
+    "total_days": 22,
+    "first_seen": "2025-04-10",   # ISO date of first occurrence
+    "co_occurring": [
+      {
+        "variable": "sleep_disruption_score",
+        "label": "sleep disruption",
+        "direction": "elevated",   # "elevated" | "reduced" | "changed"
+        "avg_on_symptom_days": 7.2,
+        "avg_off_symptom_days": 3.1,
+        "delta": 4.1,
+        "n": 7
+      },
+      ...
+    ],
+    "medication_context": {
+      # Present if any medication_events changed within 14 days of first_seen
+      "change_type": "dose_change" | "new_medication" | "discontinued" | "timing_shift",
+      "medication_name": "Escitalopram",
+      "days_before_symptom_onset": 5   # negative = days after
+    }
+  }
+]
+```
+
+Only symptoms with `days_reported ≥ 3` are included in results.
+
+---
+
+### Detection Logic — `find_symptom_correlations()`
+
+1. Pull all check-ins with `extended_data->>'notable_symptoms'` not null for the patient in the given window.
+2. Build a symptom occurrence map: `{date: [symptom, ...]}`.
+3. For each unique symptom with ≥3 occurrences:
+   a. Classify each check-in day as "symptom day" or "non-symptom day."
+   b. For each numeric variable in scope (see list below), compute the mean on symptom days vs. non-symptom days. If `|delta| ≥ 1.5` AND `n ≥ 3`, add as a co-occurring signal.
+   c. Note `first_seen` date — the earliest check-in where the symptom appears.
+   d. Query `medication_events` for any new medications, discontinued medications, or dose changes within ±14 days of `first_seen`. Add as `medication_context` if found.
+4. Return sorted by `days_reported` descending.
+
+**Variables in scope for co-occurrence detection:**
+
+| Variable | Source |
+|---|---|
+| sleep_disruption_score | computed score |
+| stim_load | computed score |
+| crash_risk | computed score |
+| mood | core check-in field |
+| stress_score | core check-in field |
+| energy | core check-in field |
+| exercise_minutes | extended_data |
+| alcohol_units | extended_data |
+| hydration | extended_data (bool → 0/1) |
+| workload_friction | extended_data |
+| perceived_stress | extended_data |
+
+**Delta threshold:** `|mean_on_symptom_days − mean_off_symptom_days| ≥ 1.5` — avoids surfacing noise as signal.
+
+---
+
+### Language Rules — Symptom Pattern Output
+
+These are in addition to all standard forbidden language patterns.
+
+**Never:**
+- "Your headaches are caused by…" → causal claim, forbidden
+- "This looks like a withdrawal symptom" → diagnostic inference, forbidden
+- "You should track whether [medication] is causing this" → medication advice, forbidden
+- "This is consistent with [condition]" → diagnostic framing, forbidden
+- "This explains your headaches" → explicitly forbidden per Section 3
+
+**Always:**
+- Name the symptom as the patient named it — do not relabel it clinically
+- State the count: "appeared on [N] of [T] days logged"
+- State the co-occurrence: "on those days, [variable label] was [higher/lower] on average ([avg_on] vs. [avg_off])"
+- If medication context exists, state it as timing, not cause: "These entries began around the same time as a change in [medication name] — worth mentioning to your provider"
+- Frame as a conversation starter: "Something your provider might want to know about" — never as a finding
+
+**Threshold before surfacing in patient-facing output (Mode B):** ≥3 symptom days AND at least one co-occurring variable with |delta| ≥ 1.5.
+
+**Threshold before surfacing in provider-facing output (Mode C):** ≥3 symptom days (with or without co-occurring variables — the provider can evaluate raw frequency).
+
+---
+
+### Example Outputs
+
+**Mode B (patient), headache with sleep co-occurrence, medication context present:**
+> "You logged headaches on 7 of the past 22 days — something worth mentioning. On those days, your sleep disruption was notably higher than on headache-free days. These entries also started around the same time as a recent change in Escitalopram. Your provider will have context on whether that's relevant — it's worth bringing up."
+
+**Mode B (patient), brain fog with stim load co-occurrence, no medication context:**
+> "Brain fog showed up on 4 of your logged days this period. On those days, your Stim Load averaged 8.2 — higher than your 4.1 average on other days. It could be worth asking your provider about the pattern."
+
+**Mode C (provider), same headache data:**
+> `Headache: reported on 7 of 22 days. Co-occurring signals: sleep_disruption_score elevated on symptom days (avg 7.2 vs. 3.1 on non-symptom days, Δ=4.1, n=7). Medication context: Escitalopram change logged 5 days before first symptom entry (2025-04-10).`
+
+---
+
+### Integration Points
+
+- `find_symptom_correlations()` is called inside `generate_appointment_summary()` in `claude_api.py` before building the prompt context.
+- Results are passed as `symptom_patterns` in the data context dict.
+- If `symptom_patterns` is empty (no symptoms meet threshold), the section is omitted from both Mode B and Mode C output — no placeholder text.
+- Mode A (check-in insight) does **not** surface symptom patterns — it operates only on the current day's data. If `notable_symptoms` were logged today, acknowledge them in one phrase ("Noted that you logged a headache today.") but do not correlate or analyze.
+- The `find_symptom_correlations()` function uses a 60-day default window for appointment summaries. This can be overridden by passing `days=N` to match the summary period.

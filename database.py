@@ -2138,6 +2138,256 @@ def find_top_patterns(patient_id, days=30, limit=5):
 
 
 # ═══════════════════════════════════════════════════════════════════════════
+# SYMPTOM PATTERN DETECTION
+# ═══════════════════════════════════════════════════════════════════════════
+
+def _to_float(v):
+    """Coerce a value to float, returning None if not possible."""
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def _check_medication_context(patient_id, reference_date_str, window_days=14):
+    """Look for medication logging pattern changes near reference_date_str.
+
+    Heuristic:
+    - 'new_medication': first event for a med falls within (window_days) before
+      first_seen, with no events in the prior (window_days*2) window.
+    - 'discontinued': a med has events in the far-before window but none
+      within window_days before or after first_seen.
+
+    Returns a dict {change_type, medication_name, days_before_symptom_onset}
+    or None if nothing notable is found.
+    """
+    try:
+        ref_date = datetime.strptime(reference_date_str, '%Y-%m-%d').date()
+        far_before_start  = (ref_date - timedelta(days=window_days * 2)).isoformat()
+        near_before_start = (ref_date - timedelta(days=window_days)).isoformat()
+        after_end         = (ref_date + timedelta(days=window_days)).isoformat()
+
+        result = supabase_admin.table('medication_events').select(
+            'event_date, medication_id'
+        ).eq('user_id', str(patient_id)).gte('event_date', far_before_start).lte('event_date', after_end).execute()
+
+        events = result.data or []
+        if not events:
+            return None
+
+        # Also pull medication names from the medications table
+        med_ids = list({ev.get('medication_id', '') for ev in events if ev.get('medication_id')})
+        name_map = {}
+        if med_ids:
+            try:
+                meds_resp = supabase_admin.table('medications').select('id, name').in_('id', med_ids).execute()
+                for m in (meds_resp.data or []):
+                    name_map[m['id']] = m.get('name', m['id'][:8])
+            except Exception:
+                pass
+
+        # Group events by medication
+        med_dates = {}
+        for ev in events:
+            mid = ev.get('medication_id', '')
+            med_dates.setdefault(mid, []).append(ev['event_date'])
+
+        ref_iso = reference_date_str
+
+        for mid, dates in med_dates.items():
+            med_name = name_map.get(mid, mid[:8] if mid else 'unknown')
+            has_far_before  = any(d <  near_before_start for d in dates)
+            has_near_before = any(near_before_start <= d < ref_iso for d in dates)
+            has_after        = any(d >= ref_iso for d in dates)
+
+            # New medication: first logged in the near-before window, nothing earlier
+            if has_near_before and not has_far_before:
+                first_event = min(d for d in dates if near_before_start <= d < ref_iso)
+                days_before = (ref_date - datetime.strptime(first_event, '%Y-%m-%d').date()).days
+                return {
+                    'change_type': 'new_medication',
+                    'medication_name': med_name,
+                    'days_before_symptom_onset': days_before,
+                }
+
+            # Discontinued: had history before near window, then nothing after
+            if has_far_before and not has_near_before and not has_after:
+                last_event = max(d for d in dates if d < near_before_start)
+                days_before = (ref_date - datetime.strptime(last_event, '%Y-%m-%d').date()).days
+                return {
+                    'change_type': 'discontinued',
+                    'medication_name': med_name,
+                    'days_before_symptom_onset': days_before,
+                }
+
+        return None
+
+    except Exception as e:
+        print(f"Error checking medication context: {e}")
+        return None
+
+
+def find_symptom_correlations(patient_id, days=60):
+    """Detect recurring patient-reported symptoms and co-occurring data patterns.
+
+    Reads `notable_symptoms` from `extended_data` on each check-in row.
+    For each symptom appearing on ≥3 days, computes mean differences across
+    numeric variables between symptom days and non-symptom days.  Signals
+    co-occurrence when |delta| ≥ 1.5 and n ≥ 3.
+
+    Also queries medication_events for pattern changes near symptom onset.
+
+    Returns a list of dicts, sorted by days_reported descending:
+      {symptom, days_reported, total_days, first_seen, co_occurring, medication_context}
+
+    co_occurring entries:
+      {variable, label, direction, avg_on_symptom_days, avg_off_symptom_days, delta, n}
+
+    medication_context: {change_type, medication_name, days_before_symptom_onset} or None
+    """
+    # Numeric variables to check for co-occurrence, in display order
+    VAR_LABELS = {
+        'sleep_disruption':  'sleep disruption',
+        'crash_risk':        'crash risk',
+        'stim_load':         'stim load',
+        'stress':            'stress',
+        'mood':              'mood',
+        'energy':            'energy',
+        'perceived_stress':  'perceived stress',
+        'workload_friction': 'workload friction',
+        'alcohol_units':     'alcohol units',
+        'exercise_minutes':  'exercise minutes',
+        'hydration':         'hydration',
+    }
+
+    try:
+        checkins = get_checkins(patient_id, days)
+        if not checkins:
+            return []
+
+        # ── Build per-day numeric snapshot and symptom map ────────────────
+        day_data    = {}  # {date_str: {var: float|None, ...}}
+        symptom_map = {}  # {symptom_str: [date_str, ...]}
+
+        for row in checkins:
+            d = row.get('checkin_date', '')
+            if not d:
+                continue
+
+            ext = row.get('extended_data') or {}
+            if isinstance(ext, str):
+                try:
+                    ext = json.loads(ext)
+                except Exception:
+                    ext = {}
+
+            meds  = row.get('medications') or []
+            mood  = row.get('mood_score')
+            stress = row.get('stress_score')
+            sleep = row.get('sleep_hours')
+            scores = _compute_checkin_scores(mood, stress, sleep, ext, meds)
+
+            hydration_raw = ext.get('hydration')
+            if hydration_raw in (True, 'true', '1', 1):
+                hydration_val = 1.0
+            elif hydration_raw in (False, 'false', '0', 0):
+                hydration_val = 0.0
+            else:
+                hydration_val = None
+
+            day_data[d] = {
+                'mood':             _to_float(mood),
+                'stress':           _to_float(stress),
+                'energy':           _to_float(ext.get('energy')),
+                'exercise_minutes': _to_float(ext.get('exercise_minutes')),
+                'alcohol_units':    _to_float(ext.get('alcohol_units')),
+                'hydration':        hydration_val,
+                'workload_friction':_to_float(ext.get('workload_friction')),
+                'perceived_stress': _to_float(ext.get('perceived_stress')),
+                'sleep_disruption': _to_float(scores.get('sleep_disruption')),
+                'stim_load':        _to_float(scores.get('stim_load')),
+                'crash_risk':       _to_float(scores.get('crash_risk')),
+            }
+
+            # Extract notable_symptoms
+            raw_symptoms = ext.get('notable_symptoms') or []
+            if isinstance(raw_symptoms, str):
+                try:
+                    raw_symptoms = json.loads(raw_symptoms)
+                except Exception:
+                    raw_symptoms = [s.strip() for s in raw_symptoms.split(',') if s.strip()]
+
+            for sym in raw_symptoms:
+                clean = str(sym).strip().lower()
+                if clean:
+                    symptom_map.setdefault(clean, []).append(d)
+
+        if not symptom_map:
+            return []
+
+        total_days  = len(day_data)
+        all_dates   = set(day_data.keys())
+        results     = []
+
+        for symptom, s_dates in symptom_map.items():
+            if len(s_dates) < 3:
+                continue
+
+            s_date_set  = set(s_dates)
+            non_s_dates = all_dates - s_date_set
+            first_seen  = min(s_dates)
+
+            # ── Co-occurrence analysis ────────────────────────────────────
+            co_occurring = []
+            for var, label in VAR_LABELS.items():
+                on_vals  = [day_data[d][var] for d in s_dates
+                            if d in day_data and day_data[d].get(var) is not None]
+                off_vals = [day_data[d][var] for d in non_s_dates
+                            if d in day_data and day_data[d].get(var) is not None]
+
+                if len(on_vals) < 3 or len(off_vals) < 2:
+                    continue
+
+                avg_on  = sum(on_vals)  / len(on_vals)
+                avg_off = sum(off_vals) / len(off_vals)
+                delta   = avg_on - avg_off
+
+                if abs(delta) >= 1.5:
+                    co_occurring.append({
+                        'variable':             var,
+                        'label':                label,
+                        'direction':            'elevated' if delta > 0 else 'reduced',
+                        'avg_on_symptom_days':  round(avg_on,  2),
+                        'avg_off_symptom_days': round(avg_off, 2),
+                        'delta':                round(delta,   2),
+                        'n':                    len(on_vals),
+                    })
+
+            co_occurring.sort(key=lambda x: abs(x['delta']), reverse=True)
+
+            # ── Medication context ────────────────────────────────────────
+            medication_context = _check_medication_context(patient_id, first_seen)
+
+            results.append({
+                'symptom':            symptom,
+                'days_reported':      len(s_dates),
+                'total_days':         total_days,
+                'first_seen':         first_seen,
+                'co_occurring':       co_occurring,
+                'medication_context': medication_context,
+            })
+
+        results.sort(key=lambda x: x['days_reported'], reverse=True)
+        return results
+
+    except Exception as e:
+        print(f"Error finding symptom correlations: {e}")
+        return []
+
+
+# ═══════════════════════════════════════════════════════════════════════════
 # AI FEEDBACK
 # ═══════════════════════════════════════════════════════════════════════════
 

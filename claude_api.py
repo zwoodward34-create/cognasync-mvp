@@ -170,6 +170,16 @@ def analyze_checkin(checkin_data, checkin_type, baseline=None):
         active = [k for k, v in coping.items() if v]
         if active:
             summary_lines.append(f"Coping activities today: {', '.join(active)}")
+    # Notable symptoms — acknowledge today's log without correlating
+    raw_symptoms = ext.get('notable_symptoms') or []
+    if isinstance(raw_symptoms, str):
+        try:
+            import json as _json
+            raw_symptoms = _json.loads(raw_symptoms)
+        except Exception:
+            raw_symptoms = [s.strip() for s in raw_symptoms.split(',') if s.strip()]
+    if raw_symptoms:
+        summary_lines.append(f"Notable symptoms logged today: {', '.join(str(s) for s in raw_symptoms)}")
     if notes:
         summary_lines.append(f"Notes: {notes[:200]}")
     if baseline:
@@ -188,6 +198,7 @@ def analyze_checkin(checkin_data, checkin_type, baseline=None):
         "Reference at least one specific number from today's data. "
         "Compare to their baseline if available (e.g., 'a bit higher than your average this week'). "
         "If advanced data was logged (exercise, coping activities, social quality), acknowledge it naturally when relevant. "
+        "If 'Notable symptoms logged today' appears in the data, briefly acknowledge it in one phrase (e.g., 'Noted that you logged a headache today.') — do NOT analyze, correlate, or explain it. "
         "STRICT RULES: "
         "Never say 'you have,' 'you are [anything clinical],' or 'you should [medication].' "
         "Never diagnose or imply a clinical interpretation. "
@@ -210,7 +221,8 @@ def analyze_checkin(checkin_data, checkin_type, baseline=None):
 def generate_appointment_summary(checkin_data, journal_data, days=14,
                                   period_start=None, period_end=None,
                                   appointment_date=None,
-                                  audience='patient'):
+                                  audience='patient',
+                                  symptom_patterns=None):
     """Synthesize check-in and journal data into a pre-appointment summary.
 
     audience='patient'  → humanized, conversational (Mode B)
@@ -367,7 +379,61 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         data_boundary += f" Advanced data available for {advanced_days} of those days."
 
     # ── System prompt: split by audience ─────────────────────────────
+    # ── Symptom patterns section ──────────────────────────────────────
+    symptom_section = ''
+    if symptom_patterns:
+        lines = []
+        for sp in symptom_patterns:
+            sym   = sp.get('symptom', '')
+            n_sym = sp.get('days_reported', 0)
+            total = sp.get('total_days', 0)
+            first = sp.get('first_seen', '')
+            co    = sp.get('co_occurring') or []
+            mctx  = sp.get('medication_context')
+
+            co_parts = []
+            for c in co[:3]:  # top 3 co-occurring signals
+                lbl = c.get('label', c.get('variable', ''))
+                dir_ = c.get('direction', '')
+                avg_on  = c.get('avg_on_symptom_days')
+                avg_off = c.get('avg_off_symptom_days')
+                if avg_on is not None and avg_off is not None:
+                    co_parts.append(
+                        f"{lbl} was {dir_} on {sym} days (avg {avg_on} vs {avg_off} on other days)"
+                    )
+
+            med_str = ''
+            if mctx:
+                ct   = mctx.get('change_type', '')
+                mname = mctx.get('medication_name', 'a medication')
+                dbso = mctx.get('days_before_symptom_onset')
+                if ct == 'new_medication':
+                    med_str = (
+                        f" A new medication ({mname}) was first logged "
+                        f"{'~' + str(dbso) + ' days before' if dbso else 'around the same time as'} "
+                        f"these entries began."
+                    )
+                elif ct == 'discontinued':
+                    med_str = (
+                        f" {mname} stopped being logged "
+                        f"{'~' + str(dbso) + ' days before' if dbso else 'around the time'} "
+                        f"these entries began."
+                    )
+
+            co_str = (' Co-occurring signals: ' + '; '.join(co_parts) + '.') if co_parts else ''
+            lines.append(
+                f"- {sym.capitalize()}: reported on {n_sym} of {total} days (first logged: {first}).{co_str}{med_str}"
+            )
+        symptom_section = "\n\nSYMPTOM PATTERNS (patient-reported via notable_symptoms field):\n" + "\n".join(lines)
+
     if audience == 'provider':
+        symptom_instructions = (
+            "\n**Symptom Patterns:** (Include ONLY if SYMPTOM PATTERNS data is present below) "
+            "For each symptom, one line: name, days reported, top co-occurring signals with delta values. "
+            "If a medication context is present, note it as a timing observation only — never as a causal claim. "
+            "If no symptom data: omit this section entirely.\n"
+            if symptom_section else ""
+        )
         summary_system = (
             "You are a clinical data assistant preparing a pre-appointment brief for a psychiatrist or mental health provider. "
             f"{appt_context}"
@@ -378,13 +444,26 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             "**Medication Signal:** Adherence rate from check-in logs. Note timing patterns if relevant.\n"
             "**Advanced Data:** (Only if advanced_stats are present) Report averages and any notable patterns.\n"
             "**Qualitative Themes:** 2-3 patterns from journal language. Observations only — no clinical interpretation.\n"
+            f"{symptom_instructions}"
             "**Flags:** Threshold crossings with supporting data. If none, write 'None for this period.'\n"
             "**Suggested Discussion Topics:** 2-3 specific, data-anchored items.\n"
             "RULES: Never diagnose. Never advise medication changes. "
             "Do not say 'you have,' 'you suffer from,' 'this indicates [disorder].' "
+            "For symptom patterns: describe co-occurrence only — never causation. "
+            "Never say 'this explains' or 'caused by' or 'this is a side effect of.' "
             f"Always state: '{data_boundary}'"
         )
     else:
+        symptom_instructions = (
+            "\n6. If SYMPTOM PATTERNS data is present: add a short 'Something worth tracking' paragraph. "
+            "Name the symptom, how many days it appeared, and what else was happening in the data on those days "
+            "— framed as a pattern worth mentioning at the appointment, not a conclusion. "
+            "If medication context is present, note it as a timing observation: "
+            "'these entries started around the same time as a change in [medication].' "
+            "NEVER say the symptom was caused by anything. NEVER say 'this is a side effect.' "
+            "If no symptom data: skip this section.\n"
+            if symptom_section else ""
+        )
         summary_system = (
             "You are writing a personal summary for a patient to read before their appointment. "
             f"{appt_context}"
@@ -396,11 +475,14 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             "2. What the numbers actually showed — use real averages and ranges. Say 'your mood averaged 5.2 out of 10' not 'mood data indicates moderate affect.' Use 'in the first week' not '2024-01-01 to 2024-01-07.'\n"
             "3. What stood out — anything different from their usual, anything that clustered together, any week that felt different from the others.\n"
             "4. What their journals reflected — themes, things they kept coming back to. Don't analyze it clinically. Just describe what was there.\n"
-            "5. Two or three specific things worth bringing to the appointment, framed as questions they might want to ask.\n\n"
+            f"{symptom_instructions}"
+            "5. Two or three specific things worth bringing to the appointment, framed as questions they might want to ask. "
+            "If symptom patterns are present, add one symptom-related question.\n\n"
             "RULES:\n"
             "- Use 'you' naturally — this is their data about themselves\n"
             "- Never say 'you have [condition],' 'you suffer from,' 'you are [clinical state]'\n"
             "- Never advise medication changes\n"
+            "- For symptom patterns: describe co-occurrence only — never causation or diagnosis\n"
             "- Translate scores into lived experience where possible ('your sleep averaged 5.2 hours, which is below where you usually aim')\n"
             "- If advanced data (exercise, social quality, coping activities) is present, weave it in naturally — don't just list fields\n"
             "- Be honest about what the data can and can't tell you\n"
@@ -418,6 +500,7 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         f"{adv_section}\n\n"
         f"DAILY CHECK-INS ({n} total):\n{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
         f"JOURNAL ENTRIES ({len(journal_rows)} total):\n{json.dumps(journal_rows, indent=2, default=str)}"
+        f"{symptom_section}"
     )
 
     raw = _call_claude(summary_system, user_content, max_tokens=1000)
