@@ -149,14 +149,22 @@ def _apply_perms_to_trends(trends: dict, perms: dict) -> dict:
         return trends
     trends = dict(trends)
     if not perms.get('mood_stress_sleep', True):
-        for k in ('mood', 'stress', 'sleep'):
+        for k in ('mood', 'stress', 'sleep', 'energy'):
             trends.pop(k, None)
     if not perms.get('medication_data', True):
         trends.pop('medication_adherence', None)
         trends.pop('medication_timing', None)
         trends.pop('current_medications', None)
     if not perms.get('system_scores', True):
-        for k in ('stability', 'crash_risk', 'stim_load'):
+        # Use the exact keys returned by get_trends_data
+        for k in ('stability_score', 'crash_risk', 'stim_load',
+                  'nervous_system_load', 'mood_distortion', 'sleep_disruption'):
+            trends.pop(k, None)
+    if not perms.get('advanced_data', True):
+        for k in ('focus', 'dissociation', 'sleep_quality', 'caffeine',
+                  'irritability', 'motivation', 'perceived_stress',
+                  'alcohol', 'exercise', 'sunlight', 'screen_time',
+                  'social_quality', 'workload_friction'):
             trends.pop(k, None)
     return trends
 
