@@ -3614,6 +3614,52 @@ def get_care_team_permissions(patient_id: str, provider_id: str) -> dict | None:
         return None
 
 
+def ensure_legacy_care_team_row(patient_id: str, provider_id: str) -> dict:
+    """
+    For a legacy provider-patient pair (assigned via patient_profiles.provider_id),
+    ensure an active care_team_members row exists so permissions can be managed.
+
+    Returns the data_permissions dict for that row (creates one on first call).
+    """
+    try:
+        # Check if any row exists already (any status)
+        existing = supabase_admin.table('care_team_members').select(
+            'id, status, data_permissions'
+        ).eq('patient_id', str(patient_id)).eq('provider_id', str(provider_id)).execute()
+
+        if existing.data:
+            row = existing.data[0]
+            if row['status'] == 'active':
+                return row.get('data_permissions') or _DEFAULT_PERMISSIONS
+            # Row exists but is not active — don't auto-activate a revoked relationship
+            return _DEFAULT_PERMISSIONS
+
+        # No row at all — look up provider_type to set a sensible role
+        try:
+            pr = supabase_admin.table('profiles').select('provider_type').eq(
+                'id', str(provider_id)).single().execute()
+            role = (pr.data or {}).get('provider_type') or 'psychiatrist'
+        except Exception:
+            role = 'psychiatrist'
+
+        now_iso = datetime.utcnow().isoformat()
+        supabase_admin.table('care_team_members').insert({
+            'patient_id':       str(patient_id),
+            'provider_id':      str(provider_id),
+            'role':             role,
+            'status':           'active',
+            'requested_by':     'migration',
+            'approved_at':      now_iso,
+            'data_permissions': _DEFAULT_PERMISSIONS,
+        }).execute()
+        print(f"[care_team] Migrated legacy pair to care_team_members: "
+              f"patient={patient_id} provider={provider_id}", flush=True)
+        return _DEFAULT_PERMISSIONS
+    except Exception as e:
+        print(f"[care_team] ensure_legacy_care_team_row error: {e}", flush=True)
+        return _DEFAULT_PERMISSIONS
+
+
 def provider_has_care_access(provider_id: str, patient_id: str) -> bool:
     """
     Returns True if an active care team relationship exists between provider and patient.

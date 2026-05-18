@@ -88,14 +88,21 @@ _ALL_PERMS_TRUE = {k: True for k in (
 def _get_provider_perms(provider_id: str, patient_id: str) -> dict:
     """Return data_permissions for this provider-patient pair.
 
-    Legacy (patient_profiles.provider_id) relationships predate the care team
-    model and get full access by default.
+    If no care_team_members row exists but a legacy (patient_profiles.provider_id)
+    relationship does, auto-create the row so the patient can manage permissions.
     """
     perms = db.get_care_team_permissions(patient_id, provider_id)
     if perms is None:
-        print(f"[perms] FALLBACK all-true: provider={provider_id} patient={patient_id} "
-              f"(no active care_team_members row)", flush=True)
-        return dict(_ALL_PERMS_TRUE)
+        # Check for legacy relationship and migrate on first access
+        legacy_patients = db.get_provider_patients(provider_id)
+        if str(patient_id) in [str(p['patient_id']) for p in legacy_patients]:
+            perms = db.ensure_legacy_care_team_row(patient_id, provider_id)
+            print(f"[perms] MIGRATED legacy: provider={provider_id} patient={patient_id} "
+                  f"perms={perms}", flush=True)
+        else:
+            print(f"[perms] FALLBACK all-true: provider={provider_id} patient={patient_id} "
+                  f"(no care team or legacy row)", flush=True)
+            return dict(_ALL_PERMS_TRUE)
     print(f"[perms] OK: provider={provider_id} patient={patient_id} perms={perms}", flush=True)
     return perms
 
