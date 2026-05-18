@@ -78,6 +78,95 @@ def _provider_owns_patient(provider_id, patient_id):
     return db.provider_has_care_access(provider_id, patient_id)
 
 
+# ── Permission helpers ────────────────────────────────────────────────────────
+
+_ALL_PERMS_TRUE = {k: True for k in (
+    'journals_raw', 'journals_themes', 'mood_stress_sleep',
+    'medication_data', 'system_scores', 'advanced_data', 'cross_provider_flags'
+)}
+
+def _get_provider_perms(provider_id: str, patient_id: str) -> dict:
+    """Return data_permissions for this provider-patient pair.
+
+    Legacy (patient_profiles.provider_id) relationships predate the care team
+    model and get full access by default.
+    """
+    perms = db.get_care_team_permissions(patient_id, provider_id)
+    return perms if perms is not None else dict(_ALL_PERMS_TRUE)
+
+
+def _strip_checkin_fields(checkins: list, perms: dict) -> list:
+    result = []
+    for c in checkins:
+        c = dict(c)
+        if not perms.get('mood_stress_sleep', True):
+            c['mood_score'] = None
+            c['stress_score'] = None
+            c['sleep_hours'] = None
+        if not perms.get('system_scores', True):
+            for key in ('stability_score', 'stim_load', 'crash_risk',
+                        'nervous_system_load', 'dopamine_efficiency',
+                        'sleep_disruption_score', 'mood_distortion',
+                        'nutrition_stability'):
+                c[key] = None
+        if not perms.get('advanced_data', True):
+            c['extended_data'] = {}
+        result.append(c)
+    return result
+
+
+def _apply_perms_to_patient_detail(detail: dict, perms: dict) -> dict:
+    if not detail:
+        return detail
+    detail = dict(detail)
+    if not perms.get('medication_data', True):
+        detail['current_medications'] = []
+    if not perms.get('journals_raw', True):
+        detail['journals'] = []
+    if not perms.get('journals_themes', True):
+        detail['latest_summary'] = None
+    if detail.get('checkins'):
+        detail['checkins'] = _strip_checkin_fields(detail['checkins'], perms)
+    if detail.get('recent_checkins'):
+        detail['recent_checkins'] = _strip_checkin_fields(detail['recent_checkins'], perms)
+    return detail
+
+
+def _apply_perms_to_trends(trends: dict, perms: dict) -> dict:
+    if not trends:
+        return trends
+    trends = dict(trends)
+    if not perms.get('mood_stress_sleep', True):
+        for k in ('mood', 'stress', 'sleep'):
+            trends.pop(k, None)
+    if not perms.get('medication_data', True):
+        trends.pop('medication_adherence', None)
+        trends.pop('medication_timing', None)
+        trends.pop('current_medications', None)
+    if not perms.get('system_scores', True):
+        for k in ('stability', 'crash_risk', 'stim_load'):
+            trends.pop(k, None)
+    return trends
+
+
+def _apply_perms_to_brief(brief: dict, perms: dict) -> dict:
+    if not brief:
+        return brief
+    brief = dict(brief)
+    if not perms.get('mood_stress_sleep', True):
+        for key in ('mood_avg', 'mood_baseline', 'mood_dir', 'mood_delta',
+                    'stress_avg', 'stress_baseline', 'stress_dir', 'stress_delta',
+                    'sleep_avg', 'sleep_baseline', 'sleep_dir', 'sleep_delta'):
+            brief[key] = None
+    if not perms.get('medication_data', True):
+        brief['med_doses_logged'] = None
+        brief['med_days_logged'] = None
+    if not perms.get('journals_raw', True):
+        brief['journal_count'] = 0
+        brief['journal_themes'] = []
+    return brief
+
+
 def _current_user():
     token = _session_token()
     return auth_module.get_current_user(token)
@@ -631,10 +720,12 @@ def provider_patient_detail(patient_id):
         return redirect(url_for('provider_dashboard'))
 
     try:
+        perms        = _get_provider_perms(user['id'], patient_id)
+        patient      = _apply_perms_to_patient_detail(patient, perms)
         patients     = db.get_provider_patients(user['id'])
-        trends       = db.get_trends_data(patient_id, days=30) or {}
+        trends       = _apply_perms_to_trends(db.get_trends_data(patient_id, days=30) or {}, perms)
         appointments = db.get_patient_appointments(user['id'], patient_id)
-        interactions = db.check_medication_interactions(patient_id)
+        interactions = db.check_medication_interactions(patient_id) if perms.get('medication_data', True) else []
 
         current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
         patient_has_crisis = current_p.get('suicide_risk', False)
@@ -663,7 +754,8 @@ def provider_patient_detail(patient_id):
                                crisis_history=crisis_history,
                                days_since_last_checkin=days_since_last_checkin,
                                last_checkin_date=last_checkin_date,
-                               provider_role=provider_role)
+                               provider_role=provider_role,
+                               perms=perms)
     except Exception:
         app.logger.exception(f"Error rendering patient detail for {patient_id}")
         flash("An error occurred loading this patient's details. The issue has been logged.", 'error')
@@ -716,11 +808,13 @@ def provider_appointment_workspace(patient_id, appt_id):
         flash('Patient not found', 'error')
         return redirect(url_for('provider_dashboard'))
 
+    perms        = _get_provider_perms(user['id'], patient_id)
+    patient      = _apply_perms_to_patient_detail(patient, perms)
     patients     = db.get_provider_patients(user['id'])
-    trends       = db.get_trends_data(patient_id, days=days) or {}
-    summaries    = db.get_summaries(patient_id)
-    timing_stats = db.get_medication_timing_stats(patient_id, days=days)
-    interactions = db.check_medication_interactions(patient_id)
+    trends       = _apply_perms_to_trends(db.get_trends_data(patient_id, days=days) or {}, perms)
+    summaries    = db.get_summaries(patient_id) if perms.get('journals_themes', True) else []
+    timing_stats = db.get_medication_timing_stats(patient_id, days=days) if perms.get('medication_data', True) else {}
+    interactions = db.check_medication_interactions(patient_id) if perms.get('medication_data', True) else []
     alerts       = _build_alerts(trends, days)
 
     # Journals scoped to the appointment's review window
@@ -731,8 +825,10 @@ def provider_appointment_workspace(patient_id, appt_id):
         appt_start_dt  = date.today()
     window_start = (appt_start_dt - timedelta(days=days)).isoformat()
     window_end   = appt_start_dt.isoformat()
-    journals     = db.get_journals_in_range(patient_id, window_start, window_end,
-                                            shared_only=True)
+    journals = (
+        db.get_journals_in_range(patient_id, window_start, window_end, shared_only=True)
+        if perms.get('journals_raw', True) else []
+    )
 
     current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
     patient_has_crisis = current_p.get('suicide_risk', False)
@@ -757,7 +853,8 @@ def provider_appointment_workspace(patient_id, appt_id):
                            today_str=date.today().isoformat(),
                            patient_has_crisis=patient_has_crisis,
                            patient_crisis_context=patient_crisis_context,
-                           ai_questions=ai_questions)
+                           ai_questions=ai_questions,
+                           perms=perms)
 
 
 @app.route('/provider/patient/<patient_id>/trends')
@@ -1499,12 +1596,17 @@ def api_provider_patient_trends(patient_id):
     if not _provider_owns_patient(user['id'], patient_id):
         return jsonify({'error': 'Patient not found'}), 404
     days = min(int(request.args.get('days', 30)), 365)
+    perms = _get_provider_perms(user['id'], patient_id)
     trends = db.get_trends_data(patient_id, days=days)
     if not trends:
         return jsonify({'error': 'Unable to fetch trends'}), 500
+    trends = _apply_perms_to_trends(trends, perms)
     try:
-        meds = db.get_user_medications(patient_id, active_only=True)
-        trends['current_medications'] = [{'id': m.get('id'), 'name': m.get('name')} for m in meds] if meds else []
+        if perms.get('medication_data', True):
+            meds = db.get_user_medications(patient_id, active_only=True)
+            trends['current_medications'] = [{'id': m.get('id'), 'name': m.get('name')} for m in meds] if meds else []
+        else:
+            trends['current_medications'] = []
     except Exception:
         trends['current_medications'] = []
     return jsonify(trends), 200
@@ -1521,7 +1623,8 @@ def api_provider_patient(patient_id):
     detail = db.get_patient_detail(patient_id, days=days)
     if not detail:
         return jsonify({'error': 'Patient not found'}), 404
-    return jsonify(detail), 200
+    perms = _get_provider_perms(user['id'], patient_id)
+    return jsonify(_apply_perms_to_patient_detail(detail, perms)), 200
 
 
 @app.route('/api/provider/appointment/<appt_id>/save', methods=['POST'])
@@ -1582,14 +1685,15 @@ def api_between_session_brief(patient_id):
     if not _provider_owns_patient(user['id'], patient_id):
         return jsonify({'error': 'Patient not found'}), 404
 
-    brief = db.get_between_session_brief(patient_id, user['id'])
+    perms = _get_provider_perms(user['id'], patient_id)
+    brief = _apply_perms_to_brief(db.get_between_session_brief(patient_id, user['id']), perms)
 
     # Detect care team role for this provider-patient pair
     care_role = db.get_care_team_member_role(user['id'], patient_id) or 'psychiatrist'
     brief['provider_role'] = care_role
 
     _THERAPY_ROLES = {'therapist', 'counselor', 'coach'}
-    if care_role in _THERAPY_ROLES:
+    if care_role in _THERAPY_ROLES and perms.get('advanced_data', True):
         brief['behavioral'] = db.get_behavioral_data(patient_id, days=brief.get('days_in_period', 30))
 
     return jsonify(brief), 200
@@ -1615,10 +1719,11 @@ def api_provider_therapy_summary(patient_id):
 
     body = request.get_json(silent=True) or {}
     days = max(7, min(int(body.get('days', 14)), 90))
+    perms = _get_provider_perms(user['id'], patient_id)
 
-    checkins    = db.get_checkins(patient_id, days)
-    journals    = db.get_journals(patient_id, limit=20, shared_only=True)
-    behavioral  = db.get_behavioral_data(patient_id, days=days)
+    checkins   = _strip_checkin_fields(db.get_checkins(patient_id, days), perms)
+    journals   = db.get_journals(patient_id, limit=20, shared_only=True) if perms.get('journals_raw', True) else []
+    behavioral = db.get_behavioral_data(patient_id, days=days) if perms.get('advanced_data', True) else {}
 
     try:
         result = claude_api.generate_therapy_summary(
@@ -1750,6 +1855,8 @@ def api_get_patient_medications(patient_id):
         return err
     if not _provider_owns_patient(user['id'], patient_id):
         return jsonify({'error': 'Access denied.'}), 403
+    if not _get_provider_perms(user['id'], patient_id).get('medication_data', True):
+        return jsonify({'medications': []}), 200
     meds = db.get_user_medications(patient_id, active_only=True)
     return jsonify({'medications': meds}), 200
 
@@ -1962,12 +2069,14 @@ def api_provider_generate_summary(patient_id):
     period_end   = data.get('period_end')
     appointment_date = data.get('appointment_date')
 
+    perms = _get_provider_perms(user['id'], patient_id)
+
     if period_start and period_end:
         if not (re.match(r'^\d{4}-\d{2}-\d{2}$', str(period_start)) and
                 re.match(r'^\d{4}-\d{2}-\d{2}$', str(period_end))):
             return jsonify({'error': 'period_start and period_end must be YYYY-MM-DD'}), 400
-        checkins = db.get_checkins_in_range(patient_id, period_start, period_end)
-        journals = db.get_journals_in_range(patient_id, period_start, period_end)
+        checkins = _strip_checkin_fields(db.get_checkins_in_range(patient_id, period_start, period_end), perms)
+        journals = db.get_journals_in_range(patient_id, period_start, period_end) if perms.get('journals_raw', True) else []
         days = None
     else:
         days = min(int(data.get('days', 14)), 365)
@@ -1975,8 +2084,8 @@ def api_provider_generate_summary(patient_id):
         start_dt  = end_dt - timedelta(days=days)
         period_start = start_dt.isoformat()
         period_end   = end_dt.isoformat()
-        checkins = db.get_checkins_in_range(patient_id, period_start, period_end)
-        journals = db.get_journals_in_range(patient_id, period_start, period_end)
+        checkins = _strip_checkin_fields(db.get_checkins_in_range(patient_id, period_start, period_end), perms)
+        journals = db.get_journals_in_range(patient_id, period_start, period_end) if perms.get('journals_raw', True) else []
 
     if not checkins and not journals:
         return jsonify({'error': 'No data found for this patient in the selected period'}), 400

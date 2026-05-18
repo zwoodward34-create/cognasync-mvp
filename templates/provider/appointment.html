@@ -592,7 +592,13 @@
 
     <!-- Entry list -->
     <div class="js-entry-list" id="js-entry-list">
-      {% if journals %}
+      {% if not perms.journals_raw %}
+      <div class="js-empty">
+        <div class="js-empty-icon">🔒</div>
+        <div class="js-empty-text">Journal access not permitted</div>
+        <div class="js-empty-sub">The patient has not granted this provider access to journal entries.</div>
+      </div>
+      {% elif journals %}
         {% for j in journals %}
         <div class="js-entry" id="js-entry-{{ loop.index }}"
              onclick="toggleJournalEntry({{ loop.index }})">

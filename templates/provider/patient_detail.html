@@ -129,7 +129,7 @@
             {% endif %}
           </h1>
           <div class="ph-email">{{ patient.email }}</div>
-          {% if patient.current_medications %}
+          {% if perms.medication_data and patient.current_medications %}
           <div class="ph-meds">
             {% for med in patient.current_medications %}
             <span class="pd-med-chip">{{ med.name | title }} {% if med.dose %}{{ med.dose }}{% endif %}</span>
@@ -196,7 +196,7 @@
     {% endif %}
 
     <!-- Interactions banner -->
-    {% if interactions %}
+    {% if perms.medication_data and interactions %}
     <div class="pv-alert-banner" style="margin-bottom:20px;">
       {% for ia in interactions %}
       <div class="pv-alert-item {{ 'urgent' if ia.severity == 'serious' else 'warning' }}">
@@ -419,7 +419,7 @@
       </div>
     </div>
 
-    {% if provider_role == 'psychiatrist' %}
+    {% if provider_role == 'psychiatrist' and perms.medication_data %}
     <!-- ─── PSYCHIATRIST: ADD MEDICATION ──────────────────────────────── -->
     <div class="ah-section" style="margin-top:28px;" id="med-add-section">
       <div class="ah-section-hdr" style="align-items:flex-start;flex-wrap:wrap;gap:12px;">
