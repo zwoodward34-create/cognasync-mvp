@@ -383,7 +383,7 @@ function EntryCard({ entry, expanded, onClick }) {
       <p style={{ margin: 0, fontSize: 13, color: P.inkMid, lineHeight: 1.55,
         overflow: 'hidden', display: '-webkit-box',
         WebkitLineClamp: expanded ? 'unset' : 2, WebkitBoxOrient: 'vertical' }}>
-        {entry.raw_entry}
+        {entry.content || entry.raw_entry}
       </p>
       {expanded && entry.ai_analysis && (
         <div style={{ marginTop: 12, paddingTop: 12, borderTop: `1px solid ${P.borderLight}` }}>

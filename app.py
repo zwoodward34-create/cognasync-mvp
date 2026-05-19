@@ -1459,9 +1459,11 @@ def api_create_journal():
             share_with_provider=share_with_provider,
         )
         return jsonify({
+            'id': journal_id,
             'journal_id': journal_id,
             'patient_id': user['id'],
-            'raw_entry': raw_entry,
+            'content': raw_entry,
+            'entry_type': data.get('entry_type', 'free_flow'),
             'ai_analysis': claude_api.CRISIS_RESPONSE,
             'created_at': date.today().isoformat(),
             'alert': 'crisis',
@@ -1484,9 +1486,11 @@ def api_create_journal():
         share_with_provider=share_with_provider,
     )
     return jsonify({
+        'id': journal_id,
         'journal_id': journal_id,
         'patient_id': user['id'],
-        'raw_entry': raw_entry,
+        'content': raw_entry,
+        'entry_type': data.get('entry_type', 'free_flow'),
         'ai_analysis': ai_text,
         'created_at': date.today().isoformat(),
     }), 201
