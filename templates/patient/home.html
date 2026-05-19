@@ -114,12 +114,12 @@
   <a href="{{ url_for('summary_page') }}" class="quick-card">
     <div class="quick-card-icon">◈</div>
     <div class="quick-card-body">
-      <div class="quick-card-title">Pre-Appointment Summary</div>
+      <div class="quick-card-title">Pre-Appt Summary</div>
       <div class="quick-card-sub">
         {% if latest_summary %}
           Last generated {{ latest_summary.created_at[:10] }}
         {% else %}
-          No summary yet — generate one before your next visit
+          Generate before your next visit
         {% endif %}
       </div>
     </div>
@@ -131,6 +131,15 @@
     <div class="quick-card-body">
       <div class="quick-card-title">Trends</div>
       <div class="quick-card-sub">View mood, sleep &amp; stress charts</div>
+    </div>
+    <div class="quick-card-arrow">→</div>
+  </a>
+
+  <a href="{{ url_for('patient_care_team_page') }}" class="quick-card">
+    <div class="quick-card-icon">⊙</div>
+    <div class="quick-card-body">
+      <div class="quick-card-title">Care Team</div>
+      <div class="quick-card-sub">View your providers &amp; contacts</div>
     </div>
     <div class="quick-card-arrow">→</div>
   </a>

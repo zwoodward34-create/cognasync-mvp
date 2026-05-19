@@ -397,7 +397,7 @@ input[type="number"], input[type="date"], select, .form-textarea, textarea {
 
 .quick-cards {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 1px;
   margin-bottom: 40px;
   border: 1px solid var(--border);
@@ -438,7 +438,7 @@ input[type="number"], input[type="date"], select, .form-textarea, textarea {
 }
 
 .quick-card-body  { flex: 1; }
-.quick-card-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 2px; }
+.quick-card-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .quick-card-sub   { font-size: 0.79rem; color: var(--text-muted); }
 .quick-card-arrow { font-size: 1rem; color: var(--text-muted); }
 
@@ -1281,7 +1281,7 @@ body.pv-body-appt .pv-main {
   .auth-card { padding: 24px 20px; }
 
   /* ── Quick cards ── */
-  .quick-cards { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .quick-cards { grid-template-columns: repeat(2, 1fr); }
 
   /* ── Stats row — horizontal scroll on mobile ── */
   .stats-row {
