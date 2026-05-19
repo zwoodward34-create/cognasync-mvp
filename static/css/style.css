@@ -846,15 +846,28 @@ input[type="number"], input[type="date"], select, .form-textarea, textarea {
 
 /* ── Journal entry cards ─────────────────────────────────────────────── */
 
-.journal-entry-card { border-bottom: 1px solid var(--border-light); padding: 16px 0; }
+.journal-entry-card {
+  border-bottom: 1px solid var(--border-light);
+  padding: 16px 0;
+  cursor: pointer;
+  user-select: none;
+}
 .journal-entry-card:last-child { border-bottom: none; }
-.journal-entry-meta { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+.journal-entry-card:hover { background: var(--bg); margin: 0 -16px; padding: 16px; }
+.journal-entry-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.journal-entry-meta { display: flex; align-items: center; gap: 10px; }
 .entry-date { font-size: 0.79rem; color: var(--text-muted); }
 .entry-type-badge { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.04em; border: 1px solid var(--border-light); padding: 2px 7px; border-radius: var(--radius); color: var(--text-muted); }
-.journal-entry-preview { font-size: 0.875rem; line-height: 1.65; }
-.analysis-details { margin-top: 10px; }
-.analysis-details summary { font-size: 0.8rem; cursor: pointer; padding: 4px 0; user-select: none; }
-.analysis-content { background: var(--bg); border: 1px solid var(--border-light); padding: 12px; border-radius: var(--radius); font-size: 0.855rem; line-height: 1.75; margin-top: 8px; white-space: pre-wrap; }
+.entry-chevron { font-size: 1.2rem; color: var(--text-muted); transition: transform 0.2s ease; line-height: 1; }
+.journal-entry-card.open .entry-chevron { transform: rotate(90deg); }
+.journal-entry-preview { font-size: 0.875rem; line-height: 1.65; color: var(--text-muted); }
+.journal-entry-card.open .journal-entry-preview { display: none; }
+.journal-entry-full { display: none; }
+.journal-entry-card.open .journal-entry-full { display: block; }
+.journal-full-text { font-size: 0.875rem; line-height: 1.75; white-space: pre-wrap; margin-bottom: 16px; }
+.journal-reflection { margin-top: 12px; }
+.journal-reflection-label { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); margin-bottom: 6px; }
+.analysis-content { background: var(--bg); border: 1px solid var(--border-light); padding: 12px; border-radius: var(--radius); font-size: 0.855rem; line-height: 1.75; white-space: pre-wrap; }
 
 /* ── Provider ────────────────────────────────────────────────────────── */
 

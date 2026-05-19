@@ -113,18 +113,24 @@
   </div>
   <div class="entries-stack">
     {% for j in journals %}
-    <div class="journal-entry-card">
-      <div class="journal-entry-meta">
-        <span class="entry-date">{{ j.created_at[:10] }}</span>
-        <span class="entry-type-badge">{{ j.entry_type or 'free_flow' }}</span>
+    <div class="journal-entry-card" onclick="toggleJournalEntry(this)">
+      <div class="journal-entry-header">
+        <div class="journal-entry-meta">
+          <span class="entry-date">{{ j.created_at[:10] }}</span>
+          <span class="entry-type-badge">{{ j.entry_type or 'free_flow' }}</span>
+        </div>
+        <span class="entry-chevron">›</span>
       </div>
-      <div class="journal-entry-preview">{{ j.raw_entry[:200] }}{% if j.raw_entry|length > 200 %}…{% endif %}</div>
-      {% if j.ai_analysis %}
-      <details class="analysis-details">
-        <summary>View reflection</summary>
-        <div class="analysis-content">{{ j.ai_analysis }}</div>
-      </details>
-      {% endif %}
+      <div class="journal-entry-preview">{{ j.raw_entry[:160] }}{% if j.raw_entry|length > 160 %}…{% endif %}</div>
+      <div class="journal-entry-full">
+        <div class="journal-full-text">{{ j.raw_entry }}</div>
+        {% if j.ai_analysis %}
+        <div class="journal-reflection">
+          <div class="journal-reflection-label">Reflection</div>
+          <div class="analysis-content">{{ j.ai_analysis }}</div>
+        </div>
+        {% endif %}
+      </div>
     </div>
     {% endfor %}
   </div>
@@ -134,5 +140,10 @@
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
-<script>initJournal();</script>
+<script>
+initJournal();
+function toggleJournalEntry(card) {
+  card.classList.toggle('open');
+}
+</script>
 {% endblock %}
