@@ -615,12 +615,13 @@
 
           <!-- Preview line -->
           <div class="js-entry-preview" id="js-preview-{{ loop.index }}">
-            {{ (j.raw_entry or '')[:90] }}{% if (j.raw_entry or '')|length > 90 %}…{% endif %}
+            {% set jtext = j.content or j.raw_entry or '' %}
+            {{ jtext[:90] }}{% if jtext|length > 90 %}…{% endif %}
           </div>
 
           <!-- Full content (hidden until expanded) -->
           <div class="js-entry-body" id="js-body-{{ loop.index }}" style="display:none;">
-            <div class="js-entry-full">{{ j.raw_entry or '' }}</div>
+            <div class="js-entry-full">{{ j.content or j.raw_entry or '' }}</div>
             {% if j.ai_analysis %}
             <div class="js-entry-ai">
               <div class="js-entry-ai-label">AI Reflection</div>
