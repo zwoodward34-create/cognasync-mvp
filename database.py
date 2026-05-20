@@ -459,6 +459,7 @@ def create_journal(patient_id, entry_type, raw_entry, ai_analysis=None, share_wi
             'entry_type': entry_type,
             'ai_analysis': ai_analysis,
             'is_crisis': entry_type == 'crisis',
+            'share_with_provider': bool(share_with_provider),
             'created_at': datetime.utcnow().isoformat()
         }
         
