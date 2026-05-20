@@ -501,6 +501,64 @@
     color: #c0392b;
     margin-top: 5px;
   }
+
+  /* ── Proactive AI Insights (provider view) ──────────────────────────────── */
+  .pd-proactive-section {
+    margin-bottom: 16px;
+    border-top: 1px solid var(--color-border, #ececec);
+    padding-top: 14px;
+  }
+  .pd-proactive-title {
+    font-size: 0.68rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #2B5C3E;
+    margin-bottom: 10px;
+  }
+  .pd-proactive-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    background: #f5f9f6;
+    border: 1px solid #b8d4c0;
+    border-left: 3px solid #2B5C3E;
+    border-radius: 7px;
+    padding: 10px 13px;
+    margin-bottom: 8px;
+  }
+  .pd-proactive-card--positive {
+    background: #fdf9ee;
+    border-color: #e0d0a0;
+    border-left-color: #C4A76B;
+  }
+  .pd-proactive-label {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: #d4eadb;
+    color: #2B5C3E;
+    margin-bottom: 5px;
+  }
+  .pd-proactive-card--positive .pd-proactive-label {
+    background: #f5e8c4;
+    color: #7a5c1e;
+  }
+  .pd-proactive-text {
+    font-size: 0.82rem;
+    color: var(--color-text, #222);
+    line-height: 1.5;
+    margin: 0;
+  }
+  .pd-proactive-time {
+    font-size: 0.68rem;
+    color: var(--color-text-muted, #aaa);
+    margin-top: 3px;
+  }
 </style>
 {% endblock %}
 
@@ -1029,6 +1087,12 @@ function renderBriefBody(d, patientId) {
     html += `</div>`;
   }
 
+  // ── Proactive AI insights (loaded async after render) ───────────────────
+  html += `<div class="pd-proactive-section" id="proactive-section-${patientId}" style="display:none;">
+    <div class="pd-proactive-title">⚡ Proactive Pattern Alerts</div>
+    <div id="proactive-body-${patientId}"></div>
+  </div>`;
+
   // ── Care flags section (loaded async after render) ──────────────────────
   html += `<div class="pd-flags-section" id="flags-section-${patientId}">
     <div class="pd-flags-section-title">Care Team Flags</div>
@@ -1058,8 +1122,9 @@ function renderBriefBody(d, patientId) {
   }
 
   body.innerHTML = html;
-  // Async: load care flags after DOM is updated
+  // Async: load secondary data after DOM is updated
   loadCareFlags(patientId);
+  loadProactiveInsights(patientId);
 }
 
 // ── Care flag helpers ──────────────────────────────────────────────────────
@@ -1099,6 +1164,52 @@ function _renderFlagCard(f, isMine) {
     <div class="pd-flag-body">${f.body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
     <div class="pd-flag-time">${_relativeTime(f.created_at)}</div>
   </div>`;
+}
+
+const _PROACTIVE_LABELS = {
+  crash_risk_climbing: 'Crash Risk Climbing',
+  sleep_degradation:   'Sleep Pattern Change',
+  mood_decline:        'Mood Trend',
+  stim_load_spike:     'High Stim Load',
+  positive_streak:     'Strong Stretch',
+};
+const _PROACTIVE_POSITIVE = new Set(['positive_streak']);
+
+async function loadProactiveInsights(patientId) {
+  const section = document.getElementById('proactive-section-' + patientId);
+  const body    = document.getElementById('proactive-body-'    + patientId);
+  if (!section || !body) return;
+  try {
+    const res  = await fetch('/api/provider/patient/' + patientId + '/proactive-insights', { credentials: 'same-origin' });
+    const data = res.ok ? await res.json() : null;
+    const insights = (data && data.insights) ? data.insights : [];
+    if (insights.length === 0) return;   // section stays hidden
+
+    let html = '';
+    insights.forEach(function(ins) {
+      const label    = _PROACTIVE_LABELS[ins.pattern_type] || ins.pattern_type;
+      const isPos    = _PROACTIVE_POSITIVE.has(ins.pattern_type);
+      const cardCls  = isPos ? 'pd-proactive-card pd-proactive-card--positive' : 'pd-proactive-card';
+      const ageMs    = Date.now() - new Date(ins.created_at).getTime();
+      const ageHr    = Math.floor(ageMs / 3600000);
+      const ageLabel = ageHr < 1 ? 'just now' : ageHr < 24 ? ageHr + 'h ago' : Math.floor(ageHr / 24) + 'd ago';
+      const seenDot  = ins.seen_at
+        ? `<span style="font-size:0.65rem;color:#1a7f3c;margin-left:5px;">✓ seen by patient</span>`
+        : `<span style="font-size:0.65rem;color:#aaa;margin-left:5px;">unseen</span>`;
+      const textEsc  = ins.insight_text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      html += `<div class="${cardCls}">
+        <div>
+          <span class="pd-proactive-label">${label}</span>
+          ${seenDot}
+          <p class="pd-proactive-text">${textEsc}</p>
+          <div class="pd-proactive-time">Detected ${ageLabel}</div>
+        </div>
+      </div>`;
+    });
+
+    body.innerHTML = html;
+    section.style.display = '';   // reveal section
+  } catch (_) { /* silent — proactive insights are supplementary */ }
 }
 
 async function loadCareFlags(patientId) {

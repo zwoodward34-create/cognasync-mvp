@@ -226,10 +226,12 @@ def home():
     streak = db.get_checkin_streak(user['id'])
     latest_summary = db.get_latest_summary(user['id'])
     first_name = user['full_name'].split()[0]
+    proactive_insights = db.get_unseen_proactive_insights(user['id'])
     return render_template('patient/home.html',
                            user=user, profile=profile, streak=streak,
                            latest_summary=latest_summary,
-                           first_name=first_name)
+                           first_name=first_name,
+                           proactive_insights=proactive_insights)
 
 
 @app.route('/login')
@@ -1078,12 +1080,50 @@ def api_create_checkin():
     except Exception as _ai_err:
         app.logger.error("AI insight generation failed: %s", _ai_err, exc_info=True)
 
+    # ── Proactive pattern detection (non-blocking) ───────────────────
+    try:
+        patterns = db.detect_proactive_patterns(user['id'])
+        for p in patterns:
+            result = claude_api.generate_proactive_insight(
+                p['pattern_type'], p['supporting_data']
+            )
+            if result.get('status') == 'safe' and result.get('text'):
+                db.save_proactive_insight(
+                    user['id'], p['pattern_type'],
+                    result['text'], p['supporting_data']
+                )
+    except Exception as _pi_err:
+        app.logger.error("Proactive insight generation failed: %s", _pi_err, exc_info=True)
+
     return jsonify({
         'checkin_id': checkin_id,
         'patient_id': user['id'],
         'message': 'Check-in recorded successfully',
         'ai_insight': ai_insight,
     }), 201
+
+
+@app.route('/api/proactive-insights', methods=['GET'])
+def api_proactive_insights():
+    """Return unseen proactive insights for the logged-in patient."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    insights = db.get_unseen_proactive_insights(user['id'])
+    for ins in insights:
+        if not ins.get('seen_at'):
+            db.mark_proactive_insight_seen(user['id'], ins['id'])
+    return jsonify({'insights': insights}), 200
+
+
+@app.route('/api/proactive-insights/<insight_id>/dismiss', methods=['POST'])
+def api_dismiss_proactive_insight(insight_id):
+    """Dismiss a proactive insight so it no longer appears on the dashboard."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    ok = db.dismiss_proactive_insight(user['id'], insight_id)
+    return jsonify({'ok': ok}), 200 if ok else 500
 
 
 @app.route('/api/medications', methods=['GET', 'POST'])
@@ -1890,6 +1930,19 @@ def api_create_flag_response(patient_id, flag_id):
     if result.get('ok'):
         return jsonify(result), 201
     return jsonify({'error': result.get('error', 'Failed to post response.')}), 400
+
+
+@app.route('/api/provider/patient/<patient_id>/proactive-insights', methods=['GET'])
+def api_provider_proactive_insights(patient_id):
+    """Return recent proactive AI insights for a patient — provider-side read."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+    days = int(request.args.get('days', 7))
+    insights = db.get_proactive_insights_for_provider(patient_id, days=days)
+    return jsonify({'insights': insights}), 200
 
 
 @app.route('/api/provider/patient/<patient_id>/medications', methods=['GET'])

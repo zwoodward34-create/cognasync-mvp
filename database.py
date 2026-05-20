@@ -4321,3 +4321,231 @@ def add_medication_by_psychiatrist(provider_id: str, patient_id: str,
     if med is None:
         return {'ok': False, 'error': 'Failed to add medication — please try again.'}
     return {'ok': True, 'medication': med}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# PROACTIVE INSIGHTS — Pattern detection & persistence
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+# How long (hours) to suppress re-firing the same pattern type
+_PROACTIVE_COOLDOWN_HOURS = 48
+
+
+def _get_recent_scored_checkins(patient_id: str, days: int = 14) -> list:
+    """Return the last `days` days of check-ins with computed scores, oldest-first."""
+    rows = get_checkins(patient_id, days=days)
+    rows = sorted(rows, key=lambda r: r.get('checkin_date', ''))  # oldest → newest
+    scored = []
+    for r in rows:
+        ext  = r.get('extended_data') or {}
+        meds = r.get('medications') or []
+        scores = _compute_checkin_scores(
+            r.get('mood_score'), r.get('stress_score'),
+            r.get('sleep_hours'), ext, meds
+        )
+        scored.append({**r, **scores})
+    return scored
+
+
+def _recently_fired(patient_id: str, pattern_type: str) -> bool:
+    """True if the same pattern fired within the cooldown window."""
+    try:
+        cutoff = (datetime.utcnow() - timedelta(hours=_PROACTIVE_COOLDOWN_HOURS)).isoformat()
+        res = (supabase_admin.table('proactive_insights')
+               .select('id')
+               .eq('patient_id', str(patient_id))
+               .eq('pattern_type', pattern_type)
+               .gte('created_at', cutoff)
+               .limit(1)
+               .execute())
+        return bool(res.data)
+    except Exception:
+        return False
+
+
+def detect_proactive_patterns(patient_id: str) -> list:
+    """
+    Analyse recent check-in data and return a list of triggered pattern dicts.
+    Each dict: { pattern_type, supporting_data }
+
+    Patterns
+    --------
+    crash_risk_climbing   — crash_risk increased on each of the last 3 check-ins, latest ≥ 5
+    sleep_degradation     — avg sleep_hours last 3 days ≥ 1.5 h below 14-day avg
+    mood_decline          — mood dropped on each of the last 3 check-ins, latest ≤ 5
+    stim_load_spike       — stim_load ≥ 7 on 2+ of the last 3 check-ins
+    positive_streak       — stability_score ≥ 7 on each of the last 3 check-ins
+    """
+    scored = _get_recent_scored_checkins(patient_id, days=14)
+    if len(scored) < 3:
+        return []
+
+    triggered = []
+    last3 = scored[-3:]   # 3 most recent, oldest→newest
+    latest = last3[-1]
+
+    def _avg(vals):
+        clean = [v for v in vals if v is not None]
+        return round(sum(clean) / len(clean), 2) if clean else None
+
+    # ── 1. Crash risk climbing ────────────────────────────────────────
+    if not _recently_fired(patient_id, 'crash_risk_climbing'):
+        cr = [r.get('crash_risk') for r in last3]
+        if (all(v is not None for v in cr)
+                and cr[0] < cr[1] < cr[2]
+                and cr[2] >= 5):
+            baseline_cr = _avg([r.get('crash_risk') for r in scored[:-3]])
+            triggered.append({
+                'pattern_type': 'crash_risk_climbing',
+                'supporting_data': {
+                    'crash_risk_last3': cr,
+                    'baseline_crash_risk': baseline_cr,
+                    'sleep_hours_latest': latest.get('sleep_hours'),
+                    'stress_latest': latest.get('stress_score'),
+                    'stim_load_latest': latest.get('stim_load'),
+                }
+            })
+
+    # ── 2. Sleep degradation ──────────────────────────────────────────
+    if not _recently_fired(patient_id, 'sleep_degradation'):
+        sleep_all  = [r.get('sleep_hours') for r in scored if r.get('sleep_hours') is not None]
+        sleep_last3 = [r.get('sleep_hours') for r in last3 if r.get('sleep_hours') is not None]
+        if len(sleep_all) >= 5 and len(sleep_last3) >= 2:
+            avg_all   = _avg(sleep_all[:-3])   # baseline excludes last 3
+            avg_last3 = _avg(sleep_last3)
+            if avg_all is not None and avg_last3 is not None and (avg_all - avg_last3) >= 1.5:
+                triggered.append({
+                    'pattern_type': 'sleep_degradation',
+                    'supporting_data': {
+                        'avg_sleep_last3_days': avg_last3,
+                        'baseline_sleep_avg': avg_all,
+                        'delta_hours': round(avg_all - avg_last3, 1),
+                        'sleep_disruption_latest': latest.get('sleep_disruption'),
+                    }
+                })
+
+    # ── 3. Mood decline ───────────────────────────────────────────────
+    if not _recently_fired(patient_id, 'mood_decline'):
+        moods = [r.get('mood_score') for r in last3]
+        if (all(v is not None for v in moods)
+                and moods[0] > moods[1] > moods[2]
+                and moods[2] <= 5):
+            baseline_mood = _avg([r.get('mood_score') for r in scored[:-3]])
+            triggered.append({
+                'pattern_type': 'mood_decline',
+                'supporting_data': {
+                    'mood_last3': moods,
+                    'baseline_mood': baseline_mood,
+                    'stress_latest': latest.get('stress_score'),
+                    'sleep_hours_latest': latest.get('sleep_hours'),
+                }
+            })
+
+    # ── 4. Stim load spike ────────────────────────────────────────────
+    if not _recently_fired(patient_id, 'stim_load_spike'):
+        stims = [r.get('stim_load') for r in last3 if r.get('stim_load') is not None]
+        high  = [v for v in stims if v >= 7]
+        if len(stims) >= 2 and len(high) >= 2:
+            baseline_stim = _avg([r.get('stim_load') for r in scored[:-3]
+                                   if r.get('stim_load') is not None])
+            triggered.append({
+                'pattern_type': 'stim_load_spike',
+                'supporting_data': {
+                    'stim_load_last3': stims,
+                    'baseline_stim_load': baseline_stim,
+                    'high_load_days': len(high),
+                    'nervous_system_load_latest': latest.get('nervous_system_load'),
+                }
+            })
+
+    # ── 5. Positive streak ────────────────────────────────────────────
+    if not _recently_fired(patient_id, 'positive_streak'):
+        stabs = [r.get('stability_score') for r in last3]
+        if (all(v is not None for v in stabs)
+                and all(v >= 7 for v in stabs)):
+            baseline_stab = _avg([r.get('stability_score') for r in scored[:-3]
+                                   if r.get('stability_score') is not None])
+            triggered.append({
+                'pattern_type': 'positive_streak',
+                'supporting_data': {
+                    'stability_scores_last3': stabs,
+                    'baseline_stability': baseline_stab,
+                    'mood_latest': latest.get('mood_score'),
+                    'sleep_hours_latest': latest.get('sleep_hours'),
+                }
+            })
+
+    return triggered
+
+
+def save_proactive_insight(patient_id: str, pattern_type: str,
+                            insight_text: str, supporting_data: dict = None) -> str | None:
+    """Persist a proactive insight. Returns the new row id or None on error."""
+    try:
+        res = (supabase_admin.table('proactive_insights').insert({
+            'patient_id':      str(patient_id),
+            'pattern_type':    pattern_type,
+            'insight_text':    insight_text,
+            'supporting_data': supporting_data or {},
+        }).execute())
+        return res.data[0]['id'] if res.data else None
+    except Exception as e:
+        print(f"Error saving proactive insight: {e}")
+        return None
+
+
+def get_unseen_proactive_insights(patient_id: str) -> list:
+    """Return active (not dismissed) insights for the patient, newest first."""
+    try:
+        res = (supabase_admin.table('proactive_insights')
+               .select('*')
+               .eq('patient_id', str(patient_id))
+               .is_('dismissed_at', 'null')
+               .order('created_at', desc=True)
+               .limit(5)
+               .execute())
+        return res.data if res.data else []
+    except Exception as e:
+        print(f"Error fetching proactive insights: {e}")
+        return []
+
+
+def mark_proactive_insight_seen(patient_id: str, insight_id: str) -> bool:
+    """Stamp seen_at if not already set."""
+    try:
+        supabase_admin.table('proactive_insights').update({
+            'seen_at': datetime.utcnow().isoformat()
+        }).eq('id', insight_id).eq('patient_id', str(patient_id)).is_('seen_at', 'null').execute()
+        return True
+    except Exception as e:
+        print(f"Error marking insight seen: {e}")
+        return False
+
+
+def dismiss_proactive_insight(patient_id: str, insight_id: str) -> bool:
+    """Mark an insight dismissed so it no longer shows on the dashboard."""
+    try:
+        supabase_admin.table('proactive_insights').update({
+            'dismissed_at': datetime.utcnow().isoformat()
+        }).eq('id', insight_id).eq('patient_id', str(patient_id)).execute()
+        return True
+    except Exception as e:
+        print(f"Error dismissing proactive insight: {e}")
+        return False
+
+
+def get_proactive_insights_for_provider(patient_id: str, days: int = 7) -> list:
+    """Return recent undismissed proactive insights — used by provider dashboard."""
+    try:
+        cutoff = (datetime.utcnow() - timedelta(days=days)).isoformat()
+        res = (supabase_admin.table('proactive_insights')
+               .select('id, pattern_type, insight_text, created_at, seen_at')
+               .eq('patient_id', str(patient_id))
+               .is_('dismissed_at', 'null')
+               .gte('created_at', cutoff)
+               .order('created_at', desc=True)
+               .execute())
+        return res.data if res.data else []
+    except Exception as e:
+        print(f"Error fetching provider proactive insights: {e}")
+        return []

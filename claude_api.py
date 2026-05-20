@@ -784,3 +784,93 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
             "Please regenerate or contact support."
         )
     return {'status': 'safe', 'text': clean, 'raw': raw}
+
+
+# ── MODE E — Proactive Between-Appointment Insight ────────────────────────────
+
+_PATTERN_LABELS = {
+    'crash_risk_climbing': 'Crash Risk Climbing',
+    'sleep_degradation':   'Sleep Pattern Change',
+    'mood_decline':        'Mood Trend',
+    'stim_load_spike':     'High Stim Load',
+    'positive_streak':     'Strong Stretch',
+}
+
+_PATTERN_PROMPTS = {
+    'crash_risk_climbing': (
+        "The patient's Crash Risk score has increased on each of their last 3 check-ins, "
+        "reaching {crash_risk_last3[2]:.1f}/10. Their baseline was {baseline_crash_risk}. "
+        "Recent sleep: {sleep_hours_latest} hours. Stress: {stress_latest}/10. "
+        "Stim Load: {stim_load_latest}."
+    ),
+    'sleep_degradation': (
+        "The patient's average sleep over the past 3 days was {avg_sleep_last3_days} hours — "
+        "{delta_hours} hours below their {baseline_sleep_avg}-hour baseline. "
+        "Sleep Disruption Score today: {sleep_disruption_latest}."
+    ),
+    'mood_decline': (
+        "The patient's mood has dropped on 3 consecutive check-ins: {mood_last3[0]} → "
+        "{mood_last3[1]} → {mood_last3[2]}/10. Baseline mood: {baseline_mood}. "
+        "Current stress: {stress_latest}/10. Sleep: {sleep_hours_latest} hours."
+    ),
+    'stim_load_spike': (
+        "The patient's Stim Load has been 7 or higher on {high_load_days} of the last 3 "
+        "check-ins (values: {stim_load_last3}). Baseline Stim Load: {baseline_stim_load}. "
+        "Nervous System Load today: {nervous_system_load_latest}."
+    ),
+    'positive_streak': (
+        "The patient's Stability Score has been 7 or above for 3 consecutive check-ins "
+        "({stability_scores_last3[0]}, {stability_scores_last3[1]}, {stability_scores_last3[2]}). "
+        "Baseline stability: {baseline_stability}. "
+        "Today's mood: {mood_latest}/10. Sleep: {sleep_hours_latest} hours."
+    ),
+}
+
+_MODE_E_SYSTEM = (
+    "You are CognaSync's proactive behavioral intelligence layer. "
+    "Your job is to surface a meaningful pattern to the patient between appointments — "
+    "something they might not notice themselves — in 2–3 warm, grounded sentences.\n\n"
+    "Rules:\n"
+    "- Anchor every observation to at least one specific number from the data provided.\n"
+    "- Be warm and human, not clinical or alarming.\n"
+    "- Never diagnose, never suggest medication changes, never use clinical terminology.\n"
+    "- For concerning patterns (crash risk, sleep, mood, stim): end with one gentle "
+    "forward-looking nudge — something worth watching or mentioning to their provider.\n"
+    "- For positive patterns: acknowledge the stretch genuinely. Note what's behind it if "
+    "the data supports it. Don't be sycophantic.\n"
+    "- Never start with 'I noticed' or 'I wanted to share'. Get straight to the observation.\n"
+    "- 2–3 sentences maximum. No headers, no bullets."
+)
+
+
+def generate_proactive_insight(pattern_type: str, supporting_data: dict) -> dict:
+    """
+    Mode E — generate a proactive between-appointment insight for the patient.
+    Returns {'status': 'safe'|'error', 'text': str}.
+    """
+    template = _PATTERN_PROMPTS.get(pattern_type)
+    if not template:
+        return {'status': 'error', 'text': ''}
+
+    # Safely format the template — replace missing keys with 'N/A'
+    class _SafeDict(dict):
+        def __missing__(self, key):
+            return 'N/A'
+
+    try:
+        data_summary = template.format_map(_SafeDict(supporting_data))
+    except Exception:
+        data_summary = str(supporting_data)
+
+    label = _PATTERN_LABELS.get(pattern_type, pattern_type.replace('_', ' ').title())
+    user_content = f"Pattern detected: {label}\n\nData:\n{data_summary}"
+
+    try:
+        raw = _call_claude(_MODE_E_SYSTEM, user_content, max_tokens=150)
+        clean = _sanitize_output(raw)
+        if not clean:
+            return {'status': 'error', 'text': ''}
+        return {'status': 'safe', 'text': clean}
+    except Exception as e:
+        print(f"Mode E generation error: {e}")
+        return {'status': 'error', 'text': ''}

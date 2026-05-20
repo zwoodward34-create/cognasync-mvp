@@ -38,6 +38,80 @@
     padding-top: 1px;
   }
   .gs-step-text strong { color: var(--color-text, #111); }
+
+  /* ── Proactive Insight Cards ── */
+  .proactive-insights { margin-bottom: 24px; display: flex; flex-direction: column; gap: 12px; }
+
+  .proactive-insight-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 18px 20px;
+    border-radius: 10px;
+    background: #f5f9f6;
+    border: 1px solid #b8d4c0;
+    border-left: 4px solid #2B5C3E;
+    position: relative;
+  }
+
+  .proactive-insight-card.proactive-insight-card--positive {
+    background: #fdf9ee;
+    border-color: #e0d0a0;
+    border-left-color: #C4A76B;
+  }
+
+  .proactive-insight-icon {
+    font-size: 1.25rem;
+    line-height: 1;
+    flex-shrink: 0;
+    margin-top: 1px;
+  }
+
+  .proactive-insight-body { flex: 1; min-width: 0; }
+
+  .proactive-insight-label {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #2B5C3E;
+    background: #d4eadb;
+    border-radius: 4px;
+    padding: 2px 7px;
+    margin-bottom: 7px;
+  }
+
+  .proactive-insight-card--positive .proactive-insight-label {
+    color: #7a5c1e;
+    background: #f5e8c4;
+  }
+
+  .proactive-insight-text {
+    font-size: 0.9rem;
+    line-height: 1.55;
+    color: var(--color-text, #222);
+    margin: 0;
+  }
+
+  .proactive-insight-dismiss {
+    flex-shrink: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-text-muted, #999);
+    font-size: 1rem;
+    line-height: 1;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 0.15s, background 0.15s;
+  }
+  .proactive-insight-dismiss:hover { color: #333; background: rgba(0,0,0,0.06); }
+
+  @media (max-width: 480px) {
+    .proactive-insight-card { padding: 14px 15px; gap: 10px; }
+    .proactive-insight-text { font-size: 0.85rem; }
+  }
 </style>
 {% endblock %}
 
@@ -82,6 +156,39 @@
     <span class="streak-label">day streak</span>
   </div>
 </div>
+
+{% if proactive_insights %}
+{% set _pattern_icons = {
+  'crash_risk_climbing': '⚡',
+  'sleep_degradation':   '🌙',
+  'mood_decline':        '↘',
+  'stim_load_spike':     '⚠',
+  'positive_streak':     '✦'
+} %}
+{% set _pattern_labels = {
+  'crash_risk_climbing': 'Crash Risk Climbing',
+  'sleep_degradation':   'Sleep Pattern Change',
+  'mood_decline':        'Mood Trend',
+  'stim_load_spike':     'High Stim Load',
+  'positive_streak':     'Strong Stretch'
+} %}
+{% set _positive_patterns = ['positive_streak'] %}
+<div class="proactive-insights" id="proactive-insights-container">
+  {% for insight in proactive_insights %}
+  <div class="proactive-insight-card{% if insight.pattern_type in _positive_patterns %} proactive-insight-card--positive{% endif %}"
+       data-insight-id="{{ insight.id }}">
+    <span class="proactive-insight-icon">{{ _pattern_icons.get(insight.pattern_type, '◉') }}</span>
+    <div class="proactive-insight-body">
+      <span class="proactive-insight-label">{{ _pattern_labels.get(insight.pattern_type, insight.pattern_type) }}</span>
+      <p class="proactive-insight-text">{{ insight.insight_text }}</p>
+    </div>
+    <button class="proactive-insight-dismiss"
+            onclick="dismissInsight(this, '{{ insight.id }}')"
+            aria-label="Dismiss">✕</button>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
 
 <div class="quick-cards">
   <a href="{{ url_for('checkin_page') }}" class="quick-card" id="checkin-card">
@@ -350,6 +457,35 @@
       sub.textContent = 'Not yet logged today';
     }
   }
+
+  window.dismissInsight = async function (btn, insightId) {
+    const card = btn.closest('.proactive-insight-card');
+    btn.disabled = true;
+    try {
+      await fetch('/api/proactive-insights/' + insightId + '/dismiss', {
+        method: 'POST',
+        credentials: 'same-origin',
+      });
+    } catch (_) { /* best-effort */ }
+    // Animate out regardless of server response
+    card.style.transition = 'opacity 0.2s, max-height 0.3s, margin 0.3s, padding 0.3s';
+    card.style.overflow = 'hidden';
+    card.style.maxHeight = card.offsetHeight + 'px';
+    requestAnimationFrame(function () {
+      card.style.opacity = '0';
+      card.style.maxHeight = '0';
+      card.style.marginBottom = '0';
+      card.style.paddingTop = '0';
+      card.style.paddingBottom = '0';
+    });
+    setTimeout(function () {
+      card.remove();
+      const container = document.getElementById('proactive-insights-container');
+      if (container && !container.querySelector('.proactive-insight-card')) {
+        container.remove();
+      }
+    }, 320);
+  };
 
   document.addEventListener('DOMContentLoaded', function () {
     initTimeInputs();
