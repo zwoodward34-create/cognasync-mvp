@@ -1464,6 +1464,19 @@ def get_trends_data(user_id: str, days: int = 30):
 
         meds_with_entries, meds_with_taken = 0, 0
 
+        # Build a set of medication names marked as-needed so they are excluded
+        # from the adherence denominator — patients should not be penalized for
+        # not taking a PRN medication on days they didn't need it.
+        try:
+            prn_rows = get_user_medications(user_id)
+            prn_names = {
+                m['name'].strip().lower()
+                for m in prn_rows
+                if (m.get('frequency') or '').lower() in ('as_needed', 'prn')
+            }
+        except Exception:
+            prn_names = set()
+
         _EXT_FIELDS = [
             ('energy',            energy_pairs),
             ('focus',             focus_pairs),
@@ -1517,9 +1530,15 @@ def get_trends_data(user_id: str, days: int = 30):
                     meds = json.loads(meds)
                 except Exception:
                     meds = []
-            if meds:
+            # Exclude as-needed medications from adherence tracking
+            scheduled_meds = [
+                m for m in meds
+                if isinstance(m, dict)
+                and m.get('name', '').strip().lower() not in prn_names
+            ]
+            if scheduled_meds:
                 meds_with_entries += 1
-                if any(m.get('taken') for m in meds if isinstance(m, dict)):
+                if any(m.get('taken') for m in scheduled_meds):
                     meds_with_taken += 1
 
             # ── Composite scores ──────────────────────────────────────
