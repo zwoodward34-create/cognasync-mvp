@@ -424,6 +424,49 @@
     </div>
   </div>
 
+  <!-- ── What's Working Section ──────────────────────────────────────────── -->
+  {% if not provider_view %}
+  <div class="trends-section" id="whats-working-section">
+    <div class="trends-section-header">
+      <h2 class="trends-section-title">What Your Best Days Had in Common</h2>
+      <span class="trends-section-sub" id="ww-period-label"></span>
+    </div>
+
+    <!-- Loading state -->
+    <div id="ww-loading" style="padding:24px 0;text-align:center;color:var(--text-muted);font-size:0.85rem;">
+      Analyzing your patterns…
+    </div>
+
+    <!-- Insufficient data state -->
+    <div id="ww-insufficient" style="display:none;padding:16px 0;color:var(--text-muted);font-size:0.88rem;line-height:1.6;">
+      Not enough check-ins yet to surface patterns — keep logging and this section will fill in once you have at least 10 check-ins over a 60-day window.
+    </div>
+
+    <!-- Results -->
+    <div id="ww-results" style="display:none;">
+      <!-- Narrative -->
+      <div id="ww-narrative"
+           style="font-size:0.92rem;line-height:1.65;color:var(--text);
+                  background:#f5f9f6;border:1px solid #b8d4c0;border-left:4px solid #2B5C3E;
+                  border-radius:8px;padding:16px 18px;margin-bottom:20px;"></div>
+
+      <!-- Context line -->
+      <div id="ww-context"
+           style="font-size:0.76rem;color:var(--text-muted);margin-bottom:16px;"></div>
+
+      <!-- Pattern cards grid -->
+      <div id="ww-pattern-grid"
+           style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;"></div>
+
+      <!-- Disclaimer -->
+      <p style="font-size:0.72rem;color:var(--text-muted);margin-top:16px;line-height:1.5;">
+        These are co-occurrence observations — variables that were also true on your highest-stability days.
+        They don't explain why those days went well, and they're not recommendations.
+      </p>
+    </div>
+  </div>
+  {% endif %}
+
 </div><!-- /trends-content -->
 {% endblock %}
 
@@ -1025,6 +1068,97 @@ async function refreshDiscovery() {
     const patterns = await hypTester.surfaceUnexpectedPatterns(30);
     hypTester.renderDiscovery('unexpected-panel', patterns);
   } catch (_) {}
+})();
+
+// ── What's Working Engine ────────────────────────────────────────────────────
+
+(async function loadWhatWorked() {
+  const section      = document.getElementById('whats-working-section');
+  if (!section) return;   // provider view — section not rendered
+
+  const loadingEl    = document.getElementById('ww-loading');
+  const insuffEl     = document.getElementById('ww-insufficient');
+  const resultsEl    = document.getElementById('ww-results');
+  const narrativeEl  = document.getElementById('ww-narrative');
+  const contextEl    = document.getElementById('ww-context');
+  const gridEl       = document.getElementById('ww-pattern-grid');
+  const periodLbl    = document.getElementById('ww-period-label');
+
+  const _GOOD_DIRECTION_LABELS = {
+    higher: { arrow: '↑', color: '#1a7f3c', bg: '#e6f4ea' },
+    lower:  { arrow: '↓', color: '#c0392b', bg: '#fdecea' },
+  };
+
+  // Matching direction = the value being higher/lower aligns with it being a good day
+  function renderPatternCard(p) {
+    const isMatch = p.direction_match;
+    const dirLabel = p.avg_good_days > p.avg_other_days ? 'higher' : 'lower';
+    const style    = _GOOD_DIRECTION_LABELS[dirLabel];
+    const arrowColor = isMatch ? style.color : '#aaa';
+    const arrowBg    = isMatch ? style.bg    : '#f5f5f5';
+    const deltaStr   = p.delta.toFixed(1);
+    const unitStr    = p.unit || '';
+    const goodVal    = typeof p.avg_good_days  === 'number' ? p.avg_good_days.toFixed(1)  : '—';
+    const otherVal   = typeof p.avg_other_days === 'number' ? p.avg_other_days.toFixed(1) : '—';
+
+    return `<div style="background:var(--surface,#fff);border:1px solid var(--border,#e5e5e5);
+                 border-radius:9px;padding:14px 16px;">
+      <div style="font-size:0.68rem;font-weight:800;text-transform:uppercase;
+                  letter-spacing:0.06em;color:var(--text-muted,#888);margin-bottom:8px;">
+        ${p.label}
+      </div>
+      <div style="display:flex;align-items:baseline;gap:6px;margin-bottom:6px;">
+        <span style="font-size:1.3rem;font-weight:700;color:var(--text,#111);">${goodVal}<span style="font-size:0.72rem;font-weight:500;color:var(--text-muted,#999);margin-left:2px;">${unitStr}</span></span>
+        <span style="display:inline-flex;align-items:center;font-size:0.72rem;font-weight:700;
+                     background:${arrowBg};color:${arrowColor};padding:1px 6px;border-radius:4px;">
+          ${style.arrow} ${deltaStr}${unitStr} on your best days
+        </span>
+      </div>
+      <div style="font-size:0.75rem;color:var(--text-muted,#999);">
+        vs ${otherVal}${unitStr} on other days &nbsp;·&nbsp; ${p.good_day_coverage} of your high-stability days
+      </div>
+    </div>`;
+  }
+
+  try {
+    const res  = await fetch('/api/what-worked?days=60', { credentials: 'same-origin' });
+    const data = res.ok ? await res.json() : null;
+
+    loadingEl.style.display = 'none';
+
+    if (!data || !data.sufficient_data) {
+      insuffEl.style.display = '';
+      return;
+    }
+
+    const good  = data.good_day_count;
+    const total = data.total_days;
+    const win   = data.days_window || 60;
+
+    if (periodLbl) periodLbl.textContent = `Past ${win} days`;
+    if (contextEl) contextEl.textContent =
+      `Based on ${good} high-stability days out of ${total} check-ins over the past ${win} days.`;
+
+    if (data.narrative && narrativeEl) {
+      narrativeEl.textContent = data.narrative;
+    } else if (narrativeEl) {
+      narrativeEl.style.display = 'none';
+    }
+
+    if (data.patterns && data.patterns.length > 0 && gridEl) {
+      gridEl.innerHTML = data.patterns
+        .slice(0, 6)
+        .map(renderPatternCard)
+        .join('');
+    }
+
+    resultsEl.style.display = '';
+
+  } catch (_) {
+    loadingEl.style.display  = 'none';
+    insuffEl.style.display   = '';
+    insuffEl.textContent     = 'Could not load pattern data — try refreshing.';
+  }
 })();
 </script>
 {% endblock %}

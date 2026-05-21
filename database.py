@@ -4549,3 +4549,161 @@ def get_proactive_insights_for_provider(patient_id: str, days: int = 7) -> list:
     except Exception as e:
         print(f"Error fetching provider proactive insights: {e}")
         return []
+
+
+# ── What Worked Engine ────────────────────────────────────────────────────────
+
+_WHAT_WORKED_MIN_CHECKINS   = 10   # minimum total check-ins to run analysis
+_WHAT_WORKED_MIN_GOOD_DAYS  = 3    # minimum good days needed
+_WHAT_WORKED_MIN_COVERAGE   = 3    # minimum good days a variable must appear on
+_WHAT_WORKED_DELTA_THRESHOLD = 1.5 # minimum mean difference to surface a pattern
+
+# Variables and their metadata: (extended_data key or special key, display label, unit, good_direction)
+# good_direction: 'higher' means higher values → good days, 'lower' means lower → good days
+_WHAT_WORKED_VARS = [
+    ('sleep_hours',       'core',     'Sleep',              'hrs',    'higher'),
+    ('exercise_minutes',  'extended', 'Exercise',           'min',    'higher'),
+    ('social_quality',    'extended', 'Social Quality',     '/10',    'higher'),
+    ('alcohol_units',     'extended', 'Alcohol',            'units',  'lower'),
+    ('stim_load',         'score',    'Stim Load',          '/10',    'lower'),
+    ('perceived_stress',  'extended', 'Perceived Stress',   '/10',    'lower'),
+    ('workload_friction', 'extended', 'Workload Friction',  '/10',    'lower'),
+    ('hydration',         'extended', 'Hydration',          '',       'higher'),  # bool → 0/1
+    ('coping_any',        'computed', 'Coping Activity',    'days',   'higher'),  # any coping tool used
+]
+
+
+def _extract_what_worked_value(row: dict, key: str, source: str):
+    """Extract a numeric value for a given variable from a scored check-in row.
+    Returns float or None if not available."""
+    if source == 'core':
+        v = row.get(key)
+    elif source == 'score':
+        v = row.get(key)  # already in scores merged onto row
+    elif source == 'extended':
+        ext = row.get('extended_data') or {}
+        if key == 'hydration':
+            raw = ext.get('hydration')
+            if raw is None:
+                return None
+            return 1.0 if (raw is True or str(raw).lower() in ('true', 'yes', '1')) else 0.0
+        v = ext.get(key)
+    elif source == 'computed':
+        if key == 'coping_any':
+            ext = row.get('extended_data') or {}
+            used = any([
+                ext.get('coping_breathing'),
+                ext.get('coping_meditation'),
+                ext.get('coping_movement'),
+                ext.get('coping_journaling'),
+                ext.get('coping_other'),
+            ])
+            return 1.0 if used else 0.0
+        v = None
+    else:
+        v = None
+    if v is None:
+        return None
+    try:
+        return float(v)
+    except (TypeError, ValueError):
+        return None
+
+
+def get_what_worked_patterns(patient_id: str, days: int = 60) -> dict | None:
+    """
+    Identify variables that co-occur with high-stability days.
+
+    Returns None if insufficient data. Otherwise returns:
+    {
+        'good_day_count':      int,
+        'total_days':          int,
+        'good_day_threshold':  float,   # stability_score cutoff (75th percentile)
+        'days_window':         int,
+        'patterns': [
+            {
+                'variable':         str,    # internal key
+                'label':            str,    # display label
+                'unit':             str,
+                'good_direction':   str,    # 'higher' | 'lower'
+                'avg_good_days':    float,
+                'avg_other_days':   float,
+                'delta':            float,  # abs(good - other)
+                'good_day_coverage': int,   # how many good days had this variable logged
+                'direction_match':  bool,   # delta aligns with good_direction
+            },
+            ...  # sorted by delta descending, direction_match first
+        ]
+    }
+    """
+    try:
+        rows = _get_recent_scored_checkins(patient_id, days=days)
+        if len(rows) < _WHAT_WORKED_MIN_CHECKINS:
+            return None
+
+        # Filter rows that have a stability_score
+        scored = [r for r in rows if r.get('stability_score') is not None]
+        if len(scored) < _WHAT_WORKED_MIN_CHECKINS:
+            return None
+
+        stability_vals = sorted([r['stability_score'] for r in scored])
+        # 75th percentile threshold
+        idx_75 = max(0, int(len(stability_vals) * 0.75) - 1)
+        threshold = stability_vals[idx_75]
+
+        good_days  = [r for r in scored if r['stability_score'] >= threshold]
+        other_days = [r for r in scored if r['stability_score'] <  threshold]
+
+        if len(good_days) < _WHAT_WORKED_MIN_GOOD_DAYS or len(other_days) < 3:
+            return None
+
+        patterns = []
+        for (key, source, label, unit, good_direction) in _WHAT_WORKED_VARS:
+            good_vals  = [_extract_what_worked_value(r, key, source) for r in good_days]
+            other_vals = [_extract_what_worked_value(r, key, source) for r in other_days]
+
+            good_vals  = [v for v in good_vals  if v is not None]
+            other_vals = [v for v in other_vals if v is not None]
+
+            if len(good_vals) < _WHAT_WORKED_MIN_COVERAGE or len(other_vals) < 2:
+                continue
+
+            avg_good  = round(sum(good_vals)  / len(good_vals),  2)
+            avg_other = round(sum(other_vals) / len(other_vals), 2)
+            delta     = round(abs(avg_good - avg_other), 2)
+
+            if delta < _WHAT_WORKED_DELTA_THRESHOLD:
+                continue
+
+            # Does the direction match what we'd expect?
+            direction_match = (
+                (good_direction == 'higher' and avg_good > avg_other) or
+                (good_direction == 'lower'  and avg_good < avg_other)
+            )
+
+            patterns.append({
+                'variable':          key,
+                'label':             label,
+                'unit':              unit,
+                'good_direction':    good_direction,
+                'avg_good_days':     avg_good,
+                'avg_other_days':    avg_other,
+                'delta':             delta,
+                'good_day_coverage': len(good_vals),
+                'direction_match':   direction_match,
+            })
+
+        # Sort: direction_match first, then by delta descending
+        patterns.sort(key=lambda p: (not p['direction_match'], -p['delta']))
+
+        return {
+            'good_day_count':     len(good_days),
+            'total_days':         len(scored),
+            'good_day_threshold': round(threshold, 2),
+            'days_window':        days,
+            'patterns':           patterns,
+        }
+
+    except Exception as e:
+        print(f"Error in get_what_worked_patterns: {e}")
+        return None

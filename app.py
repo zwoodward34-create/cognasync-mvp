@@ -1126,6 +1126,43 @@ def api_dismiss_proactive_insight(insight_id):
     return jsonify({'ok': ok}), 200 if ok else 500
 
 
+@app.route('/api/what-worked', methods=['GET'])
+def api_what_worked():
+    """Return what-worked pattern data + AI narrative for the logged-in patient.
+
+    Query params:
+        days (int, default 60): look-back window for pattern detection
+    """
+    user, err = _api_user('patient')
+    if err:
+        return err
+
+    days = min(int(request.args.get('days', 60)), 180)
+    patterns = db.get_what_worked_patterns(user['id'], days=days)
+
+    if patterns is None:
+        return jsonify({
+            'sufficient_data': False,
+            'patterns':        [],
+            'narrative':       None,
+            'good_day_count':  None,
+            'total_days':      None,
+        }), 200
+
+    result = claude_api.generate_what_worked_summary(patterns)
+    narrative = result.get('text') if result.get('status') == 'safe' else None
+
+    return jsonify({
+        'sufficient_data': True,
+        'patterns':        patterns['patterns'],
+        'narrative':       narrative,
+        'good_day_count':  patterns['good_day_count'],
+        'total_days':      patterns['total_days'],
+        'good_day_threshold': patterns['good_day_threshold'],
+        'days_window':     patterns['days_window'],
+    }), 200
+
+
 @app.route('/api/medications', methods=['GET', 'POST'])
 def api_medications():
     """GET: List user's medications. POST: Create new medication."""
@@ -1566,13 +1603,15 @@ def api_create_summary():
     symptom_patterns = db.find_symptom_correlations(user['id'], days=days)
     # Substance flags surfaced to patient only at concern level (see claude_api.py)
     flags = db.get_patient_flags(user['id'], days=days)
+    what_worked = db.get_what_worked_patterns(user['id'], days=max(days, 60))
 
     try:
         result = claude_api.generate_appointment_summary(
             checkins, journals, days=days, audience='patient',
             symptom_patterns=symptom_patterns,
             substance_flags=flags.get('substance'),
-            safety_flags=None)  # safety flags are provider-only — never passed to patient route
+            safety_flags=None,   # safety flags are provider-only — never passed to patient route
+            what_worked=what_worked)
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
 
@@ -2191,6 +2230,7 @@ def api_provider_generate_summary(patient_id):
     summary_days = days or (date.fromisoformat(period_end) - date.fromisoformat(period_start)).days
     symptom_patterns = db.find_symptom_correlations(patient_id, days=summary_days)
     flags = db.get_patient_flags(patient_id, days=summary_days)
+    what_worked = db.get_what_worked_patterns(patient_id, days=max(summary_days, 60))
 
     try:
         result = claude_api.generate_appointment_summary(
@@ -2203,6 +2243,7 @@ def api_provider_generate_summary(patient_id):
             symptom_patterns=symptom_patterns,
             substance_flags=flags.get('substance'),
             safety_flags=flags.get('safety'),
+            what_worked=what_worked,
         )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503

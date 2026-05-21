@@ -224,7 +224,8 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                                   audience='patient',
                                   symptom_patterns=None,
                                   substance_flags=None,
-                                  safety_flags=None):
+                                  safety_flags=None,
+                                  what_worked=None):
     """Synthesize check-in and journal data into a pre-appointment summary.
 
     audience='patient'  → humanized, conversational (Mode B)
@@ -569,6 +570,52 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             "Do not use clinical or judgmental language.\n"
         )
 
+    # ── What Worked section ───────────────────────────────────────────────────
+    what_worked_section = ''
+    if what_worked and what_worked.get('patterns'):
+        ww = what_worked
+        good_n  = ww['good_day_count']
+        total_n = ww['total_days']
+        lines = []
+        for p in ww['patterns'][:5]:  # cap at 5 most significant
+            label     = p['label']
+            avg_good  = p['avg_good_days']
+            avg_other = p['avg_other_days']
+            unit      = p['unit']
+            coverage  = p['good_day_coverage']
+            direction = 'higher' if p['avg_good_days'] > p['avg_other_days'] else 'lower'
+            lines.append(
+                f"- {label}: averaged {avg_good}{unit} on high-stability days "
+                f"vs {avg_other}{unit} on other days "
+                f"(logged on {coverage} of {good_n} high-stability days; "
+                f"direction: {direction} on good days)"
+            )
+        what_worked_section = (
+            f"\n\nWHAT WORKED PATTERNS (co-occurrence data — {good_n} high-stability days of {total_n} total):\n"
+            + "\n".join(lines)
+        )
+
+        # Inject into system prompts
+        if audience == 'provider':
+            summary_system += (
+                "\n\nFor WHAT WORKED PATTERNS: add a **Positive Correlates** section. "
+                "List the variables, their averages on high-stability vs other days, and the delta. "
+                "Use co-occurrence language only — never causal claims. "
+                "Format each as: '[Variable]: [avg on high-stability days] vs [avg on other days] (Δ=[delta]).' "
+                "State that these are co-occurrence observations, not causes.\n"
+            )
+        else:
+            summary_system += (
+                "\n\nFor WHAT WORKED PATTERNS: add a brief 'What your good days had in common' paragraph "
+                "after the 'What stood out' section. "
+                "Describe 2-3 of the strongest patterns using plain language. "
+                "Use ONLY co-occurrence framing: 'On your [N] highest-stability days, [variable] averaged [X] — "
+                "[delta] [higher/lower] than on other days.' "
+                "NEVER say these things 'helped,' 'improved,' 'caused,' or 'led to' anything. "
+                "Never recommend trying them. Never say 'this suggests.' "
+                "Frame it as: here's what was also true on your best days — nothing more.\n"
+            )
+
     user_content = (
         f"REVIEW PERIOD: {period_label}\n\n"
         f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}"
@@ -578,6 +625,7 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         f"{symptom_section}"
         f"{substance_section if audience == 'provider' else substance_patient_note}"
         f"{safety_section}"
+        f"{what_worked_section}"
     )
 
     raw = _call_claude(summary_system, user_content, max_tokens=1000)
@@ -873,4 +921,69 @@ def generate_proactive_insight(pattern_type: str, supporting_data: dict) -> dict
         return {'status': 'safe', 'text': clean}
     except Exception as e:
         print(f"Mode E generation error: {e}")
+        return {'status': 'error', 'text': ''}
+
+
+# ── MODE F — What Worked Engine (Patient-Facing Narrative) ────────────────────
+
+_MODE_F_SYSTEM = (
+    "You are CognaSync's pattern narrator. Your job is to describe what was "
+    "true on a patient's best days — nothing more. "
+    "You have co-occurrence data: variables that were statistically different "
+    "on high-stability days vs other days. "
+    "Write 2-3 sentences in warm, plain English. "
+    "STRICT RULES:\n"
+    "- Use ONLY co-occurrence framing: 'On your [N] best days, [variable] averaged [X] — "
+    "[delta] [higher/lower] than on your other days.'\n"
+    "- NEVER say these patterns 'helped,' 'worked,' 'caused,' 'improved,' or 'led to' anything\n"
+    "- NEVER recommend trying anything or suggest the patient do something\n"
+    "- NEVER say 'this suggests,' 'this may indicate,' or any causal phrase\n"
+    "- NEVER use clinical language or diagnose anything\n"
+    "- Every sentence must cite at least one specific number\n"
+    "- Do not mention all patterns — pick the 2-3 with the largest, clearest deltas\n"
+    "- Tone: matter-of-fact, warm, like reading data aloud to a friend\n"
+    "- If fewer than 2 patterns have clear direction, write one sentence acknowledging "
+    "there isn't enough variation in the data to surface a clear pattern yet"
+)
+
+
+def generate_what_worked_summary(what_worked: dict) -> dict:
+    """
+    Mode F — standalone patient-facing narrative describing co-occurrence patterns
+    on high-stability days.
+
+    what_worked: the dict returned by db.get_what_worked_patterns()
+    Returns: {'status': 'safe'|'error', 'text': str}
+    """
+    if not what_worked or not what_worked.get('patterns'):
+        return {'status': 'error', 'text': ''}
+
+    good_n  = what_worked['good_day_count']
+    total_n = what_worked['total_days']
+    window  = what_worked.get('days_window', 60)
+
+    lines = []
+    for p in what_worked['patterns'][:5]:
+        direction = 'higher' if p['avg_good_days'] > p['avg_other_days'] else 'lower'
+        lines.append(
+            f"- {p['label']}: {p['avg_good_days']}{p['unit']} on high-stability days "
+            f"vs {p['avg_other_days']}{p['unit']} on other days "
+            f"(delta {p['delta']}, {direction} on good days, "
+            f"logged on {p['good_day_coverage']} of {good_n} high-stability days)"
+        )
+
+    user_content = (
+        f"Co-occurrence data — {good_n} high-stability days out of {total_n} check-ins "
+        f"over the past {window} days:\n"
+        + "\n".join(lines)
+    )
+
+    try:
+        raw   = _call_claude(_MODE_F_SYSTEM, user_content, max_tokens=200)
+        clean = _sanitize_output(raw)
+        if not clean:
+            return {'status': 'error', 'text': ''}
+        return {'status': 'safe', 'text': clean}
+    except Exception as e:
+        print(f"Mode F generation error: {e}")
         return {'status': 'error', 'text': ''}
