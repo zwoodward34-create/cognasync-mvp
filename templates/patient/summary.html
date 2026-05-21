@@ -57,12 +57,12 @@
 {% endif %}
 {% endblock %}
 
-{% block scripts %}
-<script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
+{% block head %}
 <style>
+  /* Defined in head so summaries are never visibly expanded before CSS applies */
   .summary-card-header--clickable { cursor: pointer; display: flex; align-items: flex-start; }
   .summary-card-header--clickable:hover { opacity: 0.85; }
-  .summary-body--collapsed { display: none; }
+  .summary-body--collapsed { display: none !important; }
   .summary-body--expanded  { display: block; }
   .summary-toggle-icon { font-size: 11px; color: var(--text-muted); user-select: none; margin-top: 2px; }
   .btn-delete-summary {
@@ -72,6 +72,10 @@
   }
   .btn-delete-summary:hover { background: #fee2e2; border-color: #fca5a5; color: #b91c1c; }
 </style>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/patient-app.js') }}"></script>
 <script>
 function generateSummary() {
   const btn = document.getElementById('generate-btn');
