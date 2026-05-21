@@ -4810,6 +4810,18 @@ def get_appointment_synthesis(patient_id: str, appt_id: str) -> dict | None:
                 if pre_val is not None and post_val is not None:
                     deltas[out_key] = round(post_val - pre_val, 2)
 
+        # ── Parse guided Q&A (answered questions only) ──────────────────
+        raw_qa = appt.get('guided_qa') or '[]'
+        if isinstance(raw_qa, str):
+            try:
+                raw_qa = json.loads(raw_qa)
+            except Exception:
+                raw_qa = []
+        answered_qa = [
+            item for item in (raw_qa if isinstance(raw_qa, list) else [])
+            if item.get('answer') and str(item['answer']).strip()
+        ]
+
         return {
             'appt_date':      appt_date_str,
             'pre':            pre,
@@ -4818,6 +4830,7 @@ def get_appointment_synthesis(patient_id: str, appt_id: str) -> dict | None:
             'has_post_data':  bool(post and post.get('n', 0) >= 3),
             'notes_text':     (appt.get('notes') or '').strip(),
             'care_plan_text': (appt.get('care_plan_changes') or '').strip(),
+            'guided_qa':      answered_qa,
             'pre_window':     f"{pre_start} to {pre_end}",
             'post_window':    f"{post_start} to {post_end}",
         }

@@ -993,27 +993,37 @@ def generate_what_worked_summary(what_worked: dict) -> dict:
 
 _MODE_G_SYSTEM = (
     "You are a clinical data alignment assistant for CognaSync. "
-    "You receive behavioral check-in averages from the 14 days before and after "
-    "an appointment, plus optional session notes. "
-    "Your task: write 3-4 clinical-neutral sentences that describe what the "
-    "behavioral data shows across the two windows and, when notes are present, "
-    "flag any divergence between what the notes describe and what the data shows.\n\n"
+    "You receive: (1) behavioral check-in averages from the 14 days before and after "
+    "an appointment; (2) optional session notes; (3) optional guided Q&A — patient "
+    "answers to specific clinical questions recorded by the provider during the session.\n\n"
+    "Your task: write 3-4 clinical-neutral sentences that surface alignment or divergence "
+    "between what was reported/described in the session and what the objective behavioral "
+    "data shows.\n\n"
     "Structure:\n"
-    "1. State the pre→post trajectory using specific numbers for at least two metrics.\n"
-    "2. If notes are non-empty: identify whether post-appointment data moves in the "
-    "same or different direction as the clinical summary describes. Name the specific "
-    "divergence if one exists (e.g., 'notes describe reduced stress; stress average "
-    "rose from 5.1 to 6.4 post-session'). Do NOT quote notes verbatim.\n"
-    "3. Name 1 metric or pattern worth tracking in the next review period.\n\n"
+    "1. State the pre→post behavioral trajectory with specific numbers for at least "
+    "two metrics.\n"
+    "2. Patient self-report check (if Q&A answers are present): identify discrepancies "
+    "between what the patient reported during the session and what the pre-appointment "
+    "behavioral data actually showed. Format: 'Patient reported [X] — behavioral data "
+    "in the prior 14 days shows [specific number].' Only flag discrepancies where the "
+    "gap is meaningful (e.g., patient said sleep was fine but sleep averaged 5.1 hrs "
+    "with disruption score 7.2).\n"
+    "3. Clinical direction check (if notes are non-empty): identify whether the "
+    "post-appointment behavioral data moves in the same or different direction as "
+    "the session summary describes. Name the specific divergence if one exists. "
+    "Do NOT quote notes verbatim.\n"
+    "4. Name 1 metric or pattern worth tracking in the next review period.\n\n"
     "STRICT RULES:\n"
-    "- Every claim must cite a number from the provided data\n"
-    "- Never diagnose, never prescribe, never evaluate the quality of clinical care\n"
-    "- If post-window has fewer than 3 check-ins: state that explicitly and analyze "
-    "pre-window only\n"
-    "- If notes are absent or empty: skip the note-alignment sentence entirely\n"
-    "- Do not reference notes as 'notes' — say 'the clinical summary describes' or "
-    "just describe the behavioral direction implied\n"
-    "- Forbidden: 'the provider wrote,' 'you noted,' 'the notes say'\n"
+    "- Every claim must cite a specific number from the provided data\n"
+    "- Never diagnose, never prescribe, never evaluate quality of clinical care\n"
+    "- If post-window has fewer than 3 check-ins: state that explicitly; skip the "
+    "clinical direction check and describe pre-window only\n"
+    "- If neither notes nor Q&A are present: skip sentences 2 and 3\n"
+    "- Do not reference notes as 'notes' — say 'the session summary describes' or "
+    "describe the direction implied\n"
+    "- Do not attribute Q&A answers as exact quotes — say 'patient reported' not "
+    "'patient said' and never reproduce the verbatim answer text\n"
+    "- Forbidden: 'the provider wrote,' 'you noted,' 'the notes say,' 'you said'\n"
     "- Forbidden: all standard CognaSync forbidden terms (diagnose, you are, etc.)\n"
     "- Max 4 sentences total"
 )
@@ -1099,8 +1109,23 @@ def generate_provider_synthesis(synthesis: dict) -> dict:
         if delta_parts:
             lines.append("Deltas (post − pre): " + ", ".join(delta_parts))
 
+    # ── Guided Q&A — patient self-report during session ──────────────
+    guided_qa = synthesis.get('guided_qa') or []
+    if guided_qa:
+        qa_lines = []
+        for item in guided_qa[:6]:   # cap at 6 answered questions
+            q   = (item.get('question') or '').strip()[:120]
+            a   = (item.get('answer')   or '').strip()[:200]
+            cat = (item.get('category') or 'General').strip()
+            if q and a:
+                qa_lines.append(f"  [{cat}] {q} → {a}")
+        if qa_lines:
+            lines.append("Patient-reported (session Q&A):\n" + "\n".join(qa_lines))
+    else:
+        lines.append("Guided Q&A: not recorded")
+
     if notes:
-        lines.append(f"Clinical summary excerpt: {notes[:400]}")
+        lines.append(f"Session summary: {notes[:400]}")
     else:
         lines.append("Session notes: not recorded")
 

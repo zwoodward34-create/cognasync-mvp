@@ -125,28 +125,18 @@
 
       <div class="aw-step-line"></div>
 
-      <div class="aw-step" data-tab="questions" onclick="switchTab(this,'questions')">
+      <div class="aw-step" data-tab="session" onclick="switchTab(this,'session')">
         <div class="aw-step-badge">2</div>
         <div class="aw-step-info">
-          <div class="aw-step-label">Guided Questions</div>
-          <div class="aw-step-sub">Session Q&amp;A</div>
-        </div>
-      </div>
-
-      <div class="aw-step-line"></div>
-
-      <div class="aw-step" data-tab="notes" onclick="switchTab(this,'notes')">
-        <div class="aw-step-badge">3</div>
-        <div class="aw-step-info">
-          <div class="aw-step-label">Notes &amp; Care Plan</div>
-          <div class="aw-step-sub">Document session</div>
+          <div class="aw-step-label">Session</div>
+          <div class="aw-step-sub">Q&amp;A, notes &amp; plan</div>
         </div>
       </div>
 
       <div class="aw-step-line"></div>
 
       <div class="aw-step" data-tab="schedule" onclick="switchTab(this,'schedule')">
-        <div class="aw-step-badge">4</div>
+        <div class="aw-step-badge">3</div>
         <div class="aw-step-info">
           <div class="aw-step-label">Next Appointment</div>
           <div class="aw-step-sub">Schedule follow-up</div>
@@ -156,7 +146,7 @@
       <div class="aw-step-line"></div>
 
       <div class="aw-step" data-tab="synthesis" onclick="switchTab(this,'synthesis')">
-        <div class="aw-step-badge">5</div>
+        <div class="aw-step-badge">4</div>
         <div class="aw-step-info">
           <div class="aw-step-label">Synthesis</div>
           <div class="aw-step-sub">Pre/post signal</div>
@@ -336,48 +326,126 @@
 
     </div><!-- /tab-data -->
 
-    <!-- ═══ TAB: GUIDED QUESTIONS ═════════════════════════════════════ -->
-    <div class="aw-tab-pane" id="tab-questions">
+    <!-- ═══ TAB: SESSION (Q&A + Notes + Care Plan + Actions) ═══════════ -->
+    <div class="aw-tab-pane" id="tab-session">
 
+      <!-- Header -->
       <div style="display:flex;gap:16px;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;">
         <div style="flex:1;min-width:260px;">
-          <div class="pv-panel-title" style="margin-bottom:4px;">Guided Questions</div>
+          <div class="pv-panel-title" style="margin-bottom:4px;">Session</div>
           <div style="font-size:12px;color:var(--text-muted);line-height:1.6;">
-            AI-suggested questions are based on this patient's data.
-            Add from the library or write your own. Record answers in real time.
+            Record patient responses alongside session notes.
+            Both are used in the post-session Synthesis to surface discrepancies with behavioral data.
           </div>
         </div>
         <button class="btn btn-sm" onclick="toggleLibrary()">📚 Question Library</button>
       </div>
 
-      <!-- AI-suggested questions (pre-loaded) -->
-      {% if ai_questions %}
-      <div class="gq-section">
-        <div class="gq-section-label">✦ Suggested for this patient</div>
-        {% for q in ai_questions %}
-        <div class="gq-suggestion" onclick="addSuggestion({{ loop.index0 }})">
-          <div class="gq-suggestion-cat">{{ q.category }}</div>
-          <div class="gq-suggestion-text">{{ q.text }}</div>
-          <div class="gq-suggestion-add">+ Add to session</div>
-        </div>
-        {% endfor %}
-      </div>
-      {% endif %}
+      <!-- Two-column: Q&A left | Notes + Care Plan + Actions right -->
+      <div class="pv-grid-2" style="gap:24px;align-items:start;">
 
-      <!-- Active Q&A list -->
-      <div class="gq-active-list" id="gq-active-list">
-        <!-- Populated by JS from appt.guided_qa -->
-      </div>
+        <!-- ── LEFT: Guided Q&A ────────────────────────── -->
+        <div>
 
-      <!-- Add custom question -->
-      <div class="gq-add-row">
-        <input type="text" id="gq-custom-input" placeholder="Type a custom question…"
-               class="gq-custom-input" onkeydown="if(event.key==='Enter')addCustomQuestion()">
-        <button class="btn btn-sm" onclick="addCustomQuestion()">Add</button>
-      </div>
+          {% if ai_questions %}
+          <div class="gq-section">
+            <div class="gq-section-label">✦ Suggested for this patient</div>
+            {% for q in ai_questions %}
+            <div class="gq-suggestion" onclick="addSuggestion({{ loop.index0 }})">
+              <div class="gq-suggestion-cat">{{ q.category }}</div>
+              <div class="gq-suggestion-text">{{ q.text }}</div>
+              <div class="gq-suggestion-add">+ Add to session</div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endif %}
 
-      <!-- Question library (hidden by default) -->
-      <div class="gq-library" id="gq-library" style="display:none;">
+          <div class="gq-active-list" id="gq-active-list"></div>
+
+          <div class="gq-add-row">
+            <input type="text" id="gq-custom-input" placeholder="Type a custom question…"
+                   class="gq-custom-input" onkeydown="if(event.key==='Enter')addCustomQuestion()">
+            <button class="btn btn-sm" onclick="addCustomQuestion()">Add</button>
+          </div>
+
+        </div><!-- /left -->
+
+        <!-- ── RIGHT: Notes, Care Plan, Actions ──────────── -->
+        <div>
+
+          <!-- Session notes -->
+          <div style="margin-bottom:20px;">
+            <label class="aw-field-label">Session Notes</label>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+              Clinical observations, patient-reported topics, discussion highlights.
+            </div>
+            <textarea id="notes-field" class="aw-textarea" rows="9"
+                      placeholder="Enter session notes…"
+                      {% if appt.status == 'completed' %}readonly style="opacity:0.75;background:var(--surface-alt,#f8f8f8);"{% else %}oninput="scheduleSave()"{% endif %}>{{ appt.notes or '' }}</textarea>
+          </div>
+
+          <!-- Care plan -->
+          <div style="margin-bottom:20px;">
+            <label class="aw-field-label">Care Plan Changes</label>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+              Adjustments to treatment plan discussed or decided this session.
+            </div>
+            <textarea id="care-plan-field" class="aw-textarea" rows="7"
+                      placeholder="Document any care plan changes…"
+                      {% if appt.status == 'completed' %}readonly style="opacity:0.75;background:var(--surface-alt,#f8f8f8);"{% else %}oninput="scheduleSave()"{% endif %}>{{ appt.care_plan_changes or '' }}</textarea>
+          </div>
+
+          {% if appt.status == 'completed' %}
+          <div style="margin-bottom:20px;padding:10px 14px;background:#f0f7f0;border:1px solid #c3e0c3;
+                      font-size:12px;color:#2a6b2a;border-radius:4px;">
+            ✓ This appointment is complete. Notes are locked and have been carried forward to the between-session brief.
+          </div>
+          {% endif %}
+
+          <!-- Action items -->
+          <div>
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+              <label class="aw-field-label" style="margin:0;">Action Items</label>
+              {% if appt.status != 'completed' %}
+              <div style="display:flex;gap:8px;">
+                <input type="text" id="action-input" placeholder="Add an action item…"
+                       class="gq-custom-input" style="width:220px;"
+                       onkeydown="if(event.key==='Enter')addAction()">
+                <button class="btn btn-sm" onclick="addAction()">Add</button>
+              </div>
+              {% endif %}
+            </div>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">
+              Tasks to be completed before the next appointment.
+            </div>
+            <div id="actions-list" class="aw-actions-list"></div>
+            {% if appt.status != 'completed' %}
+            <div class="aw-action-templates" style="margin-top:12px;">
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;margin-bottom:8px;">Common Actions</div>
+              <div style="display:flex;flex-wrap:wrap;gap:6px;">
+                {% for tmpl in [
+                  'Schedule follow-up labs',
+                  'Patient to track sleep for 2 weeks',
+                  'Refer to therapy',
+                  'Review medication timing logs',
+                  'Complete PHQ-9 before next visit',
+                  'Check in via portal if symptoms worsen',
+                  'Patient to try sleep hygiene protocol',
+                  'Coordinate with pharmacy',
+                ] %}
+                <button class="aw-action-template-btn" onclick="addActionFromTemplate('{{ tmpl }}')">{{ tmpl }}</button>
+                {% endfor %}
+              </div>
+            </div>
+            {% endif %}
+          </div>
+
+        </div><!-- /right -->
+
+      </div><!-- /pv-grid-2 -->
+
+      <!-- Question library (full-width, hidden by default) -->
+      <div class="gq-library" id="gq-library" style="display:none;margin-top:20px;">
         <div class="gq-library-hdr">
           <div class="pv-panel-title" style="margin:0;">Question Library</div>
           <button class="btn btn-sm" onclick="toggleLibrary()">Close</button>
@@ -406,7 +474,6 @@
           {'cat':'Safety', 'q':'Have you had any thoughts of harming yourself or others?'},
           {'cat':'Safety', 'q':'Are you feeling safe at home and in your environment?'},
         ] %}
-        {% set categories = lib | map(attribute='cat') | list | unique %}
         {% for cat in ['Daily Functioning','Mood','Sleep','Energy & Motivation','Medication','Stress & Coping','Social & Relationships','Life Events','Safety'] %}
         <div class="gq-lib-cat">
           <div class="gq-lib-cat-label">{{ cat }}</div>
@@ -420,88 +487,7 @@
         {% endfor %}
       </div>
 
-    </div><!-- /tab-questions -->
-
-    <!-- ═══ TAB: NOTES & CARE PLAN ════════════════════════════════════ -->
-    <div class="aw-tab-pane" id="tab-notes">
-
-      <div class="pv-grid-2" style="gap:20px;">
-
-        <!-- Session notes -->
-        <div>
-          <label class="aw-field-label">Session Notes</label>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
-            Clinical observations, patient-reported topics, discussion highlights.
-          </div>
-          <textarea id="notes-field" class="aw-textarea" rows="12"
-                    placeholder="Enter session notes…"
-                    {% if appt.status == 'completed' %}readonly style="opacity:0.75;background:var(--surface-alt,#f8f8f8);"{% else %}oninput="scheduleSave()"{% endif %}>{{ appt.notes or '' }}</textarea>
-        </div>
-
-        <!-- Care plan -->
-        <div>
-          <label class="aw-field-label">Care Plan Changes</label>
-          <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
-            Adjustments to treatment plan discussed or decided this session.
-          </div>
-          <textarea id="care-plan-field" class="aw-textarea" rows="12"
-                    placeholder="Document any care plan changes…"
-                    {% if appt.status == 'completed' %}readonly style="opacity:0.75;background:var(--surface-alt,#f8f8f8);"{% else %}oninput="scheduleSave()"{% endif %}>{{ appt.care_plan_changes or '' }}</textarea>
-        </div>
-      </div>
-
-      {% if appt.status == 'completed' %}
-      <div style="margin-top:16px;padding:10px 14px;background:#f0f7f0;border:1px solid #c3e0c3;
-                  font-size:12px;color:#2a6b2a;border-radius:4px;">
-        ✓ This appointment is complete. Notes are locked and have been carried forward to the between-session brief.
-      </div>
-      {% endif %}
-
-      <!-- Action items -->
-      <div style="margin-top:24px;">
-        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px;">
-          <label class="aw-field-label" style="margin:0;">Action Items</label>
-          {% if appt.status != 'completed' %}
-          <div style="display:flex;gap:8px;">
-            <input type="text" id="action-input" placeholder="Add an action item…"
-                   class="gq-custom-input" style="width:300px;"
-                   onkeydown="if(event.key==='Enter')addAction()">
-            <button class="btn btn-sm" onclick="addAction()">Add</button>
-          </div>
-          {% endif %}
-        </div>
-        <div style="font-size:11px;color:var(--text-muted);margin-bottom:12px;">
-          Tasks to be completed before the next appointment.
-        </div>
-        <div id="actions-list" class="aw-actions-list">
-          <!-- Populated by JS -->
-        </div>
-        {% if appt.status != 'completed' %}
-        <div class="aw-action-templates">
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;margin-bottom:8px;">
-            Common Actions
-          </div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;">
-            {% for tmpl in [
-              'Schedule follow-up labs',
-              'Patient to track sleep for 2 weeks',
-              'Refer to therapy',
-              'Review medication timing logs',
-              'Complete PHQ-9 before next visit',
-              'Check in via portal if symptoms worsen',
-              'Patient to try sleep hygiene protocol',
-              'Coordinate with pharmacy',
-            ] %}
-            <button class="aw-action-template-btn" onclick="addActionFromTemplate('{{ tmpl }}')">
-              {{ tmpl }}
-            </button>
-            {% endfor %}
-          </div>
-        </div>
-        {% endif %}
-      </div>
-
-    </div><!-- /tab-notes -->
+    </div><!-- /tab-session -->
 
     <!-- ═══ TAB: NEXT APPOINTMENT ═════════════════════════════════════ -->
     <div class="aw-tab-pane" id="tab-schedule">
@@ -930,8 +916,11 @@ function addSuggestion(idx) {
   qAndA.push({ question: q.text, category: q.category, answer: '' });
   renderQA();
   scheduleSave();
-  // Switch to questions tab if not already there
-  document.querySelector('[data-tab="questions"]').click();
+  // Switch to session tab if not already there
+  const sessionStep = document.querySelector('[data-tab="session"]');
+  if (sessionStep && !document.getElementById('tab-session').classList.contains('active')) {
+    sessionStep.click();
+  }
 }
 
 function addFromLibrary(text, cat) {
