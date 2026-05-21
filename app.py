@@ -1782,6 +1782,80 @@ def api_appointment_save(appt_id):
     return jsonify({'status': 'saved'}), 200
 
 
+@app.route('/api/provider/appointment/<appt_id>/synthesis', methods=['GET'])
+def api_provider_appointment_synthesis(appt_id):
+    """
+    Bidirectional synthesis for a provider.
+    Returns pre/post behavioral comparison plus Mode G (note-data alignment)
+    and Mode H (patient-perspective) AI narratives.
+    """
+    user, err = _api_user('provider')
+    if err:
+        return err
+
+    # Verify appointment belongs to this provider
+    appt = db.get_provider_appointment(appt_id, user['id'])
+    if not appt:
+        return jsonify({'error': 'Appointment not found'}), 404
+
+    patient_id = str(appt['patient_id'])
+    synthesis  = db.get_appointment_synthesis(patient_id, appt_id)
+    if not synthesis:
+        return jsonify({'error': 'Synthesis data unavailable'}), 200
+
+    provider_result = claude_api.generate_provider_synthesis(synthesis)
+    patient_result  = claude_api.generate_patient_synthesis(synthesis)
+
+    return jsonify({
+        'appt_date':          synthesis['appt_date'],
+        'pre':                synthesis['pre'],
+        'post':               synthesis['post'],
+        'deltas':             synthesis['deltas'],
+        'has_post_data':      synthesis['has_post_data'],
+        'pre_window':         synthesis['pre_window'],
+        'post_window':        synthesis['post_window'],
+        'provider_narrative': provider_result.get('text') if provider_result.get('status') == 'safe' else None,
+        'patient_narrative':  patient_result.get('text')  if patient_result.get('status') == 'safe' else None,
+    }), 200
+
+
+@app.route('/api/patient/appointment/<appt_id>/synthesis', methods=['GET'])
+def api_patient_appointment_synthesis(appt_id):
+    """
+    Patient-facing synthesis for a single appointment.
+    Returns only the behavioral story — no session notes or clinical content.
+    """
+    user, err = _api_user('patient')
+    if err:
+        return err
+
+    # Verify this appointment belongs to this patient
+    try:
+        resp = db.supabase_admin.table('provider_appointments').select(
+            'patient_id').eq('id', appt_id).limit(1).execute()
+        if not resp.data or str(resp.data[0]['patient_id']) != str(user['id']):
+            return jsonify({'error': 'Appointment not found'}), 404
+    except Exception:
+        return jsonify({'error': 'Appointment not found'}), 404
+
+    synthesis = db.get_appointment_synthesis(user['id'], appt_id)
+    if not synthesis:
+        return jsonify({'error': 'Synthesis data unavailable'}), 200
+
+    patient_result = claude_api.generate_patient_synthesis(synthesis)
+
+    return jsonify({
+        'appt_date':         synthesis['appt_date'],
+        'pre':               synthesis['pre'],
+        'post':              synthesis['post'],
+        'deltas':            synthesis['deltas'],
+        'has_post_data':     synthesis['has_post_data'],
+        'pre_window':        synthesis['pre_window'],
+        'post_window':       synthesis['post_window'],
+        'patient_narrative': patient_result.get('text') if patient_result.get('status') == 'safe' else None,
+    }), 200
+
+
 @app.route('/api/provider/patient/<patient_id>/resolve-crisis', methods=['POST'])
 def api_resolve_crisis(patient_id):
     user, err = _api_user('provider')

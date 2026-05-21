@@ -153,6 +153,16 @@
         </div>
       </div>
 
+      <div class="aw-step-line"></div>
+
+      <div class="aw-step" data-tab="synthesis" onclick="switchTab(this,'synthesis')">
+        <div class="aw-step-badge">5</div>
+        <div class="aw-step-info">
+          <div class="aw-step-label">Synthesis</div>
+          <div class="aw-step-sub">Pre/post signal</div>
+        </div>
+      </div>
+
     </div>
 
     <!-- ═══ TAB: DATA & INSIGHTS ══════════════════════════════════════ -->
@@ -564,6 +574,94 @@
 
     </div><!-- /tab-schedule -->
 
+    <!-- ═══ TAB: SYNTHESIS ═══════════════════════════════════════════════ -->
+    <div class="aw-tab-pane" id="tab-synthesis">
+
+      <!-- Header -->
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:20px;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div class="pv-panel-title" style="margin-bottom:3px;">Bidirectional Synthesis</div>
+          <div style="font-size:12px;color:var(--text-muted);line-height:1.6;max-width:540px;">
+            Compares behavioral data from the 14 days before and after this appointment.
+            Surfaces any divergence between what the session described and what the data shows.
+          </div>
+        </div>
+        <button class="btn btn-sm" id="synth-reload-btn" onclick="loadSynthesis(true)" style="white-space:nowrap;">↺ Refresh</button>
+      </div>
+
+      <!-- Loading state -->
+      <div id="synth-loading" style="padding:32px;text-align:center;font-size:12px;color:var(--text-muted);">
+        <div class="spinner" style="margin:0 auto 10px;"></div>
+        Analyzing pre/post behavioral data…
+      </div>
+
+      <!-- Error state -->
+      <div id="synth-error" class="alert alert-error hidden" style="margin-bottom:16px;"></div>
+
+      <!-- Results -->
+      <div id="synth-results" style="display:none;">
+
+        <!-- Pre / Post comparison table -->
+        <div class="pv-panel-full" style="margin-bottom:20px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+            <div class="pv-panel-title">Behavioral Comparison</div>
+            <div style="font-size:11px;color:var(--text-muted);" id="synth-window-label"></div>
+          </div>
+          <div style="overflow-x:auto;">
+            <table id="synth-table" style="width:100%;border-collapse:collapse;font-size:13px;">
+              <thead>
+                <tr style="border-bottom:2px solid var(--border-light);">
+                  <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;">Metric</th>
+                  <th style="text-align:right;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;">Pre-Appt<br><span id="synth-pre-n" style="font-weight:400;text-transform:none;letter-spacing:0;"></span></th>
+                  <th style="text-align:right;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;">Post-Appt<br><span id="synth-post-n" style="font-weight:400;text-transform:none;letter-spacing:0;"></span></th>
+                  <th style="text-align:right;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;">Δ Change</th>
+                </tr>
+              </thead>
+              <tbody id="synth-table-body"></tbody>
+            </table>
+          </div>
+          <div id="synth-post-sparse" style="display:none;margin-top:10px;padding:8px 12px;
+               background:var(--surface-alt,#f8f8f8);border:1px solid var(--border-light);
+               font-size:12px;color:var(--text-muted);">
+            ⏳ Post-appointment window has fewer than 3 check-ins — comparison will sharpen as the patient logs more data.
+          </div>
+        </div>
+
+        <!-- Provider signal detection (AI) -->
+        <div class="pv-panel-full" style="margin-bottom:20px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <div class="pv-panel-title">Post-Session Signal Detection</div>
+            <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border-light);padding:2px 7px;">Mode G</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+            Does the behavioral data after the session track with the clinical direction described in your notes?
+          </div>
+          <div id="synth-provider-narrative" style="font-size:13px;line-height:1.7;color:var(--text);"></div>
+          <div id="synth-provider-empty" style="display:none;font-size:12px;color:var(--text-muted);">
+            No session notes recorded — signal detection requires notes to compare against behavioral data.
+          </div>
+        </div>
+
+        <!-- Patient perspective (AI) -->
+        <div class="pv-panel-full">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <div class="pv-panel-title">Patient Perspective</div>
+            <span style="font-size:10px;color:var(--text-muted);border:1px solid var(--border-light);padding:2px 7px;">Mode H</span>
+          </div>
+          <div style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">
+            How this appointment's behavioral story reads from the patient's point of view — no session notes included.
+            This is what the patient would see if given access to their own data around this appointment.
+          </div>
+          <div id="synth-patient-narrative"
+               style="font-size:13px;line-height:1.7;color:var(--text);
+                      background:var(--surface-alt,#f8f8f8);border:1px solid var(--border-light);
+                      padding:14px 16px;border-radius:4px;"></div>
+        </div>
+
+      </div><!-- /synth-results -->
+
+    </div><!-- /tab-synthesis -->
+
     <div style="padding-top:16px;border-top:1px solid var(--border-light);font-size:11px;
                 color:var(--text-muted);margin-top:24px;">
       All data access is logged · Appointment autosaves every 30 seconds
@@ -731,6 +829,7 @@ function switchTab(btn, tab) {
   btn.classList.add('active');
   document.getElementById('tab-' + tab).classList.add('active');
   if (tab === 'data') renderInsights();
+  if (tab === 'synthesis') loadSynthesis(false);
 }
 
 // ── Charts ────────────────────────────────────────────────────────────
@@ -1012,6 +1111,111 @@ function filterPatients(q) {
     toggleBtn.querySelector('.pv-toggle-arrow').textContent = open ? '▴' : '▾';
   });
 })();
+
+// ── Synthesis ─────────────────────────────────────────────────────────
+let _synthLoaded = false;
+
+async function loadSynthesis(force) {
+  if (_synthLoaded && !force) return;
+  const loading  = document.getElementById('synth-loading');
+  const error    = document.getElementById('synth-error');
+  const results  = document.getElementById('synth-results');
+  const reloadBtn= document.getElementById('synth-reload-btn');
+
+  loading.style.display = '';
+  results.style.display = 'none';
+  error.classList.add('hidden');
+  if (reloadBtn) reloadBtn.disabled = true;
+
+  try {
+    const r = await fetch(`/api/provider/appointment/${APPT_ID}/synthesis`);
+    const d = await r.json();
+
+    if (!r.ok || d.error) {
+      throw new Error(d.error || 'Synthesis unavailable');
+    }
+
+    // ── Window label ──────────────────────────────────────────────
+    const winLabel = document.getElementById('synth-window-label');
+    if (winLabel) {
+      winLabel.textContent =
+        `Pre: ${(d.pre_window||'').replace(' to ',' → ')}  ·  ` +
+        `Post: ${(d.post_window||'').replace(' to ',' → ')}`;
+    }
+
+    // ── Check-in counts ───────────────────────────────────────────
+    const preN  = document.getElementById('synth-pre-n');
+    const postN = document.getElementById('synth-post-n');
+    if (preN)  preN.textContent  = d.pre  ? `${d.pre.n} check-in${d.pre.n !== 1 ? 's' : ''}` : 'no data';
+    if (postN) postN.textContent = d.post ? `${d.post.n} check-in${d.post.n !== 1 ? 's' : ''}` : 'no data';
+
+    // ── Comparison table ──────────────────────────────────────────
+    const METRICS = [
+      { key: 'mood',       label: 'Mood',       unit: '/10', higherGood: true  },
+      { key: 'sleep_hours',label: 'Sleep',      unit: ' hrs',higherGood: true  },
+      { key: 'stress',     label: 'Stress',     unit: '/10', higherGood: false },
+      { key: 'energy',     label: 'Energy',     unit: '/10', higherGood: true  },
+      { key: 'stability',  label: 'Stability',  unit: '/10', higherGood: true  },
+      { key: 'crash_risk', label: 'Crash Risk', unit: '/10', higherGood: false },
+    ];
+    const tbody = document.getElementById('synth-table-body');
+    if (tbody) {
+      tbody.innerHTML = METRICS.map(m => {
+        const preVal  = d.pre  && d.pre[m.key]  != null ? d.pre[m.key]  : null;
+        const postVal = d.post && d.post[m.key] != null ? d.post[m.key] : null;
+        const delta   = d.deltas && d.deltas[m.key] != null ? d.deltas[m.key] : null;
+        if (preVal == null && postVal == null) return '';
+
+        let deltaHtml = '—';
+        if (delta != null) {
+          const sign = delta >= 0 ? '+' : '';
+          const isGood = (m.higherGood && delta > 0) || (!m.higherGood && delta < 0);
+          const isBad  = (m.higherGood && delta < 0) || (!m.higherGood && delta > 0);
+          const color  = isGood ? 'var(--green,#2e7d32)' : (isBad ? '#c0392b' : 'var(--text-muted)');
+          deltaHtml = `<span style="color:${color};font-weight:600;">${sign}${delta}</span>`;
+        }
+
+        return `<tr style="border-bottom:1px solid var(--border-light);">
+          <td style="padding:9px 10px;font-weight:600;">${m.label}</td>
+          <td style="padding:9px 10px;text-align:right;">${preVal != null ? preVal + m.unit : '—'}</td>
+          <td style="padding:9px 10px;text-align:right;">${postVal != null ? postVal + m.unit : '—'}</td>
+          <td style="padding:9px 10px;text-align:right;">${deltaHtml}</td>
+        </tr>`;
+      }).join('');
+    }
+
+    // ── Sparse post-window warning ────────────────────────────────
+    const sparse = document.getElementById('synth-post-sparse');
+    if (sparse) sparse.style.display = d.has_post_data ? 'none' : '';
+
+    // ── Provider narrative (Mode G) ───────────────────────────────
+    const provEl    = document.getElementById('synth-provider-narrative');
+    const provEmpty = document.getElementById('synth-provider-empty');
+    if (d.provider_narrative) {
+      if (provEl)    { provEl.textContent = d.provider_narrative; provEl.style.display = ''; }
+      if (provEmpty) provEmpty.style.display = 'none';
+    } else {
+      if (provEl)    provEl.style.display = 'none';
+      if (provEmpty) provEmpty.style.display = '';
+    }
+
+    // ── Patient narrative (Mode H) ────────────────────────────────
+    const patEl = document.getElementById('synth-patient-narrative');
+    if (patEl) {
+      patEl.textContent = d.patient_narrative ||
+        'Not enough behavioral data to generate a patient-facing summary.';
+    }
+
+    results.style.display = '';
+    _synthLoaded = true;
+  } catch(e) {
+    error.textContent = e.message || 'Unable to load synthesis.';
+    error.classList.remove('hidden');
+  } finally {
+    loading.style.display = 'none';
+    if (reloadBtn) reloadBtn.disabled = false;
+  }
+}
 
 // ── Init ──────────────────────────────────────────────────────────────
 renderQA();

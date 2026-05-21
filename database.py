@@ -4707,3 +4707,121 @@ def get_what_worked_patterns(patient_id: str, days: int = 60) -> dict | None:
     except Exception as e:
         print(f"Error in get_what_worked_patterns: {e}")
         return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# APPOINTMENT SYNTHESIS — Bidirectional pre/post behavioral comparison
+# ═══════════════════════════════════════════════════════════════════════════
+
+def get_appointment_synthesis(patient_id: str, appt_id: str) -> dict | None:
+    """
+    Build a pre/post behavioral comparison around an appointment date.
+
+    Pulls scored check-ins from 14 days before and 14 days after the
+    appointment, computes per-metric averages for each window, and returns
+    the comparison alongside raw session notes and care plan text so callers
+    can decide what to surface to each audience (provider vs. patient).
+
+    Returns:
+        {
+            'appt_date':     ISO date string,
+            'pre':           {mood, sleep_hours, stress, energy, stability,
+                              crash_risk, n} or None,
+            'post':          same shape or None,
+            'deltas':        {key: post_val - pre_val} (omits keys where
+                              either window lacks data),
+            'has_post_data': bool — True if post window has ≥3 check-ins,
+            'notes_text':    session notes (provider-only — strip before
+                             passing to patient-facing AI),
+            'care_plan_text':care plan changes text,
+            'pre_window':    human-readable date range string,
+            'post_window':   human-readable date range string,
+        }
+    Returns None on any error or if the appointment cannot be found.
+    """
+    try:
+        # ── Fetch appointment row ────────────────────────────────────────
+        resp = supabase_admin.table('provider_appointments').select('*').eq(
+            'id', str(appt_id)).eq('patient_id', str(patient_id)).limit(1).execute()
+        if not resp.data:
+            return None
+        appt = resp.data[0]
+
+        appt_date_str = (appt.get('started_at') or datetime.utcnow().isoformat())[:10]
+        try:
+            appt_dt = date.fromisoformat(appt_date_str)
+        except Exception:
+            appt_dt = date.today()
+
+        pre_start  = (appt_dt - timedelta(days=14)).isoformat()
+        pre_end    = appt_date_str
+        post_start = appt_date_str
+        post_end   = (appt_dt + timedelta(days=14)).isoformat()
+
+        # ── Fetch and score check-ins for each window ────────────────────
+        def _fetch_scored_window(start: str, end: str) -> list:
+            rows = get_checkins_in_range(patient_id, start, end)
+            scored = []
+            for row in rows:
+                ext   = row.get('extended_data') or {}
+                meds  = row.get('medications') or []
+                scores = _compute_checkin_scores(
+                    row.get('mood_score'), row.get('stress_score'),
+                    row.get('sleep_hours'), ext, meds,
+                )
+                scored.append({**row, **scores})
+            return scored
+
+        pre_checkins  = _fetch_scored_window(pre_start, pre_end)
+        post_checkins = _fetch_scored_window(post_start, post_end)
+
+        # ── Compute per-metric averages ─────────────────────────────────
+        # Each tuple: (row_key_after_score_merge, output_key)
+        # mood_score/stress_score come from raw row; stability_score/crash_risk
+        # come from _compute_checkin_scores merge; sleep_hours/energy from raw row.
+        _SYNTH_METRICS = [
+            ('mood_score',      'mood'),
+            ('sleep_hours',     'sleep_hours'),
+            ('stress_score',    'stress'),
+            ('energy',          'energy'),
+            ('stability_score', 'stability'),
+            ('crash_risk',      'crash_risk'),
+        ]
+
+        def _avg_window(checkins: list) -> dict | None:
+            if not checkins:
+                return None
+            result: dict = {'n': len(checkins)}
+            for src_key, out_key in _SYNTH_METRICS:
+                vals = [c[src_key] for c in checkins
+                        if c.get(src_key) is not None]
+                result[out_key] = round(sum(vals) / len(vals), 2) if vals else None
+            return result
+
+        pre  = _avg_window(pre_checkins)
+        post = _avg_window(post_checkins)
+
+        # ── Compute deltas (post − pre) ──────────────────────────────────
+        deltas: dict = {}
+        if pre and post:
+            for _src_key, out_key in _SYNTH_METRICS:
+                pre_val  = pre.get(out_key)
+                post_val = post.get(out_key)
+                if pre_val is not None and post_val is not None:
+                    deltas[out_key] = round(post_val - pre_val, 2)
+
+        return {
+            'appt_date':      appt_date_str,
+            'pre':            pre,
+            'post':           post,
+            'deltas':         deltas,
+            'has_post_data':  bool(post and post.get('n', 0) >= 3),
+            'notes_text':     (appt.get('notes') or '').strip(),
+            'care_plan_text': (appt.get('care_plan_changes') or '').strip(),
+            'pre_window':     f"{pre_start} to {pre_end}",
+            'post_window':    f"{post_start} to {post_end}",
+        }
+
+    except Exception as e:
+        print(f"Error in get_appointment_synthesis: {e}")
+        return None

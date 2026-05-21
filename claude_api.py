@@ -987,3 +987,194 @@ def generate_what_worked_summary(what_worked: dict) -> dict:
     except Exception as e:
         print(f"Mode F generation error: {e}")
         return {'status': 'error', 'text': ''}
+
+
+# ── MODE G — Provider Synthesis (Note-Data Alignment) ─────────────────────────
+
+_MODE_G_SYSTEM = (
+    "You are a clinical data alignment assistant for CognaSync. "
+    "You receive behavioral check-in averages from the 14 days before and after "
+    "an appointment, plus optional session notes. "
+    "Your task: write 3-4 clinical-neutral sentences that describe what the "
+    "behavioral data shows across the two windows and, when notes are present, "
+    "flag any divergence between what the notes describe and what the data shows.\n\n"
+    "Structure:\n"
+    "1. State the pre→post trajectory using specific numbers for at least two metrics.\n"
+    "2. If notes are non-empty: identify whether post-appointment data moves in the "
+    "same or different direction as the clinical summary describes. Name the specific "
+    "divergence if one exists (e.g., 'notes describe reduced stress; stress average "
+    "rose from 5.1 to 6.4 post-session'). Do NOT quote notes verbatim.\n"
+    "3. Name 1 metric or pattern worth tracking in the next review period.\n\n"
+    "STRICT RULES:\n"
+    "- Every claim must cite a number from the provided data\n"
+    "- Never diagnose, never prescribe, never evaluate the quality of clinical care\n"
+    "- If post-window has fewer than 3 check-ins: state that explicitly and analyze "
+    "pre-window only\n"
+    "- If notes are absent or empty: skip the note-alignment sentence entirely\n"
+    "- Do not reference notes as 'notes' — say 'the clinical summary describes' or "
+    "just describe the behavioral direction implied\n"
+    "- Forbidden: 'the provider wrote,' 'you noted,' 'the notes say'\n"
+    "- Forbidden: all standard CognaSync forbidden terms (diagnose, you are, etc.)\n"
+    "- Max 4 sentences total"
+)
+
+
+# ── MODE H — Patient Synthesis (Behavioral Story Around Appointment) ──────────
+
+_MODE_H_SYSTEM = (
+    "You are a warm, honest data narrator for CognaSync patients. "
+    "You receive behavioral check-in averages from the 14 days before and 14 days "
+    "after an appointment. You do NOT have access to session notes or clinical content.\n\n"
+    "Your task: write 2-3 sentences describing the patient's behavioral journey "
+    "around the appointment in plain, human language.\n\n"
+    "Structure:\n"
+    "1. Describe the pre-appointment window using at least one specific average "
+    "(mood, sleep, or stability — whichever is most notable).\n"
+    "2. If post-data exists with ≥3 check-ins: describe what changed or stayed "
+    "similar. If post data is sparse, say it's too early to see the full picture.\n"
+    "3. Optional: one observation worth watching — framed as a question the patient "
+    "might hold, not as advice.\n\n"
+    "STRICT RULES:\n"
+    "- Write in second person: 'your mood averaged…', 'in the two weeks before…'\n"
+    "- Use plain time references: 'in the two weeks before,' 'in the days since'\n"
+    "- Never mention the session, the provider, or clinical notes\n"
+    "- Never diagnose, never advise on medications\n"
+    "- Never use the words 'improved,' 'declined,' 'worsened' — instead say "
+    "'rose,' 'dropped,' 'was higher,' 'was lower'\n"
+    "- Never say 'this suggests' or any causal phrase\n"
+    "- If only pre-window data exists: write 1-2 sentences about that window only, "
+    "noting it's the data leading into the appointment\n"
+    "- Warm but not cheerful — honest without being alarming\n"
+    "- Max 3 sentences"
+)
+
+
+def generate_provider_synthesis(synthesis: dict) -> dict:
+    """
+    Mode G — provider-facing synthesis comparing pre/post behavioral data
+    against session notes.
+
+    synthesis: the dict returned by db.get_appointment_synthesis()
+    Returns: {'status': 'safe'|'error', 'text': str}
+    """
+    if not synthesis:
+        return {'status': 'error', 'text': ''}
+
+    pre      = synthesis.get('pre')  or {}
+    post     = synthesis.get('post') or {}
+    deltas   = synthesis.get('deltas') or {}
+    notes    = synthesis.get('notes_text', '').strip()
+    appt_dt  = synthesis.get('appt_date', 'unknown date')
+    pre_win  = synthesis.get('pre_window', '')
+    post_win = synthesis.get('post_window', '')
+    has_post = synthesis.get('has_post_data', False)
+
+    def _fmt(window: dict, label: str) -> str:
+        parts = []
+        for key, display in [('mood', 'mood'), ('sleep_hours', 'sleep hrs'),
+                              ('stress', 'stress'), ('energy', 'energy'),
+                              ('stability', 'stability'), ('crash_risk', 'crash risk')]:
+            val = window.get(key)
+            if val is not None:
+                parts.append(f"{display}={val}/10" if key not in ('sleep_hours',)
+                             else f"sleep={val}hrs")
+        n = window.get('n', 0)
+        return f"{label} ({n} check-ins, {pre_win if label=='Pre' else post_win}): " + ", ".join(parts)
+
+    lines = [_fmt(pre, 'Pre')] if pre else ["Pre-window: no check-in data"]
+    if has_post:
+        lines.append(_fmt(post, 'Post'))
+    else:
+        post_n = post.get('n', 0) if post else 0
+        lines.append(f"Post-window: {post_n} check-in(s) — insufficient for trend analysis")
+
+    if deltas:
+        delta_parts = []
+        for key, display in [('mood', 'mood'), ('sleep_hours', 'sleep'),
+                              ('stress', 'stress'), ('stability', 'stability')]:
+            d = deltas.get(key)
+            if d is not None:
+                sign = '+' if d >= 0 else ''
+                delta_parts.append(f"{display}: {sign}{d}")
+        if delta_parts:
+            lines.append("Deltas (post − pre): " + ", ".join(delta_parts))
+
+    if notes:
+        lines.append(f"Clinical summary excerpt: {notes[:400]}")
+    else:
+        lines.append("Session notes: not recorded")
+
+    user_content = f"Appointment date: {appt_dt}\n" + "\n".join(lines)
+
+    try:
+        raw   = _call_claude(_MODE_G_SYSTEM, user_content, max_tokens=300)
+        clean = _sanitize_output(raw)
+        if not clean:
+            return {'status': 'error', 'text': ''}
+        return {'status': 'safe', 'text': clean}
+    except Exception as e:
+        print(f"Mode G generation error: {e}")
+        return {'status': 'error', 'text': ''}
+
+
+def generate_patient_synthesis(synthesis: dict) -> dict:
+    """
+    Mode H — patient-facing synthesis: behavioral story around the appointment.
+    NOTE: Never pass session notes or care plan to this function — only
+    behavioral data is included.
+
+    synthesis: the dict returned by db.get_appointment_synthesis()
+    Returns: {'status': 'safe'|'error', 'text': str}
+    """
+    if not synthesis:
+        return {'status': 'error', 'text': ''}
+
+    pre      = synthesis.get('pre')  or {}
+    post     = synthesis.get('post') or {}
+    deltas   = synthesis.get('deltas') or {}
+    appt_dt  = synthesis.get('appt_date', 'unknown date')
+    has_post = synthesis.get('has_post_data', False)
+    pre_win  = synthesis.get('pre_window', '')
+    post_win = synthesis.get('post_window', '')
+
+    def _fmt_patient(window: dict, label: str) -> str:
+        parts = []
+        for key, display in [('mood', 'mood avg'), ('sleep_hours', 'sleep avg'),
+                              ('stress', 'stress avg'), ('energy', 'energy avg'),
+                              ('stability', 'stability avg')]:
+            val = window.get(key)
+            if val is not None:
+                unit = 'hrs' if key == 'sleep_hours' else '/10'
+                parts.append(f"{display} {val}{unit}")
+        n = window.get('n', 0)
+        return f"{label} window ({n} check-ins): " + ", ".join(parts)
+
+    lines = [_fmt_patient(pre, 'Pre-appointment')] if pre else ["Pre-appointment: no check-in data"]
+
+    if has_post:
+        lines.append(_fmt_patient(post, 'Post-appointment'))
+        if deltas:
+            delta_parts = []
+            for key, display in [('mood', 'mood'), ('sleep_hours', 'sleep'),
+                                  ('stress', 'stress'), ('stability', 'stability')]:
+                d = deltas.get(key)
+                if d is not None:
+                    sign = '+' if d >= 0 else ''
+                    delta_parts.append(f"{display} {sign}{d}")
+            if delta_parts:
+                lines.append("Changes: " + ", ".join(delta_parts))
+    else:
+        post_n = post.get('n', 0) if post else 0
+        lines.append(f"Post-appointment: only {post_n} check-in(s) recorded so far")
+
+    user_content = f"Appointment date: {appt_dt}\n" + "\n".join(lines)
+
+    try:
+        raw   = _call_claude(_MODE_H_SYSTEM, user_content, max_tokens=250)
+        clean = _sanitize_output(raw)
+        if not clean:
+            return {'status': 'error', 'text': ''}
+        return {'status': 'safe', 'text': clean}
+    except Exception as e:
+        print(f"Mode H generation error: {e}")
+        return {'status': 'error', 'text': ''}
