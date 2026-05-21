@@ -426,43 +426,49 @@
 
   <!-- ── What's Working Section ──────────────────────────────────────────── -->
   {% if not provider_view %}
-  <div class="trends-section" id="whats-working-section">
-    <div class="trends-section-header">
-      <h2 class="trends-section-title">What Your Best Days Had in Common</h2>
-      <span class="trends-section-sub" id="ww-period-label"></span>
+  <div class="trends-section" id="section-working">
+    <div class="trends-section-hdr" onclick="toggleTrendsSection('working')">
+      <div style="display:flex;align-items:center;">
+        <span class="trends-section-title">What Your Best Days Had in Common</span>
+        <span class="trends-section-meta" id="ww-period-label"></span>
+      </div>
+      <span class="trends-section-chevron">▾</span>
     </div>
+    <div class="trends-section-body" id="section-body-working" style="display:none;">
 
-    <!-- Loading state -->
-    <div id="ww-loading" style="padding:24px 0;text-align:center;color:var(--text-muted);font-size:0.85rem;">
-      Analyzing your patterns…
-    </div>
+      <!-- Loading state -->
+      <div id="ww-loading" style="padding:24px 0;text-align:center;color:var(--text-muted);font-size:0.85rem;">
+        Analyzing your patterns…
+      </div>
 
-    <!-- Insufficient data state -->
-    <div id="ww-insufficient" style="display:none;padding:16px 0;color:var(--text-muted);font-size:0.88rem;line-height:1.6;">
-      Not enough check-ins yet to surface patterns — keep logging and this section will fill in once you have at least 10 check-ins over a 60-day window.
-    </div>
+      <!-- Insufficient data state -->
+      <div id="ww-insufficient" style="display:none;padding:16px 0;color:var(--text-muted);font-size:0.88rem;line-height:1.6;">
+        Not enough check-ins yet to surface patterns — keep logging and this section will fill in once you have at least 10 check-ins over a 60-day window.
+      </div>
 
-    <!-- Results -->
-    <div id="ww-results" style="display:none;">
-      <!-- Narrative -->
-      <div id="ww-narrative"
-           style="font-size:0.92rem;line-height:1.65;color:var(--text);
-                  background:#f5f9f6;border:1px solid #b8d4c0;border-left:4px solid #2B5C3E;
-                  border-radius:8px;padding:16px 18px;margin-bottom:20px;"></div>
+      <!-- Results -->
+      <div id="ww-results" style="display:none;">
+        <!-- Narrative -->
+        <div id="ww-narrative"
+             style="font-size:0.92rem;line-height:1.65;color:var(--text);
+                    background:#f5f9f6;border:1px solid #b8d4c0;border-left:4px solid #2B5C3E;
+                    border-radius:8px;padding:16px 18px;margin-bottom:20px;"></div>
 
-      <!-- Context line -->
-      <div id="ww-context"
-           style="font-size:0.76rem;color:var(--text-muted);margin-bottom:16px;"></div>
+        <!-- Context line -->
+        <div id="ww-context"
+             style="font-size:0.76rem;color:var(--text-muted);margin-bottom:16px;"></div>
 
-      <!-- Pattern cards grid -->
-      <div id="ww-pattern-grid"
-           style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;"></div>
+        <!-- Pattern cards grid -->
+        <div id="ww-pattern-grid"
+             style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;"></div>
 
-      <!-- Disclaimer -->
-      <p style="font-size:0.72rem;color:var(--text-muted);margin-top:16px;line-height:1.5;">
-        These are co-occurrence observations — variables that were also true on your highest-stability days.
-        They don't explain why those days went well, and they're not recommendations.
-      </p>
+        <!-- Disclaimer -->
+        <p style="font-size:0.72rem;color:var(--text-muted);margin-top:16px;line-height:1.5;">
+          These are co-occurrence observations — variables that were also true on your highest-stability days.
+          They don't explain why those days went well, and they're not recommendations.
+        </p>
+      </div>
+
     </div>
   </div>
   {% endif %}
@@ -1073,7 +1079,7 @@ async function refreshDiscovery() {
 // ── What's Working Engine ────────────────────────────────────────────────────
 
 (async function loadWhatWorked() {
-  const section      = document.getElementById('whats-working-section');
+  const section      = document.getElementById('section-working');
   if (!section) return;   // provider view — section not rendered
 
   const loadingEl    = document.getElementById('ww-loading');
