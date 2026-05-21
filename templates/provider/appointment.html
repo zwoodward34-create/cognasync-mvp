@@ -312,11 +312,19 @@
         {% if summaries %}
           {% for s in summaries[:2] %}
           <div class="pv-summary-card {% if loop.first %}new{% endif %}">
-            <div class="pv-summary-meta">
-              <span>{{ s.date_range_start }} – {{ s.date_range_end }}</span>
-              <span>{{ s.created_at[:10] }} · {{ s.generated_by }}</span>
+            <div class="pv-summary-meta"
+                 style="cursor:pointer;user-select:none;"
+                 onclick="toggleApptSummary({{ loop.index }})">
+              <div>
+                <span>{{ s.date_range_start }} – {{ s.date_range_end }}</span>
+                <span style="margin-left:10px;font-weight:400;opacity:.7;">{{ s.created_at[:10] }} · {{ s.generated_by }}</span>
+              </div>
+              <span id="appt-sum-chev-{{ loop.index }}" style="font-size:11px;">▸</span>
             </div>
-            <div class="md-summary pv-summary-body" data-raw="{{ s.summary_text | e }}"></div>
+            <div class="md-summary pv-summary-body"
+                 id="appt-sum-body-{{ loop.index }}"
+                 data-raw="{{ s.summary_text | e }}"
+                 style="display:none;margin-top:10px;"></div>
           </div>
           {% endfor %}
         {% else %}
@@ -1208,6 +1216,16 @@ async function generateSummary(patientId) {
     loading.classList.add('hidden');
     btns.forEach(b => b.disabled = false);
   }
+}
+
+// ── Past summary toggle ───────────────────────────────────────────────
+function toggleApptSummary(idx) {
+  const body = document.getElementById('appt-sum-body-' + idx);
+  const chev = document.getElementById('appt-sum-chev-' + idx);
+  if (!body) return;
+  const open = body.style.display !== 'none';
+  body.style.display = open ? 'none' : '';
+  if (chev) chev.textContent = open ? '▸' : '▾';
 }
 
 // ── Sidebar search ────────────────────────────────────────────────────

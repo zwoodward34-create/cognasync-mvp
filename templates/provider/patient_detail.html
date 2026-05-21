@@ -191,7 +191,7 @@
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);font-weight:700;margin-bottom:8px;">
         30-day Mood Trend
       </div>
-      <canvas id="mood-spark" height="60"></canvas>
+      <canvas id="mood-spark" height="90"></canvas>
     </div>
     {% endif %}
 
@@ -612,12 +612,17 @@ function filterPatients(q) {
 {% if trends.mood and trends.mood.daily_scores %}
 (function() {
   const scores = {{ trends.mood.daily_scores | tojson }};
+  const dates  = {{ (trends.mood.dates or []) | tojson }};
   const ctx = document.getElementById('mood-spark');
   if (!ctx) return;
+  function fmtD(iso) {
+    const d = new Date(iso + 'T12:00:00');
+    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  }
   new Chart(ctx, {
     type: 'line',
     data: {
-      labels: scores.map((_, i) => ''),
+      labels: dates.length ? dates : scores.map(() => ''),
       datasets: [{
         data: scores,
         borderColor: '#111',
@@ -634,7 +639,15 @@ function filterPatients(q) {
       plugins: { legend: { display: false }, tooltip: { enabled: false } },
       scales: {
         y: { min: 0, max: 10, display: false },
-        x: { display: false }
+        x: {
+          grid: { display: false },
+          ticks: {
+            font: { family: 'DM Sans', size: 10 },
+            maxTicksLimit: 6,
+            maxRotation: 0,
+            callback: function(val, i) { return dates[i] ? fmtD(dates[i]) : ''; }
+          }
+        }
       }
     }
   });
