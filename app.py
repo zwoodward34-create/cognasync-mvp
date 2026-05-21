@@ -1751,6 +1751,53 @@ def api_provider_patient(patient_id):
     return jsonify(_apply_perms_to_patient_detail(detail, perms)), 200
 
 
+@app.route('/api/provider/patient/<patient_id>/checkins/by-date', methods=['GET'])
+def api_provider_patient_checkins_by_date(patient_id):
+    """Return a patient's check-ins for a specific date for the provider appointment view."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+    date_str = request.args.get('date', '')
+    if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(date_str)):
+        return jsonify({'error': 'Invalid date. Use YYYY-MM-DD'}), 400
+    perms = _get_provider_perms(user['id'], patient_id)
+    rows = db.get_checkins_in_range(patient_id, date_str, date_str)
+    checkins = []
+    for c in (rows or []):
+        ext = c.get('extended_data') or {}
+        if isinstance(ext, str):
+            try:
+                ext = json.loads(ext)
+            except Exception:
+                ext = {}
+        scores = ext.get('scores') or {}
+        checkins.append({
+            'checkin_type':    c.get('checkin_type', 'on_demand'),
+            'time_of_day':     c.get('time_of_day', ''),
+            'mood_score':      c.get('mood_score'),
+            'stress_score':    c.get('stress_score'),
+            'sleep_hours':     c.get('sleep_hours'),
+            'notes':           c.get('notes', '') if perms.get('checkin_data', True) else None,
+            'medications':     (c.get('medications') or []) if perms.get('medication_data', True) else [],
+            'energy':          ext.get('energy'),
+            'focus':           ext.get('focus'),
+            'dissociation':    ext.get('dissociation'),
+            'anxiety':         ext.get('anxiety'),
+            'irritability':    ext.get('irritability'),
+            'motivation':      ext.get('motivation'),
+            'caffeine_mg':     ext.get('caffeine_mg'),
+            'exercise_minutes':ext.get('exercise_minutes'),
+            'sleep_quality':   ext.get('sleep_quality'),
+            'stability_score': scores.get('stability_score'),
+            'crash_risk':      scores.get('crash_risk'),
+            'stim_load':       scores.get('stim_load'),
+            'ns_load':         scores.get('ns_load'),
+        })
+    return jsonify({'date': date_str, 'checkins': checkins}), 200
+
+
 @app.route('/api/provider/appointment/<appt_id>/save', methods=['POST'])
 def api_appointment_save(appt_id):
     """Autosave appointment workspace data (notes, Q&A, actions, care plan)."""

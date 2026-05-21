@@ -740,6 +740,30 @@
     <span class="js-expand-label">📓 Journals{% if journals %} · {{ journals|length }}{% endif %}</span>
   </button>
 
+<!-- Day-detail modal -->
+<div id="day-detail-overlay"
+     style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1500;"
+     onclick="closeDayDetail()"></div>
+<div id="day-detail-modal"
+     style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+            z-index:1501;background:#fff;border:1px solid var(--border-light);
+            width:min(560px,92vw);max-height:80vh;overflow-y:auto;
+            box-shadow:0 8px 32px rgba(0,0,0,0.18);flex-direction:column;">
+  <div style="display:flex;justify-content:space-between;align-items:center;
+              padding:14px 18px;border-bottom:1px solid var(--border-light);position:sticky;top:0;background:#fff;">
+    <div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;
+                  color:var(--text-muted);font-weight:700;">Check-in Detail</div>
+      <div id="dd-title" style="font-size:16px;font-weight:700;margin-top:2px;"></div>
+    </div>
+    <button onclick="closeDayDetail()"
+            style="background:none;border:1px solid var(--border-light);
+                   width:28px;height:28px;cursor:pointer;font-size:16px;
+                   display:flex;align-items:center;justify-content:center;">✕</button>
+  </div>
+  <div id="dd-body" style="padding:16px 18px;"></div>
+</div>
+
 </div><!-- /pv-shell -->
 
 <script>
@@ -819,54 +843,158 @@ function switchTab(btn, tab) {
 }
 
 // ── Charts ────────────────────────────────────────────────────────────
-const chartDefs = { fill: true, tension: 0.3, pointRadius: 3, pointHoverRadius: 5 };
-const chartOpts = (min, max) => ({
+const chartDefs = { fill: true, tension: 0.3, pointRadius: 4, pointHoverRadius: 6,
+                    pointHitRadius: 10, cursor: 'pointer' };
+
+function fmtDateShort(iso) {
+  const d = new Date(iso + 'T12:00:00');
+  return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+}
+
+const chartOpts = (min, max, dates) => ({
   responsive: true, maintainAspectRatio: true,
-  plugins: { legend: { display: false } },
+  plugins: { legend: { display: false },
+             tooltip: { callbacks: {
+               title: items => dates && dates[items[0].dataIndex]
+                 ? fmtDateShort(dates[items[0].dataIndex]) : items[0].label
+             }}},
   scales: {
     y: { min, max, grid: { color: 'rgba(0,0,0,0.04)' },
          ticks: { font: { family: 'DM Sans', size: 11 } } },
     x: { grid: { display: false },
-         ticks: { font: { family: 'DM Sans', size: 11 }, maxTicksLimit: 8 } },
+         ticks: { font: { family: 'DM Sans', size: 11 }, maxTicksLimit: 8,
+                  callback: function(val, i) {
+                    return dates && dates[i] ? fmtDateShort(dates[i]) : val;
+                  } } },
+  },
+  onClick: function(evt, elements) {
+    if (!elements.length) return;
+    const idx = elements[0].index;
+    const date = dates && dates[idx];
+    if (date) openDayDetail(date);
+  },
+  onHover: function(evt, elements) {
+    evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
   },
 });
-const mkLabels = arr => arr.map((_, i) => 'Day ' + (i + 1));
 
 if (trendsData.mood?.daily_scores?.length)
   new Chart(document.getElementById('mood-chart'), {
     type: 'line',
-    data: { labels: mkLabels(trendsData.mood.daily_scores),
+    data: { labels: trendsData.mood.dates || [],
       datasets: [{ ...chartDefs, data: trendsData.mood.daily_scores,
         borderColor: '#000', backgroundColor: 'rgba(0,0,0,0.05)' }] },
-    options: chartOpts(0, 10),
+    options: chartOpts(0, 10, trendsData.mood.dates),
   });
 
 if (trendsData.sleep?.daily_hours?.length)
   new Chart(document.getElementById('sleep-chart'), {
     type: 'line',
-    data: { labels: mkLabels(trendsData.sleep.daily_hours),
+    data: { labels: trendsData.sleep.dates || [],
       datasets: [{ ...chartDefs, data: trendsData.sleep.daily_hours,
         borderColor: '#333', backgroundColor: 'rgba(0,0,0,0.04)' }] },
-    options: chartOpts(0, 12),
+    options: chartOpts(0, 12, trendsData.sleep.dates),
   });
 
 if (trendsData.stress?.daily_scores?.length)
   new Chart(document.getElementById('stress-chart'), {
     type: 'line',
-    data: { labels: mkLabels(trendsData.stress.daily_scores),
+    data: { labels: trendsData.stress.dates || [],
       datasets: [{ ...chartDefs, data: trendsData.stress.daily_scores,
         borderColor: '#8B1A1A', backgroundColor: 'rgba(139,26,26,0.05)' }] },
-    options: chartOpts(0, 10),
+    options: chartOpts(0, 10, trendsData.stress.dates),
   });
 
 if (trendsData.energy?.daily_scores?.length)
   new Chart(document.getElementById('energy-chart'), {
     type: 'line',
-    data: { labels: mkLabels(trendsData.energy.daily_scores),
+    data: { labels: trendsData.energy.dates || [],
       datasets: [{ ...chartDefs, data: trendsData.energy.daily_scores,
         borderColor: '#6B4A00', backgroundColor: 'rgba(107,74,0,0.05)' }] },
-    options: chartOpts(0, 10),
+    options: chartOpts(0, 10, trendsData.energy.dates),
   });
+
+// ── Day-detail modal ──────────────────────────────────────────────────
+function val(v, unit) {
+  return v != null ? `<strong>${v}</strong><span style="font-size:11px;color:var(--text-muted);margin-left:2px;">${unit}</span>` : '—';
+}
+function row(label, v, unit) {
+  const display = v != null ? `${v}${unit}` : '—';
+  return `<div style="display:flex;justify-content:space-between;padding:5px 0;
+                      border-bottom:1px solid var(--border-light);font-size:13px;">
+    <span style="color:var(--text-muted);">${label}</span>
+    <span style="font-weight:600;">${display}</span>
+  </div>`;
+}
+
+async function openDayDetail(dateIso) {
+  const modal   = document.getElementById('day-detail-modal');
+  const overlay = document.getElementById('day-detail-overlay');
+  const title   = document.getElementById('dd-title');
+  const body    = document.getElementById('dd-body');
+  title.textContent = fmtDateShort(dateIso);
+  body.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);font-size:13px;">Loading…</div>';
+  modal.style.display = 'flex';
+  overlay.style.display = 'block';
+
+  try {
+    const r = await fetch(`/api/provider/patient/${PATIENT_ID}/checkins/by-date?date=${dateIso}`);
+    const d = await r.json();
+    if (!r.ok) throw new Error(d.error || 'Failed to load');
+    if (!d.checkins || d.checkins.length === 0) {
+      body.innerHTML = '<p style="font-size:13px;color:var(--text-muted);padding:8px 0;">No check-ins recorded on this date.</p>';
+      return;
+    }
+    body.innerHTML = d.checkins.map((c, i) => {
+      const label = c.time_of_day
+        ? `${c.time_of_day.charAt(0).toUpperCase() + c.time_of_day.slice(1)} check-in`
+        : (d.checkins.length > 1 ? `Check-in ${i + 1}` : 'Check-in');
+      const meds = (c.medications || []).map(m => m.name || m).filter(Boolean);
+      return `
+        <div style="margin-bottom:${i < d.checkins.length - 1 ? '20px' : '0'};
+                    ${i < d.checkins.length - 1 ? 'padding-bottom:20px;border-bottom:2px solid var(--border-light);' : ''}">
+          <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;
+                      font-weight:700;color:var(--text-muted);margin-bottom:10px;">${escHtml(label)}</div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">
+            <div>
+              ${row('Mood',        c.mood_score,   '/10')}
+              ${row('Stress',      c.stress_score, '/10')}
+              ${row('Energy',      c.energy,       '/10')}
+              ${row('Focus',       c.focus,        '/10')}
+              ${row('Anxiety',     c.anxiety,      '/10')}
+              ${row('Irritability',c.irritability, '/10')}
+            </div>
+            <div>
+              ${row('Sleep',       c.sleep_hours,       ' hrs')}
+              ${row('Caffeine',    c.caffeine_mg,        ' mg')}
+              ${row('Exercise',    c.exercise_minutes,   ' min')}
+              ${row('Stability',   c.stability_score,   '/10')}
+              ${row('Crash Risk',  c.crash_risk,        '/10')}
+              ${row('Stim Load',   c.stim_load,         '/10')}
+            </div>
+          </div>
+          ${meds.length ? `<div style="margin-top:10px;font-size:12px;">
+            <span style="color:var(--text-muted);">Medications:</span>
+            <span style="font-weight:600;">${meds.map(m => escHtml(m)).join(', ')}</span>
+          </div>` : ''}
+          ${c.notes ? `<div style="margin-top:10px;font-size:12px;line-height:1.55;
+                                   background:var(--surface-alt,#f7f7f7);padding:8px 10px;
+                                   border-left:3px solid var(--border-light);">
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;
+                        color:var(--text-muted);margin-bottom:4px;">Notes</div>
+            ${escHtml(c.notes)}
+          </div>` : ''}
+        </div>`;
+    }).join('');
+  } catch(e) {
+    body.innerHTML = `<p style="font-size:13px;color:#c0392b;">${escHtml(e.message)}</p>`;
+  }
+}
+
+function closeDayDetail() {
+  document.getElementById('day-detail-modal').style.display = 'none';
+  document.getElementById('day-detail-overlay').style.display = 'none';
+}
 
 function renderInsights() {
   const container = document.getElementById('pv-insights-container');
