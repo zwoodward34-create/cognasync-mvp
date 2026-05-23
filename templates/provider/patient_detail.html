@@ -138,9 +138,13 @@
           {% endif %}
         </div>
       </div>
-      <div class="ph-header-right">
+      <div class="ph-header-right" style="display:flex;gap:8px;flex-wrap:wrap;">
         <a href="{{ url_for('provider_patient_trends', patient_id=patient.patient_id) }}"
            class="btn btn-sm">View Full Data →</a>
+        <a href="{{ url_for('provider_summary_print', patient_id=patient.patient_id) }}"
+           target="_blank" class="btn btn-sm" style="display:flex;align-items:center;gap:5px;">
+          🖨 Print Summary
+        </a>
       </div>
     </div>
 

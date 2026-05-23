@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Clinical Summary — {{ patient.full_name }} — {{ generated_at }}</title>
+  <style>
+    :root {
+      --text: #111827;
+      --text-muted: #6b7280;
+      --border: #e5e7eb;
+      --surface: #fff;
+      --blue: #2563eb;
+      --red: #dc2626;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: 'Georgia', 'Times New Roman', serif;
+      font-size: 11pt;
+      color: var(--text);
+      background: var(--surface);
+      padding: 0;
+    }
+
+    .page {
+      max-width: 760px;
+      margin: 0 auto;
+      padding: 40px 48px;
+    }
+
+    /* ── Header ── */
+    .doc-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      border-bottom: 2px solid var(--text);
+      padding-bottom: 14px;
+      margin-bottom: 20px;
+    }
+
+    .doc-logo {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: -0.5px;
+      color: var(--text);
+    }
+    .doc-logo-sub {
+      font-size: 9pt;
+      color: var(--text-muted);
+      font-weight: 400;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      margin-top: 2px;
+    }
+
+    .doc-meta {
+      text-align: right;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 9pt;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    /* ── Patient info block ── */
+    .patient-block {
+      background: #f9fafb;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 14px 18px;
+      margin-bottom: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+    }
+
+    .patient-name {
+      font-size: 15pt;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 3px;
+    }
+
+    .patient-meta {
+      font-size: 9pt;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .patient-period {
+      text-align: right;
+      font-size: 9pt;
+      color: var(--text-muted);
+      line-height: 1.6;
+    }
+
+    .patient-period strong {
+      font-size: 10pt;
+      color: var(--text);
+      display: block;
+      margin-bottom: 2px;
+    }
+
+    /* ── Period selector (screen only) ── */
+    .period-selector {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 20px;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 12px;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      padding-bottom: 16px;
+    }
+
+    .period-selector select,
+    .period-selector button {
+      font-size: 12px;
+      padding: 5px 10px;
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      cursor: pointer;
+      background: var(--surface);
+      color: var(--text);
+    }
+
+    .period-selector button.print-btn {
+      background: var(--text);
+      color: var(--surface);
+      border-color: var(--text);
+      font-weight: 600;
+    }
+
+    /* ── Summary body ── */
+    .summary-body {
+      line-height: 1.75;
+    }
+
+    .summary-body h2, .summary-body h3 {
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 10pt;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-muted);
+      margin: 24px 0 8px;
+      padding-bottom: 4px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .summary-body h2:first-child, .summary-body h3:first-child { margin-top: 0; }
+
+    .summary-body p {
+      margin-bottom: 10px;
+    }
+
+    .summary-body ul, .summary-body ol {
+      margin: 8px 0 10px 20px;
+    }
+
+    .summary-body li {
+      margin-bottom: 4px;
+    }
+
+    .summary-body strong {
+      font-weight: 700;
+    }
+
+    /* ── Error state ── */
+    .error-block {
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      border-radius: 4px;
+      padding: 16px;
+      color: var(--red);
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 11px;
+    }
+
+    /* ── Footer ── */
+    .doc-footer {
+      margin-top: 40px;
+      border-top: 1px solid var(--border);
+      padding-top: 12px;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 8pt;
+      color: var(--text-muted);
+      display: flex;
+      justify-content: space-between;
+    }
+
+    .confidential-notice {
+      background: #fefce8;
+      border: 1px solid #fde68a;
+      border-radius: 3px;
+      padding: 8px 14px;
+      font-family: 'Helvetica Neue', Arial, sans-serif;
+      font-size: 9pt;
+      color: #92400e;
+      margin-bottom: 20px;
+      text-align: center;
+    }
+
+    /* ── Print styles ── */
+    @media print {
+      .period-selector { display: none !important; }
+      .page { padding: 20px 32px; }
+      body { font-size: 10pt; }
+      .doc-header { page-break-after: avoid; }
+      .summary-body h2, .summary-body h3 { page-break-after: avoid; }
+    }
+
+    @page {
+      margin: 1.5cm 1.2cm;
+    }
+  </style>
+</head>
+<body>
+<div class="page">
+
+  <!-- Screen-only controls -->
+  <div class="period-selector" id="period-bar">
+    <span>Review period:</span>
+    <select id="days-select" onchange="changePeriod(this.value)">
+      <option value="7"  {% if days == 7  %}selected{% endif %}>7 days</option>
+      <option value="14" {% if days == 14 %}selected{% endif %}>14 days</option>
+      <option value="30" {% if days == 30 %}selected{% endif %}>30 days</option>
+      <option value="60" {% if days == 60 %}selected{% endif %}>60 days</option>
+      <option value="90" {% if days == 90 %}selected{% endif %}>90 days</option>
+    </select>
+    <span style="color:#d1d5db;">|</span>
+    <button class="print-btn" onclick="window.print()">🖨 Print / Save PDF</button>
+    <button onclick="window.close()" style="margin-left:4px;">✕ Close</button>
+  </div>
+
+  <!-- Document header -->
+  <div class="doc-header">
+    <div>
+      <div class="doc-logo">CognaSync</div>
+      <div class="doc-logo-sub">Behavioral Intelligence Platform</div>
+    </div>
+    <div class="doc-meta">
+      <strong style="font-size:10pt;color:var(--text);">Clinical Summary</strong><br>
+      Prepared for: {{ provider_name }}<br>
+      Generated: {{ generated_at }}<br>
+      CognaSync — cognasync.com
+    </div>
+  </div>
+
+  <!-- Confidentiality notice -->
+  <div class="confidential-notice">
+    ⚠ CONFIDENTIAL — Protected Health Information — For Clinical Use Only
+  </div>
+
+  <!-- Patient block -->
+  <div class="patient-block">
+    <div>
+      <div class="patient-name">{{ patient.full_name }}</div>
+      <div class="patient-meta">
+        {{ patient.email }}<br>
+        {% if patient.current_medications %}
+          Current Medications:
+          {% for med in patient.current_medications %}
+            {{ med.name | title }}{% if med.dose %} {{ med.dose }}{% endif %}{% if not loop.last %}, {% endif %}
+          {% endfor %}
+        {% else %}
+          No medications on record
+        {% endif %}
+      </div>
+    </div>
+    <div class="patient-period">
+      <strong>Review Period</strong>
+      {{ period_start }} — {{ period_end }}<br>
+      ({{ days }}-day window)
+    </div>
+  </div>
+
+  <!-- Summary content -->
+  {% if error_msg %}
+    <div class="error-block">
+      <strong>Unable to generate summary:</strong> {{ error_msg }}
+    </div>
+  {% elif summary_text %}
+    <div class="summary-body" id="summary-content">
+      {{ summary_text | replace('\n\n', '</p><p>') | replace('\n', '<br>') | replace('**', '') | safe }}
+    </div>
+  {% endif %}
+
+  <!-- Footer -->
+  <div class="doc-footer">
+    <span>CognaSync — AI-assisted pattern summary. Not a diagnostic tool. For clinical discussion only.</span>
+    <span>{{ patient.full_name }} · {{ generated_at }}</span>
+  </div>
+
+</div>
+
+<script>
+function changePeriod(days) {
+  const url = new URL(window.location.href);
+  url.searchParams.set('days', days);
+  window.location.href = url.toString();
+}
+
+// Convert plain-text markdown-style summary to basic HTML
+(function formatSummary() {
+  const el = document.getElementById('summary-content');
+  if (!el) return;
+  let html = el.innerHTML;
+
+  // Bold: **text**
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+
+  // Section headers: lines starting with # or ##
+  html = html.replace(/(^|<br>)(#{1,3})\s+(.+?)(<br>|$)/g, (_, pre, hashes, text, post) => {
+    return pre + '<h2>' + text.trim() + '</h2>' + post;
+  });
+
+  // Bullet lines: - item or • item
+  html = html.replace(/(^|<br>)[•\-]\s+(.+?)(?=<br>|$)/g, (_, pre, text) => {
+    return pre + '<li>' + text.trim() + '</li>';
+  });
+
+  // Wrap consecutive <li> in <ul>
+  html = html.replace(/(<li>.*?<\/li>(\s*<br>)*)+/gs, match => {
+    const items = match.replace(/<br>/g, '').trim();
+    return '<ul>' + items + '</ul>';
+  });
+
+  el.innerHTML = html;
+})();
+</script>
+</body>
+</html>

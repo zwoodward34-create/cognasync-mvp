@@ -285,3 +285,64 @@ def send_checkin_reminder(to_email: str, to_name: str, days_since: int) -> None:
     </p>
     """
     _send(to_email, "Your CognaSync check-in is waiting", html)
+
+
+def send_provider_patient_invite_email(to_email: str, provider_name: str, role_label: str,
+                                        message: str | None, invite_url: str) -> None:
+    """
+    Email sent to a prospective patient who doesn't have a CognaSync account yet.
+    The invite_url includes a pre-registration token.
+    """
+    msg_block = f"""
+    <blockquote style="background:#f5f5f5;border-left:3px solid #ccc;padding:10px 14px;
+                       font-size:13px;color:#444;margin:16px 0;">
+      "{message}"
+    </blockquote>""" if message else ""
+    html = f"""
+    <p>Hi,</p>
+    <p><strong>{provider_name}</strong> ({role_label}) has invited you to join CognaSync —
+    a behavioral tracking platform that helps you and your care team have more informed
+    conversations about your mental health.</p>
+    {msg_block}
+    <p>CognaSync lets you log daily check-ins, track mood, sleep, and stress, and share
+    your patterns with your provider before appointments. Your data stays private and you
+    control exactly what your provider can see.</p>
+    <p style="margin:24px 0">
+      <a href="{invite_url}"
+         style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">
+        Create my account →
+      </a>
+    </p>
+    <p>Or copy this link:<br><a href="{invite_url}">{invite_url}</a></p>
+    <p style="color:#888;font-size:12px;margin-top:32px;">
+      This invitation expires in 7 days. Once you create your account, you'll be
+      automatically connected with {provider_name}.
+    </p>
+    """
+    _send(to_email, f"{provider_name} invited you to CognaSync", html)
+
+
+def send_appointment_request_email(to_email: str, provider_name: str,
+                                    patient_name: str, message: str | None) -> None:
+    """Notify a provider that a patient is requesting an appointment."""
+    dashboard_url = f"{APP_URL}/provider"
+    msg_block = f"""
+    <blockquote style="background:#f5f5f5;border-left:3px solid #ccc;padding:10px 14px;
+                       font-size:13px;color:#444;margin:16px 0;">
+      "{message}"
+    </blockquote>""" if message else ""
+    html = f"""
+    <p>Hi {provider_name},</p>
+    <p><strong>{patient_name}</strong> has requested an appointment through CognaSync.</p>
+    {msg_block}
+    <p style="margin:24px 0">
+      <a href="{dashboard_url}"
+         style="background:#000;color:#fff;padding:12px 24px;text-decoration:none;border-radius:4px">
+        View in dashboard →
+      </a>
+    </p>
+    <p style="color:#888;font-size:12px;margin-top:32px;">
+      Log in to CognaSync to schedule the appointment.
+    </p>
+    """
+    _send(to_email, f"Appointment request from {patient_name}", html)

@@ -3439,23 +3439,156 @@ _ROLE_LABELS = {
 }
 
 
+def create_patient_invite(provider_id: str, patient_email: str,
+                          role: str = 'psychiatrist', message: str = None) -> dict:
+    """
+    Create a pre-registration invite for a patient who doesn't have an account yet.
+    Returns {'ok': True, 'token': ..., 'invite_id': ...}.
+    """
+    role = role if role in _ROLE_LABELS else 'other'
+    email = patient_email.lower().strip()
+    try:
+        # Cancel any prior pending invite for this provider+email
+        supabase_admin.table('patient_invites').update({'status': 'superseded'}).eq(
+            'provider_id', str(provider_id)).eq('patient_email', email).eq(
+            'status', 'pending').execute()
+        res = supabase_admin.table('patient_invites').insert({
+            'provider_id': str(provider_id),
+            'patient_email': email,
+            'role': role,
+            'message': message,
+            'status': 'pending',
+        }).execute()
+        row = res.data[0] if res.data else {}
+        return {'ok': True, 'token': row.get('token'), 'invite_id': row.get('id')}
+    except Exception as e:
+        return {'ok': False, 'error': f'Could not create invite: {e}'}
+
+
+def get_patient_invite_by_token(token: str) -> dict | None:
+    """Fetch a valid pending invite by token."""
+    try:
+        res = supabase_admin.table('patient_invites').select('*, profiles!patient_invites_provider_id_fkey(full_name)').eq(
+            'token', token).eq('status', 'pending').execute()
+        if not res.data:
+            return None
+        row = res.data[0]
+        # Flatten provider name
+        pf = row.pop('profiles', None) or {}
+        row['provider_name'] = pf.get('full_name', 'Your provider')
+        return row
+    except Exception:
+        return None
+
+
+def process_pending_invites(patient_email: str, patient_id: str) -> int:
+    """
+    When a patient account becomes active, accept all pending invites for their email.
+    Creates care_team_members rows for each and marks invites as accepted.
+    Returns the number of connections created.
+    """
+    email = patient_email.lower().strip()
+    try:
+        res = supabase_admin.table('patient_invites').select('*').eq(
+            'patient_email', email).eq('status', 'pending').execute()
+        rows = res.data or []
+        created = 0
+        for invite in rows:
+            provider_id = invite['provider_id']
+            role = invite.get('role', 'psychiatrist')
+            message = invite.get('message')
+            # Check for existing relationship
+            existing = supabase_admin.table('care_team_members').select('id, status').eq(
+                'patient_id', str(patient_id)).eq('provider_id', str(provider_id)).execute()
+            if existing.data:
+                # Reactivate if revoked
+                rec = existing.data[0]
+                if rec['status'] != 'active':
+                    supabase_admin.table('care_team_members').update({
+                        'status': 'active',
+                        'role': role,
+                        'approved_at': datetime.utcnow().isoformat(),
+                    }).eq('id', rec['id']).execute()
+                    created += 1
+            else:
+                supabase_admin.table('care_team_members').insert({
+                    'patient_id': str(patient_id),
+                    'provider_id': str(provider_id),
+                    'role': role,
+                    'status': 'active',
+                    'data_permissions': _DEFAULT_PERMISSIONS,
+                    'requested_by': 'provider',
+                    'request_message': message,
+                    'approved_at': datetime.utcnow().isoformat(),
+                }).execute()
+                created += 1
+            # Mark invite accepted
+            supabase_admin.table('patient_invites').update(
+                {'status': 'accepted'}).eq('id', invite['id']).execute()
+        return created
+    except Exception as e:
+        print(f"[db] process_pending_invites error: {e}", flush=True)
+        return 0
+
+
+def get_patient_appointment_list(patient_id: str) -> list:
+    """
+    Return all appointments for a patient with provider name, newest first.
+    Used for the patient-facing appointments page.
+    """
+    try:
+        res = supabase_admin.table('provider_appointments').select(
+            'id, started_at, appointment_type, period_days, provider_id'
+        ).eq('patient_id', str(patient_id)).order('started_at', desc=True).execute()
+        rows = res.data or []
+        if not rows:
+            return []
+        # Batch-fetch provider names
+        provider_ids = list({r['provider_id'] for r in rows if r.get('provider_id')})
+        pf_res = supabase_admin.table('profiles').select('id, full_name').in_(
+            'id', provider_ids).execute()
+        provider_map = {p['id']: p.get('full_name', 'Provider') for p in (pf_res.data or [])}
+        today = date.today().isoformat()
+        result = []
+        for r in rows:
+            appt_date = (r.get('started_at') or '')[:10]
+            result.append({
+                'id':               r['id'],
+                'appt_date':        appt_date,
+                'provider_name':    provider_map.get(r['provider_id'], 'Provider'),
+                'provider_id':      r['provider_id'],
+                'appointment_type': r.get('appointment_type') or 'Appointment',
+                'period_days':      r.get('period_days', 30),
+                'is_upcoming':      appt_date >= today,
+            })
+        return result
+    except Exception as e:
+        print(f"[db] get_patient_appointment_list error: {e}", flush=True)
+        return []
+
+
 def send_care_team_request(provider_id: str, patient_email: str, role: str = 'psychiatrist',
                            message: str = None) -> dict:
     """
     Provider sends a connection request to a patient by email.
-    Returns {'ok': True, 'member_id': ...} or {'ok': False, 'error': '...'}.
+    If the patient has no account yet, creates a pre-registration invite instead.
+    Returns {'ok': True, 'member_id': ..., 'method': 'request'|'invitation'} or {'ok': False, ...}.
     """
     role = role if role in _ROLE_LABELS else 'other'
 
     # Look up patient by email
     try:
-        pr = supabase_admin.table('profiles').select('id, full_name, role').eq(
+        pr = supabase_admin.table('profiles').select('id, full_name, role, status').eq(
             'email', patient_email.lower().strip()).single().execute()
         if not pr.data or pr.data.get('role') != 'patient':
-            return {'ok': False, 'error': 'No patient account found with that email.'}
+            raise Exception('not found')
         patient_id = pr.data['id']
     except Exception:
-        return {'ok': False, 'error': 'No patient account found with that email.'}
+        # Patient has no account — create a pre-registration invite
+        result = create_patient_invite(provider_id, patient_email, role, message)
+        if result.get('ok'):
+            result['method'] = 'invitation'
+        return result
 
     # Don't allow a provider to connect to themselves
     if str(patient_id) == str(provider_id):
@@ -3482,7 +3615,7 @@ def send_care_team_request(provider_id: str, patient_email: str, role: str = 'ps
                     'approved_at': None,
                     'revoked_at': None,
                 }).eq('id', rec['id']).execute()
-                return {'ok': True, 'member_id': rec['id'], 'patient_name': pr.data.get('full_name')}
+                return {'ok': True, 'member_id': rec['id'], 'patient_name': pr.data.get('full_name'), 'method': 'request'}
     except Exception:
         pass
 
@@ -3499,7 +3632,7 @@ def send_care_team_request(provider_id: str, patient_email: str, role: str = 'ps
         }
         res = supabase_admin.table('care_team_members').insert(insert_data).execute()
         member_id = res.data[0]['id'] if res.data else None
-        return {'ok': True, 'member_id': member_id, 'patient_name': pr.data.get('full_name')}
+        return {'ok': True, 'member_id': member_id, 'patient_name': pr.data.get('full_name'), 'method': 'request'}
     except Exception as e:
         return {'ok': False, 'error': f'Could not create request: {e}'}
 
@@ -4214,6 +4347,38 @@ def get_care_team_for_provider(provider_id: str, patient_id: str) -> list:
         ]
     except Exception as e:
         print(f"get_care_team_for_provider error: {e}")
+        return []
+
+
+def get_care_team_for_patient(patient_id: str) -> list:
+    """
+    Returns all active care team members visible to the patient.
+    Each entry: {provider_id, provider_name, provider_email, role, role_label}
+    Used for the patient appointments page (request form) and care team display.
+    """
+    try:
+        res = supabase_admin.table('care_team_members').select(
+            'provider_id, role'
+        ).eq('patient_id', str(patient_id)).eq('status', 'active').execute()
+        members = res.data or []
+        if not members:
+            return []
+        provider_ids = [m['provider_id'] for m in members]
+        prof_res = supabase_admin.table('profiles').select(
+            'id, full_name, email').in_('id', provider_ids).execute()
+        info_map = {r['id']: r for r in (prof_res.data or [])}
+        return [
+            {
+                'provider_id':    m['provider_id'],
+                'provider_name':  info_map.get(m['provider_id'], {}).get('full_name', 'Provider'),
+                'provider_email': info_map.get(m['provider_id'], {}).get('email'),
+                'role':           m['role'],
+                'role_label':     _ROLE_LABELS.get(m['role'], 'Provider'),
+            }
+            for m in members
+        ]
+    except Exception as e:
+        print(f"[db] get_care_team_for_patient error: {e}", flush=True)
         return []
 
 

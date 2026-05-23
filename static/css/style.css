@@ -383,6 +383,20 @@ input[type="number"], input[type="date"], select, .form-textarea, textarea {
 .auth-form .form-group { margin-bottom: 16px; }
 .auth-switch { text-align: center; margin-top: 20px; font-size: 0.855rem; color: var(--text-muted); }
 
+.auth-invite-banner {
+  display: flex; align-items: flex-start; gap: 12px;
+  background: #eff6ff; border: 1px solid #93c5fd;
+  border-radius: var(--radius); padding: 14px 16px;
+  width: 100%; max-width: 420px; margin-bottom: 16px;
+  font-size: 0.9rem; color: #1e40af;
+}
+.invite-banner-icon { font-size: 1.2rem; flex-shrink: 0; }
+.invite-banner-body { line-height: 1.5; }
+.invite-message {
+  margin: 6px 0 0; font-style: italic; color: #3b82f6;
+  border-left: 2px solid #93c5fd; padding-left: 8px;
+}
+
 /* ── Home ────────────────────────────────────────────────────────────── */
 
 .streak-badge {

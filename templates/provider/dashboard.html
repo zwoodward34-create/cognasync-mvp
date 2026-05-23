@@ -1453,7 +1453,11 @@ async function submitAddPatient(e) {
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request failed');
-    sucEl.textContent = `Connection request sent to ${email}. They'll see it in their Care Team page.`;
+    if (data.method === 'invitation') {
+      sucEl.textContent = `Invitation sent to ${email}. They don't have a CognaSync account yet — they'll receive an email with a link to sign up and will be automatically connected to you.`;
+    } else {
+      sucEl.textContent = `Connection request sent to ${email}. They'll see it in their Care Team page.`;
+    }
     document.getElementById('ap-form').reset();
     loadOutboundRequests();
   } catch (err) {
@@ -1564,7 +1568,7 @@ updateInboundBadge();
                    font-size:18px;cursor:pointer;color:var(--text-muted);">✕</button>
     <h2 style="font-family:'DM Serif Display',serif;font-size:20px;margin:0 0 4px;">Add Patient</h2>
     <p style="font-size:0.82rem;color:var(--text-muted);margin:0 0 20px;">
-      Enter the patient's CognaSync email. They'll receive a connection request and must approve it before you can view their data.
+      Enter the patient's email address. If they have a CognaSync account, they'll receive a connection request. If not, they'll get an invitation to sign up — and will be automatically connected to you once their account is approved.
     </p>
 
     <form id="ap-form" onsubmit="submitAddPatient(event)">

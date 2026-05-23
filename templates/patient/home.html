@@ -250,6 +250,15 @@
     </div>
     <div class="quick-card-arrow">→</div>
   </a>
+
+  <a href="{{ url_for('patient_appointments_page') }}" class="quick-card">
+    <div class="quick-card-icon">📅</div>
+    <div class="quick-card-body">
+      <div class="quick-card-title">Appointments</div>
+      <div class="quick-card-sub" id="appt-card-sub">View history &amp; request visits</div>
+    </div>
+    <div class="quick-card-arrow">→</div>
+  </a>
 </div>
 
 {% set current_meds = profile.current_medications if profile and profile.current_medications else [] %}
@@ -487,10 +496,32 @@
     }, 320);
   };
 
+  async function updateAppointmentCard() {
+    const sub = document.getElementById('appt-card-sub');
+    if (!sub) return;
+    try {
+      const res = await fetch('/api/patient/appointments', { credentials: 'same-origin' });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const upcoming = data.filter(a => a.is_upcoming);
+      if (upcoming.length > 0) {
+        const next = upcoming[upcoming.length - 1]; // earliest upcoming
+        sub.textContent = 'Next: ' + next.appt_date + ' with ' + next.provider_name;
+      } else if (data.length > 0) {
+        sub.textContent = data.length + ' past session' + (data.length !== 1 ? 's' : '');
+      } else {
+        sub.textContent = 'No appointments yet';
+      }
+    } catch (_) {
+      sub.textContent = 'View history & request visits';
+    }
+  }
+
   document.addEventListener('DOMContentLoaded', function () {
     initTimeInputs();
     loadTodayDoses();
     updateCheckinCard();
+    updateAppointmentCard();
   });
 })();
 </script>

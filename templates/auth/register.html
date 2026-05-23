@@ -19,9 +19,27 @@
     {% endif %}
   {% endwith %}
 
+  {% if invite_context %}
+  <div class="auth-invite-banner">
+    <div class="invite-banner-icon">✉️</div>
+    <div class="invite-banner-body">
+      <strong>{{ invite_context.provider_name }}</strong> invited you to join CognaSync
+      {% if invite_context.role and invite_context.role != 'other' %}
+        as your {{ invite_context.role | replace('_', ' ') | title }}
+      {% endif %}.
+      {% if invite_context.message %}
+        <p class="invite-message">"{{ invite_context.message }}"</p>
+      {% endif %}
+    </div>
+  </div>
+  {% endif %}
+
   <div class="auth-card">
     <h2 class="auth-card-title">Create your account</h2>
     <form method="POST" action="{{ url_for('register_post') }}" class="auth-form" id="register-form">
+      {% if invite_token %}
+        <input type="hidden" name="invite_token" value="{{ invite_token }}">
+      {% endif %}
       <div class="form-group">
         <label for="full_name">Full name</label>
         <input type="text" id="full_name" name="full_name" required
@@ -30,7 +48,9 @@
       <div class="form-group">
         <label for="email">Email address</label>
         <input type="email" id="email" name="email" required
-               value="{{ email or '' }}" placeholder="you@example.com" autocomplete="email">
+               value="{{ invite_email or email or '' }}"
+               placeholder="you@example.com" autocomplete="email"
+               {% if invite_email %}readonly{% endif %}>
       </div>
       <div class="form-group">
         <label for="password">Password <span class="label-hint">(min. 8 characters)</span></label>
@@ -43,6 +63,7 @@
                placeholder="Re-enter your password" minlength="8" autocomplete="new-password">
         <span id="pw-match-msg" style="display:none;font-size:13px;margin-top:4px"></span>
       </div>
+      {% if not invite_context %}
       <div class="form-group">
         <label for="role">I am a</label>
         <select id="role" name="role">
@@ -50,6 +71,9 @@
           <option value="provider" {% if role == 'provider' %}selected{% endif %}>Provider (Therapist / Psychiatrist)</option>
         </select>
       </div>
+      {% else %}
+      <input type="hidden" name="role" value="patient">
+      {% endif %}
       <button type="submit" class="btn btn-primary btn-full" id="submit-btn">Create account</button>
     </form>
     <p class="auth-switch">Already have an account? <a href="{{ url_for('login_page') }}">Sign in</a></p>

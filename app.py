@@ -262,7 +262,15 @@ def login_post():
 def register_page():
     if _current_user():
         return redirect(url_for('home'))
-    return render_template('auth/register.html')
+    invite_token = request.args.get('invite', '').strip()
+    invite_email = request.args.get('email', '').strip()
+    invite_context = None
+    if invite_token:
+        invite_context = db.get_patient_invite_by_token(invite_token)
+    return render_template('auth/register.html',
+                           invite_token=invite_token,
+                           invite_email=invite_email or None,
+                           invite_context=invite_context)
 
 
 @app.route('/register', methods=['POST'])
@@ -272,13 +280,20 @@ def register_post():
     confirm_password = request.form.get('confirm_password', '')
     full_name = request.form.get('full_name', '').strip()
     role = request.form.get('role', 'patient')
+    invite_token = request.form.get('invite_token', '').strip()
+    # Rebuild invite context for re-rendering on error
+    invite_context = db.get_patient_invite_by_token(invite_token) if invite_token else None
     if password != confirm_password:
         flash('Passwords do not match.', 'error')
-        return render_template('auth/register.html', email=email, full_name=full_name, role=role)
+        return render_template('auth/register.html', email=email, full_name=full_name, role=role,
+                               invite_token=invite_token, invite_email=email if invite_token else None,
+                               invite_context=invite_context)
     result, error = auth_module.register_user(email, password, full_name, role)
     if error:
         flash(error, 'error')
-        return render_template('auth/register.html', email=email, full_name=full_name, role=role)
+        return render_template('auth/register.html', email=email, full_name=full_name, role=role,
+                               invite_token=invite_token, invite_email=email if invite_token else None,
+                               invite_context=invite_context)
     email_sent = result.get('email_sent', True)
     return render_template('auth/verify_sent.html', email=email, email_sent=email_sent)
 
@@ -421,6 +436,8 @@ def admin_approve():
         return render_template('auth/approval_done.html', already=True, email=profile['email'])
     db.supabase_admin.table('profiles').update({'status': 'approved'}).eq('id', user_id).execute()
     email_utils.send_account_approved_email(profile['email'], profile['full_name'], profile.get('role', 'patient'))
+    if profile.get('role') == 'patient':
+        db.process_pending_invites(profile['email'], user_id)
     return render_template('auth/approval_done.html', already=False, email=profile['email'])
 
 
@@ -508,6 +525,8 @@ def admin_approve_user(user_id):
         return redirect(url_for('admin_panel'))
     db.supabase_admin.table('profiles').update({'status': 'approved'}).eq('id', user_id).execute()
     email_utils.send_account_approved_email(profile['email'], profile['full_name'], profile.get('role', 'patient'))
+    if profile.get('role') == 'patient':
+        db.process_pending_invites(profile['email'], user_id)
     flash(f'Approved {profile["email"]}.', 'success')
     return redirect(url_for('admin_panel'))
 
@@ -893,6 +912,71 @@ def provider_patient_trends(patient_id):
                            provider_view=True,
                            provider_patient_id=patient_id,
                            provider_patient_name=patient_name)
+
+
+@app.route('/provider/patient/<patient_id>/summary/print')
+@limiter.limit("10/hour")
+def provider_summary_print(patient_id):
+    """Generate and render a print-optimized Mode C clinical summary."""
+    import claude_api
+    user, redir = _require_provider()
+    if redir:
+        return redir
+    if not _provider_owns_patient(user['id'], patient_id):
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+
+    days = min(int(request.args.get('days', 30)), 365)
+    end_dt = date.today()
+    start_dt = end_dt - timedelta(days=days)
+    period_start = start_dt.isoformat()
+    period_end   = end_dt.isoformat()
+
+    perms = _get_provider_perms(user['id'], patient_id)
+    patient = db.get_patient_detail(patient_id, days=days)
+    if not patient:
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+
+    checkins = _strip_checkin_fields(db.get_checkins_in_range(patient_id, period_start, period_end), perms)
+    journals = db.get_journals_in_range(patient_id, period_start, period_end) if perms.get('journals_raw', True) else []
+
+    summary_text = None
+    error_msg = None
+
+    if checkins or journals:
+        symptom_patterns = db.find_symptom_correlations(patient_id, days=days)
+        flags = db.get_patient_flags(patient_id, days=days)
+        what_worked = db.get_what_worked_patterns(patient_id, days=max(days, 60))
+        try:
+            result = claude_api.generate_appointment_summary(
+                checkins, journals,
+                days=days,
+                period_start=period_start,
+                period_end=period_end,
+                audience='provider',
+                symptom_patterns=symptom_patterns,
+                substance_flags=flags.get('substance'),
+                safety_flags=flags.get('safety'),
+                what_worked=what_worked,
+            )
+            summary_text = result['text']
+        except RuntimeError as e:
+            error_msg = str(e)
+    else:
+        error_msg = 'No check-in or journal data found for this period.'
+
+    return render_template(
+        'provider/summary_print.html',
+        patient=patient,
+        provider_name=user.get('full_name', 'Provider'),
+        summary_text=summary_text,
+        error_msg=error_msg,
+        period_start=period_start,
+        period_end=period_end,
+        days=days,
+        generated_at=date.today().isoformat(),
+    )
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2154,6 +2238,7 @@ def api_provider_add_medication(patient_id):
 @app.route('/api/provider/care-team/request', methods=['POST'])
 def api_provider_care_request():
     """Provider sends a connection request to a patient by email."""
+    import email_utils
     user, err = _api_user('provider')
     if err:
         return err
@@ -2165,6 +2250,22 @@ def api_provider_care_request():
         return jsonify({'error': 'patient_email is required'}), 400
     result = db.send_care_team_request(user['id'], patient_email, role, message or None)
     if result.get('ok'):
+        if result.get('method') == 'invitation':
+            # Patient has no account yet — send pre-registration invite email
+            token = result.get('token', '')
+            base_url = request.host_url.rstrip('/')
+            invite_url = f"{base_url}/register?invite={token}&email={patient_email}"
+            role_labels = {
+                'psychiatrist': 'Psychiatrist', 'therapist': 'Therapist',
+                'psychologist': 'Psychologist', 'nurse_practitioner': 'Nurse Practitioner',
+                'counselor': 'Counselor', 'social_worker': 'Social Worker',
+                'care_coordinator': 'Care Coordinator', 'other': 'Provider',
+            }
+            role_label = role_labels.get(role, 'Provider')
+            provider_name = user.get('full_name') or 'Your provider'
+            email_utils.send_provider_patient_invite_email(
+                patient_email, provider_name, role_label, message or None, invite_url
+            )
         return jsonify(result), 200
     return jsonify({'error': result.get('error', 'Request failed')}), 400
 
@@ -2310,6 +2411,62 @@ def patient_care_team_page():
     if redir:
         return redir
     return render_template('patient/care_team.html', user=user)
+
+
+@app.route('/appointments')
+def patient_appointments_page():
+    """Patient-facing appointments list and request page."""
+    user, redir = _require_patient()
+    if redir:
+        return redir
+    appointments = db.get_patient_appointment_list(user['id'])
+    # Find care team providers for the request form
+    care_team = db.get_care_team_for_patient(user['id'])
+    return render_template('patient/appointments.html',
+                           user=user,
+                           appointments=appointments,
+                           care_team=care_team)
+
+
+@app.route('/api/patient/appointments', methods=['GET'])
+def api_patient_appointments():
+    """JSON endpoint: patient's appointment list."""
+    user, err = _api_user('patient')
+    if err:
+        return err
+    appointments = db.get_patient_appointment_list(user['id'])
+    return jsonify(appointments), 200
+
+
+@app.route('/api/patient/appointments/request', methods=['POST'])
+def api_patient_appointment_request():
+    """Patient sends appointment request email to a provider."""
+    import email_utils
+    user, err = _api_user('patient')
+    if err:
+        return err
+    body = request.get_json(silent=True) or {}
+    provider_id = (body.get('provider_id') or '').strip()
+    message     = (body.get('message') or '').strip()
+    if not provider_id:
+        return jsonify({'error': 'provider_id is required'}), 400
+    # Verify this provider is on the patient's care team
+    care_team = db.get_care_team_for_patient(user['id'])
+    provider = next((m for m in care_team if m.get('provider_id') == provider_id), None)
+    if not provider:
+        return jsonify({'error': 'Provider not found on your care team'}), 404
+    provider_email = provider.get('provider_email')
+    if not provider_email:
+        return jsonify({'error': 'Provider email not available'}), 400
+    provider_name  = provider.get('provider_name', 'Your provider')
+    patient_name   = user.get('full_name', 'Your patient')
+    try:
+        email_utils.send_appointment_request_email(
+            provider_email, provider_name, patient_name, message or None
+        )
+        return jsonify({'ok': True}), 200
+    except Exception as e:
+        return jsonify({'error': f'Could not send request: {e}'}), 500
 
 
 @app.route('/api/provider/generate-summary/<patient_id>', methods=['POST'])
