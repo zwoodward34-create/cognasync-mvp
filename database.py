@@ -3569,24 +3569,17 @@ def get_patient_appointment_list(patient_id: str) -> list:
 
 def get_patient_next_scheduled_appointment(patient_id: str) -> dict | None:
     """
-    Return the soonest upcoming next-appointment record set by any provider
-    during a session (provider_appointments.next_appointment_date).
-    Only returns appointments where next_appointment_date >= today.
+    Return the soonest upcoming appointment for the patient.
+
+    Priority:
+    1. Earliest future next_appointment_date explicitly set by a provider.
+    2. Earliest appointment whose started_at date >= today (upcoming session),
+       used as a fallback when no next_appointment_date has been set.
     """
     from datetime import datetime as _dt
     today = date.today().isoformat()
-    try:
-        res = supabase_admin.table('provider_appointments').select(
-            'provider_id, next_appointment_date, next_appointment_time, next_appointment_notes'
-        ).eq('patient_id', str(patient_id)).not_.is_(
-            'next_appointment_date', 'null'
-        ).gte('next_appointment_date', today).order(
-            'next_appointment_date', desc=False
-        ).limit(1).execute()
-        row = (res.data or [None])[0]
-        if not row:
-            return None
-        provider_id = row['provider_id']
+
+    def _build_result(appt_date_str, provider_id, time_str=None, notes_str=None):
         pf = supabase_admin.table('profiles').select('full_name').eq(
             'id', str(provider_id)).limit(1).execute()
         provider_name = ((pf.data or [{}])[0]).get('full_name', 'Your provider')
@@ -3594,17 +3587,15 @@ def get_patient_next_scheduled_appointment(patient_id: str) -> dict | None:
             'patient_id', str(patient_id)).eq(
             'provider_id', str(provider_id)).eq('status', 'active').limit(1).execute()
         role = ((ct.data or [{}])[0]).get('role', 'other')
-        # Format date for display
         try:
-            d = _dt.strptime(row['next_appointment_date'], '%Y-%m-%d')
+            d = _dt.strptime(appt_date_str, '%Y-%m-%d')
             date_display = d.strftime('%A, %B %d, %Y').replace(' 0', ' ')
             days_until = (d.date() - date.today()).days
         except Exception:
-            date_display = row['next_appointment_date']
+            date_display = appt_date_str
             days_until = None
-        # Format time for display
         time_display = ''
-        raw_time = (row.get('next_appointment_time') or '').strip()
+        raw_time = (time_str or '').strip()
         if raw_time:
             try:
                 t = _dt.strptime(raw_time, '%H:%M')
@@ -3617,12 +3608,44 @@ def get_patient_next_scheduled_appointment(patient_id: str) -> dict | None:
             'provider_name':       provider_name,
             'provider_role':       role,
             'provider_role_label': _ROLE_LABELS.get(role, 'Provider'),
-            'date':                row['next_appointment_date'],
+            'date':                appt_date_str,
             'date_display':        date_display,
             'time_display':        time_display,
             'days_until':          days_until,
-            'notes':               (row.get('next_appointment_notes') or '').strip(),
+            'notes':               (notes_str or '').strip(),
         }
+
+    try:
+        # Priority 1: provider-set next_appointment_date
+        res = supabase_admin.table('provider_appointments').select(
+            'provider_id, next_appointment_date, next_appointment_time, next_appointment_notes'
+        ).eq('patient_id', str(patient_id)).not_.is_(
+            'next_appointment_date', 'null'
+        ).gte('next_appointment_date', today).order(
+            'next_appointment_date', desc=False
+        ).limit(1).execute()
+        row = (res.data or [None])[0]
+        if row:
+            return _build_result(
+                row['next_appointment_date'],
+                row['provider_id'],
+                row.get('next_appointment_time'),
+                row.get('next_appointment_notes'),
+            )
+
+        # Priority 2: upcoming session by started_at (same logic as the appointments quick card)
+        res2 = supabase_admin.table('provider_appointments').select(
+            'provider_id, started_at'
+        ).eq('patient_id', str(patient_id)).gte(
+            'started_at', today
+        ).order('started_at', desc=False).limit(1).execute()
+        row2 = (res2.data or [None])[0]
+        if row2:
+            appt_date = (row2.get('started_at') or '')[:10]
+            if appt_date >= today:
+                return _build_result(appt_date, row2['provider_id'])
+
+        return None
     except Exception as e:
         print(f"[db] get_patient_next_scheduled_appointment error: {e}", flush=True)
         return None
