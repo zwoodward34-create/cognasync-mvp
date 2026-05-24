@@ -248,21 +248,59 @@
 .gs-step-text strong { color: var(--text); }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
+
+/* ─ Tablet: collapse to single column ─ */
 @media (max-width: 860px) {
-  .home-layout { grid-template-columns: 1fr; }
+  .home-layout { display: flex; flex-direction: column; gap: 16px; }
 }
 
+/* ─ Mobile: touch-optimised layout ─ */
 @media (max-width: 600px) {
+  .home-header   { margin-bottom: 16px; }
+  .home-greeting { font-size: 1.3rem; }
+
+  /* Check-in hero — taller tap target on button */
   .checkin-hero { gap: 14px; padding: 16px 18px; }
-  .home-quick-card { padding: 12px 13px; gap: 10px; }
+  .checkin-hero-btn {
+    min-height: 44px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 10px 18px;
+  }
+
+  /* Quick nav — hide subtitle to keep 3-col clean on medium phones */
+  .home-quick-sub  { display: none; }
+  .home-quick-card { padding: 13px 11px; gap: 9px; }
   .home-quick-icon { width: 28px; height: 28px; font-size: 1rem; }
+
+  /* Insight dismiss — full 44×44 tap region */
+  .insight-row { padding: 12px 8px 12px 14px; align-items: center; }
+  .insight-row-dismiss {
+    min-width: 44px; min-height: 44px; padding: 0; margin-top: 0;
+    display: flex; align-items: center; justify-content: center;
+  }
+  /* Expand clipped insight text to 3 lines (more readable on a tall phone) */
+  .insight-row-text { -webkit-line-clamp: 3; }
+
+  /* Compact intel components */
+  .appt-compact    { padding: 12px 14px; }
+  .summary-preview { padding: 13px; }
+  /* Fewer lines — users don't need 6-line preview on a small screen */
+  .summary-preview-text { -webkit-line-clamp: 4; }
 }
 
-@media (max-width: 420px) {
-  .home-greeting { font-size: 1.3rem; }
+/* ─ Small phones: 2-col quick grid ─ */
+@media (max-width: 480px) {
+  /* Switch from 3-col to 2-col */
+  .home-quick-grid { grid-template-columns: repeat(2, 1fr); }
+  /* Reset 3-col border rules, apply 2-col rules */
+  .home-quick-card:nth-child(3n)  { border-right: 1px solid var(--border-light); }
+  .home-quick-card:nth-child(n+4) { border-bottom: 1px solid var(--border-light); }
+  .home-quick-card:nth-child(2n)  { border-right: none; }
+  .home-quick-card:nth-child(n+5) { border-bottom: none; }
+
+  /* Streak badge */
   .streak-number { font-size: 1.5rem; }
   .streak-badge  { padding: 8px 14px; min-width: 60px; }
-  /* Keep 3-col grid on small phones — cards are short enough */
 }
 </style>
 {% endblock %}
