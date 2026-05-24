@@ -191,33 +191,42 @@
 }
 .summary-preview-link:hover { color: var(--text); }
 
-/* ── Bottom navigation grid ───────────────────────────────────────────── */
-.home-nav-grid {
+/* ── Quick nav grid (2 × 3 between check-in and meds) ────────────────── */
+.home-quick-grid {
   display: grid;
-  grid-template-columns: repeat(7, 1fr);
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1px;
   border: 1px solid var(--border);
   border-radius: var(--radius); overflow: hidden;
 }
-.home-nav-item {
-  display: flex; flex-direction: column; align-items: center;
-  justify-content: center; gap: 5px;
-  padding: 13px 6px;
-  text-decoration: none; color: var(--text);
+.home-quick-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 15px;
   background: var(--surface);
+  text-decoration: none; color: var(--text);
+  border-bottom: 1px solid var(--border-light);
   border-right: 1px solid var(--border-light);
   transition: background 0.12s;
-  text-align: center;
 }
-.home-nav-item:last-child { border-right: none; }
-.home-nav-item:hover { background: var(--bg); text-decoration: none; }
-.home-nav-item--done { background: var(--green-light); }
-.home-nav-item--done:hover { background: #d5eddf; }
-.home-nav-icon  { font-size: 1rem; line-height: 1; }
-.home-nav-label {
-  font-size: 0.63rem; font-weight: 600;
-  color: var(--text-muted); white-space: nowrap;
+.home-quick-card:hover { background: var(--bg); text-decoration: none; }
+/* Remove right border on every 3rd card */
+.home-quick-card:nth-child(3n) { border-right: none; }
+/* Remove bottom border on last row (cards 4-6) */
+.home-quick-card:nth-child(n+4) { border-bottom: none; }
+
+.home-quick-icon {
+  width: 32px; height: 32px; flex-shrink: 0;
+  border-radius: 7px; border: 1px solid var(--border-light);
+  background: var(--bg); font-size: 1.1rem;
+  display: flex; align-items: center; justify-content: center;
 }
-.home-nav-item--done .home-nav-label { color: #2d6e48; }
+.home-quick-body  { flex: 1; min-width: 0; }
+.home-quick-title {
+  font-size: 0.83rem; font-weight: 600;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.home-quick-sub   { font-size: 0.73rem; color: var(--text-muted); margin-top: 1px; }
+.home-quick-arrow { font-size: 0.85rem; color: var(--text-muted); flex-shrink: 0; }
 
 /* ── Getting started card ─────────────────────────────────────────────── */
 .getting-started-card {
@@ -244,17 +253,16 @@
 }
 
 @media (max-width: 600px) {
-  .home-nav-grid { grid-template-columns: repeat(4, 1fr); }
-  .home-nav-item:nth-child(4)  { border-right: none; }
-  .home-nav-item:nth-child(n+5) { border-top: 1px solid var(--border-light); }
   .checkin-hero { gap: 14px; padding: 16px 18px; }
+  .home-quick-card { padding: 12px 13px; gap: 10px; }
+  .home-quick-icon { width: 28px; height: 28px; font-size: 1rem; }
 }
 
 @media (max-width: 420px) {
-  .home-nav-grid { grid-template-columns: repeat(4, 1fr); }
   .home-greeting { font-size: 1.3rem; }
   .streak-number { font-size: 1.5rem; }
   .streak-badge  { padding: 8px 14px; min-width: 60px; }
+  /* Keep 3-col grid on small phones — cards are short enough */
 }
 </style>
 {% endblock %}
@@ -319,6 +327,58 @@
       </div>
       <div class="checkin-hero-btn" id="checkin-hero-btn">Start →</div>
     </a>
+
+    <!-- 2×3 quick navigation grid -->
+    <div class="home-quick-grid">
+      <a href="{{ url_for('journal_page') }}" class="home-quick-card">
+        <div class="home-quick-icon">✎</div>
+        <div class="home-quick-body">
+          <div class="home-quick-title">Journal</div>
+          <div class="home-quick-sub">Reflect &amp; explore</div>
+        </div>
+        <span class="home-quick-arrow">→</span>
+      </a>
+      <a href="{{ url_for('medication_page') }}" class="home-quick-card">
+        <div class="home-quick-icon">⊕</div>
+        <div class="home-quick-body">
+          <div class="home-quick-title">Medications</div>
+          <div class="home-quick-sub">Doses &amp; adherence</div>
+        </div>
+        <span class="home-quick-arrow">→</span>
+      </a>
+      <a href="{{ url_for('summary_page') }}" class="home-quick-card">
+        <div class="home-quick-icon">◈</div>
+        <div class="home-quick-body">
+          <div class="home-quick-title">Summary</div>
+          <div class="home-quick-sub">Pre-appt brief</div>
+        </div>
+        <span class="home-quick-arrow">→</span>
+      </a>
+      <a href="{{ url_for('trends_page') }}" class="home-quick-card">
+        <div class="home-quick-icon">↗</div>
+        <div class="home-quick-body">
+          <div class="home-quick-title">Trends</div>
+          <div class="home-quick-sub">Mood, sleep &amp; stress</div>
+        </div>
+        <span class="home-quick-arrow">→</span>
+      </a>
+      <a href="{{ url_for('patient_care_team_page') }}" class="home-quick-card">
+        <div class="home-quick-icon">⊙</div>
+        <div class="home-quick-body">
+          <div class="home-quick-title">Care Team</div>
+          <div class="home-quick-sub">Providers &amp; contacts</div>
+        </div>
+        <span class="home-quick-arrow">→</span>
+      </a>
+      <a href="{{ url_for('patient_appointments_page') }}" class="home-quick-card">
+        <div class="home-quick-icon">📅</div>
+        <div class="home-quick-body">
+          <div class="home-quick-title">Appointments</div>
+          <div class="home-quick-sub">History &amp; requests</div>
+        </div>
+        <span class="home-quick-arrow">→</span>
+      </a>
+    </div>
 
     <!-- Medications -->
     {% set current_meds = profile.current_medications if profile and profile.current_medications else [] %}
@@ -435,39 +495,6 @@
 
 </div><!-- /home-layout -->
 
-<!-- Bottom navigation grid -->
-<div class="home-nav">
-  <div class="home-nav-grid">
-    <a href="{{ url_for('checkin_page') }}" class="home-nav-item" id="checkin-nav-item">
-      <span class="home-nav-icon">✓</span>
-      <span class="home-nav-label">Check-In</span>
-    </a>
-    <a href="{{ url_for('journal_page') }}" class="home-nav-item">
-      <span class="home-nav-icon">✎</span>
-      <span class="home-nav-label">Journal</span>
-    </a>
-    <a href="{{ url_for('medication_page') }}" class="home-nav-item">
-      <span class="home-nav-icon">⊕</span>
-      <span class="home-nav-label">Medications</span>
-    </a>
-    <a href="{{ url_for('summary_page') }}" class="home-nav-item">
-      <span class="home-nav-icon">◈</span>
-      <span class="home-nav-label">Summary</span>
-    </a>
-    <a href="{{ url_for('trends_page') }}" class="home-nav-item">
-      <span class="home-nav-icon">↗</span>
-      <span class="home-nav-label">Trends</span>
-    </a>
-    <a href="{{ url_for('patient_care_team_page') }}" class="home-nav-item">
-      <span class="home-nav-icon">⊙</span>
-      <span class="home-nav-label">Care Team</span>
-    </a>
-    <a href="{{ url_for('patient_appointments_page') }}" class="home-nav-item">
-      <span class="home-nav-icon">📅</span>
-      <span class="home-nav-label">Appts</span>
-    </a>
-  </div>
-</div>
 
 </div><!-- /home-wrap -->
 {% endblock %}
