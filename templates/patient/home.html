@@ -3,182 +3,265 @@
 
 {% block head %}
 <style>
-  .getting-started-card {
-    border: 1px solid var(--color-border, #e5e5e5);
-    border-radius: 10px;
-    padding: 28px 32px;
-    margin-bottom: 32px;
-    background: var(--color-surface-alt, #fafafa);
-  }
-  .getting-started-card h2 {
-    font-size: 1.1rem;
-    margin: 0 0 6px;
-  }
-  .getting-started-card .gs-subtitle {
-    color: var(--color-text-muted, #666);
-    font-size: 0.9rem;
-    margin: 0 0 20px;
-  }
-  .gs-steps { list-style: none; margin: 0 0 20px; padding: 0; }
-  .gs-steps li {
-    display: flex;
-    gap: 12px;
-    align-items: baseline;
-    padding: 7px 0;
-    font-size: 0.9rem;
-    color: var(--color-text, #333);
-    border-top: 1px solid var(--color-border, #ececec);
-  }
-  .gs-steps li:first-child { border-top: none; }
-  .gs-step-num {
-    font-size: 0.72rem;
-    font-weight: 700;
-    color: var(--color-text-muted, #aaa);
-    min-width: 18px;
-    padding-top: 1px;
-  }
-  .gs-step-text strong { color: var(--color-text, #111); }
+/* ── Home layout ──────────────────────────────────────────────────────── */
+.home-wrap { max-width: 960px; }
 
-  /* ── Proactive Insight Cards ── */
-  .proactive-insights { margin-bottom: 24px; display: flex; flex-direction: column; gap: 12px; }
+.home-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 24px; gap: 12px; flex-wrap: wrap;
+}
+.home-greeting { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+.home-date     { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
 
-  .proactive-insight-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 14px;
-    padding: 18px 20px;
-    border-radius: 10px;
-    background: #f5f9f6;
-    border: 1px solid #b8d4c0;
-    border-left: 4px solid #2B5C3E;
-    position: relative;
-  }
+.home-layout {
+  display: grid;
+  grid-template-columns: 1fr 320px;
+  gap: 20px;
+  align-items: start;
+}
+.home-today { display: flex; flex-direction: column; gap: 16px; }
+.home-intel { display: flex; flex-direction: column; gap: 14px; }
+.home-nav   { margin-top: 8px; }
 
-  .proactive-insight-card.proactive-insight-card--positive {
-    background: #fdf9ee;
-    border-color: #e0d0a0;
-    border-left-color: #C4A76B;
-  }
+/* ── Streak badge ─────────────────────────────────────────────────────── */
+.streak-badge {
+  display: flex; flex-direction: column; align-items: center;
+  background: var(--text); color: var(--surface);
+  border-radius: var(--radius); padding: 10px 18px; min-width: 72px;
+}
+.streak-number { font-family: 'DM Serif Display', serif; font-size: 1.75rem; line-height: 1; }
+.streak-label  { font-size: 0.68rem; opacity: 0.7; }
 
-  .proactive-insight-icon {
-    font-size: 1.25rem;
-    line-height: 1;
-    flex-shrink: 0;
-    margin-top: 1px;
-  }
+/* ── Check-in hero card ───────────────────────────────────────────────── */
+.checkin-hero {
+  display: flex; align-items: center; gap: 18px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+  text-decoration: none; color: var(--text);
+  transition: var(--transition);
+}
+.checkin-hero:hover { background: var(--bg); text-decoration: none; }
 
-  .proactive-insight-body { flex: 1; min-width: 0; }
+.checkin-hero-icon {
+  width: 44px; height: 44px; flex-shrink: 0;
+  border-radius: 10px; border: 1px solid var(--border-light);
+  background: var(--bg); font-size: 1.4rem;
+  display: flex; align-items: center; justify-content: center;
+  transition: var(--transition);
+}
+.checkin-hero-body { flex: 1; min-width: 0; }
+.checkin-hero-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 2px; }
+.checkin-hero-sub   { font-size: 0.8rem; color: var(--text-muted); }
 
-  .proactive-insight-label {
-    display: inline-block;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #2B5C3E;
-    background: #d4eadb;
-    border-radius: 4px;
-    padding: 2px 7px;
-    margin-bottom: 7px;
-  }
+.checkin-hero-btn {
+  flex-shrink: 0; font-size: 0.8rem; font-weight: 600;
+  padding: 7px 15px; background: var(--text); color: var(--surface);
+  border-radius: var(--radius); border: 1px solid var(--border);
+  transition: var(--transition); white-space: nowrap;
+}
 
-  .proactive-insight-card--positive .proactive-insight-label {
-    color: #7a5c1e;
-    background: #f5e8c4;
-  }
+/* Done state */
+.checkin-hero--done { background: var(--green-light); border-color: #90C8A8; }
+.checkin-hero--done:hover { background: #d5eddf; }
+.checkin-hero--done .checkin-hero-icon {
+  background: #2B5C3E; border-color: #2B5C3E; color: #fff; font-size: 1.1rem;
+}
+.checkin-hero--done .checkin-hero-sub { color: #2d6e48; }
+.checkin-hero--done .checkin-hero-btn {
+  background: transparent; color: var(--text-muted); border-color: var(--border);
+  font-weight: 500;
+}
 
-  .proactive-insight-text {
-    font-size: 0.9rem;
-    line-height: 1.55;
-    color: var(--color-text, #222);
-    margin: 0;
-  }
+/* ── Medication widget ────────────────────────────────────────────────── */
+.home-med-widget {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 20px 22px;
+}
+.section-header {
+  display: flex; align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 14px; gap: 12px; flex-wrap: wrap;
+}
+.section-title { font-size: 0.95rem; font-weight: 700; }
+.section-meta  { font-size: 0.78rem; color: var(--text-muted); }
 
-  .proactive-insight-dismiss {
-    flex-shrink: 0;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--color-text-muted, #999);
-    font-size: 1rem;
-    line-height: 1;
-    padding: 2px 4px;
-    border-radius: 4px;
-    transition: color 0.15s, background 0.15s;
-  }
-  .proactive-insight-dismiss:hover { color: #333; background: rgba(0,0,0,0.06); }
+/* ── Intel panel components ───────────────────────────────────────────── */
+.intel-section-label {
+  font-size: 0.65rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .1em;
+  color: var(--text-muted); margin-bottom: 6px;
+  padding-left: 2px;
+}
 
-  @media (max-width: 480px) {
-    .proactive-insight-card { padding: 14px 15px; gap: 10px; }
-    .proactive-insight-text { font-size: 0.85rem; }
-  }
+/* Compact insight rows */
+.insight-list {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.insight-row {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border-light);
+  transition: background 0.12s;
+}
+.insight-row:last-child { border-bottom: none; }
+.insight-row-icon { font-size: 0.95rem; line-height: 1.6; flex-shrink: 0; }
+.insight-row-content { flex: 1; min-width: 0; }
+.insight-row-label {
+  display: inline-block; font-size: 0.63rem; font-weight: 700;
+  text-transform: uppercase; letter-spacing: .06em;
+  color: #2B5C3E; background: #d4eadb;
+  border-radius: 3px; padding: 1px 6px; margin-bottom: 4px;
+}
+.insight-row--positive .insight-row-label { color: #7a5c1e; background: #f5e8c4; }
+.insight-row-text {
+  font-size: 0.81rem; line-height: 1.45; color: var(--text);
+  display: -webkit-box; -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+.insight-row-dismiss {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 0.8rem;
+  padding: 2px 5px; border-radius: 3px; flex-shrink: 0;
+  margin-top: 2px; transition: color 0.12s, background 0.12s;
+  line-height: 1;
+}
+.insight-row-dismiss:hover { color: var(--text); background: var(--bg); }
 
-  /* ── Next Appointment Banner ── */
-  .next-appt-banner {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    padding: 18px 22px;
-    border-radius: 10px;
-    background: #eef4fb;
-    border: 1px solid #b8d0ea;
-    border-left: 4px solid #2563eb;
-    margin-bottom: 24px;
-  }
+/* Compact appointment card */
+.appt-compact {
+  display: flex; align-items: center; gap: 12px;
+  background: #eef4fb; border: 1px solid #bfd4ec;
+  border-radius: var(--radius); padding: 13px 15px;
+  text-decoration: none; color: var(--text);
+  transition: background 0.12s;
+}
+.appt-compact:hover { background: #dce9f6; text-decoration: none; }
+.appt-compact-icon { font-size: 1.05rem; flex-shrink: 0; }
+.appt-compact-body { flex: 1; min-width: 0; }
+.appt-compact-label {
+  font-size: 0.6rem; font-weight: 800; text-transform: uppercase;
+  letter-spacing: .08em; color: #1d4ed8; margin-bottom: 2px;
+}
+.appt-compact-provider { font-size: 0.86rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appt-compact-date    { font-size: 0.76rem; color: #3b6ea8; }
+.appt-compact-badge {
+  font-size: 0.7rem; font-weight: 600;
+  color: #1d4ed8; background: #dbeafe;
+  border-radius: 20px; padding: 2px 9px;
+  white-space: nowrap; flex-shrink: 0;
+}
 
-  .next-appt-icon {
-    font-size: 1.4rem;
-    line-height: 1;
-    flex-shrink: 0;
-  }
+/* Summary preview */
+.summary-preview {
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 15px;
+}
+.summary-preview-header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 10px; gap: 8px;
+}
+.summary-preview-title {
+  font-size: 0.65rem; font-weight: 800;
+  text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted);
+}
+.summary-preview-date { font-size: 0.73rem; color: var(--text-muted); }
+.summary-preview-text {
+  font-size: 0.81rem; line-height: 1.6; color: var(--text-mid);
+  margin-bottom: 11px;
+  /* clamp to ~6 lines */
+  display: -webkit-box; -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical; overflow: hidden;
+}
+/* Rendered markdown inside preview */
+.summary-preview-text h3 {
+  font-size: 0.78rem; font-weight: 700; color: var(--text);
+  margin: 8px 0 3px; text-transform: uppercase; letter-spacing: .04em;
+}
+.summary-preview-text strong { font-weight: 600; color: var(--text); }
+.summary-preview-text ul { margin: 3px 0 6px 14px; padding: 0; }
+.summary-preview-text li { margin-bottom: 1px; }
+.summary-preview-link {
+  font-size: 0.78rem; color: var(--text-muted);
+  text-decoration: underline;
+}
+.summary-preview-link:hover { color: var(--text); }
 
-  .next-appt-body { flex: 1; min-width: 0; }
+/* ── Bottom navigation grid ───────────────────────────────────────────── */
+.home-nav-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  border: 1px solid var(--border);
+  border-radius: var(--radius); overflow: hidden;
+}
+.home-nav-item {
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 5px;
+  padding: 13px 6px;
+  text-decoration: none; color: var(--text);
+  background: var(--surface);
+  border-right: 1px solid var(--border-light);
+  transition: background 0.12s;
+  text-align: center;
+}
+.home-nav-item:last-child { border-right: none; }
+.home-nav-item:hover { background: var(--bg); text-decoration: none; }
+.home-nav-item--done { background: var(--green-light); }
+.home-nav-item--done:hover { background: #d5eddf; }
+.home-nav-icon  { font-size: 1rem; line-height: 1; }
+.home-nav-label {
+  font-size: 0.63rem; font-weight: 600;
+  color: var(--text-muted); white-space: nowrap;
+}
+.home-nav-item--done .home-nav-label { color: #2d6e48; }
 
-  .next-appt-label {
-    display: inline-block;
-    font-size: 0.68rem;
-    font-weight: 700;
-    letter-spacing: 0.07em;
-    text-transform: uppercase;
-    color: #1d4ed8;
-    background: #dbeafe;
-    border-radius: 4px;
-    padding: 2px 7px;
-    margin-bottom: 7px;
-  }
+/* ── Getting started card ─────────────────────────────────────────────── */
+.getting-started-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 24px 28px; margin-bottom: 24px;
+  background: var(--surface);
+}
+.getting-started-card h2  { font-size: 1.05rem; margin: 0 0 5px; }
+.getting-started-card .gs-subtitle { color: var(--text-muted); font-size: 0.85rem; margin: 0 0 18px; }
+.gs-steps { list-style: none; margin: 0 0 18px; padding: 0; }
+.gs-steps li {
+  display: flex; gap: 10px; align-items: baseline;
+  padding: 6px 0; font-size: 0.86rem; color: var(--text);
+  border-top: 1px solid var(--border-light);
+}
+.gs-steps li:first-child { border-top: none; }
+.gs-step-num { font-size: 0.68rem; font-weight: 700; color: var(--text-muted); min-width: 16px; padding-top: 1px; }
+.gs-step-text strong { color: var(--text); }
 
-  .next-appt-provider {
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: var(--color-text, #111);
-    margin: 0 0 3px;
-  }
+/* ── Responsive ───────────────────────────────────────────────────────── */
+@media (max-width: 860px) {
+  .home-layout { grid-template-columns: 1fr; }
+}
 
-  .next-appt-datetime {
-    font-size: 0.88rem;
-    color: var(--color-text-muted, #555);
-    margin: 0;
-  }
+@media (max-width: 600px) {
+  .home-nav-grid { grid-template-columns: repeat(4, 1fr); }
+  .home-nav-item:nth-child(4)  { border-right: none; }
+  .home-nav-item:nth-child(n+5) { border-top: 1px solid var(--border-light); }
+  .checkin-hero { gap: 14px; padding: 16px 18px; }
+}
 
-  .next-appt-badge {
-    flex-shrink: 0;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #1d4ed8;
-    background: #dbeafe;
-    border-radius: 20px;
-    padding: 4px 12px;
-    white-space: nowrap;
-  }
-
-  @media (max-width: 480px) {
-    .next-appt-banner { padding: 14px 16px; gap: 12px; }
-    .next-appt-badge { display: none; }
-  }
+@media (max-width: 420px) {
+  .home-nav-grid { grid-template-columns: repeat(4, 1fr); }
+  .home-greeting { font-size: 1.3rem; }
+  .streak-number { font-size: 1.5rem; }
+  .streak-badge  { padding: 8px 14px; min-width: 60px; }
+}
 </style>
 {% endblock %}
 
 {% block content %}
+<div class="home-wrap">
+
 {% if not streak and not latest_summary %}
 <div class="getting-started-card">
   <h2>Welcome, {{ first_name }}. Here's how to get started.</h2>
@@ -194,7 +277,7 @@
     </li>
     <li>
       <span class="gs-step-num">03</span>
-      <span class="gs-step-text"><strong>Add your medications in Settings</strong> — then you can log doses with one tap from this screen.</span>
+      <span class="gs-step-text"><strong>Add your medications in Settings</strong> — then log doses with one tap from this screen.</span>
     </li>
     <li>
       <span class="gs-step-num">04</span>
@@ -209,10 +292,11 @@
 </div>
 {% endif %}
 
-<div class="page-header">
+<!-- Page header -->
+<div class="home-header">
   <div>
-    <h1 class="page-title">Welcome back, {{ first_name }}.</h1>
-    <p class="page-sub">Here's your mental health snapshot.</p>
+    <div class="home-greeting">Welcome back, {{ first_name }}.</div>
+    <div class="home-date" id="home-date-display"></div>
   </div>
   <div class="streak-badge">
     <span class="streak-number">{{ streak }}</span>
@@ -220,172 +304,178 @@
   </div>
 </div>
 
-{% if proactive_insights %}
-{% set _pattern_icons = {
-  'crash_risk_climbing': '⚡',
-  'sleep_degradation':   '🌙',
-  'mood_decline':        '↘',
-  'stim_load_spike':     '⚠',
-  'positive_streak':     '✦'
-} %}
-{% set _pattern_labels = {
-  'crash_risk_climbing': 'Crash Risk Climbing',
-  'sleep_degradation':   'Sleep Pattern Change',
-  'mood_decline':        'Mood Trend',
-  'stim_load_spike':     'High Stim Load',
-  'positive_streak':     'Strong Stretch'
-} %}
-{% set _positive_patterns = ['positive_streak'] %}
-<div class="proactive-insights" id="proactive-insights-container">
-  {% for insight in proactive_insights %}
-  <div class="proactive-insight-card{% if insight.pattern_type in _positive_patterns %} proactive-insight-card--positive{% endif %}"
-       data-insight-id="{{ insight.id }}">
-    <span class="proactive-insight-icon">{{ _pattern_icons.get(insight.pattern_type, '◉') }}</span>
-    <div class="proactive-insight-body">
-      <span class="proactive-insight-label">{{ _pattern_labels.get(insight.pattern_type, insight.pattern_type) }}</span>
-      <p class="proactive-insight-text">{{ insight.insight_text }}</p>
+<!-- Two-column layout -->
+<div class="home-layout">
+
+  <!-- LEFT: Today's actions -->
+  <div class="home-today">
+
+    <!-- Check-in hero -->
+    <a href="{{ url_for('checkin_page') }}" class="checkin-hero" id="checkin-hero">
+      <div class="checkin-hero-icon" id="checkin-hero-icon">✓</div>
+      <div class="checkin-hero-body">
+        <div class="checkin-hero-title">Daily Check-In</div>
+        <div class="checkin-hero-sub" id="checkin-hero-sub">Loading…</div>
+      </div>
+      <div class="checkin-hero-btn" id="checkin-hero-btn">Start →</div>
+    </a>
+
+    <!-- Medications -->
+    {% set current_meds = profile.current_medications if profile and profile.current_medications else [] %}
+    {% if current_meds %}
+    <div class="home-med-widget" id="med-widget">
+      <div class="section-header">
+        <span class="section-title">Today's Medications</span>
+        <span class="section-meta" id="med-widget-meta">Loading…</span>
+      </div>
+      <ul class="med-dose-list" id="med-dose-list">
+        {% for med in current_meds %}
+        <li class="med-dose-item" data-med-name="{{ med.name }}" data-med-dose="{{ med.dose or '' }}">
+          <div class="med-dose-info">
+            <span class="med-dose-name">{{ med.name }}</span>
+            {% if med.dose %}<span class="med-dose-amount">{{ med.dose }}{% if med.dose_unit %} {{ med.dose_unit }}{% endif %}</span>{% endif %}
+          </div>
+          <div class="med-dose-status">
+            <span class="med-taken-checkmark" style="display:none;" aria-label="Taken">✓</span>
+            <span class="med-taken-time"></span>
+            <input type="time" class="med-time-input form-input" aria-label="Time taken">
+            <button class="btn btn-sm med-log-btn" onclick="quickLogDose(this)">Log Dose</button>
+            <button class="btn btn-sm btn-ghost med-remove-btn" style="display:none;" onclick="removeDose(this)">Remove</button>
+          </div>
+        </li>
+        {% endfor %}
+      </ul>
     </div>
-    <button class="proactive-insight-dismiss"
-            onclick="dismissInsight(this, '{{ insight.id }}')"
-            aria-label="Dismiss">✕</button>
-  </div>
-  {% endfor %}
-</div>
-{% endif %}
+    {% endif %}
 
-{% if next_appt %}
-<div class="next-appt-banner">
-  <span class="next-appt-icon">📅</span>
-  <div class="next-appt-body">
-    <span class="next-appt-label">Next Appointment</span>
-    <p class="next-appt-provider">{{ next_appt.provider_name }} &middot; {{ next_appt.provider_role_label }}</p>
-    <p class="next-appt-datetime">
-      {{ next_appt.date_display }}{% if next_appt.time_display %} &middot; {{ next_appt.time_display }}{% endif %}
-    </p>
-  </div>
-  {% if next_appt.days_until is not none %}
-  <span class="next-appt-badge">
-    {% if next_appt.days_until == 0 %}Today
-    {% elif next_appt.days_until == 1 %}Tomorrow
-    {% else %}in {{ next_appt.days_until }} days{% endif %}
-  </span>
-  {% endif %}
-</div>
-{% endif %}
+  </div><!-- /home-today -->
 
-<div class="quick-cards">
-  <a href="{{ url_for('checkin_page') }}" class="quick-card" id="checkin-card">
-    <div class="quick-card-icon">✓</div>
-    <div class="quick-card-body">
-      <div class="quick-card-title">Daily Check-In</div>
-      <div class="quick-card-sub" id="checkin-card-sub">Loading…</div>
+  <!-- RIGHT: Intelligence -->
+  <div class="home-intel">
+
+    <!-- Proactive insights (compact rows) -->
+    {% if proactive_insights %}
+    {% set _pattern_icons = {
+      'crash_risk_climbing': '⚡',
+      'sleep_degradation':   '🌙',
+      'mood_decline':        '↘',
+      'stim_load_spike':     '⚠',
+      'positive_streak':     '✦'
+    } %}
+    {% set _pattern_labels = {
+      'crash_risk_climbing': 'Crash Risk',
+      'sleep_degradation':   'Sleep Pattern',
+      'mood_decline':        'Mood Trend',
+      'stim_load_spike':     'High Stim Load',
+      'positive_streak':     'Strong Stretch'
+    } %}
+    {% set _positive_patterns = ['positive_streak'] %}
+    <div>
+      <div class="intel-section-label">Patterns</div>
+      <div class="insight-list" id="proactive-insights-container">
+        {% for insight in proactive_insights %}
+        <div class="insight-row{% if insight.pattern_type in _positive_patterns %} insight-row--positive{% endif %}"
+             data-insight-id="{{ insight.id }}">
+          <span class="insight-row-icon">{{ _pattern_icons.get(insight.pattern_type, '◉') }}</span>
+          <div class="insight-row-content">
+            <span class="insight-row-label">{{ _pattern_labels.get(insight.pattern_type, insight.pattern_type) }}</span>
+            <div class="insight-row-text">{{ insight.insight_text }}</div>
+          </div>
+          <button class="insight-row-dismiss"
+                  onclick="dismissInsight(this, '{{ insight.id }}')"
+                  aria-label="Dismiss">✕</button>
+        </div>
+        {% endfor %}
+      </div>
     </div>
-    <div class="quick-card-arrow">→</div>
-  </a>
+    {% endif %}
 
-  <a href="{{ url_for('journal_page') }}" class="quick-card">
-    <div class="quick-card-icon">✎</div>
-    <div class="quick-card-body">
-      <div class="quick-card-title">Journal</div>
-      <div class="quick-card-sub">Reflect &amp; explore your thoughts</div>
-    </div>
-    <div class="quick-card-arrow">→</div>
-  </a>
-
-  <a href="{{ url_for('medication_page') }}" class="quick-card">
-    <div class="quick-card-icon">⊕</div>
-    <div class="quick-card-body">
-      <div class="quick-card-title">Medications</div>
-      <div class="quick-card-sub">Track doses &amp; adherence</div>
-    </div>
-    <div class="quick-card-arrow">→</div>
-  </a>
-
-  <a href="{{ url_for('summary_page') }}" class="quick-card">
-    <div class="quick-card-icon">◈</div>
-    <div class="quick-card-body">
-      <div class="quick-card-title">Pre-Appt Summary</div>
-      <div class="quick-card-sub">
-        {% if latest_summary %}
-          Last generated {{ latest_summary.created_at[:10] }}
-        {% else %}
-          Generate before your next visit
+    <!-- Next appointment -->
+    {% if next_appt %}
+    <div>
+      <div class="intel-section-label">Next Appointment</div>
+      <a href="{{ url_for('patient_appointments_page') }}" class="appt-compact">
+        <span class="appt-compact-icon">📅</span>
+        <div class="appt-compact-body">
+          <div class="appt-compact-provider">{{ next_appt.provider_name }}</div>
+          <div class="appt-compact-date">
+            {{ next_appt.date_display }}{% if next_appt.time_display %} · {{ next_appt.time_display }}{% endif %}
+          </div>
+        </div>
+        {% if next_appt.days_until is not none %}
+        <span class="appt-compact-badge">
+          {% if next_appt.days_until == 0 %}Today
+          {% elif next_appt.days_until == 1 %}Tomorrow
+          {% else %}{{ next_appt.days_until }}d away{% endif %}
+        </span>
         {% endif %}
+      </a>
+    </div>
+    {% endif %}
+
+    <!-- Latest summary excerpt -->
+    {% if latest_summary %}
+    <div>
+      <div class="intel-section-label">Latest Summary</div>
+      <div class="summary-preview">
+        <div class="summary-preview-header">
+          <span class="summary-preview-title">Pre-Appt Summary</span>
+          <span class="summary-preview-date">{{ latest_summary.summary_date }}</span>
+        </div>
+        <div class="summary-preview-text" id="summary-preview-text">{{ latest_summary.content[:500] }}{% if latest_summary.content|length > 500 %}…{% endif %}</div>
+        <a href="{{ url_for('summary_page') }}" class="summary-preview-link">View full summary →</a>
       </div>
     </div>
-    <div class="quick-card-arrow">→</div>
-  </a>
+    {% endif %}
 
-  <a href="{{ url_for('trends_page') }}" class="quick-card">
-    <div class="quick-card-icon">↗</div>
-    <div class="quick-card-body">
-      <div class="quick-card-title">Trends</div>
-      <div class="quick-card-sub">View mood, sleep &amp; stress charts</div>
-    </div>
-    <div class="quick-card-arrow">→</div>
-  </a>
+    <!-- Appt card sub (for async loading, hidden anchor element) -->
+    <span id="appt-card-sub" style="display:none;"></span>
 
-  <a href="{{ url_for('patient_care_team_page') }}" class="quick-card">
-    <div class="quick-card-icon">⊙</div>
-    <div class="quick-card-body">
-      <div class="quick-card-title">Care Team</div>
-      <div class="quick-card-sub">View your providers &amp; contacts</div>
-    </div>
-    <div class="quick-card-arrow">→</div>
-  </a>
+  </div><!-- /home-intel -->
 
-  <a href="{{ url_for('patient_appointments_page') }}" class="quick-card">
-    <div class="quick-card-icon">📅</div>
-    <div class="quick-card-body">
-      <div class="quick-card-title">Appointments</div>
-      <div class="quick-card-sub" id="appt-card-sub">View history &amp; request visits</div>
-    </div>
-    <div class="quick-card-arrow">→</div>
-  </a>
-</div>
+</div><!-- /home-layout -->
 
-{% set current_meds = profile.current_medications if profile and profile.current_medications else [] %}
-{% if current_meds %}
-<div class="home-med-widget" id="med-widget">
-  <div class="section-header">
-    <h2 class="section-title">Today's Medications</h2>
-    <span class="section-meta" id="med-widget-meta">Loading…</span>
+<!-- Bottom navigation grid -->
+<div class="home-nav">
+  <div class="home-nav-grid">
+    <a href="{{ url_for('checkin_page') }}" class="home-nav-item" id="checkin-nav-item">
+      <span class="home-nav-icon">✓</span>
+      <span class="home-nav-label">Check-In</span>
+    </a>
+    <a href="{{ url_for('journal_page') }}" class="home-nav-item">
+      <span class="home-nav-icon">✎</span>
+      <span class="home-nav-label">Journal</span>
+    </a>
+    <a href="{{ url_for('medication_page') }}" class="home-nav-item">
+      <span class="home-nav-icon">⊕</span>
+      <span class="home-nav-label">Medications</span>
+    </a>
+    <a href="{{ url_for('summary_page') }}" class="home-nav-item">
+      <span class="home-nav-icon">◈</span>
+      <span class="home-nav-label">Summary</span>
+    </a>
+    <a href="{{ url_for('trends_page') }}" class="home-nav-item">
+      <span class="home-nav-icon">↗</span>
+      <span class="home-nav-label">Trends</span>
+    </a>
+    <a href="{{ url_for('patient_care_team_page') }}" class="home-nav-item">
+      <span class="home-nav-icon">⊙</span>
+      <span class="home-nav-label">Care Team</span>
+    </a>
+    <a href="{{ url_for('patient_appointments_page') }}" class="home-nav-item">
+      <span class="home-nav-icon">📅</span>
+      <span class="home-nav-label">Appts</span>
+    </a>
   </div>
-  <ul class="med-dose-list" id="med-dose-list">
-    {% for med in current_meds %}
-    <li class="med-dose-item" data-med-name="{{ med.name }}" data-med-dose="{{ med.dose or '' }}">
-      <div class="med-dose-info">
-        <span class="med-dose-name">{{ med.name }}</span>
-        {% if med.dose %}<span class="med-dose-amount">{{ med.dose }}{% if med.dose_unit %} {{ med.dose_unit }}{% endif %}</span>{% endif %}
-      </div>
-      <div class="med-dose-status">
-        <span class="med-taken-checkmark" style="display:none;" aria-label="Taken">✓</span>
-        <span class="med-taken-time"></span>
-        <input type="time" class="med-time-input form-input" aria-label="Time taken">
-        <button class="btn btn-sm med-log-btn" onclick="quickLogDose(this)">Log Dose</button>
-        <button class="btn btn-sm btn-ghost med-remove-btn" style="display:none;" onclick="removeDose(this)">Remove</button>
-      </div>
-    </li>
-    {% endfor %}
-  </ul>
 </div>
-{% endif %}
 
-{% if latest_summary %}
-<div class="home-summary-preview">
-  <div class="section-header">
-    <h2 class="section-title">Latest Summary</h2>
-    <span class="section-meta">{{ latest_summary.summary_date }}</span>
-  </div>
-  <div class="summary-excerpt">{{ latest_summary.content[:400] }}{% if latest_summary.content|length > 400 %}…{% endif %}</div>
-  <a href="{{ url_for('summary_page') }}" class="btn btn-ghost">View full summary →</a>
-</div>
-{% endif %}
+</div><!-- /home-wrap -->
 {% endblock %}
 
 {% block scripts %}
 <script>
 (function () {
+  /* ── Utilities ─────────────────────────────────────────────────────── */
   function nowHHMM() {
     const d = new Date();
     return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
@@ -393,16 +483,54 @@
 
   function localDateStr() {
     const n = new Date();
-    return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2, '0') + '-' + String(n.getDate()).padStart(2, '0');
+    return n.getFullYear() + '-' + String(n.getMonth() + 1).padStart(2,'0') + '-' + String(n.getDate()).padStart(2,'0');
   }
 
-  // Numeric part of a dose string: "20mg" → 20, "0.5" → 0.5, "" → null
   function parseDoseNum(s) {
     const n = parseFloat(String(s || '').replace(/[^\d.]/g, ''));
     return isNaN(n) ? null : n;
   }
 
-  // Find the ONE row whose name AND dose match (dose-aware to distinguish two Adderall Rx)
+  /* ── Date display ──────────────────────────────────────────────────── */
+  function setDateDisplay() {
+    const el = document.getElementById('home-date-display');
+    if (!el) return;
+    const d = new Date();
+    el.textContent = d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+  }
+
+  /* ── Check-in hero card ────────────────────────────────────────────── */
+  async function updateCheckinHero() {
+    const hero    = document.getElementById('checkin-hero');
+    const icon    = document.getElementById('checkin-hero-icon');
+    const sub     = document.getElementById('checkin-hero-sub');
+    const btn     = document.getElementById('checkin-hero-btn');
+    // also update the nav item
+    const navItem = document.getElementById('checkin-nav-item');
+    if (!hero || !sub) return;
+    try {
+      const res = await fetch('/api/checkins/today?date=' + localDateStr(), { credentials: 'same-origin' });
+      if (!res.ok) throw new Error();
+      const data = await res.json();
+      const done = (data.completed || []).length > 0;
+      if (done) {
+        hero.classList.add('checkin-hero--done');
+        if (icon) icon.textContent = '✓';
+        sub.textContent = 'Logged today';
+        if (btn) btn.textContent = 'View →';
+        if (navItem) navItem.classList.add('home-nav-item--done');
+      } else {
+        hero.classList.remove('checkin-hero--done');
+        if (icon) icon.textContent = '✓';
+        sub.textContent = 'Not yet logged today';
+        if (btn) btn.textContent = 'Start →';
+      }
+    } catch (_) {
+      if (sub) sub.textContent = 'Not yet logged today';
+    }
+  }
+
+  /* ── Medication widget ─────────────────────────────────────────────── */
   function findRow(name, dose) {
     const doseNum = parseDoseNum(dose);
     const candidates = [];
@@ -415,9 +543,7 @@
         candidates.push(li);
       }
     });
-    // If exactly one match, return it; otherwise fall back to first name-only match
-    return candidates.length === 1 ? candidates[0]
-         : candidates[0] || null;
+    return candidates.length === 1 ? candidates[0] : candidates[0] || null;
   }
 
   function setRowTaken(li, time, eventId) {
@@ -455,7 +581,7 @@
   function updateMeta(delta) {
     const meta = document.getElementById('med-widget-meta');
     if (!meta) return;
-    const cur = parseInt(meta.textContent) || 0;
+    const cur  = parseInt(meta.textContent) || 0;
     const next = Math.max(0, cur + delta);
     meta.textContent = next ? next + ' dose' + (next !== 1 ? 's' : '') + ' logged today' : 'None logged yet';
   }
@@ -466,7 +592,7 @@
       if (!res.ok) return;
       const data = await res.json();
       const doses = data.doses || [];
-      const meta = document.getElementById('med-widget-meta');
+      const meta  = document.getElementById('med-widget-meta');
       if (meta) meta.textContent = doses.length ? doses.length + ' dose' + (doses.length !== 1 ? 's' : '') + ' logged today' : 'None logged yet';
       doses.forEach(function (d) {
         const li = findRow(d.name, d.dose);
@@ -482,17 +608,16 @@
   }
 
   window.quickLogDose = async function (btn) {
-    const li = btn.closest('.med-dose-item');
-    const name = li.dataset.medName;
-    const dose = li.dataset.medDose;
+    const li      = btn.closest('.med-dose-item');
+    const name    = li.dataset.medName;
+    const dose    = li.dataset.medDose;
     const timeInp = li.querySelector('.med-time-input');
-    const time = (timeInp && timeInp.value) ? timeInp.value : nowHHMM();
+    const time    = (timeInp && timeInp.value) ? timeInp.value : nowHHMM();
     btn.disabled = true;
     btn.textContent = 'Logging…';
     try {
       const res = await fetch('/api/medications/quick-log', {
-        method: 'POST',
-        credentials: 'same-origin',
+        method: 'POST', credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, dose, time, date: localDateStr() }),
       });
@@ -512,99 +637,120 @@
   window.removeDose = async function (btn) {
     const eventId = btn.dataset.eventId;
     if (!eventId) return;
-    btn.disabled = true;
-    btn.textContent = '…';
+    btn.disabled = true; btn.textContent = '…';
     try {
       const res = await fetch('/api/medications/quick-log/' + eventId, {
-        method: 'DELETE',
-        credentials: 'same-origin',
+        method: 'DELETE', credentials: 'same-origin',
       });
       if (res.ok) {
         const li = btn.closest('.med-dose-item');
         setRowUntaken(li);
         updateMeta(-1);
       } else {
-        btn.textContent = 'Error';
-        btn.disabled = false;
+        btn.textContent = 'Error'; btn.disabled = false;
       }
     } catch (_) {
-      btn.textContent = 'Error';
-      btn.disabled = false;
+      btn.textContent = 'Error'; btn.disabled = false;
     }
   };
 
-  async function updateCheckinCard() {
-    const sub = document.getElementById('checkin-card-sub');
-    const card = document.getElementById('checkin-card');
-    if (!sub || !card) return;
-    try {
-      const res = await fetch('/api/checkins/today?date=' + localDateStr(), { credentials: 'same-origin' });
-      if (!res.ok) throw new Error();
-      const data = await res.json();
-      const done = (data.completed || []).length > 0;
-      sub.textContent = done ? 'Logged today' : 'Not yet logged today';
-      if (done) card.classList.add('quick-card--done');
-      else card.classList.remove('quick-card--done');
-    } catch (_) {
-      sub.textContent = 'Not yet logged today';
-    }
-  }
-
+  /* ── Dismiss insight row ───────────────────────────────────────────── */
   window.dismissInsight = async function (btn, insightId) {
-    const card = btn.closest('.proactive-insight-card');
+    const row = btn.closest('.insight-row');
     btn.disabled = true;
     try {
       await fetch('/api/proactive-insights/' + insightId + '/dismiss', {
-        method: 'POST',
-        credentials: 'same-origin',
+        method: 'POST', credentials: 'same-origin',
       });
     } catch (_) { /* best-effort */ }
-    // Animate out regardless of server response
-    card.style.transition = 'opacity 0.2s, max-height 0.3s, margin 0.3s, padding 0.3s';
-    card.style.overflow = 'hidden';
-    card.style.maxHeight = card.offsetHeight + 'px';
+    row.style.transition = 'opacity 0.18s, max-height 0.25s, padding 0.25s';
+    row.style.overflow = 'hidden';
+    row.style.maxHeight = row.offsetHeight + 'px';
     requestAnimationFrame(function () {
-      card.style.opacity = '0';
-      card.style.maxHeight = '0';
-      card.style.marginBottom = '0';
-      card.style.paddingTop = '0';
-      card.style.paddingBottom = '0';
+      row.style.opacity = '0';
+      row.style.maxHeight = '0';
+      row.style.paddingTop = '0';
+      row.style.paddingBottom = '0';
     });
     setTimeout(function () {
-      card.remove();
+      row.remove();
       const container = document.getElementById('proactive-insights-container');
-      if (container && !container.querySelector('.proactive-insight-card')) {
-        container.remove();
+      if (container && !container.querySelector('.insight-row')) {
+        container.closest('div').remove();
       }
-    }, 320);
+    }, 280);
   };
 
+  /* ── Appointment info (for legacy appt-card-sub, kept for compat) ──── */
   async function updateAppointmentCard() {
     const sub = document.getElementById('appt-card-sub');
     if (!sub) return;
     try {
-      const res = await fetch('/api/patient/appointments', { credentials: 'same-origin' });
+      const res  = await fetch('/api/patient/appointments', { credentials: 'same-origin' });
       if (!res.ok) throw new Error();
       const data = await res.json();
       const upcoming = data.filter(a => a.is_upcoming);
       if (upcoming.length > 0) {
-        const next = upcoming[upcoming.length - 1]; // earliest upcoming
+        const next = upcoming[upcoming.length - 1];
         sub.textContent = 'Next: ' + next.appt_date + ' with ' + next.provider_name;
       } else if (data.length > 0) {
         sub.textContent = data.length + ' past session' + (data.length !== 1 ? 's' : '');
-      } else {
-        sub.textContent = 'No appointments yet';
       }
-    } catch (_) {
-      sub.textContent = 'View history & request visits';
-    }
+    } catch (_) {}
   }
 
+  /* ── Render markdown in summary preview ────────────────────────────── */
+  function renderSummaryMarkdown() {
+    const el = document.getElementById('summary-preview-text');
+    if (!el) return;
+    // Escape HTML entities (raw text from server)
+    const escaped = el.textContent
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;');
+
+    const lines = escaped.split('\n');
+    let html = '';
+    let inList = false;
+
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      // Heading lines: ## Foo or # Foo
+      if (/^#{1,3}\s+/.test(line)) {
+        if (inList) { html += '</ul>'; inList = false; }
+        html += '<h3>' + line.replace(/^#+\s+/, '') + '</h3>';
+        continue;
+      }
+      // Bullet lines: - item or * item
+      if (/^[-*]\s+/.test(line)) {
+        if (!inList) { html += '<ul>'; inList = true; }
+        html += '<li>' + line.replace(/^[-*]\s+/, '') + '</li>';
+        continue;
+      }
+      // Empty line
+      if (line.trim() === '') {
+        if (inList) { html += '</ul>'; inList = false; }
+        continue;
+      }
+      // Regular paragraph line
+      if (inList) { html += '</ul>'; inList = false; }
+      html += line + '<br>';
+    }
+    if (inList) html += '</ul>';
+
+    // Bold: **text** → <strong>text</strong>
+    html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+    el.innerHTML = html;
+  }
+
+  /* ── Init ──────────────────────────────────────────────────────────── */
   document.addEventListener('DOMContentLoaded', function () {
+    setDateDisplay();
     initTimeInputs();
     loadTodayDoses();
-    updateCheckinCard();
+    updateCheckinHero();
     updateAppointmentCard();
+    renderSummaryMarkdown();
   });
 })();
 </script>
