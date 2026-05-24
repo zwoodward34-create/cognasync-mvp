@@ -227,11 +227,13 @@ def home():
     latest_summary = db.get_latest_summary(user['id'])
     first_name = user['full_name'].split()[0]
     proactive_insights = db.get_unseen_proactive_insights(user['id'])
+    next_appt = db.get_patient_next_scheduled_appointment(user['id'])
     return render_template('patient/home.html',
                            user=user, profile=profile, streak=streak,
                            latest_summary=latest_summary,
                            first_name=first_name,
-                           proactive_insights=proactive_insights)
+                           proactive_insights=proactive_insights,
+                           next_appt=next_appt)
 
 
 @app.route('/login')
@@ -1901,6 +1903,9 @@ def api_appointment_save(appt_id):
     if 'next_appointment_date' in data:
         nd = str(data['next_appointment_date']).strip()
         updates['next_appointment_date'] = nd if nd else None
+    if 'next_appointment_time' in data:
+        nt = str(data['next_appointment_time']).strip()
+        updates['next_appointment_time'] = nt if nt else None
     if 'next_appointment_notes' in data:
         updates['next_appointment_notes'] = str(data['next_appointment_notes'])
     if data.get('complete'):

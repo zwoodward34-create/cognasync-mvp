@@ -508,10 +508,20 @@
 
         <div class="aw-schedule-grid">
           <div>
-            <label class="aw-field-label">Next Appointment Date</label>
-            <input type="date" id="next-appt-date" class="aw-date-input"
-                   value="{{ appt.next_appointment_date or '' }}"
-                   oninput="scheduleSave()">
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+              <div>
+                <label class="aw-field-label">Next Appointment Date</label>
+                <input type="date" id="next-appt-date" class="aw-date-input"
+                       value="{{ appt.next_appointment_date or '' }}"
+                       oninput="scheduleSave()">
+              </div>
+              <div>
+                <label class="aw-field-label">Time <span style="font-weight:400;color:var(--text-muted);">(optional)</span></label>
+                <input type="time" id="next-appt-time" class="aw-date-input"
+                       value="{{ appt.next_appointment_time or '' }}"
+                       oninput="scheduleSave()">
+              </div>
+            </div>
           </div>
           <div>
             <label class="aw-field-label">Review Period for Next Session</label>
@@ -541,7 +551,9 @@
         <div class="aw-schedule-current">
           <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
                       color:var(--green);margin-bottom:6px;">Currently Scheduled</div>
-          <div style="font-size:18px;font-weight:600;color:var(--text);">{{ appt.next_appointment_date }}</div>
+          <div style="font-size:18px;font-weight:600;color:var(--text);">
+            {{ appt.next_appointment_date }}{% if appt.next_appointment_time %} &middot; {{ appt.next_appointment_time }}{% endif %}
+          </div>
           {% if appt.next_appointment_notes %}
           <div style="font-size:12px;color:var(--text-muted);margin-top:6px;line-height:1.6;">{{ appt.next_appointment_notes }}</div>
           {% endif %}
@@ -799,12 +811,13 @@ function scheduleSave() {
 
 async function doSave() {
   const payload = {
-    notes:                 document.getElementById('notes-field')?.value || '',
-    care_plan_changes:     document.getElementById('care-plan-field')?.value || '',
-    guided_qa:             qAndA,
-    actions:               actions,
-    next_appointment_date: document.getElementById('next-appt-date')?.value || '',
-    next_appointment_notes:document.getElementById('next-appt-notes')?.value || '',
+    notes:                  document.getElementById('notes-field')?.value || '',
+    care_plan_changes:      document.getElementById('care-plan-field')?.value || '',
+    guided_qa:              qAndA,
+    actions:                actions,
+    next_appointment_date:  document.getElementById('next-appt-date')?.value || '',
+    next_appointment_time:  document.getElementById('next-appt-time')?.value || '',
+    next_appointment_notes: document.getElementById('next-appt-notes')?.value || '',
   };
   try {
     const r = await fetch(`/api/provider/appointment/${APPT_ID}/save`, {
@@ -827,6 +840,7 @@ async function completeAppointment() {
     guided_qa:              qAndA,
     actions:                actions,
     next_appointment_date:  document.getElementById('next-appt-date')?.value || '',
+    next_appointment_time:  document.getElementById('next-appt-time')?.value || '',
     next_appointment_notes: document.getElementById('next-appt-notes')?.value || '',
     complete: true,
   };

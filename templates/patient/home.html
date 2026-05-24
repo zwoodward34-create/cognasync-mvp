@@ -112,6 +112,69 @@
     .proactive-insight-card { padding: 14px 15px; gap: 10px; }
     .proactive-insight-text { font-size: 0.85rem; }
   }
+
+  /* ── Next Appointment Banner ── */
+  .next-appt-banner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 18px 22px;
+    border-radius: 10px;
+    background: #eef4fb;
+    border: 1px solid #b8d0ea;
+    border-left: 4px solid #2563eb;
+    margin-bottom: 24px;
+  }
+
+  .next-appt-icon {
+    font-size: 1.4rem;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  .next-appt-body { flex: 1; min-width: 0; }
+
+  .next-appt-label {
+    display: inline-block;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: #1d4ed8;
+    background: #dbeafe;
+    border-radius: 4px;
+    padding: 2px 7px;
+    margin-bottom: 7px;
+  }
+
+  .next-appt-provider {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--color-text, #111);
+    margin: 0 0 3px;
+  }
+
+  .next-appt-datetime {
+    font-size: 0.88rem;
+    color: var(--color-text-muted, #555);
+    margin: 0;
+  }
+
+  .next-appt-badge {
+    flex-shrink: 0;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #1d4ed8;
+    background: #dbeafe;
+    border-radius: 20px;
+    padding: 4px 12px;
+    white-space: nowrap;
+  }
+
+  @media (max-width: 480px) {
+    .next-appt-banner { padding: 14px 16px; gap: 12px; }
+    .next-appt-badge { display: none; }
+  }
 </style>
 {% endblock %}
 
@@ -187,6 +250,26 @@
             aria-label="Dismiss">✕</button>
   </div>
   {% endfor %}
+</div>
+{% endif %}
+
+{% if next_appt %}
+<div class="next-appt-banner">
+  <span class="next-appt-icon">📅</span>
+  <div class="next-appt-body">
+    <span class="next-appt-label">Next Appointment</span>
+    <p class="next-appt-provider">{{ next_appt.provider_name }} &middot; {{ next_appt.provider_role_label }}</p>
+    <p class="next-appt-datetime">
+      {{ next_appt.date_display }}{% if next_appt.time_display %} &middot; {{ next_appt.time_display }}{% endif %}
+    </p>
+  </div>
+  {% if next_appt.days_until is not none %}
+  <span class="next-appt-badge">
+    {% if next_appt.days_until == 0 %}Today
+    {% elif next_appt.days_until == 1 %}Tomorrow
+    {% else %}in {{ next_appt.days_until }} days{% endif %}
+  </span>
+  {% endif %}
 </div>
 {% endif %}
 

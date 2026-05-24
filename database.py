@@ -2879,7 +2879,7 @@ def update_provider_appointment(appt_id: str, provider_id: str, updates: dict) -
     ALLOWED = {
         'status', 'period_days', 'guided_qa', 'notes',
         'care_plan_changes', 'actions',
-        'next_appointment_date', 'next_appointment_notes', 'completed_at',
+        'next_appointment_date', 'next_appointment_time', 'next_appointment_notes', 'completed_at',
     }
     payload = {k: v for k, v in updates.items() if k in ALLOWED}
     if not payload:
@@ -3565,6 +3565,67 @@ def get_patient_appointment_list(patient_id: str) -> list:
     except Exception as e:
         print(f"[db] get_patient_appointment_list error: {e}", flush=True)
         return []
+
+
+def get_patient_next_scheduled_appointment(patient_id: str) -> dict | None:
+    """
+    Return the soonest upcoming next-appointment record set by any provider
+    during a session (provider_appointments.next_appointment_date).
+    Only returns appointments where next_appointment_date >= today.
+    """
+    from datetime import datetime as _dt
+    today = date.today().isoformat()
+    try:
+        res = supabase_admin.table('provider_appointments').select(
+            'provider_id, next_appointment_date, next_appointment_time, next_appointment_notes'
+        ).eq('patient_id', str(patient_id)).not_.is_(
+            'next_appointment_date', 'null'
+        ).gte('next_appointment_date', today).order(
+            'next_appointment_date', desc=False
+        ).limit(1).execute()
+        row = (res.data or [None])[0]
+        if not row:
+            return None
+        provider_id = row['provider_id']
+        pf = supabase_admin.table('profiles').select('full_name').eq(
+            'id', str(provider_id)).limit(1).execute()
+        provider_name = ((pf.data or [{}])[0]).get('full_name', 'Your provider')
+        ct = supabase_admin.table('care_team_members').select('role').eq(
+            'patient_id', str(patient_id)).eq(
+            'provider_id', str(provider_id)).eq('status', 'active').limit(1).execute()
+        role = ((ct.data or [{}])[0]).get('role', 'other')
+        # Format date for display
+        try:
+            d = _dt.strptime(row['next_appointment_date'], '%Y-%m-%d')
+            date_display = d.strftime('%A, %B %d, %Y').replace(' 0', ' ')
+            days_until = (d.date() - date.today()).days
+        except Exception:
+            date_display = row['next_appointment_date']
+            days_until = None
+        # Format time for display
+        time_display = ''
+        raw_time = (row.get('next_appointment_time') or '').strip()
+        if raw_time:
+            try:
+                t = _dt.strptime(raw_time, '%H:%M')
+                hour = t.hour % 12 or 12
+                ampm = 'am' if t.hour < 12 else 'pm'
+                time_display = f"{hour}:{t.strftime('%M')} {ampm}"
+            except Exception:
+                time_display = raw_time
+        return {
+            'provider_name':       provider_name,
+            'provider_role':       role,
+            'provider_role_label': _ROLE_LABELS.get(role, 'Provider'),
+            'date':                row['next_appointment_date'],
+            'date_display':        date_display,
+            'time_display':        time_display,
+            'days_until':          days_until,
+            'notes':               (row.get('next_appointment_notes') or '').strip(),
+        }
+    except Exception as e:
+        print(f"[db] get_patient_next_scheduled_appointment error: {e}", flush=True)
+        return None
 
 
 def send_care_team_request(provider_id: str, patient_email: str, role: str = 'psychiatrist',
