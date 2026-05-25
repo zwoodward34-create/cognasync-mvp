@@ -1027,3 +1027,100 @@ If both signals are present in the same entry (e.g., patient expresses suicidal 
 - Results are **never** passed to Mode B (patient summary) or Mode A (check-in insight).
 - If `signals_found` is False: omit entirely.
 - `check_safety_signals()` uses a 60-day default window. Recency matters — `recency_days` tells the provider how recent the most recent signal is.
+
+---
+
+## 19. Regulatory Framework Alignment
+
+CognaSync's architecture is intentionally aligned with established regulatory frameworks for AI in digital mental health. This section documents that alignment explicitly so the alignment can be cited in clinical advisor conversations, due diligence, and any future regulatory submissions. **Nothing in this section changes existing functionality — it documents the regulatory posture already embodied in the product.**
+
+### FDA Cures Act Section 3060 — Clinical Decision Support Software Exemption
+
+CognaSync is built to operate within the four conditions of the Clinical Decision Support (CDS) Software exemption created by Section 3060 of the 21st Century Cures Act:
+
+1. **Display patient information.** CognaSync displays structured patient-reported information (mood, sleep, stress, medication adherence, symptoms, substance use, behavioral signals) to clinicians.
+2. **Support clinical recommendations.** The Mode C provider summary surfaces patterns intended to support — not replace — clinical recommendations.
+3. **Independent clinician review.** Every Mode C output is structured so a licensed clinician can independently evaluate the basis of any surfaced pattern. The methodology note appended to every Mode C summary makes the analytic basis explicit.
+4. **Clinician sees the basis of the information.** All quantitative scores cite their inputs and N. All symptom patterns cite their co-occurrence statistics and delta. All flags cite the threshold crossed.
+
+The product's existing four non-negotiable safety rules (Section 2), the deterministic scoring engine (Section 5), the forbidden-language sanitization (Section 15), and the methodology footer on every Mode C output (Section 14) are the technical implementations of this alignment.
+
+### Risk Classification Context
+
+CognaSync's current scope sits within the CDS exemption rather than within the SaMD (Software as a Medical Device) regulated classifications. The exemption is intentional: the product describes patterns; it does not make diagnostic or therapeutic recommendations. As CognaSync's roadmap expands (Decompensation Risk Forecasting, in particular), the regulatory positioning will be reassessed; features that cross into prediction or recommendation will be addressed through the appropriate SaMD pathway (likely 510(k) De Novo for novel digital mental health predictive features).
+
+### Total Product Life Cycle (TPLC) Approach
+
+The FDA's TPLC framework treats AI-enabled medical software as iterative throughout its lifecycle rather than fixed at submission. CognaSync's architecture is built to support TPLC thinking:
+
+- **Premarket:** The four safety rules, deterministic scoring, and sanitization layer are baseline guardrails that exist before any output is generated.
+- **Postmarket:** Model behavior is observable through structured logging of inputs and outputs (not yet implemented at the scale of formal postmarket surveillance, but the architecture supports it).
+- **Iteration:** When the underlying model is updated (e.g., a new Claude version), the system prompts, the forbidden-language list, and the scoring engine remain stable. Behavior changes can be regression-tested against historical inputs.
+
+### Predetermined Change Control Plan (PCCP) Readiness
+
+The FDA's PCCP framework allows manufacturers of AI-enabled medical devices to pre-specify the kinds of algorithm changes that may be made post-market without a new submission, provided the changes stay within established guardrails. CognaSync's architecture is PCCP-ready in three ways:
+
+1. **The four non-negotiable safety rules are version-controlled and immutable across model updates.** Model upgrades cannot relax these rules; they are enforced at the prompt and post-processing layers, not in the model itself.
+2. **The deterministic scoring engine is independent of the LLM.** Score formulas can be refined without retraining or replacing the model; model changes do not affect the score computation.
+3. **The forbidden-language sanitization list is independent of the model.** New language patterns can be added defensively; existing patterns survive every model upgrade.
+
+When CognaSync pursues SaMD-classified features in the future, this architecture supports drafting a PCCP that pre-specifies allowable changes within the existing safety guardrails — reducing the regulatory friction of iterating on the product.
+
+---
+
+## 20. Calibrated Prompt Framework Compliance
+
+The professional standard for LLM use in clinical contexts is the "Calibrated Prompt" framework: prompts that demonstrate Clarity, Context, Goal Alignment, Output Format, and Safety Guardrails. CognaSync's system prompts implement all five elements by design. This section documents that compliance so the discipline of prompt engineering applied to this product can be cited in clinical, regulatory, and investor conversations.
+
+| Element | How CognaSync's prompts comply |
+|---|---|
+| **Clarity** | Each output mode (A, B, C, D) has a distinct, named system prompt with specific, non-ambiguous language. "Mode A: 2–3 sentences, warm, references at least one specific number from the current check-in" — not "give the patient an insight." |
+| **Context** | Structured patient data — scores, trends, journal themes, symptom patterns, medication events, substance flags, safety signals — is passed to the model as JSON-shaped context. The model never has to retrieve or infer data; it references what it was given. |
+| **Goal Alignment** | Each mode has a single, defined audience and purpose. Mode A is the post-check-in patient insight. Mode B is the patient pre-appointment summary. Mode C is the provider clinical summary. Mode D is the dashboard threshold alert. Output is never mode-mixed. |
+| **Output Format** | Each mode has a defined output structure (Section 13 and Section 14). Mode A: 2–3 sentences. Mode B: five labeled paragraphs in conversational prose. Mode C: structured brief with named sections. Mode D: terse `[Level] [Subject] — [Data]` format. |
+| **Safety Guardrails** | The four non-negotiable rules (Section 2) are embedded in every system prompt. The forbidden-language list (Section 3) is enforced after generation. Crisis interception (Section 10) runs before the model is invoked. |
+
+The intent of formalizing this compliance is not to constrain future prompt iteration — it is to establish that any iteration must continue to satisfy all five elements. Prompt changes that violate any of the five must be flagged in code review and reconsidered.
+
+---
+
+## 21. Bias Mitigation, Output Verification, and Drift Monitoring
+
+The published frameworks for safe AI in mental health identify three risks that CognaSync addresses but has not previously documented under formal headings: bias, output verification, and model drift. This section captures the existing safeguards under the formal framework and identifies the next steps in each area.
+
+### Bias Mitigation Principles
+
+CognaSync's pattern detection is designed to be demographic-agnostic at the analytical layer:
+
+- **Score computation is identity-blind.** The deterministic scoring engine takes only the patient's logged values — mood, sleep, stress, medication events, symptoms, behavioral signals. It does not condition on age, gender, race, ethnicity, income, geography, or any demographic variable.
+- **Output language is restrained by the forbidden-language sanitization.** Diagnostic phrasing, certainty overclaims, and clinical-meaning interpretation are caught at the post-processing layer regardless of the demographic context of the patient.
+- **Provider-only routing for sensitive signals.** The Interpersonal Safety Signal detector (Section 18) is provider-only by design, not surfaced to the patient, because the bias risk of misinterpreting language patterns in a patient-facing context is too high. The provider — a trained clinician — is the right evaluator of language patterns that may indicate harm.
+- **Neutral prompting.** System prompts are written without leading or demographic-coded language. The patient is referred to as "the patient" throughout, not assumed to be of any particular profile.
+
+The forward-looking commitment is to formal bias audits as the user base grows: comparing surfaced-pattern frequencies across demographic groups to detect any disparate handling that may emerge from the underlying model's training data rather than CognaSync's deterministic layer. This audit framework is a roadmap item.
+
+### Output Verification
+
+CognaSync implements automated output verification at three layers, even though the architecture has not previously named the discipline:
+
+1. **Pre-generation:** Crisis detection intercepts triggering language before any model invocation. Deterministic scoring computes all numeric values that the model will later reference, so the model cannot invent numbers.
+2. **During generation:** System prompts constrain the model's output mode, format, and language constraints. The model is instructed to reference scores, not recompute them.
+3. **Post-generation:** Every generated output is processed against a forbidden-language list. Diagnostic phrasing, medication recommendations, and certainty overclaims are caught at the string level before the output reaches the patient or provider.
+
+The roadmap commitment is to **structured output sampling** — periodic human review of randomly sampled outputs across modes to verify the three-layer verification is performing as designed. This becomes operationally meaningful at scale.
+
+### Drift Monitoring
+
+Model drift is a known risk: a stable model's behavior can change over time as the underlying model is updated by the provider, or as the distribution of patient data evolves. CognaSync's architecture is structured to make drift detectable:
+
+- **Model version is logged with every AI call.** When Anthropic releases a new model version, CognaSync's logs preserve the exact model used for each historical output.
+- **System prompts are version-controlled in the codebase.** Prompt changes are visible in git history; output behavior changes can be attributed either to prompt changes or to model changes.
+- **The deterministic scoring engine is invariant to model changes.** Scores computed today and scores computed two years from now use the same formulas. Drift in computed scores would indicate input-distribution drift, not model drift.
+- **Forbidden-language sanitization is invariant to model changes.** If the model starts generating language it didn't previously generate, sanitization catches it — the safety floor does not move when the model moves.
+
+The forward-looking commitment is to **periodic regression testing** of model behavior against a fixed set of synthetic patient inputs — generating Mode A, B, C, and D outputs against the same inputs every quarter and comparing outputs across model versions. This is a roadmap item that becomes critical at clinical deployment scale.
+
+### Integration with Existing Architecture
+
+None of the safeguards in this section are new functionality. The bias-agnostic scoring, three-layer verification, and version-aware logging already exist in the product. This section names them under the formal framework used in published guidance so that clinical advisors and regulatory reviewers can map CognaSync's architecture to the standards they're already evaluating against.
