@@ -18,9 +18,19 @@ def get_client():
 
 
 CRISIS_KEYWORDS = [
-    'suicide', 'suicidal', 'kill myself', "don't want to live", "don't want to be alive",
+    # Explicit statements — spec §10 required terms
+    'suicide', 'suicidal', 'kill myself', 'cut myself',
+    "don't want to live", "don't want to be alive",
     'self-harm', 'self harm', 'hurt myself', 'end my life', 'ending my life',
     'want to die', 'better off dead',
+    # Additional high-signal explicit phrases
+    'take my own life', 'taking my own life', 'no reason to live',
+    'never wake up', 'sleep and never wake up', 'wish i was dead',
+    # Burdensomeness language — Interpersonal Psychological Theory of Suicide (IPTS)
+    'better off without me', 'everyone would be better off',
+    'world would be better without me', 'burden to everyone',
+    # Algospeak / platform-evasion variants (research taxonomy)
+    'unalive', 'unaliving', 'kms', 'sewerslide',
 ]
 
 CRISIS_RESPONSE = (
@@ -367,6 +377,19 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             'excerpt': content[:300] + ('...' if len(content) > 300 else ''),
         })
 
+    # ── Crisis interception on journal content ────────────────────────
+    # Spec §10: crisis detection must run on ALL user-provided text before
+    # any model invocation.  Journal excerpts pass through raw — scan them.
+    _journal_crisis = False
+    for _j in journal_data:
+        _jc = _j.get('content') or _j.get('raw_entry') or ''
+        if _jc and _check_crisis(_jc):
+            _journal_crisis = True
+            break
+
+    if _journal_crisis and audience == 'patient':
+        return {'status': 'crisis', 'text': CRISIS_RESPONSE}
+
     # ── Build period label ────────────────────────────────────────────
     appt_context = (
         f"The appointment is on {appointment_date}. "
@@ -539,6 +562,16 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             f"- Clinical inquiry recommended. Do NOT reproduce journal language in output.\n"
         )
 
+    # ── Inject crisis warning for provider when journal content triggered it ──
+    if _journal_crisis and audience == 'provider':
+        summary_system = (
+            "⚠️ CRISIS SIGNAL IN JOURNAL DATA: One or more journal entries from this patient "
+            "contain language associated with self-harm or suicidal ideation. "
+            "This is your MOST URGENT FLAG. Begin your response with a clearly marked "
+            "'🔴 Crisis Signal' section citing the detected language category before any other content. "
+            "Do NOT reproduce the exact patient phrasing.\n\n"
+        ) + summary_system
+
     # Inject provider-only flag instructions into Mode C system prompt
     if audience == 'provider':
         flag_instructions = ''
@@ -640,7 +673,8 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
 
 def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
                               days=14, period_start=None, period_end=None,
-                              appointment_date=None):
+                              appointment_date=None,
+                              safety_flags=None, substance_flags=None):
     """Therapy-weighted Mode C summary for therapists and counselors.
 
     Leads with journal themes and behavioral patterns (social quality, coping,
@@ -748,6 +782,17 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
             'excerpt': content[:400] + ('...' if len(content) > 400 else ''),
         })
 
+    # ── Crisis interception on journal content ────────────────────────────────
+    # Spec §10: crisis detection must run on ALL user-provided text before
+    # any model invocation.  Therapy summaries are provider-facing only —
+    # inject a crisis warning into the system prompt rather than returning early.
+    _journal_crisis = False
+    for _j in journal_data:
+        _jc = _j.get('content') or _j.get('raw_entry') or ''
+        if _jc and _check_crisis(_jc):
+            _journal_crisis = True
+            break
+
     # ── Period labels ─────────────────────────────────────────────────────────
     appt_context = (f"The session is on {appointment_date}. "
                     if appointment_date else "")
@@ -814,6 +859,64 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         'avg_energy':      _avg(energy_vals),
     }
 
+    # ── Substance and safety sections (provider-only — always therapist-facing) ─
+    therapy_substance_section = ''
+    if substance_flags and substance_flags.get('alert_level'):
+        sf = substance_flags
+        level  = sf['alert_level'].upper()
+        dd     = sf.get('drinking_days', 0)
+        td     = sf.get('total_days', 0)
+        avg    = sf.get('avg_units_per_drinking_day', 0)
+        jflags = sf.get('journal_flags') or []
+        pat_labels = list({f['pattern'] for f in jflags})
+        therapy_substance_section = (
+            f"\n\nSUBSTANCE USE FLAGS [{level}]:\n"
+            f"- Alcohol logged on {dd} of {td} check-in days\n"
+            f"- Avg {avg} units/drinking day\n"
+            f"- Journal/notes entries with substance-related language: {len(jflags)}"
+            + (f" (categories: {', '.join(pat_labels)})" if pat_labels else "") + "\n"
+        )
+
+    therapy_safety_section = ''
+    if safety_flags and safety_flags.get('signals_found'):
+        sig = safety_flags
+        therapy_safety_section = (
+            f"\n\nINTERPERSONAL SAFETY SIGNALS [CONCERN]:\n"
+            f"- Language patterns suggesting possible interpersonal harm detected in {sig['signal_count']} "
+            f"journal/note entries\n"
+            f"- Date range: {sig['first_signal_date']} to {sig['most_recent_date']} "
+            f"({sig['recency_days']} days since most recent)\n"
+            f"- Clinical inquiry recommended. Do NOT reproduce journal language in output.\n"
+        )
+
+    # ── Inject crisis, substance, and safety warnings into system prompt ───────
+    if _journal_crisis:
+        summary_system = (
+            "⚠️ CRISIS SIGNAL IN JOURNAL DATA: One or more journal entries from this patient "
+            "contain language associated with self-harm or suicidal ideation. "
+            "This is your MOST URGENT FLAG. Begin your response with a clearly marked "
+            "'🔴 Crisis Signal' section before any other content. "
+            "Do NOT reproduce the exact patient phrasing.\n\n"
+        ) + summary_system
+
+    if therapy_substance_section:
+        summary_system += (
+            "\nFor SUBSTANCE USE FLAGS: include in the **Flags** section. "
+            "Format: 'Substance Use: Alcohol logged [N] of [T] days. Avg [X] units/drinking day. "
+            "[N] entries flagged for substance-related language (categories: [list]).' "
+            "NEVER use 'alcoholic,' 'addict,' or 'substance abuse.' "
+            "Describe the frequency and volume pattern only.\n"
+        )
+    if therapy_safety_section:
+        summary_system += (
+            "\nFor INTERPERSONAL SAFETY SIGNALS: include in the **Flags** section as the FIRST flag "
+            "(unless a crisis signal is present, which always comes first). "
+            "Format: 'Interpersonal Safety Signal: Language patterns suggesting possible interpersonal harm "
+            "detected in [N] journal entries between [first_date] and [most_recent_date]. "
+            "Clinical inquiry recommended.' "
+            "NEVER quote journal language. NEVER say 'patient is being abused' or assign any label.\n"
+        )
+
     user_content = (
         f"REVIEW PERIOD: {period_label}\n\n"
         f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}"
@@ -822,6 +925,8 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         f"{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
         f"JOURNAL ENTRIES ({len(journal_rows)} total):\n"
         f"{json.dumps(journal_rows, indent=2, default=str)}"
+        f"{therapy_substance_section}"
+        f"{therapy_safety_section}"
     )
 
     raw = _call_claude(summary_system, user_content, max_tokens=1000)
