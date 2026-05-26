@@ -27,7 +27,34 @@
   .back-link { font-size: 0.8rem; color: var(--text-secondary); text-decoration: none; display: inline-block; margin-bottom: 12px; }
   .back-link:hover { color: var(--primary); }
 
-  /* ── Upload form ─────────────────────────────────────────── */
+  /* ── Input mode tabs ─────────────────────────────────────── */
+  .input-tabs {
+    display: flex;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    overflow: hidden;
+    margin-bottom: 10px;
+  }
+  .input-tab {
+    flex: 1;
+    padding: 7px 0;
+    text-align: center;
+    font-size: 0.8rem;
+    font-weight: 500;
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--text-secondary);
+    border: none;
+    transition: background 0.12s, color 0.12s;
+  }
+  .input-tab.active {
+    background: var(--primary);
+    color: #fff;
+    font-weight: 600;
+  }
+
+  /* ── Shared form elements ────────────────────────────────── */
   .section-label {
     font-size: 0.7rem;
     font-weight: 600;
@@ -51,6 +78,8 @@
     background: var(--surface);
     color: var(--text-primary);
   }
+
+  /* ── Transcript paste panel ──────────────────────────────── */
   .transcript-area {
     width: 100%;
     min-height: 160px;
@@ -66,6 +95,70 @@
     margin-bottom: 8px;
   }
   .transcript-area:focus { outline: none; border-color: var(--primary); }
+
+  /* ── Audio upload panel ──────────────────────────────────── */
+  .audio-drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 28px 16px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    margin-bottom: 8px;
+    position: relative;
+  }
+  .audio-drop-zone:hover,
+  .audio-drop-zone.drag-over {
+    border-color: var(--primary);
+    background: var(--primary-light, #f0f4ff);
+  }
+  .audio-drop-zone input[type="file"] {
+    position: absolute;
+    inset: 0;
+    opacity: 0;
+    cursor: pointer;
+    width: 100%;
+    height: 100%;
+  }
+  .audio-drop-icon { font-size: 1.8rem; margin-bottom: 6px; }
+  .audio-drop-label { font-size: 0.85rem; color: var(--text-secondary); }
+  .audio-drop-hint  { font-size: 0.75rem; color: var(--text-tertiary, #aaa); margin-top: 4px; }
+  .audio-file-selected {
+    font-size: 0.82rem;
+    color: var(--text-primary);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 10px;
+    margin-bottom: 8px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+  }
+  .audio-file-selected.visible { display: flex; }
+  .audio-file-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .audio-file-clear { cursor: pointer; color: var(--text-secondary); font-size: 1rem; flex-shrink: 0; }
+  .audio-file-clear:hover { color: var(--danger, #c0392b); }
+
+  /* ── Upload progress bar ─────────────────────────────────── */
+  .upload-progress-wrap {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-bottom: 6px;
+    display: none;
+    overflow: hidden;
+  }
+  .upload-progress-wrap.visible { display: block; }
+  .upload-progress-bar {
+    height: 100%;
+    background: var(--primary);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.3s ease;
+  }
+
+  /* ── Submit button ───────────────────────────────────────── */
   .btn-upload {
     width: 100%;
     padding: 9px 0;
@@ -85,8 +178,8 @@
     min-height: 18px;
     color: var(--text-secondary);
   }
-  .upload-status.ok    { color: #1a7f3c; }
-  .upload-status.error { color: var(--danger, #c0392b); }
+  .upload-status.ok     { color: #1a7f3c; }
+  .upload-status.error  { color: var(--danger, #c0392b); }
   .upload-status.crisis { color: var(--danger, #c0392b); font-weight: 600; }
 
   /* ── Session list ────────────────────────────────────────── */
@@ -105,6 +198,7 @@
   }
   .session-item:hover  { border-color: var(--primary); }
   .session-item.selected { border-color: var(--primary); background: var(--primary-light, #f0f4ff); }
+  .session-item.processing { cursor: default; opacity: 0.8; }
   .session-item input[type="checkbox"] { margin-top: 2px; flex-shrink: 0; cursor: pointer; }
   .session-info { flex: 1; min-width: 0; }
   .session-date { font-size: 0.85rem; font-weight: 500; }
@@ -117,6 +211,22 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+  .session-processing {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.72rem;
+    color: var(--primary);
+    margin-top: 3px;
+  }
+  .mini-spinner {
+    width: 10px; height: 10px;
+    border: 1.5px solid var(--border);
+    border-top-color: var(--primary);
+    border-radius: 50%;
+    animation: spin 0.7s linear infinite;
+    display: inline-block;
   }
   .no-sessions { font-size: 0.85rem; color: var(--text-secondary); padding: 12px 0; }
 
@@ -225,9 +335,9 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
-  /* ── Print styles ────────────────────────────────────────── */
+  /* ── Print ───────────────────────────────────────────────── */
   @media print {
-    .intel-sidebar, .brief-controls, .brief-tabs, .back-link { display: none !important; }
+    .intel-sidebar, .brief-controls, .brief-tabs, .back-link, .input-tabs { display: none !important; }
     .intel-wrap { grid-template-columns: 1fr; }
     .intel-main { padding: 0; }
     .brief-card { border: none; padding: 0; }
@@ -245,7 +355,7 @@
 {% block content %}
 <div class="intel-wrap">
 
-  <!-- ── Sidebar: upload + session list ─────────────────────── -->
+  <!-- ── Sidebar ─────────────────────────────────────────────────── -->
   <div class="intel-sidebar">
     <a class="back-link" href="{{ url_for('provider_intel_index') }}">← All patients</a>
 
@@ -254,8 +364,14 @@
       <p>Intelligence Dashboard</p>
     </div>
 
-    <!-- Upload form -->
-    <div class="section-label">Add session transcript</div>
+    <!-- Input mode tabs -->
+    <div class="section-label">Add session</div>
+    <div class="input-tabs">
+      <button class="input-tab active" id="tab-transcript" onclick="switchInputTab('transcript')">Paste Transcript</button>
+      <button class="input-tab" id="tab-audio" onclick="switchInputTab('audio')">Upload Audio</button>
+    </div>
+
+    <!-- Shared: session metadata (date + type) -->
     <div class="form-row">
       <input type="date" id="session-date" value="{{ today }}" title="Session date">
       <select id="session-type" title="Session type">
@@ -266,14 +382,45 @@
         <option value="other">Other</option>
       </select>
     </div>
-    <textarea
-      id="transcript-input"
-      class="transcript-area"
-      placeholder="Paste session transcript here…&#10;&#10;Speaker labels are optional but improve extraction accuracy:&#10;PATIENT: ...&#10;THERAPIST: ..."
-    ></textarea>
-    <button class="btn-upload" id="btn-upload" onclick="uploadTranscript()">
-      Extract &amp; Add Session
-    </button>
+
+    <!-- Panel A: Transcript paste -->
+    <div id="panel-transcript">
+      <textarea
+        id="transcript-input"
+        class="transcript-area"
+        placeholder="Paste session transcript here…&#10;&#10;Speaker labels improve extraction accuracy:&#10;PATIENT: ...&#10;THERAPIST: ..."
+      ></textarea>
+      <button class="btn-upload" id="btn-upload-transcript" onclick="uploadTranscript()">
+        Extract &amp; Add Session
+      </button>
+    </div>
+
+    <!-- Panel B: Audio upload -->
+    <div id="panel-audio" style="display:none;">
+      <div class="audio-drop-zone" id="audio-drop-zone"
+           ondragover="handleDragOver(event)"
+           ondragleave="handleDragLeave(event)"
+           ondrop="handleDrop(event)">
+        <input type="file" id="audio-file-input" accept="audio/*,.mp3,.m4a,.wav,.flac,.ogg,.webm"
+               onchange="handleFileSelected(this.files[0])">
+        <div class="audio-drop-icon">🎙</div>
+        <div class="audio-drop-label">Drop audio file or click to browse</div>
+        <div class="audio-drop-hint">MP3 · M4A · WAV · FLAC · OGG · WebM · max 500 MB</div>
+      </div>
+      <div class="audio-file-selected" id="audio-file-selected">
+        <span>🎵</span>
+        <span class="audio-file-name" id="audio-file-name"></span>
+        <span class="audio-file-clear" onclick="clearAudioFile()" title="Remove">✕</span>
+      </div>
+      <div class="upload-progress-wrap" id="upload-progress-wrap">
+        <div class="upload-progress-bar" id="upload-progress-bar"></div>
+      </div>
+      <button class="btn-upload" id="btn-upload-audio" onclick="uploadAudio()">
+        Upload &amp; Transcribe
+      </button>
+    </div>
+
+    <!-- Shared status message -->
     <div class="upload-status" id="upload-status"></div>
 
     <!-- Session list -->
@@ -281,34 +428,44 @@
       <div class="section-label" style="margin-top: 8px;">Sessions</div>
       {% if sessions %}
         {% for s in sessions %}
-        <div class="session-item" id="session-{{ s.session_id }}" onclick="toggleSession('{{ s.session_id }}', this)">
-          <input type="checkbox" class="session-checkbox" id="chk-{{ s.session_id }}" value="{{ s.session_id }}" onclick="event.stopPropagation(); toggleSession('{{ s.session_id }}', this.closest('.session-item'))">
+        <div class="session-item{% if s.processing_status not in ['complete'] %} processing{% endif %}"
+             id="session-{{ s.session_id }}"
+             {% if s.processing_status == 'complete' %}onclick="toggleSession('{{ s.session_id }}', this)"{% endif %}>
+          {% if s.processing_status == 'complete' %}
+          <input type="checkbox" class="session-checkbox" id="chk-{{ s.session_id }}" value="{{ s.session_id }}"
+                 onclick="event.stopPropagation(); toggleSession('{{ s.session_id }}', this.closest('.session-item'))">
+          {% endif %}
           <div class="session-info">
             <div class="session-date">{{ s.session_date }}</div>
             <div class="session-meta">
               {{ s.session_type | capitalize }}
-              {% if s.processing_status != 'complete' %}
-                · <em>{{ s.processing_status }}</em>
-              {% endif %}
+              {% if s.transcript_source == 'audio_upload' %} · 🎙 Audio{% endif %}
             </div>
             {% if s.crisis_detected %}
               <div class="session-crisis">🔴 Crisis signal detected</div>
-            {% endif %}
-            {% if s.features and s.features.themes %}
-              <div class="session-themes">{{ s.features.themes | join(' · ') }}</div>
+            {% elif s.processing_status == 'complete' %}
+              {% if s.features and s.features.themes %}
+                <div class="session-themes">{{ s.features.themes | join(' · ') }}</div>
+              {% endif %}
+            {% elif s.processing_status == 'error' %}
+              <div class="session-crisis">⚠ Processing error</div>
+            {% else %}
+              <div class="session-processing" id="proc-{{ s.session_id }}">
+                <span class="mini-spinner"></span>
+                <span id="proc-label-{{ s.session_id }}">{{ s.processing_status | capitalize }}…</span>
+              </div>
             {% endif %}
           </div>
         </div>
         {% endfor %}
       {% else %}
-        <div class="no-sessions" id="no-sessions-msg">No sessions yet. Upload a transcript above.</div>
+        <div class="no-sessions" id="no-sessions-msg">No sessions yet. Add one above.</div>
       {% endif %}
     </div>
   </div>
 
-  <!-- ── Main: brief controls + viewer ──────────────────────── -->
+  <!-- ── Main: brief controls + viewer ───────────────────────────── -->
   <div class="intel-main">
-
     <div class="brief-controls">
       <button class="btn-brief" id="btn-generate" onclick="generateBrief()">
         Generate Pre-Visit Brief
@@ -316,12 +473,11 @@
       <button class="btn-outline" onclick="window.print()">Print</button>
       <span id="selection-hint" style="font-size:0.8rem; color:var(--text-secondary); align-self:center;">
         {% if sessions %}
-          Select sessions below or generate from all ({{ sessions|length }}).
+          Select sessions or generate from all ({{ sessions | selectattr('processing_status', 'equalto', 'complete') | list | length }} ready).
         {% endif %}
       </span>
     </div>
 
-    <!-- Brief tabs (history) -->
     {% if briefs %}
     <div class="brief-tabs" id="brief-tabs">
       <div class="brief-tab active" onclick="showPanel('live-panel', this)">Current</div>
@@ -334,11 +490,10 @@
     </div>
     {% endif %}
 
-    <!-- Live panel (generation target) -->
     <div id="live-panel">
       <div class="brief-empty" id="brief-placeholder">
         <h3>Ready to generate</h3>
-        <p>Upload at least one session transcript, then click Generate Pre-Visit Brief to produce a Mode C provider summary.</p>
+        <p>Add at least one session, then click Generate Pre-Visit Brief to produce a Mode C provider summary.</p>
       </div>
       <div id="brief-generating" style="display:none;" class="brief-generating">
         <div class="spinner"></div>
@@ -347,26 +502,38 @@
       <div id="brief-output" style="display:none;"></div>
     </div>
 
-    <!-- Historical brief panel -->
     <div id="history-panel" style="display:none;">
       <div id="history-content"></div>
     </div>
+  </div>
 
-  </div><!-- /.intel-main -->
 </div><!-- /.intel-wrap -->
 
 <script>
 const PATIENT_ID = {{ patient.id | tojson }};
 
-// ── Today's date default ────────────────────────────────────────────────
+// ── Track sessions being processed (for polling) ─────────────────────
+let pollingSessions = new Set(
+  {{ sessions | selectattr('processing_status', 'in', ['transcribing', 'extracting', 'pending']) | map(attribute='session_id') | list | tojson }}
+);
+let pollTimer = null;
+
 document.addEventListener('DOMContentLoaded', () => {
   const d = document.getElementById('session-date');
-  if (!d.value) {
-    d.value = new Date().toISOString().slice(0, 10);
-  }
+  if (!d.value) d.value = new Date().toISOString().slice(0, 10);
+  if (pollingSessions.size > 0) startPolling();
 });
 
-// ── Toggle session selection ────────────────────────────────────────────
+// ── Input mode tabs ──────────────────────────────────────────────────
+function switchInputTab(mode) {
+  document.getElementById('panel-transcript').style.display = mode === 'transcript' ? 'block' : 'none';
+  document.getElementById('panel-audio').style.display = mode === 'audio' ? 'block' : 'none';
+  document.getElementById('tab-transcript').classList.toggle('active', mode === 'transcript');
+  document.getElementById('tab-audio').classList.toggle('active', mode === 'audio');
+  clearStatus();
+}
+
+// ── Session selection ────────────────────────────────────────────────
 function toggleSession(id, el) {
   const chk = document.getElementById('chk-' + id);
   chk.checked = !chk.checked;
@@ -379,32 +546,26 @@ function updateSelectionHint() {
   const total = document.querySelectorAll('.session-checkbox').length;
   const hint = document.getElementById('selection-hint');
   if (!hint) return;
-  if (selected.length === 0) {
-    hint.textContent = total ? `Select sessions or generate from all (${total}).` : '';
-  } else {
-    hint.textContent = `${selected.length} session${selected.length !== 1 ? 's' : ''} selected.`;
-  }
+  hint.textContent = selected.length
+    ? `${selected.length} session${selected.length !== 1 ? 's' : ''} selected.`
+    : total ? `Select sessions or generate from all (${total} ready).` : '';
 }
 
 function getSelectedIds() {
   return Array.from(document.querySelectorAll('.session-checkbox:checked')).map(c => c.value);
 }
 
-// ── Upload transcript ───────────────────────────────────────────────────
+// ── Upload transcript ────────────────────────────────────────────────
 async function uploadTranscript() {
-  const transcript = document.getElementById('transcript-input').value.trim();
+  const transcript  = document.getElementById('transcript-input').value.trim();
   const sessionDate = document.getElementById('session-date').value;
   const sessionType = document.getElementById('session-type').value;
-  const status = document.getElementById('upload-status');
-  const btn = document.getElementById('btn-upload');
+  const btn = document.getElementById('btn-upload-transcript');
 
-  if (!transcript) {
-    setStatus(status, 'Paste a transcript first.', 'error');
-    return;
-  }
+  if (!transcript) { setStatus('Paste a transcript first.', 'error'); return; }
 
   btn.disabled = true;
-  setStatus(status, 'Extracting clinical features…', '');
+  setStatus('Extracting clinical features…', '');
 
   try {
     const res = await fetch(`/api/intel/patient/${PATIENT_ID}/session`, {
@@ -415,47 +576,178 @@ async function uploadTranscript() {
     });
     const data = await res.json();
 
-    if (!res.ok) {
-      setStatus(status, data.error || 'Upload failed.', 'error');
-      return;
-    }
+    if (!res.ok) { setStatus(data.error || 'Upload failed.', 'error'); return; }
 
     if (data.crisis_detected) {
-      setStatus(status, '🔴 Crisis signal detected. Session saved — see brief for safety note.', 'crisis');
+      setStatus('🔴 Crisis signal detected. Session saved.', 'crisis');
     } else if (data.status === 'error') {
-      setStatus(status, `Extraction error: ${data.error || 'unknown'}`, 'error');
+      setStatus(`Extraction error: ${data.error || 'unknown'}`, 'error');
     } else {
-      setStatus(status, `Session added. Richness: ${data.extraction_richness}/10+`, 'ok');
+      setStatus(`Session added (richness: ${data.extraction_richness}).`, 'ok');
     }
-
-    // Clear textarea and reload page to show new session
     document.getElementById('transcript-input').value = '';
     setTimeout(() => window.location.reload(), 800);
-
   } catch (e) {
-    setStatus(status, 'Network error — try again.', 'error');
+    setStatus('Network error — try again.', 'error');
   } finally {
     btn.disabled = false;
   }
 }
 
-// ── Generate brief ──────────────────────────────────────────────────────
+// ── Audio file handling ──────────────────────────────────────────────
+let selectedAudioFile = null;
+
+function handleFileSelected(file) {
+  if (!file) return;
+  selectedAudioFile = file;
+  document.getElementById('audio-file-name').textContent = `${file.name} (${formatBytes(file.size)})`;
+  document.getElementById('audio-file-selected').classList.add('visible');
+}
+
+function clearAudioFile() {
+  selectedAudioFile = null;
+  document.getElementById('audio-file-input').value = '';
+  document.getElementById('audio-file-selected').classList.remove('visible');
+}
+
+function handleDragOver(e) {
+  e.preventDefault();
+  document.getElementById('audio-drop-zone').classList.add('drag-over');
+}
+
+function handleDragLeave(e) {
+  document.getElementById('audio-drop-zone').classList.remove('drag-over');
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('audio-drop-zone').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFileSelected(file);
+}
+
+async function uploadAudio() {
+  if (!selectedAudioFile) { setStatus('Select an audio file first.', 'error'); return; }
+
+  const sessionDate = document.getElementById('session-date').value;
+  const sessionType = document.getElementById('session-type').value;
+  const btn = document.getElementById('btn-upload-audio');
+
+  btn.disabled = true;
+  setStatus('Uploading audio…', '');
+
+  // Show progress bar animation (indeterminate while uploading)
+  const progressWrap = document.getElementById('upload-progress-wrap');
+  const progressBar  = document.getElementById('upload-progress-bar');
+  progressWrap.classList.add('visible');
+  animateProgress(progressBar, 0, 60, 2000);
+
+  try {
+    const formData = new FormData();
+    formData.append('audio_file', selectedAudioFile);
+    formData.append('session_date', sessionDate);
+    formData.append('session_type', sessionType);
+
+    const res = await fetch(`/api/intel/patient/${PATIENT_ID}/audio-session`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      body: formData,
+    });
+    const data = await res.json();
+
+    animateProgress(progressBar, 60, 100, 400);
+
+    if (!res.ok) {
+      setStatus(data.error || 'Upload failed.', 'error');
+      progressWrap.classList.remove('visible');
+      return;
+    }
+
+    setStatus('Audio uploaded. Transcription is running — the session will appear below in 1–2 minutes.', 'ok');
+    clearAudioFile();
+
+    // Add the new session to the polling set and reload after a moment
+    if (data.session_id) {
+      pollingSessions.add(data.session_id);
+      startPolling();
+    }
+    setTimeout(() => window.location.reload(), 1200);
+
+  } catch (e) {
+    setStatus('Network error — try again.', 'error');
+    progressWrap.classList.remove('visible');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ── Status polling for in-progress sessions ──────────────────────────
+function startPolling() {
+  if (pollTimer) return;
+  pollTimer = setInterval(pollProcessingSessions, 6000);
+}
+
+function stopPolling() {
+  if (pollTimer) { clearInterval(pollTimer); pollTimer = null; }
+}
+
+async function pollProcessingSessions() {
+  if (pollingSessions.size === 0) { stopPolling(); return; }
+
+  const toRemove = [];
+  for (const sessionId of pollingSessions) {
+    try {
+      const res = await fetch(
+        `/api/intel/patient/${PATIENT_ID}/session/${sessionId}/status`,
+        { credentials: 'same-origin' }
+      );
+      if (!res.ok) continue;
+      const data = await res.json();
+      const status = data.processing_status;
+
+      // Update the label in the sidebar
+      const labelEl = document.getElementById(`proc-label-${sessionId}`);
+      if (labelEl) {
+        labelEl.textContent = statusLabel(status);
+      }
+
+      if (status === 'complete' || status === 'error') {
+        toRemove.push(sessionId);
+        // Reload the page to show the fully extracted session
+        window.location.reload();
+      }
+    } catch (e) {
+      // Ignore transient network errors
+    }
+  }
+  toRemove.forEach(id => pollingSessions.delete(id));
+  if (pollingSessions.size === 0) stopPolling();
+}
+
+function statusLabel(status) {
+  return {
+    'pending':       'Pending…',
+    'transcribing':  'Transcribing…',
+    'extracting':    'Extracting features…',
+    'complete':      'Complete',
+    'error':         'Error',
+  }[status] || status;
+}
+
+// ── Generate brief ───────────────────────────────────────────────────
 async function generateBrief() {
   const btn = document.getElementById('btn-generate');
   const placeholder = document.getElementById('brief-placeholder');
-  const generating = document.getElementById('brief-generating');
-  const output = document.getElementById('brief-output');
-
+  const generating  = document.getElementById('brief-generating');
+  const output      = document.getElementById('brief-output');
   const selectedIds = getSelectedIds();
-  const body = selectedIds.length ? { session_ids: selectedIds } : {};
+  const body        = selectedIds.length ? { session_ids: selectedIds } : {};
 
   btn.disabled = true;
   if (placeholder) placeholder.style.display = 'none';
-  output.style.display = 'none';
+  output.style.display  = 'none';
   generating.style.display = 'flex';
-
-  // Ensure we're on the live panel
-  showPanel('live-panel', document.querySelector('.brief-tab.active') || {});
+  showPanel('live-panel', document.querySelector('.brief-tab') || {});
 
   try {
     const res = await fetch(`/api/intel/patient/${PATIENT_ID}/brief`, {
@@ -465,18 +757,14 @@ async function generateBrief() {
       body: JSON.stringify(body),
     });
     const data = await res.json();
-
-    if (!res.ok) {
-      generating.style.display = 'none';
-      output.style.display = 'block';
-      output.innerHTML = `<div class="brief-card"><p style="color:var(--danger,#c0392b)">${data.error || 'Generation failed.'}</p></div>`;
-      return;
-    }
-
     generating.style.display = 'none';
     output.style.display = 'block';
-    output.innerHTML = renderBrief(data);
 
+    if (!res.ok) {
+      output.innerHTML = `<div class="brief-card"><p style="color:var(--danger,#c0392b)">${escHtml(data.error || 'Generation failed.')}</p></div>`;
+      return;
+    }
+    output.innerHTML = renderBrief(data);
   } catch (e) {
     generating.style.display = 'none';
     output.style.display = 'block';
@@ -488,29 +776,25 @@ async function generateBrief() {
 
 function renderBrief(data) {
   const isCrisis = data.crisis_detected;
-  const date = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const sessCount = data.session_count || '?';
+  const dateStr  = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const n        = data.session_count || '?';
   return `
     <div class="brief-card ${isCrisis ? 'crisis-flag' : ''}">
       <div class="brief-meta">
-        <div class="brief-meta-left">
-          Generated ${date} · ${sessCount} session${sessCount !== 1 ? 's' : ''}
-        </div>
+        <div class="brief-meta-left">Generated ${dateStr} · ${n} session${n !== 1 ? 's' : ''}</div>
         ${isCrisis ? '<span class="crisis-badge">🔴 Crisis flag</span>' : ''}
       </div>
       <div class="brief-body">${escHtml(data.text)}</div>
-    </div>
-  `;
+    </div>`;
 }
 
-// ── Load historical brief ───────────────────────────────────────────────
+// ── Load historical brief ────────────────────────────────────────────
 async function loadBrief(briefId, tabEl) {
-  // Activate tab
   document.querySelectorAll('.brief-tab').forEach(t => t.classList.remove('active'));
-  if (tabEl) tabEl.classList.add('active');
+  if (tabEl && tabEl.classList) tabEl.classList.add('active');
 
   document.getElementById('live-panel').style.display = 'none';
-  const histPanel = document.getElementById('history-panel');
+  const histPanel   = document.getElementById('history-panel');
   const histContent = document.getElementById('history-content');
   histPanel.style.display = 'block';
   histContent.innerHTML = '<div class="brief-generating"><div class="spinner"></div><span>Loading…</span></div>';
@@ -519,16 +803,16 @@ async function loadBrief(briefId, tabEl) {
     const res = await fetch(`/api/intel/brief/${briefId}`, { credentials: 'same-origin' });
     const data = await res.json();
     if (!res.ok) {
-      histContent.innerHTML = `<p style="color:var(--danger,#c0392b)">${data.error || 'Failed to load brief.'}</p>`;
+      histContent.innerHTML = `<p style="color:var(--danger,#c0392b)">${data.error || 'Failed to load.'}</p>`;
       return;
     }
     const isCrisis = data.crisis_detected;
-    const date = data.generated_at ? data.generated_at.slice(0, 10) : '—';
+    const dateStr  = data.generated_at ? data.generated_at.slice(0, 10) : '—';
     histContent.innerHTML = `
       <div class="brief-card ${isCrisis ? 'crisis-flag' : ''}">
         <div class="brief-meta">
           <div class="brief-meta-left">
-            Generated ${date} · ${data.session_count || '?'} session${(data.session_count || 0) !== 1 ? 's' : ''}
+            Generated ${dateStr} · ${data.session_count || '?'} session${(data.session_count || 0) !== 1 ? 's' : ''}
             ${data.period_start ? ' · ' + data.period_start + ' to ' + (data.period_end || '—') : ''}
           </div>
           ${isCrisis ? '<span class="crisis-badge">🔴 Crisis flag</span>' : ''}
@@ -543,23 +827,38 @@ async function loadBrief(briefId, tabEl) {
 function showPanel(panelId, tabEl) {
   document.querySelectorAll('.brief-tab').forEach(t => t.classList.remove('active'));
   if (tabEl && tabEl.classList) tabEl.classList.add('active');
-  document.getElementById('live-panel').style.display = panelId === 'live-panel' ? 'block' : 'none';
+  document.getElementById('live-panel').style.display    = panelId === 'live-panel' ? 'block' : 'none';
   document.getElementById('history-panel').style.display = panelId === 'history-panel' ? 'block' : 'none';
 }
 
-// ── Utilities ───────────────────────────────────────────────────────────
-function setStatus(el, msg, cls) {
+// ── Utilities ────────────────────────────────────────────────────────
+function setStatus(msg, cls) {
+  const el = document.getElementById('upload-status');
   el.textContent = msg;
   el.className = 'upload-status' + (cls ? ' ' + cls : '');
 }
 
+function clearStatus() {
+  setStatus('', '');
+}
+
 function escHtml(str) {
-  if (!str) return '';
-  return str
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/\n/g, '<br>');
+  return (str || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>');
+}
+
+function formatBytes(bytes) {
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function animateProgress(bar, from, to, durationMs) {
+  const start = performance.now();
+  function step(now) {
+    const p = Math.min((now - start) / durationMs, 1);
+    bar.style.width = `${from + (to - from) * p}%`;
+    if (p < 1) requestAnimationFrame(step);
+  }
+  requestAnimationFrame(step);
 }
 </script>
 {% endblock %}

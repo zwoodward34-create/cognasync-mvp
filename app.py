@@ -3061,6 +3061,93 @@ def provider_intel_dashboard(patient_id):
     )
 
 
+@app.route('/api/intel/patient/<patient_id>/audio-session', methods=['POST'])
+def api_intel_upload_audio_session(patient_id):
+    """
+    Upload an audio file, store it, and kick off background transcription + extraction.
+    Returns immediately (201) while processing continues in a background thread.
+
+    Accepts multipart/form-data:
+        audio_file      — required, audio file (MP3, M4A, WAV, FLAC, OGG, WebM)
+        session_date    — YYYY-MM-DD, defaults to today
+        session_type    — 'psychiatry'|'therapy'|..., defaults to 'therapy'
+        duration_minutes — optional int
+
+    Returns:
+        {
+            "session_id":  str,
+            "status":      "transcribing",
+            "message":     str     # human-readable status
+        }
+
+    The frontend should poll GET /api/intel/patient/<id>/sessions to watch
+    for status changes from 'transcribing' → 'extracting' → 'complete'|'error'.
+    """
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    if 'audio_file' not in request.files:
+        return jsonify({'error': 'audio_file is required (multipart/form-data)'}), 400
+
+    audio_file    = request.files['audio_file']
+    session_date  = request.form.get('session_date') or str(date.today())
+    session_type  = request.form.get('session_type', 'therapy')
+    duration_mins = request.form.get('duration_minutes')
+    if duration_mins:
+        try:
+            duration_mins = int(duration_mins)
+        except ValueError:
+            duration_mins = None
+
+    valid_types = {'psychiatry', 'therapy', 'intake', 'followup', 'group', 'other'}
+    if session_type not in valid_types:
+        session_type = 'other'
+
+    filename   = audio_file.filename or 'recording.audio'
+    file_bytes = audio_file.read()
+    mime_type  = audio_file.content_type
+
+    # Validate before touching the DB
+    from audio_engine import validate_audio_file
+    valid, err_msg = validate_audio_file(filename, file_bytes, mime_type)
+    if not valid:
+        return jsonify({'error': err_msg}), 400
+
+    # Create the session record immediately so the UI can show it
+    session_id = db.store_clinical_session(
+        provider_id=provider['id'],
+        patient_id=patient_id,
+        session_date=session_date,
+        session_type=session_type,
+        transcript_raw='',          # populated by background thread after transcription
+        duration_minutes=duration_mins,
+        transcript_source='audio_upload',
+    )
+    if not session_id:
+        return jsonify({'error': 'Failed to create session record'}), 500
+
+    # Set status to transcribing before kicking off the thread
+    db.update_clinical_session_status(session_id, 'transcribing')
+
+    # Fire and forget — background thread owns the rest of the pipeline
+    from audio_engine import process_audio_session_async
+    process_audio_session_async(
+        session_id=session_id,
+        patient_id=patient_id,
+        file_bytes=file_bytes,
+        filename=filename,
+        session_date=session_date,
+        session_type=session_type,
+    )
+
+    return jsonify({
+        'session_id': session_id,
+        'status':     'transcribing',
+        'message':    'Audio uploaded. Transcription is running in the background — refresh the session list in 1–2 minutes.',
+    }), 201
+
+
 @app.route('/api/intel/patient/<patient_id>/session', methods=['POST'])
 def api_intel_upload_session(patient_id):
     """
@@ -3160,6 +3247,39 @@ def api_intel_get_sessions(patient_id):
         limit=limit,
     )
     return jsonify({'sessions': sessions})
+
+
+@app.route('/api/intel/patient/<patient_id>/session/<session_id>/status', methods=['GET'])
+def api_intel_session_status(patient_id, session_id):
+    """
+    Lightweight poll endpoint for a single session's processing status.
+    Used by the frontend to track audio transcription progress.
+
+    Returns:
+        {
+            "session_id":        str,
+            "processing_status": str,   # pending|transcribing|extracting|complete|error
+            "processing_error":  str | null,
+            "crisis_detected":   bool,
+            "themes":            [str],  # populated once complete
+        }
+    """
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    session = db.get_clinical_session_by_id(session_id)
+    if not session:
+        return jsonify({'error': 'Session not found'}), 404
+
+    themes = (session.get('features') or {}).get('themes') or []
+    return jsonify({
+        'session_id':        session['session_id'],
+        'processing_status': session['processing_status'],
+        'processing_error':  session.get('processing_error'),
+        'crisis_detected':   session['crisis_detected'],
+        'themes':            themes,
+    })
 
 
 @app.route('/api/intel/patient/<patient_id>/brief', methods=['POST'])

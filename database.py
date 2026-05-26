@@ -5439,3 +5439,82 @@ def get_intel_patients_for_provider(provider_id: str) -> list[dict]:
     except Exception as e:
         print(f"Error in get_intel_patients_for_provider: {e}")
         return []
+
+
+def get_clinical_session_by_id(session_id: str) -> dict | None:
+    """
+    Fetch a single clinical session with its extracted features.
+    Returns None if not found.
+    """
+    try:
+        result = (
+            supabase_admin
+            .table('clinical_sessions')
+            .select('id, session_date, session_type, duration_minutes, transcript_source, processing_status, processing_error, session_features(extracted, scores, crisis_detected)')
+            .eq('id', session_id)
+            .single()
+            .execute()
+        )
+        row = result.data
+        if not row:
+            return None
+        feat_rows = row.get('session_features') or []
+        feat_row  = feat_rows[0] if feat_rows else {}
+        return {
+            'session_id':        str(row['id']),
+            'session_date':      row.get('session_date'),
+            'session_type':      row.get('session_type', 'other'),
+            'duration_minutes':  row.get('duration_minutes'),
+            'transcript_source': row.get('transcript_source', 'upload'),
+            'processing_status': row.get('processing_status', 'pending'),
+            'processing_error':  row.get('processing_error'),
+            'crisis_detected':   feat_row.get('crisis_detected', False),
+            'features':          feat_row.get('extracted') or {},
+            'scores':            feat_row.get('scores') or {},
+        }
+    except Exception as e:
+        print(f"Error in get_clinical_session_by_id: {e}")
+        return None
+
+
+def update_clinical_session_status(
+    session_id: str,
+    status: str,
+    error_message: str | None = None,
+) -> bool:
+    """
+    Update processing_status (and optionally processing_error) on a clinical session.
+    Used by the audio processing background thread to report progress.
+
+    Valid statuses: 'pending', 'transcribing', 'extracting', 'complete', 'error'
+    """
+    try:
+        payload = {'processing_status': status}
+        if error_message:
+            payload['processing_error'] = error_message
+        supabase_admin.table('clinical_sessions').update(payload).eq('id', session_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error in update_clinical_session_status: {e}")
+        return False
+
+
+def store_session_transcript(
+    session_id: str,
+    transcript_text: str,
+    audio_storage_path: str | None = None,
+) -> bool:
+    """
+    Store the transcript text (produced by audio transcription) back on the
+    clinical_sessions row. Also records the audio storage path if provided.
+    """
+    try:
+        payload = {'transcript_raw': transcript_text}
+        if audio_storage_path:
+            # Store the path in transcript_json as metadata
+            payload['transcript_json'] = {'audio_storage_path': audio_storage_path}
+        supabase_admin.table('clinical_sessions').update(payload).eq('id', session_id).execute()
+        return True
+    except Exception as e:
+        print(f"Error in store_session_transcript: {e}")
+        return False
