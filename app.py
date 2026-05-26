@@ -3025,9 +3025,9 @@ def api_log_feedback():
 @app.route('/provider/intel')
 def provider_intel_index():
     """Intelligence layer patient list — providers see all patients with sessions."""
-    provider = _require_provider()
-    if isinstance(provider, tuple):
-        return provider
+    provider, err = _require_provider()
+    if err:
+        return err
 
     patients = db.get_intel_patients_for_provider(provider['id'])
     return render_template(
@@ -3040,9 +3040,9 @@ def provider_intel_index():
 @app.route('/provider/intel/<patient_id>')
 def provider_intel_dashboard(patient_id):
     """Intelligence layer dashboard for a single patient."""
-    provider = _require_provider()
-    if isinstance(provider, tuple):
-        return provider
+    provider, err = _require_provider()
+    if err:
+        return err
 
     patient_row = db.get_user_by_id(patient_id)
     if not patient_row:
