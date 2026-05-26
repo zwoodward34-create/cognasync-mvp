@@ -3006,6 +3006,285 @@ def api_log_feedback():
     return jsonify({'message': 'Feedback recorded'}), 200
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# INTELLIGENCE LAYER — transcript-to-brief pipeline
+#
+# Routes in this section power the pivot architecture.
+# Provider pages:
+#   GET  /provider/intel                            — patient list
+#   GET  /provider/intel/<patient_id>               — transcript upload + brief view
+# Provider APIs:
+#   POST /api/intel/patient/<patient_id>/session    — upload transcript, extract features
+#   GET  /api/intel/patient/<patient_id>/sessions   — list sessions for period
+#   POST /api/intel/patient/<patient_id>/brief      — generate + store Mode C brief
+#   GET  /api/intel/patient/<patient_id>/briefs     — list recent briefs
+#   GET  /api/intel/brief/<brief_id>                — fetch full brief text
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+@app.route('/provider/intel')
+def provider_intel_index():
+    """Intelligence layer patient list — providers see all patients with sessions."""
+    provider = _require_provider()
+    if isinstance(provider, tuple):
+        return provider
+
+    patients = db.get_intel_patients_for_provider(provider['id'])
+    return render_template(
+        'provider/intel_index.html',
+        provider=provider,
+        patients=patients,
+    )
+
+
+@app.route('/provider/intel/<patient_id>')
+def provider_intel_dashboard(patient_id):
+    """Intelligence layer dashboard for a single patient."""
+    provider = _require_provider()
+    if isinstance(provider, tuple):
+        return provider
+
+    patient_row = db.get_user_by_id(patient_id)
+    if not patient_row:
+        return 'Patient not found', 404
+
+    sessions = db.get_clinical_sessions_for_period(patient_id, limit=20)
+    briefs   = db.get_provider_briefs_for_patient(provider['id'], patient_id, limit=5)
+
+    return render_template(
+        'provider/intel_dashboard.html',
+        provider=provider,
+        patient=patient_row,
+        sessions=sessions,
+        briefs=briefs,
+        today=date.today().isoformat(),
+    )
+
+
+@app.route('/api/intel/patient/<patient_id>/session', methods=['POST'])
+def api_intel_upload_session(patient_id):
+    """
+    Upload a session transcript, run extraction, and persist.
+
+    Accepts JSON:
+        {
+            "transcript":       str,
+            "session_date":     str,          # YYYY-MM-DD, defaults to today
+            "session_type":     str,          # 'psychiatry'|'therapy'|..., defaults to 'therapy'
+            "duration_minutes": int | null
+        }
+
+    Returns:
+        {
+            "session_id":          str,
+            "crisis_detected":     bool,
+            "safety_note":         str | null,
+            "extraction_richness": int,
+            "status":              "complete" | "error"
+        }
+    """
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    data = request.get_json(silent=True) or {}
+    transcript = data.get('transcript', '').strip()
+    if not transcript:
+        return jsonify({'error': 'transcript is required'}), 400
+
+    session_date  = data.get('session_date') or str(date.today())
+    session_type  = data.get('session_type', 'therapy')
+    duration_mins = data.get('duration_minutes')
+
+    valid_types = {'psychiatry', 'therapy', 'intake', 'followup', 'group', 'other'}
+    if session_type not in valid_types:
+        session_type = 'other'
+
+    # 1. Persist raw session
+    session_id = db.store_clinical_session(
+        provider_id=provider['id'],
+        patient_id=patient_id,
+        session_date=session_date,
+        session_type=session_type,
+        transcript_raw=transcript,
+        duration_minutes=duration_mins,
+    )
+    if not session_id:
+        return jsonify({'error': 'Failed to store session'}), 500
+
+    # 2. Extract features (crisis detection runs inside extract_features)
+    from transcript_engine import extract_features
+    extraction = extract_features(
+        transcript_text=transcript,
+        session_date=session_date,
+        session_type=session_type,
+    )
+
+    # 3. Persist features
+    db.store_session_features(
+        session_id=session_id,
+        patient_id=patient_id,
+        extraction_result=extraction,
+        extraction_model=os.environ.get('CLAUDE_MODEL', 'claude-haiku-4-5-20251001'),
+    )
+
+    richness = (extraction.get('scores') or {}).get('extraction_richness', 0)
+    return jsonify({
+        'session_id':          session_id,
+        'crisis_detected':     extraction.get('crisis_detected', False),
+        'safety_note':         extraction.get('safety_note'),
+        'extraction_richness': richness,
+        'status':              'error' if extraction.get('error') else 'complete',
+        'error':               extraction.get('error'),
+    }), 201
+
+
+@app.route('/api/intel/patient/<patient_id>/sessions', methods=['GET'])
+def api_intel_get_sessions(patient_id):
+    """
+    List clinical sessions for a patient.
+    Query params: period_start, period_end (both YYYY-MM-DD, optional), limit (default 20).
+    """
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    period_start = request.args.get('period_start')
+    period_end   = request.args.get('period_end')
+    limit        = min(int(request.args.get('limit', 20)), 50)
+
+    sessions = db.get_clinical_sessions_for_period(
+        patient_id=patient_id,
+        period_start=period_start,
+        period_end=period_end,
+        limit=limit,
+    )
+    return jsonify({'sessions': sessions})
+
+
+@app.route('/api/intel/patient/<patient_id>/brief', methods=['POST'])
+def api_intel_generate_brief(patient_id):
+    """
+    Generate a Mode C provider brief from stored session features.
+
+    Accepts JSON:
+        {
+            "period_start":  str | null,
+            "period_end":    str | null,
+            "session_ids":   [str] | null   # specific sessions; omit to use period
+        }
+
+    Returns:
+        {
+            "brief_id":        str,
+            "status":          "safe" | "crisis" | "error",
+            "text":            str,
+            "crisis_detected": bool,
+            "session_count":   int
+        }
+    """
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    data         = request.get_json(silent=True) or {}
+    period_start = data.get('period_start')
+    period_end   = data.get('period_end')
+    session_ids  = data.get('session_ids')
+
+    # Fetch session feature data
+    if session_ids:
+        all_sessions  = db.get_clinical_sessions_for_period(patient_id=patient_id, limit=50)
+        sessions_data = [s for s in all_sessions if s['session_id'] in session_ids]
+    else:
+        sessions_data = db.get_clinical_sessions_for_period(
+            patient_id=patient_id,
+            period_start=period_start,
+            period_end=period_end,
+            limit=20,
+        )
+
+    if not sessions_data:
+        return jsonify({'error': 'No sessions found for the specified period'}), 404
+
+    # Reshape for transcript_engine functions
+    session_results = [
+        {
+            'crisis_detected': s['crisis_detected'],
+            'session_date':    s['session_date'],
+            'session_type':    s['session_type'],
+            'features':        s['features'],
+            'scores':          s['scores'],
+        }
+        for s in sessions_data
+    ]
+
+    from transcript_engine import score_transcript_batch
+    aggregated = score_transcript_batch(session_results)
+
+    # Generate brief
+    brief_result = claude_api.generate_brief_from_sessions(
+        aggregated_scores=aggregated,
+        session_features=session_results,
+        period_start=period_start,
+        period_end=period_end,
+        audience='provider',
+    )
+
+    if brief_result.get('status') == 'error':
+        return jsonify({'error': brief_result.get('text', 'Generation failed')}), 500
+
+    # Persist
+    used_session_ids = [s['session_id'] for s in sessions_data]
+    brief_id = db.store_provider_brief(
+        patient_id=patient_id,
+        provider_id=provider['id'],
+        brief_text=brief_result['text'],
+        session_ids=used_session_ids,
+        period_start=period_start,
+        period_end=period_end,
+        scores=aggregated,
+        crisis_detected=(brief_result.get('crisis_sessions', 0) > 0),
+        model_version=os.environ.get('CLAUDE_MODEL', 'claude-sonnet-4-6'),
+    )
+
+    return jsonify({
+        'brief_id':        brief_id,
+        'status':          brief_result['status'],
+        'text':            brief_result['text'],
+        'crisis_detected': brief_result.get('crisis_sessions', 0) > 0,
+        'session_count':   aggregated['session_count'],
+    }), 201
+
+
+@app.route('/api/intel/patient/<patient_id>/briefs', methods=['GET'])
+def api_intel_list_briefs(patient_id):
+    """List recent provider briefs for a patient."""
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    limit  = min(int(request.args.get('limit', 5)), 20)
+    briefs = db.get_provider_briefs_for_patient(provider['id'], patient_id, limit=limit)
+    return jsonify({'briefs': briefs})
+
+
+@app.route('/api/intel/brief/<brief_id>', methods=['GET'])
+def api_intel_get_brief(brief_id):
+    """Fetch full brief text by ID."""
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    brief = db.get_provider_brief_by_id(brief_id, provider['id'])
+    if not brief:
+        return jsonify({'error': 'Brief not found'}), 404
+    return jsonify(brief)
+
+
+# ── end intelligence layer routes ────────────────────────────────────────────
+
+
 if __name__ == '__main__':
     port = int(os.environ.get('FLASK_PORT', 5002))
     debug = os.environ.get('FLASK_ENV') == 'development'

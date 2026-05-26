@@ -5106,3 +5106,336 @@ def get_appointment_synthesis(patient_id: str, appt_id: str) -> dict | None:
     except Exception as e:
         print(f"Error in get_appointment_synthesis: {e}")
         return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INTELLIGENCE LAYER — pivot_001_intelligence_layer
+#
+# These functions support the transcript-to-brief pipeline introduced in the
+# CognaSync pivot. They operate on the new tables defined in
+# migrations/pivot_001_intelligence_layer.sql.
+#
+# Design contracts:
+#   - supabase_admin is used for all writes (bypasses RLS; server-side only)
+#   - All functions return None (or empty list) on failure, never raise
+#   - IDs returned as str(uuid) for JSON serialisation safety
+#   - Transcript text is stored verbatim; summaries and features are stored
+#     as JSONB — never modify clinical content in transit
+# ═══════════════════════════════════════════════════════════════════════════
+
+
+def store_clinical_session(
+    provider_id: str,
+    patient_id: str,
+    session_date: str,
+    session_type: str,
+    transcript_raw: str,
+    duration_minutes: int | None = None,
+    transcript_source: str = 'upload',
+) -> str | None:
+    """
+    Create a clinical_sessions row and return its UUID.
+
+    Processing status is set to 'pending' — the caller is responsible for
+    calling store_session_features() once extraction completes.
+
+    Returns the new session UUID as a str, or None on failure.
+    """
+    try:
+        row = {
+            'provider_id':       provider_id,
+            'patient_id':        patient_id,
+            'session_date':      session_date,
+            'session_type':      session_type,
+            'transcript_raw':    transcript_raw,
+            'transcript_source': transcript_source,
+            'processing_status': 'pending',
+        }
+        if duration_minutes is not None:
+            row['duration_minutes'] = duration_minutes
+
+        result = supabase_admin.table('clinical_sessions').insert(row).execute()
+        data = result.data
+        if data and len(data) > 0:
+            return str(data[0]['id'])
+        return None
+    except Exception as e:
+        print(f"Error in store_clinical_session: {e}")
+        return None
+
+
+def store_session_features(
+    session_id: str,
+    patient_id: str,
+    extraction_result: dict,
+    extraction_model: str | None = None,
+) -> bool:
+    """
+    Persist extraction results from transcript_engine.extract_features()
+    into session_features. Also updates clinical_sessions.processing_status.
+
+    Args:
+        session_id:         UUID of the clinical_sessions row.
+        patient_id:         UUID of the patient.
+        extraction_result:  Full dict returned by extract_features().
+        extraction_model:   Model identifier used for extraction (optional).
+
+    Returns True on success, False on failure.
+    """
+    try:
+        crisis      = extraction_result.get('crisis_detected', False)
+        features    = extraction_result.get('features') or {}
+        scores      = extraction_result.get('scores') or {}
+        safety_note = extraction_result.get('safety_note')
+
+        safety_flags = {}
+        if crisis:
+            safety_flags['crisis_detected'] = True
+            if safety_note:
+                safety_flags['safety_note'] = safety_note
+
+        feature_row = {
+            'session_id':       session_id,
+            'patient_id':       patient_id,
+            'extracted':        features,
+            'scores':           scores,
+            'crisis_detected':  crisis,
+            'safety_flags':     safety_flags,
+        }
+        if extraction_model:
+            feature_row['extraction_model'] = extraction_model
+
+        supabase_admin.table('session_features').insert(feature_row).execute()
+
+        # Update parent session processing status
+        new_status = 'error' if extraction_result.get('error') else 'complete'
+        update_payload = {'processing_status': new_status}
+        if extraction_result.get('error'):
+            update_payload['processing_error'] = extraction_result['error']
+        supabase_admin.table('clinical_sessions').update(update_payload).eq('id', session_id).execute()
+
+        return True
+    except Exception as e:
+        print(f"Error in store_session_features: {e}")
+        return False
+
+
+def get_clinical_sessions_for_period(
+    patient_id: str,
+    period_start: str | None = None,
+    period_end: str | None = None,
+    limit: int = 20,
+) -> list[dict]:
+    """
+    Return clinical sessions with their extracted features for a patient.
+
+    Each returned dict has the shape:
+        {
+            'session_id':    str,
+            'session_date':  str,
+            'session_type':  str,
+            'duration_minutes': int | None,
+            'transcript_source': str,
+            'processing_status': str,
+            'crisis_detected':   bool,
+            'features':      dict,   # from session_features.extracted
+            'scores':        dict,   # from session_features.scores
+        }
+
+    Sessions with processing_status != 'complete' are included so the
+    caller can see what is in the pipeline.
+    """
+    try:
+        q = (
+            supabase_admin
+            .table('clinical_sessions')
+            .select('id, session_date, session_type, duration_minutes, transcript_source, processing_status, session_features(extracted, scores, crisis_detected)')
+            .eq('patient_id', patient_id)
+            .order('session_date', desc=True)
+            .limit(limit)
+        )
+        if period_start:
+            q = q.gte('session_date', period_start)
+        if period_end:
+            q = q.lte('session_date', period_end)
+
+        result = q.execute()
+        rows = result.data or []
+
+        out = []
+        for row in rows:
+            feat_rows = row.get('session_features') or []
+            feat_row  = feat_rows[0] if feat_rows else {}
+            out.append({
+                'session_id':        str(row['id']),
+                'session_date':      row.get('session_date'),
+                'session_type':      row.get('session_type', 'other'),
+                'duration_minutes':  row.get('duration_minutes'),
+                'transcript_source': row.get('transcript_source', 'upload'),
+                'processing_status': row.get('processing_status', 'pending'),
+                'crisis_detected':   feat_row.get('crisis_detected', False),
+                'features':          feat_row.get('extracted') or {},
+                'scores':            feat_row.get('scores') or {},
+            })
+        return out
+    except Exception as e:
+        print(f"Error in get_clinical_sessions_for_period: {e}")
+        return []
+
+
+def store_provider_brief(
+    patient_id: str,
+    provider_id: str,
+    brief_text: str,
+    session_ids: list[str],
+    period_start: str | None = None,
+    period_end: str | None = None,
+    scores: dict | None = None,
+    crisis_detected: bool = False,
+    brief_type: str = 'pre_visit',
+    model_version: str | None = None,
+    wearable_days: int = 0,
+    voice_memo_count: int = 0,
+) -> str | None:
+    """
+    Persist a generated Mode C provider brief to provider_briefs.
+    Returns the new brief UUID as a str, or None on failure.
+    """
+    try:
+        data_sources = {
+            'sessions':         session_ids,
+            'session_count':    len(session_ids),
+            'wearable_days':    wearable_days,
+            'voice_memos':      voice_memo_count,
+        }
+        row = {
+            'patient_id':      patient_id,
+            'provider_id':     provider_id,
+            'brief_type':      brief_type,
+            'content':         brief_text,
+            'data_sources':    data_sources,
+            'scores':          scores or {},
+            'crisis_detected': crisis_detected,
+            'session_count':   len(session_ids),
+        }
+        if period_start:
+            row['period_start'] = period_start
+        if period_end:
+            row['period_end'] = period_end
+        if model_version:
+            row['model_version'] = model_version
+
+        result = supabase_admin.table('provider_briefs').insert(row).execute()
+        data = result.data
+        if data and len(data) > 0:
+            return str(data[0]['id'])
+        return None
+    except Exception as e:
+        print(f"Error in store_provider_brief: {e}")
+        return None
+
+
+def get_provider_briefs_for_patient(
+    provider_id: str,
+    patient_id: str,
+    limit: int = 5,
+) -> list[dict]:
+    """
+    Return recent provider briefs for a patient, newest first.
+
+    Each dict has: id, brief_type, period_start, period_end,
+    session_count, crisis_detected, generated_at, content (truncated to 500 chars for list view).
+    """
+    try:
+        result = (
+            supabase_admin
+            .table('provider_briefs')
+            .select('id, brief_type, period_start, period_end, session_count, crisis_detected, generated_at, content, scores')
+            .eq('provider_id', provider_id)
+            .eq('patient_id', patient_id)
+            .order('generated_at', desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = result.data or []
+        out = []
+        for row in rows:
+            out.append({
+                'id':              str(row['id']),
+                'brief_type':      row.get('brief_type', 'pre_visit'),
+                'period_start':    row.get('period_start'),
+                'period_end':      row.get('period_end'),
+                'session_count':   row.get('session_count', 0),
+                'crisis_detected': row.get('crisis_detected', False),
+                'generated_at':    row.get('generated_at'),
+                'scores':          row.get('scores') or {},
+                'content':         row.get('content', ''),
+            })
+        return out
+    except Exception as e:
+        print(f"Error in get_provider_briefs_for_patient: {e}")
+        return []
+
+
+def get_provider_brief_by_id(brief_id: str, provider_id: str) -> dict | None:
+    """
+    Fetch a single brief by ID, verifying it belongs to the requesting provider.
+    Returns None if not found or access denied.
+    """
+    try:
+        result = (
+            supabase_admin
+            .table('provider_briefs')
+            .select('*')
+            .eq('id', brief_id)
+            .eq('provider_id', provider_id)
+            .single()
+            .execute()
+        )
+        return result.data or None
+    except Exception as e:
+        print(f"Error in get_provider_brief_by_id: {e}")
+        return None
+
+
+def get_intel_patients_for_provider(provider_id: str) -> list[dict]:
+    """
+    Return patients who have at least one clinical_session recorded
+    for this provider. Used to populate the intelligence dashboard patient list.
+
+    Returns list of {patient_id, full_name, session_count, latest_session_date}.
+    """
+    try:
+        result = (
+            supabase_admin
+            .table('clinical_sessions')
+            .select('patient_id, session_date, profiles!clinical_sessions_patient_id_fkey(full_name)')
+            .eq('provider_id', provider_id)
+            .order('session_date', desc=True)
+            .execute()
+        )
+        rows = result.data or []
+
+        # Group by patient_id
+        seen: dict[str, dict] = {}
+        for row in rows:
+            pid = str(row['patient_id'])
+            if pid not in seen:
+                name = ''
+                profile = row.get('profiles')
+                if isinstance(profile, dict):
+                    name = profile.get('full_name', '')
+                elif isinstance(profile, list) and profile:
+                    name = profile[0].get('full_name', '')
+                seen[pid] = {
+                    'patient_id':          pid,
+                    'full_name':           name,
+                    'session_count':       0,
+                    'latest_session_date': row.get('session_date'),
+                }
+            seen[pid]['session_count'] += 1
+
+        return list(seen.values())
+    except Exception as e:
+        print(f"Error in get_intel_patients_for_provider: {e}")
+        return []

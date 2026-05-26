@@ -1308,3 +1308,274 @@ def generate_patient_synthesis(synthesis: dict) -> dict:
     except Exception as e:
         print(f"Mode H generation error: {e}")
         return {'status': 'error', 'text': ''}
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# INTELLIGENCE LAYER — PIVOT FUNCTIONS
+# Generates Mode C briefs from transcript-derived features rather than
+# patient self-report check-ins. All four safety rules and the forbidden-
+# language sanitization layer apply identically to these outputs.
+# ═══════════════════════════════════════════════════════════════════════════
+
+_BRIEF_FROM_SESSIONS_SYSTEM_PROVIDER = """You are a clinical data assistant preparing a pre-appointment brief for a psychiatrist or mental health provider.
+
+Your inputs are structured features extracted from this patient's recent session transcripts, along with any available wearable biometric data and voice memo analysis.
+
+Write in structured, clinically neutral language. Be specific — cite numbers and session counts. Describe patterns; never interpret clinical meaning.
+
+STRUCTURE (use these exact section headers):
+
+**Trajectory:** One sentence covering the period and overall direction.
+
+**Quantitative Summary:**
+- Mood: (include avg and range if mood estimates available; state 'patient did not self-report numeric mood this period' if not)
+- Sleep: (avg hours if mentioned; sleep disruption proxy if computable)
+- Stress/Stressors: (count and categories of stressors raised across sessions)
+- Wearable data: (include HRV, resting HR, sleep avg from wearables if present; omit section if no wearable data)
+
+**Medication Signal:** What medications were discussed, adherence signals from session language, any side-effect mentions. If none discussed: 'No medication discussions recorded this period.'
+
+**Session Themes:** 2-3 dominant topics the patient raised across sessions. Language-level observations only — not clinical characterization of what those topics represent.
+
+**Flags:** Any crisis language (blocked generation if detected — note accordingly), concerning language patterns, recurring symptoms mentioned, medication adherence concerns. If none: 'None for this period.'
+
+**Suggested Discussion Topics:** 2-3 specific, data-anchored items the provider may wish to raise.
+
+RULES:
+- Never diagnose. Never advise medication changes.
+- Do not say 'you have,' 'you suffer from,' 'this indicates [disorder],' 'this explains your [symptom],' 'this is consistent with [condition].'
+- Describe co-occurrence only — never causation. 'Stressor count was elevated in sessions where sleep hours were also lower' not 'stress caused sleep disruption.'
+- Every numeric claim must come from the data provided. If a value is null or not_recorded, say so — never substitute a plausible estimate.
+- The methodology footer at the end of every brief is mandatory."""
+
+_BRIEF_FROM_SESSIONS_SYSTEM_PATIENT = """You are writing a plain-language session summary for a patient to read before their next appointment.
+
+Your goal is to help them walk into the appointment knowing what to bring up — based on what came up in their recent sessions and what their data showed.
+
+Write like a thoughtful friend who actually reviewed their sessions. Not clinical. Not cheerful or dismissive. Honest and specific.
+
+STRUCTURE:
+1. One sentence: what the period looked like overall, in plain words.
+2. What came up in sessions: the main things they talked about, in their own terms. No clinical framing.
+3. What the data showed: if wearable or acoustic data is available, translate it into plain language ('your sleep averaged 5.8 hours over these weeks'). If not available, skip.
+4. What stood out: anything different from usual, anything they kept coming back to.
+5. Two or three things worth raising at the appointment, framed as questions they might want to ask their provider.
+
+RULES:
+- Use 'you' naturally — this is about their own experience
+- Never say 'you have [condition],' 'you suffer from,' 'you are [clinical state]'
+- Never advise medication changes
+- Translate session themes into the patient's own language where possible — not your characterization
+- Be honest about what the data can and cannot tell them
+- The note at the end about data sources is mandatory"""
+
+_METHODOLOGY_FOOTER = (
+    "\n\n---\n*Methodology: Session themes extracted via structured AI analysis of transcript text. "
+    "Numeric scores computed deterministically in Python prior to AI generation — "
+    "the model describes patterns; it does not compute scores. "
+    "This brief does not constitute a diagnosis, clinical assessment, or medication recommendation. "
+    "Clinical interpretation is the provider's responsibility.*"
+)
+
+
+def generate_brief_from_sessions(
+    aggregated_scores: dict,
+    session_features: list,
+    period_start: str | None = None,
+    period_end: str | None = None,
+    wearable_summary: dict | None = None,
+    voice_memo_summary: dict | None = None,
+    medication_records: list | None = None,
+    audience: str = 'provider',
+) -> dict:
+    """
+    Generate a Mode C provider brief (or patient session summary) from
+    transcript-derived session features.
+
+    This function is the intelligence layer equivalent of
+    generate_appointment_summary(). The output format and safety rules
+    are identical. The input source changes from patient self-report
+    check-ins to passively collected session features.
+
+    Args:
+        aggregated_scores:  Output of transcript_engine.score_transcript_batch().
+                            Contains mood_avg, sleep_avg, stressor counts, themes, etc.
+        session_features:   List of individual session extraction results from
+                            transcript_engine.extract_features(). Used to build
+                            the per-session narrative.
+        period_start:       ISO date string (YYYY-MM-DD) or None.
+        period_end:         ISO date string (YYYY-MM-DD) or None.
+        wearable_summary:   Aggregated wearable data dict or None.
+                            Shape: {sleep_avg, hrv_avg, resting_hr_avg, active_min_avg, days}
+        voice_memo_summary: Aggregated acoustic features or None.
+                            Shape: {speech_rate_trend, vocal_energy_avg, pause_rate_avg, weeks}
+        medication_records: List of active medication records from the DB or None.
+        audience:           'provider' (Mode C) or 'patient' (plain-language summary).
+
+    Returns:
+        {'status': 'safe'|'crisis'|'error', 'text': str, 'raw': str}
+    """
+    # ── Crisis check: scan all session features before generating ──────────
+    # Any crisis-detected session blocks standard brief generation for provider path;
+    # for patient path, any crisis signal blocks entirely.
+    crisis_sessions = [
+        f for f in (session_features or []) if f.get('crisis_detected')
+    ]
+    if crisis_sessions:
+        if audience == 'patient':
+            return {'status': 'crisis', 'text': CRISIS_RESPONSE}
+        # Provider path: prepend crisis warning, continue generation
+        crisis_warning = (
+            "🔴 CRISIS SIGNAL DETECTED\n"
+            f"Crisis language was identified in {len(crisis_sessions)} session(s) during this period. "
+            "Standard brief content follows, but this flag must be addressed before the appointment. "
+            "Affected sessions: " + ", ".join(
+                f.get('session_date', 'date unknown') for f in crisis_sessions
+            ) + "\n\n"
+        )
+    else:
+        crisis_warning = ""
+
+    # ── Build period label ─────────────────────────────────────────────────
+    n_sessions = aggregated_scores.get('session_count', len(session_features or []))
+    period_label = (
+        f"{period_start} to {period_end}"
+        if period_start and period_end
+        else f"recent {n_sessions} session{'s' if n_sessions != 1 else ''}"
+    )
+    data_boundary = (
+        f"Based on {aggregated_scores.get('valid_session_count', n_sessions)} of {n_sessions} "
+        f"session transcript{'s' if n_sessions != 1 else ''} processed"
+        + (f" ({period_start} to {period_end})" if period_start and period_end else "")
+        + "."
+    )
+
+    # ── Build per-session narrative block ─────────────────────────────────
+    session_rows = []
+    for feat in (session_features or []):
+        if feat.get('crisis_detected') or not feat.get('features'):
+            continue
+        f = feat['features']
+        s = feat.get('scores') or {}
+        row = {
+            'date':         feat.get('session_date', 'unknown'),
+            'session_type': feat.get('session_type', 'unknown'),
+            'themes':       f.get('themes') or [],
+            'stressors':    f.get('stressors') or [],
+            'medications':  f.get('medications_mentioned') or [],
+            'symptoms':     f.get('symptoms_mentioned') or [],
+        }
+        if s.get('mood_estimate') is not None:
+            row['mood_self_report'] = s['mood_estimate']
+        if s.get('sleep_hours') is not None:
+            row['sleep_hours_mentioned'] = s['sleep_hours']
+        if f.get('positive_signals'):
+            row['positive_signals'] = f['positive_signals']
+        if f.get('concerning_language'):
+            row['concerning_language'] = f['concerning_language']
+        if f.get('session_notes'):
+            row['session_notes'] = f['session_notes']
+        session_rows.append(row)
+
+    # ── Build aggregate stats block ────────────────────────────────────────
+    agg = aggregated_scores
+    stats = {
+        'session_count':       n_sessions,
+        'period':              period_label,
+        'mood_avg':            agg.get('mood_avg'),
+        'mood_estimates':      agg.get('mood_estimates') or [],
+        'sessions_with_mood':  agg.get('sessions_with_mood', 0),
+        'sleep_avg_mentioned': agg.get('sleep_avg'),
+        'sleep_disruption_avg': agg.get('sleep_disruption_avg'),
+        'stressor_count_total': agg.get('stressor_count_total', 0),
+        'stressor_count_avg':  agg.get('stressor_count_avg'),
+        'themes_across_sessions': agg.get('themes_aggregate') or [],
+        'symptom_mentions':    agg.get('symptom_mentions') or {},
+        'medication_signals':  agg.get('medication_signals') or [],
+    }
+
+    # ── Wearable section ───────────────────────────────────────────────────
+    wearable_block = ''
+    if wearable_summary:
+        w = wearable_summary
+        wearable_block = (
+            f"\n\nWEARABLE DATA ({w.get('source', 'wearable')}, {w.get('days', '?')} days):\n"
+            + (f"- Sleep avg: {w['sleep_avg']} hrs/night\n" if w.get('sleep_avg') else '')
+            + (f"- HRV (RMSSD) avg: {w['hrv_avg']} ms\n" if w.get('hrv_avg') else '')
+            + (f"- Resting HR avg: {w['resting_hr_avg']} bpm\n" if w.get('resting_hr_avg') else '')
+            + (f"- Active minutes avg: {w['active_min_avg']}/day\n" if w.get('active_min_avg') else '')
+        )
+
+    # ── Voice memo section ─────────────────────────────────────────────────
+    voice_block = ''
+    if voice_memo_summary:
+        v = voice_memo_summary
+        voice_block = (
+            f"\n\nVOICE MEMO ACOUSTIC DATA ({v.get('weeks', '?')} weeks):\n"
+            + (f"- Speech rate: {v['speech_rate_trend']}\n" if v.get('speech_rate_trend') else '')
+            + (f"- Vocal energy avg: {v['vocal_energy_avg']}\n" if v.get('vocal_energy_avg') else '')
+            + (f"- Pause rate avg: {v['pause_rate_avg']}\n" if v.get('pause_rate_avg') else '')
+        )
+
+    # ── Medication records section ─────────────────────────────────────────
+    med_block = ''
+    if medication_records:
+        med_lines = []
+        for m in medication_records:
+            name  = m.get('medication_name', 'unknown')
+            dose  = f"{m.get('dose_amount', '')} {m.get('dose_unit', '')}".strip()
+            freq  = m.get('frequency', '')
+            parts = [name]
+            if dose:    parts.append(dose)
+            if freq:    parts.append(freq)
+            med_lines.append('- ' + ' | '.join(parts))
+        med_block = "\n\nACTIVE MEDICATIONS (from records):\n" + '\n'.join(med_lines)
+
+    # ── Select system prompt ───────────────────────────────────────────────
+    if audience == 'provider':
+        system_prompt = (
+            crisis_warning
+            + _BRIEF_FROM_SESSIONS_SYSTEM_PROVIDER
+            + f"\n\nData boundary statement (include verbatim at end of brief): {data_boundary}"
+        )
+    else:
+        system_prompt = (
+            _BRIEF_FROM_SESSIONS_SYSTEM_PATIENT
+            + f"\n\nData note (include at end): {data_boundary}"
+        )
+
+    # ── Build user content ─────────────────────────────────────────────────
+    user_content = (
+        f"REVIEW PERIOD: {period_label}\n\n"
+        f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}\n\n"
+        f"INDIVIDUAL SESSION SUMMARIES ({len(session_rows)} sessions):\n"
+        f"{json.dumps(session_rows, indent=2, default=str)}"
+        + wearable_block
+        + voice_block
+        + med_block
+    )
+
+    # ── Generate ───────────────────────────────────────────────────────────
+    try:
+        raw = _call_claude(system_prompt, user_content, max_tokens=900)
+    except RuntimeError as e:
+        import logging
+        logging.getLogger(__name__).error("generate_brief_from_sessions failed: %s", e)
+        return {'status': 'error', 'text': str(e)}
+
+    clean = _sanitize_output(raw)
+    if clean is None:
+        clean = (
+            "A brief was generated but contained language flagged by the safety filter. "
+            "Please regenerate or contact support."
+        )
+
+    # Append methodology footer (mandatory per CLAUDE.md §14, applied to pivot output)
+    final = clean + _METHODOLOGY_FOOTER
+
+    return {
+        'status': 'crisis' if crisis_sessions and audience == 'provider' else 'safe',
+        'text':   final,
+        'raw':    raw,
+        'crisis_sessions': len(crisis_sessions),
+    }
