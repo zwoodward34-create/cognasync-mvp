@@ -63,12 +63,11 @@ def verify_jwt(token):
         if response.data:
             user_data = response.data[0]
             return {
-                'id':            user_data['id'],
-                'email':         user_data['email'],
-                'full_name':     user_data['full_name'],
-                'role':          user_data['role'],
-                'provider_type': user_data.get('provider_type'),
-                'created_at':    user_data.get('created_at', ''),
+                'id':         user_data['id'],
+                'email':      user_data['email'],
+                'full_name':  user_data['full_name'],
+                'role':       user_data['role'],
+                'created_at': user_data.get('created_at', ''),
             }
     except Exception:
         pass
@@ -109,7 +108,7 @@ def require_provider(f):
     return decorated
 
 
-def register_user(email, password, full_name, role, provider_type=None):
+def register_user(email, password, full_name, role):
     """Create a pending account. The user must verify email; admin must then approve.
 
     Steps are separated so that a failure in any one step can be handled cleanly:
@@ -217,17 +216,14 @@ def register_user(email, password, full_name, role, provider_type=None):
                     if not prof.data or not prof.data[0].get('status'):
                         # Orphaned auth user with no/incomplete profile — create it now
                         token = str(uuid.uuid4())
-                        recovery_row = {
+                        supabase_admin.table('profiles').upsert({
                             'id':                 uid,
                             'email':              email,
                             'full_name':          full_name,
                             'role':               role,
                             'status':             'pending_email',
                             'email_verify_token': token,
-                        }
-                        if provider_type:
-                            recovery_row['provider_type'] = provider_type
-                        supabase_admin.table('profiles').upsert(recovery_row).execute()
+                        }).execute()
                         email_sent = True
                         try:
                             email_utils.send_verification_email(email, full_name, token)
@@ -266,17 +262,14 @@ def register_user(email, password, full_name, role, provider_type=None):
     # ── Step 2: Create the profile row (upsert tolerates trigger-created rows) ──
     try:
         print(f"[register] Step 2: upserting profile for {user_id}")
-        profile_row = {
+        supabase_admin.table('profiles').upsert({
             'id':                 user_id,
             'email':              email,
             'full_name':          full_name,
             'role':               role,
             'status':             'pending_email',
             'email_verify_token': verify_token,
-        }
-        if provider_type:
-            profile_row['provider_type'] = provider_type
-        supabase_admin.table('profiles').upsert(profile_row).execute()
+        }).execute()
         print(f"[register] Step 2 OK: profile upserted for {email}")
     except Exception as e:
         # Profile insert failed — roll back the auth user so the address is free to retry.
@@ -327,12 +320,11 @@ def login_user(email, password):
             return None, 'Your account is pending administrator approval. You will receive an email when approved.'
 
         return {
-            'session_token':  response.session.access_token,
-            'user_id':        response.user.id,
-            'email':          profile.get('email'),
-            'role':           profile.get('role'),
-            'full_name':      profile.get('full_name'),
-            'provider_type':  profile.get('provider_type'),
+            'session_token': response.session.access_token,
+            'user_id': response.user.id,
+            'email': profile.get('email'),
+            'role': profile.get('role'),
+            'full_name': profile.get('full_name')
         }, None
     except Exception:
         return None, "Invalid email or password"

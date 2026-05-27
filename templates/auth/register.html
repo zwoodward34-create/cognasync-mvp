@@ -71,15 +71,6 @@
           <option value="provider" {% if role == 'provider' %}selected{% endif %}>Provider (Therapist / Psychiatrist)</option>
         </select>
       </div>
-      <div class="form-group" id="provider-type-group" style="display:none">
-        <label for="provider_type">Provider type</label>
-        <select id="provider_type" name="provider_type">
-          <option value="" {% if not provider_type %}selected{% endif %}>— select one —</option>
-          <option value="psychiatrist" {% if provider_type == 'psychiatrist' %}selected{% endif %}>Psychiatrist</option>
-          <option value="therapist" {% if provider_type == 'therapist' %}selected{% endif %}>Therapist</option>
-          <option value="counselor" {% if provider_type == 'counselor' %}selected{% endif %}>Counselor</option>
-        </select>
-      </div>
       {% else %}
       <input type="hidden" name="role" value="patient">
       {% endif %}
@@ -106,17 +97,6 @@
 
   pw.addEventListener('input', check);
   cpw.addEventListener('input', check);
-
-  // Show/hide provider type field based on role selection
-  const roleSelect = document.getElementById('role');
-  const providerTypeGroup = document.getElementById('provider-type-group');
-  if (roleSelect && providerTypeGroup) {
-    function toggleProviderType() {
-      providerTypeGroup.style.display = roleSelect.value === 'provider' ? '' : 'none';
-    }
-    roleSelect.addEventListener('change', toggleProviderType);
-    toggleProviderType(); // run on page load (handles validation error re-render)
-  }
 })();
 </script>
 {% endblock %}
