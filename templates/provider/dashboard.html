@@ -559,6 +559,26 @@
     color: var(--color-text-muted, #aaa);
     margin-top: 3px;
   }
+
+  /* Provider type badge */
+  .pd-provider-type-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.68rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+    background: var(--color-surface-alt, #f0f0f0);
+    color: var(--color-text-muted, #555);
+    border: 1px solid var(--color-border, #ddd);
+  }
+  .pd-provider-type-badge.psychiatrist { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+  .pd-provider-type-badge.therapist    { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+  .pd-provider-type-badge.counselor    { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
 </style>
 {% endblock %}
 
@@ -582,7 +602,11 @@
   <!-- Page header -->
   <div class="pd-page-hdr">
     <div>
-      <h1 class="pd-page-title">My Patients</h1>
+      <h1 class="pd-page-title">My Patients
+        {% if user.provider_type %}
+        <span class="pd-provider-type-badge {{ user.provider_type }}">{{ user.provider_type | title }}</span>
+        {% endif %}
+      </h1>
       <div class="pd-page-sub">{{ patients|length }} patient{{ 's' if patients|length != 1 }} · {{ today_str }}</div>
     </div>
     <div class="pd-page-hdr-actions">

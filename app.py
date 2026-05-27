@@ -283,17 +283,33 @@ def register_post():
     full_name = request.form.get('full_name', '').strip()
     role = request.form.get('role', 'patient')
     invite_token = request.form.get('invite_token', '').strip()
+    provider_type = request.form.get('provider_type', '').strip() or None
     # Rebuild invite context for re-rendering on error
     invite_context = db.get_patient_invite_by_token(invite_token) if invite_token else None
+
+    # Validate provider_type when registering as provider
+    valid_provider_types = ('psychiatrist', 'therapist', 'counselor')
+    if role == 'provider' and provider_type not in valid_provider_types:
+        flash('Please select a provider type (Psychiatrist, Therapist, or Counselor).', 'error')
+        return render_template('auth/register.html', email=email, full_name=full_name, role=role,
+                               provider_type=provider_type,
+                               invite_token=invite_token, invite_email=email if invite_token else None,
+                               invite_context=invite_context)
+
     if password != confirm_password:
         flash('Passwords do not match.', 'error')
         return render_template('auth/register.html', email=email, full_name=full_name, role=role,
+                               provider_type=provider_type,
                                invite_token=invite_token, invite_email=email if invite_token else None,
                                invite_context=invite_context)
-    result, error = auth_module.register_user(email, password, full_name, role)
+    result, error = auth_module.register_user(
+        email, password, full_name, role,
+        provider_type=provider_type if role == 'provider' else None,
+    )
     if error:
         flash(error, 'error')
         return render_template('auth/register.html', email=email, full_name=full_name, role=role,
+                               provider_type=provider_type,
                                invite_token=invite_token, invite_email=email if invite_token else None,
                                invite_context=invite_context)
     email_sent = result.get('email_sent', True)
@@ -2515,19 +2531,32 @@ def api_provider_generate_summary(patient_id):
     flags = db.get_patient_flags(patient_id, days=summary_days)
     what_worked = db.get_what_worked_patterns(patient_id, days=max(summary_days, 60))
 
+    provider_type = user.get('provider_type')
     try:
-        result = claude_api.generate_appointment_summary(
-            checkins, journals,
-            days=summary_days,
-            period_start=period_start,
-            period_end=period_end,
-            appointment_date=appointment_date,
-            audience='provider',
-            symptom_patterns=symptom_patterns,
-            substance_flags=flags.get('substance'),
-            safety_flags=flags.get('safety'),
-            what_worked=what_worked,
-        )
+        if provider_type in ('therapist', 'counselor'):
+            result = claude_api.generate_therapy_summary(
+                checkins, journals,
+                days=summary_days,
+                period_start=period_start,
+                period_end=period_end,
+                appointment_date=appointment_date,
+                safety_flags=flags.get('safety'),
+                substance_flags=flags.get('substance'),
+            )
+        else:
+            # psychiatrist, unknown, or None — default to Mode C provider brief
+            result = claude_api.generate_appointment_summary(
+                checkins, journals,
+                days=summary_days,
+                period_start=period_start,
+                period_end=period_end,
+                appointment_date=appointment_date,
+                audience='provider',
+                symptom_patterns=symptom_patterns,
+                substance_flags=flags.get('substance'),
+                safety_flags=flags.get('safety'),
+                what_worked=what_worked,
+            )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
 
@@ -2585,6 +2614,28 @@ def api_update_profile():
     if updates:
         db.update_patient_profile(user['id'], **updates)
     return jsonify({'message': 'Profile updated'}), 200
+
+
+@app.route('/api/settings/provider-profile', methods=['POST'])
+def api_update_provider_profile():
+    user, err = _api_user('provider')
+    if err:
+        return err
+    data = request.json or {}
+
+    updates = {}
+    if 'provider_type' in data:
+        pt = data['provider_type']
+        if pt not in ('psychiatrist', 'therapist', 'counselor'):
+            return jsonify({'error': 'Invalid provider_type. Must be psychiatrist, therapist, or counselor'}), 400
+        updates['provider_type'] = pt
+
+    if updates:
+        try:
+            db.supabase_admin.table('profiles').update(updates).eq('id', user['id']).execute()
+        except Exception as e:
+            return jsonify({'error': f'Could not update profile: {e}'}), 500
+    return jsonify({'message': 'Provider profile updated'}), 200
 
 
 @app.route('/api/settings/password', methods=['POST'])
