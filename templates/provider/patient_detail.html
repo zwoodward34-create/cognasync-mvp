@@ -145,6 +145,10 @@
            target="_blank" class="btn btn-sm" style="display:flex;align-items:center;gap:5px;">
           🖨 Print Summary
         </a>
+        <button onclick="openSmsModal()" class="btn btn-sm"
+                style="display:flex;align-items:center;gap:5px;">
+          📱 Send Check-in SMS
+        </button>
         <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}"
            class="btn btn-sm btn-primary" style="display:flex;align-items:center;gap:5px;">
           ⚡ Intelligence Layer
@@ -322,6 +326,76 @@
       </div>
       {% endif %}
     </div><!-- /ah-section -->
+
+    <!-- ─── VOICE NOTES ──────────────────────────────────────────────────── -->
+    <div class="ah-section" style="margin-top:28px;" id="voice-notes-section">
+      <div class="ah-section-hdr" style="align-items:flex-start;flex-wrap:wrap;gap:12px;">
+        <div>
+          <div class="pv-panel-title" style="margin:0 0 3px;">Voice Notes</div>
+          <div style="font-size:11px;color:var(--text-muted);">
+            Patient voice recordings submitted before appointments
+          </div>
+        </div>
+        <button class="btn btn-sm" onclick="openSmsModal()"
+                style="align-self:center;">
+          📱 Send Check-in Request
+        </button>
+      </div>
+      <div id="voice-notes-list">
+        <div style="font-size:13px;color:var(--text-muted);padding:16px 0;">Loading…</div>
+      </div>
+    </div>
+
+    <!-- ─── SMS CHECK-IN MODAL ────────────────────────────────────────────── -->
+    <div id="sms-modal"
+         style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);
+                z-index:1500;align-items:center;justify-content:center;padding:16px;">
+      <div style="background:#fff;max-width:460px;width:100%;padding:28px 24px 24px;
+                  box-shadow:0 8px 32px rgba(0,0,0,.18);">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+          <div style="font-size:13px;font-weight:700;text-transform:uppercase;
+                      letter-spacing:.08em;color:var(--text);">Send Check-in SMS</div>
+          <button onclick="closeSmsModal()"
+                  style="background:none;border:none;font-size:18px;cursor:pointer;color:#666;">✕</button>
+        </div>
+
+        <p style="font-size:13px;color:var(--text-muted);line-height:1.65;margin:0 0 18px;">
+          This will send a text message to
+          <strong id="sms-patient-name">{{ patient.full_name }}</strong>
+          with a link to record a voice note before their next appointment.
+          {% if not patient.phone_number %}
+          <span id="sms-no-phone" style="display:block;margin-top:8px;color:#dc2626;
+                font-size:12px;font-weight:600;">
+            ⚠ No phone number on file for this patient. Ask them to add one in their profile.
+          </span>
+          {% endif %}
+        </p>
+
+        <div style="margin-bottom:16px;">
+          <label style="font-size:11px;font-weight:600;text-transform:uppercase;
+                        letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:6px;">
+            Guiding question (optional)
+          </label>
+          <textarea id="sms-voice-prompt" rows="3"
+                    style="width:100%;font-size:13px;padding:8px;border:1px solid var(--border-light);
+                           background:var(--surface);color:var(--text);resize:vertical;box-sizing:border-box;"
+                    placeholder="E.g. How have you been feeling since your last appointment?"></textarea>
+          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
+            If left blank, a default prompt based on your provider type will be used.
+          </div>
+        </div>
+
+        <div style="display:flex;gap:10px;align-items:center;">
+          <button id="sms-send-btn" onclick="sendCheckinSms()"
+                  class="btn btn-primary"
+                  {% if not patient.phone_number %}disabled title="No phone number on file"{% endif %}>
+            Send SMS
+          </button>
+          <button onclick="closeSmsModal()" class="btn btn-sm">Cancel</button>
+          <span id="sms-status" style="font-size:12px;color:var(--text-muted);margin-left:4px;"></span>
+        </div>
+      </div>
+    </div>
 
     <!-- Crisis history (if any) -->
     {% if crisis_history %}

@@ -211,8 +211,12 @@
 .home-quick-card:hover { background: var(--bg); text-decoration: none; }
 /* Remove right border on every 3rd card */
 .home-quick-card:nth-child(3n) { border-right: none; }
-/* Remove bottom border on last row (cards 4-6) */
-.home-quick-card:nth-child(n+4) { border-bottom: none; }
+/* Remove bottom border on last row (cards 5-7 for 3-col 7-card grid) */
+.home-quick-card:nth-child(n+7) { border-bottom: none; }
+/* Restore border on rows 2 (cards 4-6 are no longer the last row) */
+.home-quick-card:nth-child(4),
+.home-quick-card:nth-child(5),
+.home-quick-card:nth-child(6) { border-bottom: 1px solid var(--border-light); }
 
 .home-quick-icon {
   width: 32px; height: 32px; flex-shrink: 0;
@@ -296,7 +300,7 @@
   .home-quick-card:nth-child(3n)  { border-right: 1px solid var(--border-light); }
   .home-quick-card:nth-child(n+4) { border-bottom: 1px solid var(--border-light); }
   .home-quick-card:nth-child(2n)  { border-right: none; }
-  .home-quick-card:nth-child(n+5) { border-bottom: none; }
+  .home-quick-card:nth-child(n+7) { border-bottom: none; }
 
   /* Streak badge */
   .streak-number { font-size: 1.5rem; }
@@ -413,6 +417,14 @@
         <div class="home-quick-body">
           <div class="home-quick-title">Appointments</div>
           <div class="home-quick-sub">History &amp; requests</div>
+        </div>
+        <span class="home-quick-arrow">→</span>
+      </a>
+      <a href="{{ url_for('patient_voice_notes_page') }}" class="home-quick-card">
+        <div class="home-quick-icon">🎙</div>
+        <div class="home-quick-body">
+          <div class="home-quick-title">Voice Notes</div>
+          <div class="home-quick-sub">Pre-appt recordings</div>
         </div>
         <span class="home-quick-arrow">→</span>
       </a>
