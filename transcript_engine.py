@@ -38,7 +38,10 @@ import logging
 import os
 import re
 
-from claude_api import _check_crisis, _call_claude, CRISIS_KEYWORDS
+from claude_api import (
+    _check_crisis, _call_claude, CRISIS_KEYWORDS,
+    score_crisis, CRISIS_LEVEL_NOTES, CRISIS_LEVEL_LABELS,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +86,34 @@ EXTRACTION RULES:
 - crisis_language_detected should be true ONLY if the transcript contains explicit statements about self-harm, suicide, or wanting to die.
 - session_notes is a single factual sentence describing the session's primary focus and the patient's level of engagement. No interpretation.
 
+SPEECH AND BEHAVIORAL FEATURES:
+Populate speech_features based on observable characteristics of the patient's utterances in the transcript. You are reading text, so infer from length of responses, interruptions, ellipses, stage directions, and the nature of the language used.
+
+- speech_rate: "slowed" if responses are brief, hesitant, or the transcript notes long pauses; "pressured" if the patient produces long uninterrupted runs of text, interrupts, or the transcript notes rapid speech; "normal" otherwise; null if insufficient data.
+- prosody: "flat" if emotional affect appears diminished (short affect-free responses, minimal variation); "elevated" if emotion is notably heightened or intense; "normal" otherwise; null if insufficient data.
+- pauses: "increased" if ellipses, [pause] markers, or very short fragmented responses appear; "decreased" if speech is continuous and unbroken; "normal" otherwise; null if insufficient data.
+- speech_coherence: "disorganized" if speech jumps between unrelated topics, is hard to follow, or contains loose associations; "intact" otherwise; null if insufficient.
+- arousal: "low" if patient seems subdued, minimally responsive, flat; "elevated" if patient is animated, excitable; "agitated" if irritable or dysregulated; "normal" otherwise; null if insufficient.
+- vocal_affect: "flat" if emotional expression is minimal across the session; "strained" if the patient seems to be struggling to express themselves; "normal" otherwise; null if insufficient.
+- severity_note: One brief factual observation about the most notable speech or engagement characteristic. Example: "Responses were notably brief and affect appeared flat throughout." Null if nothing stands out.
+- confidence: "high" if clear evidence supports the labels; "medium" if partially visible; "low" if the transcript has minimal content to assess.
+
+BASELINE DEVIATION:
+If the transcript or notes contain any reference to how the patient "usually" presents, how today compares to prior sessions, or the provider notes a change — populate baseline_deviation with one sentence. Example: "Provider noted the patient was quieter than usual." Null if no baseline comparison is available.
+
+CLINICAL PATTERN TYPE:
+Assign the single best-matching pattern for the session. Choose from:
+- "depressive": low energy, withdrawal, flat speech, sleep disruption, hopelessness dominate
+- "anxiety_stress": heightened arousal, restlessness, worry, physical tension themes dominate
+- "mania_hypomania": pressured speech, elevated arousal, reduced sleep need, impulsive themes, expansive mood
+- "psychosis_risk": disorganized speech, unusual beliefs, perceptual disturbances, marked functional decline
+- "crisis": active self-harm or suicidal themes dominate the session
+- "mixed": two or more patterns are clearly present and neither dominates
+- "none_detected": signals present do not clearly match any pattern
+- null: insufficient transcript content to assess
+
+Apply conservatively — use "none_detected" or null when uncertain rather than over-assigning. This is a routing label for providers, not a diagnosis.
+
 JSON SCHEMA:
 {
   "patient_mood_description": string or null,
@@ -107,7 +138,19 @@ JSON SCHEMA:
   "concerning_language": [string],
   "crisis_language_detected": boolean,
   "functional_status": string or null,
-  "session_notes": string
+  "session_notes": string,
+  "speech_features": {
+    "speech_rate": "normal" | "slowed" | "pressured" | null,
+    "prosody": "normal" | "flat" | "elevated" | null,
+    "pauses": "normal" | "increased" | "decreased" | null,
+    "speech_coherence": "intact" | "disorganized" | null,
+    "arousal": "normal" | "low" | "elevated" | "agitated" | null,
+    "vocal_affect": "normal" | "flat" | "strained" | null,
+    "severity_note": string or null,
+    "confidence": "high" | "medium" | "low"
+  },
+  "clinical_pattern_type": "depressive" | "anxiety_stress" | "mania_hypomania" | "psychosis_risk" | "crisis" | "mixed" | "none_detected" | null,
+  "baseline_deviation": string or null
 }"""
 
 
@@ -205,32 +248,108 @@ def _compute_transcript_scores(features: dict) -> dict:
     symptoms = features.get('symptoms_mentioned') or []
     scores['symptom_count'] = len(symptoms)
 
-    # ── Session signal quality ─────────────────────────────────────
+    # ── Speech features — pass through from extraction ────────────────
+    # These are qualitative labels extracted by the model. Pass through as-is;
+    # the scoring engine does not normalize them. Provider brief uses them directly.
+    speech = features.get('speech_features')
+    if speech and isinstance(speech, dict):
+        scores['speech_features'] = speech
+        # Derive a simple speech concern flag (True if any abnormal label present)
+        abnormal_markers = [
+            speech.get('speech_rate') in ('slowed', 'pressured'),
+            speech.get('prosody') == 'flat',
+            speech.get('pauses') == 'increased',
+            speech.get('speech_coherence') == 'disorganized',
+            speech.get('arousal') in ('low', 'elevated', 'agitated'),
+            speech.get('vocal_affect') in ('flat', 'strained'),
+        ]
+        scores['speech_concern_flag'] = any(abnormal_markers)
+    else:
+        scores['speech_features'] = None
+        scores['speech_concern_flag'] = False
+
+    # ── Clinical pattern type — pass through from extraction ──────────
+    scores['clinical_pattern_type'] = features.get('clinical_pattern_type')
+
+    # ── Baseline deviation — pass through from extraction ─────────────
+    scores['baseline_deviation'] = features.get('baseline_deviation')
+
+    # ── Session signal quality ─────────────────────────────────────────
     # A rough proxy for how data-rich this session's extraction was.
     # Not a clinical score — used internally to weight brief generation.
     richness = 0
-    if features.get('mood_estimate') is not None:       richness += 2
-    if features.get('mood_description'):                richness += 1
+    if features.get('mood_estimate') is not None:         richness += 2
+    if features.get('patient_mood_description'):          richness += 1
     if features.get('sleep_hours_mentioned') is not None: richness += 2
-    if features.get('themes'):                          richness += len(features['themes'])
-    if meds:                                            richness += 2
-    if features.get('positive_signals'):                richness += 1
+    if features.get('themes'):                            richness += len(features['themes'])
+    if meds:                                              richness += 2
+    if features.get('positive_signals'):                  richness += 1
+    if speech and speech.get('confidence') == 'high':     richness += 1
     scores['extraction_richness'] = richness
 
     return scores
 
 
-def _build_safety_note(transcript_text: str) -> str:
+def _build_safety_note(crisis_result: dict) -> str:
     """
-    Build the provider-facing safety note when crisis language is detected.
+    Build the provider-facing safety note from a graduated crisis result.
     This note goes into the provider_brief as the highest-priority flag.
     It never goes to the patient.
+
+    Args:
+        crisis_result: Dict returned by score_crisis() with 'level', 'score',
+                       'adjusted_score', 'features', and 'population_modifier'.
     """
+    level = crisis_result.get('level', 3)
+    score = crisis_result.get('adjusted_score', 0)
+    features = crisis_result.get('features', {})
+    pop_mod  = crisis_result.get('population_modifier', 0)
+
+    # Collect which high-weight features were detected for the note
+    high_weight = [
+        f for f in ('direct_intent', 'specific_plan', 'means_access',
+                    'recent_self_harm', 'preparatory_behavior')
+        if features.get(f)
+    ]
+    passive_weight = [
+        f for f in ('recurrent_ideation', 'cannot_safety_plan',
+                    'hopelessness', 'worsening_distress')
+        if features.get(f)
+    ]
+
+    feature_summary = ''
+    if high_weight:
+        readable = {
+            'direct_intent': 'direct intent',
+            'specific_plan': 'specific plan',
+            'means_access': 'means access',
+            'recent_self_harm': 'prior self-harm reference',
+            'preparatory_behavior': 'preparatory behavior',
+        }
+        feature_summary = ' Signals detected: ' + ', '.join(
+            readable.get(f, f) for f in high_weight
+        ) + '.'
+    elif passive_weight:
+        readable = {
+            'recurrent_ideation': 'recurrent ideation',
+            'cannot_safety_plan': 'safety planning difficulty',
+            'hopelessness': 'hopelessness',
+            'worsening_distress': 'worsening distress',
+        }
+        feature_summary = ' Signals detected: ' + ', '.join(
+            readable.get(f, f) for f in passive_weight
+        ) + '.'
+
+    pop_note = ''
+    if pop_mod > 0:
+        pop_note = f' Population modifier applied (+{pop_mod}).'
+
+    base_note = CRISIS_LEVEL_NOTES.get(level, CRISIS_LEVEL_NOTES[3])
     return (
-        "🔴 CRISIS LANGUAGE DETECTED — This transcript contains language consistent "
-        "with self-harm or suicidal ideation. Standard brief generation was blocked. "
-        "Clinical assessment recommended before the next appointment. "
-        "Resource: 988 Suicide & Crisis Lifeline (call or text 988)."
+        f"{base_note}"
+        f"{feature_summary}"
+        f"{pop_note}"
+        f" Risk score: {score}/14. Standard brief generation was blocked."
     )
 
 
@@ -240,6 +359,7 @@ def extract_features(
     transcript_text: str,
     session_date: str | None = None,
     session_type: str = 'therapy',
+    population_flags: dict | None = None,
 ) -> dict:
     """
     Primary extraction function. Safe to call from any route.
@@ -250,21 +370,28 @@ def extract_features(
         session_date:     ISO date string (YYYY-MM-DD). Passed through to output
                           for downstream brief generation.
         session_type:     'psychiatry' | 'therapy' | 'intake' | 'followup' | 'other'
+        population_flags: Optional {population_name: bool} for graduated crisis scoring.
+                          Valid keys: 'adolescent', 'older_adult', 'veteran',
+                          'prior_self_harm', 'serious_mental_illness'
 
     Returns:
         {
-            'crisis_detected': bool,
-            'safety_note':     str | None,   # provider-only, never patient-facing
-            'features':        dict | None,  # None if crisis blocked extraction
-            'scores':          dict | None,
-            'session_date':    str | None,
-            'session_type':    str,
+            'crisis_detected':  bool,
+            'crisis_level':     int (0-4),   # 0 = none, 4 = imminent
+            'crisis_result':    dict | None, # full score_crisis() output
+            'safety_note':      str | None,  # provider-only, never patient-facing
+            'features':         dict | None, # None if Level 3-4 blocked extraction
+            'scores':           dict | None,
+            'session_date':     str | None,
+            'session_type':     str,
             'transcript_length': int,
         }
     """
     if not transcript_text or not isinstance(transcript_text, str):
         return {
             'crisis_detected':   False,
+            'crisis_level':      0,
+            'crisis_result':     None,
             'safety_note':       None,
             'features':          None,
             'scores':            None,
@@ -274,16 +401,25 @@ def extract_features(
             'error':             'Empty or invalid transcript',
         }
 
-    # ── Step 1: Crisis detection — always runs before AI call ──────────────
-    if _check_crisis(transcript_text):
+    # ── Step 1: Graduated crisis scoring — always runs before AI call ──────
+    # score_crisis() uses the weighted 5-level system from spec §22.
+    # Level 3-4: block extraction, return provider-only safety note.
+    # Level 1-2: allow extraction to continue; include crisis info in output
+    #            so the provider brief can surface appropriate flags.
+    crisis_result = score_crisis(transcript_text, population_flags=population_flags)
+    crisis_level  = crisis_result['level']
+
+    if crisis_level >= 3:
         logger.warning(
-            "Crisis language detected in transcript (session_date=%s, session_type=%s). "
-            "Extraction blocked.",
-            session_date, session_type
+            "Crisis language detected at Level %d (score=%d) in transcript "
+            "(session_date=%s, session_type=%s). Extraction blocked.",
+            crisis_level, crisis_result['adjusted_score'], session_date, session_type
         )
         return {
             'crisis_detected':   True,
-            'safety_note':       _build_safety_note(transcript_text),
+            'crisis_level':      crisis_level,
+            'crisis_result':     crisis_result,
+            'safety_note':       _build_safety_note(crisis_result),
             'features':          None,
             'scores':            None,
             'session_date':      session_date,
@@ -335,19 +471,37 @@ def extract_features(
         }
 
     # ── Step 5: Secondary crisis check on extracted concerning_language ─────
-    # The primary check above runs on raw transcript text.
-    # This catches cases where the model surfaces concerning language it
-    # extracted that our keyword list would have caught anyway — belt and suspenders.
+    # Belt-and-suspenders: re-score against the concerning_language phrases
+    # the model surfaced. Uses score_crisis() for consistency with Step 1.
     concerning = features.get('concerning_language') or []
-    if features.get('crisis_language_detected') or any(_check_crisis(phrase) for phrase in concerning):
+    secondary_crisis = None
+    if features.get('crisis_language_detected') and not concerning:
+        # Model flagged crisis but we don't have phrases — treat as Level 3
+        secondary_crisis = {'level': 3, 'score': 6, 'adjusted_score': 6,
+                            'features': {}, 'population_modifier': 0}
+    elif concerning:
+        combined_text = ' '.join(concerning)
+        secondary_crisis = score_crisis(combined_text, population_flags=population_flags)
+
+    # If secondary check upgrades us to Level 3+, block brief generation
+    if secondary_crisis and secondary_crisis['level'] >= 3:
+        # Merge the two results — take the higher-scored one
+        effective_crisis = (
+            secondary_crisis
+            if secondary_crisis['adjusted_score'] > crisis_result['adjusted_score']
+            else crisis_result
+        )
+        effective_crisis['level'] = max(effective_crisis['level'], 3)
         logger.warning(
-            "Crisis language detected in extraction output (session_date=%s). "
+            "Secondary crisis check elevated level to %d (session_date=%s). "
             "Brief generation blocked.",
-            session_date
+            effective_crisis['level'], session_date
         )
         return {
             'crisis_detected':   True,
-            'safety_note':       _build_safety_note(transcript_text),
+            'crisis_level':      effective_crisis['level'],
+            'crisis_result':     effective_crisis,
+            'safety_note':       _build_safety_note(effective_crisis),
             'features':          features,   # features preserved for provider review
             'scores':            None,
             'session_date':      session_date,
@@ -358,9 +512,20 @@ def extract_features(
     # ── Step 6: Deterministic scoring ─────────────────────────────────────
     scores = _compute_transcript_scores(features)
 
+    # If Level 1-2 signals were detected, include them as non-blocking context
+    # for the provider brief. crisis_detected stays False — extraction proceeds.
+    passive_safety_note = None
+    effective_level = crisis_level
+    if secondary_crisis and secondary_crisis['level'] > crisis_level:
+        effective_level = secondary_crisis['level']
+    if effective_level in (1, 2):
+        passive_safety_note = CRISIS_LEVEL_NOTES[effective_level]
+
     return {
         'crisis_detected':   False,
-        'safety_note':       None,
+        'crisis_level':      effective_level,
+        'crisis_result':     crisis_result,
+        'safety_note':       passive_safety_note,   # non-None but non-blocking for Level 1-2
         'features':          features,
         'scores':            scores,
         'session_date':      session_date,
@@ -446,6 +611,12 @@ def score_transcript_batch(
     all_themes        = []
     crisis_count      = sum(1 for r in session_results if r.get('crisis_detected'))
 
+    # Speech and pattern aggregation
+    clinical_patterns: Counter = Counter()
+    speech_concern_sessions = 0
+    speech_features_list    = []
+    passive_flags_by_level  = {1: 0, 2: 0}  # count of sessions at each passive level
+
     for result in valid_sessions:
         scores   = result.get('scores') or {}
         features = result.get('features') or {}
@@ -469,22 +640,50 @@ def score_transcript_batch(
             if theme not in all_themes:
                 all_themes.append(theme)
 
+        # Clinical pattern aggregation
+        pattern = scores.get('clinical_pattern_type')
+        if pattern and pattern not in ('none_detected', None):
+            clinical_patterns[pattern] += 1
+
+        # Speech concern aggregation
+        if scores.get('speech_concern_flag'):
+            speech_concern_sessions += 1
+            sf = scores.get('speech_features')
+            if sf:
+                speech_features_list.append({
+                    'session_date': result.get('session_date'),
+                    **sf,
+                })
+
+        # Passive crisis level count (Level 1-2 non-blocking sessions)
+        level = result.get('crisis_level', 0)
+        if level in (1, 2):
+            passive_flags_by_level[level] += 1
+
     def _avg(lst):
         return round(sum(lst) / len(lst), 1) if lst else None
 
     return {
-        'session_count':         len(session_results),
-        'valid_session_count':   len(valid_sessions),
-        'crisis_sessions':       crisis_count,
-        'sessions_with_mood':    len(mood_estimates),
-        'mood_avg':              _avg(mood_estimates),
-        'mood_estimates':        mood_estimates,
-        'sleep_avg':             _avg(sleep_series),
-        'sleep_hours_series':    sleep_series,
-        'sleep_disruption_avg':  _avg(sleep_disruptions),
-        'stressor_count_total':  sum(stressor_counts),
-        'stressor_count_avg':    _avg(stressor_counts),
-        'medication_signals':    all_med_signals,
-        'symptom_mentions':      dict(all_symptoms),
-        'themes_aggregate':      all_themes,
+        'session_count':          len(session_results),
+        'valid_session_count':    len(valid_sessions),
+        'crisis_sessions':        crisis_count,
+        'sessions_with_mood':     len(mood_estimates),
+        'mood_avg':               _avg(mood_estimates),
+        'mood_estimates':         mood_estimates,
+        'sleep_avg':              _avg(sleep_series),
+        'sleep_hours_series':     sleep_series,
+        'sleep_disruption_avg':   _avg(sleep_disruptions),
+        'stressor_count_total':   sum(stressor_counts),
+        'stressor_count_avg':     _avg(stressor_counts),
+        'medication_signals':     all_med_signals,
+        'symptom_mentions':       dict(all_symptoms),
+        'themes_aggregate':       all_themes,
+        # Speech and pattern
+        'clinical_pattern_counts':    dict(clinical_patterns),
+        'dominant_pattern':           clinical_patterns.most_common(1)[0][0] if clinical_patterns else None,
+        'speech_concern_sessions':    speech_concern_sessions,
+        'speech_features_by_session': speech_features_list,
+        # Passive crisis signals (non-blocking but provider-relevant)
+        'passive_crisis_level_1_sessions': passive_flags_by_level[1],
+        'passive_crisis_level_2_sessions': passive_flags_by_level[2],
     }

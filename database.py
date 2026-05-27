@@ -140,6 +140,56 @@ def update_patient_profile(user_id, **kwargs):
         return False
 
 
+def get_patient_population_flags(patient_user_id: str) -> dict:
+    """Return the population_flags JSONB dict for a patient.
+
+    Used by transcript_engine.extract_features() to apply population-aware
+    crisis escalation modifiers. Returns an empty dict if the column is absent,
+    null, or the profile row doesn't exist yet.
+
+    Supported flag keys (all boolean):
+        adolescent, older_adult, veteran, prior_self_harm, serious_mental_illness
+    """
+    try:
+        response = supabase_admin.table('patient_profiles') \
+            .select('population_flags') \
+            .eq('user_id', str(patient_user_id)) \
+            .execute()
+        if response.data:
+            return response.data[0].get('population_flags') or {}
+        return {}
+    except Exception as e:
+        print(f"Error getting population flags for {patient_user_id}: {e}")
+        return {}
+
+
+def set_patient_population_flags(patient_user_id: str, flags: dict) -> bool:
+    """Upsert the population_flags JSONB column for a patient profile.
+
+    Merges the provided flags into any existing flags rather than replacing
+    the entire object, so callers can set individual keys without clobbering
+    others. Pass a key with value False/None to clear that flag.
+
+    Example:
+        set_patient_population_flags(uid, {'veteran': True})
+        set_patient_population_flags(uid, {'veteran': False})  # clears it
+    """
+    try:
+        # Fetch current flags first to merge
+        current = get_patient_population_flags(patient_user_id)
+        merged = {**current, **flags}
+        # Remove keys explicitly set to False/None to keep the dict clean
+        merged = {k: v for k, v in merged.items() if v}
+        supabase_admin.table('patient_profiles').upsert(
+            {'user_id': str(patient_user_id), 'population_flags': merged},
+            on_conflict='user_id',
+        ).execute()
+        return True
+    except Exception as e:
+        print(f"Error setting population flags for {patient_user_id}: {e}")
+        return False
+
+
 def assign_patient_to_provider(patient_user_id, provider_id):
     """Assign patient to provider. Pass provider_id=None to unlink."""
     try:
@@ -1374,11 +1424,42 @@ def _compute_checkin_scores(mood, stress, sleep_hours, ext, meds):
     else:
         s['nervous_system_load'] = None
 
-    # ── Crash Risk (sleep + NS load; nutrition omitted when absent) ─
+    # ── Nutrition Stability Score (spec §5) ───────────────────────
+    # +4 protein (≥7 srv), +2 (≥5 srv); +3 sugar (≤4 srv), +2 (≤6 srv);
+    # +3 hydration (≥80oz), +2 (≥60oz).  None when no nutrition data logged.
+    protein  = ext.get('protein_servings')
+    sugar    = ext.get('sugar_servings')
+    hydration_oz = ext.get('hydration_oz')
+    nut_available = any(v is not None for v in (protein, sugar, hydration_oz))
+    if nut_available:
+        nut = 0
+        if protein is not None:
+            p = float(protein)
+            nut += 4 if p >= 7 else (2 if p >= 5 else 0)
+        if sugar is not None:
+            sg = float(sugar)
+            nut += 3 if sg <= 4 else (2 if sg <= 6 else 0)
+        if hydration_oz is not None:
+            hz = float(hydration_oz)
+            nut += 3 if hz >= 80 else (2 if hz >= 60 else 0)
+        s['nutrition_stability'] = min(nut, 10)
+    else:
+        s['nutrition_stability'] = None
+
+    # ── Crash Risk (spec §5) ───────────────────────────────────────
+    # Formula: (SD × 0.4) + (NS × 0.4) + ((10 − Nutrition) × 0.2)
+    # Fallback when Nutrition absent: weight SD and NS equally at 0.5 each.
     ns = s['nervous_system_load']
     sd_val = s['sleep_disruption']
+    nut_val = s['nutrition_stability']
     if ns is not None and sd_val is not None:
-        s['crash_risk'] = round(min(float(sd_val) * 0.5 + float(ns) * 0.5, 10), 2)
+        if nut_val is not None:
+            s['crash_risk'] = round(
+                min(float(sd_val) * 0.4 + float(ns) * 0.4 + (10 - float(nut_val)) * 0.2, 10), 2
+            )
+        else:
+            # Nutrition not logged — distribute weight equally between SD and NS
+            s['crash_risk'] = round(min(float(sd_val) * 0.5 + float(ns) * 0.5, 10), 2)
     else:
         s['crash_risk'] = None
 
@@ -2701,8 +2782,11 @@ def check_safety_signals(patient_id, days=60):
     recency_days, alert_level (None|'concern').
     """
     try:
-        journals = get_journals(patient_id, limit=500)
-        checkins = get_checkins(patient_id, days)
+        # Apply the days window so stale signals don't surface as if recent (spec §18).
+        cutoff     = (date.today() - timedelta(days=days)).isoformat()
+        today_str  = date.today().isoformat()
+        journals   = get_journals_in_range(patient_id, cutoff, today_str)
+        checkins   = get_checkins(patient_id, days)
 
         signal_dates = []
 
@@ -2739,7 +2823,6 @@ def check_safety_signals(patient_id, days=60):
 
         most_recent   = signal_dates[-1]
         first_signal  = signal_dates[0]
-        today_str     = date.today().isoformat()
         recency_days  = (date.today() - datetime.strptime(most_recent, '%Y-%m-%d').date()).days
 
         return {
@@ -5112,15 +5195,15 @@ def get_appointment_synthesis(patient_id: str, appt_id: str) -> dict | None:
 # INTELLIGENCE LAYER — pivot_001_intelligence_layer
 #
 # These functions support the transcript-to-brief pipeline introduced in the
-# CognaSync pivot. They operate on the new tables defined in
+# CognaSync pivot. They operate on the tables defined in
 # migrations/pivot_001_intelligence_layer.sql.
 #
 # Design contracts:
-#   - supabase_admin is used for all writes (bypasses RLS; server-side only)
+#   - supabase_admin for all writes (bypasses RLS; server-side only)
 #   - All functions return None (or empty list) on failure, never raise
 #   - IDs returned as str(uuid) for JSON serialisation safety
-#   - Transcript text is stored verbatim; summaries and features are stored
-#     as JSONB — never modify clinical content in transit
+#   - Transcript text stored verbatim; features stored as JSONB
+#   - Function names match app.py call sites exactly (grep-safe)
 # ═══════════════════════════════════════════════════════════════════════════
 
 
@@ -5377,10 +5460,28 @@ def get_provider_briefs_for_patient(
         return []
 
 
+def record_brief_view(brief_id: str, provider_id: str) -> bool:
+    """
+    Insert a view event into provider_brief_views.
+    Called as a side effect of get_provider_brief_by_id. Never raises.
+    """
+    try:
+        supabase_admin.table('provider_brief_views').insert({
+            'brief_id':   brief_id,
+            'provider_id': provider_id,
+            'viewed_at':  datetime.utcnow().isoformat(),
+        }).execute()
+        return True
+    except Exception as e:
+        print(f"Error in record_brief_view: {e}")
+        return False
+
+
 def get_provider_brief_by_id(brief_id: str, provider_id: str) -> dict | None:
     """
     Fetch a single brief by ID, verifying it belongs to the requesting provider.
     Returns None if not found or access denied.
+    Records a view event as a side effect (never raises).
     """
     try:
         result = (
@@ -5392,7 +5493,10 @@ def get_provider_brief_by_id(brief_id: str, provider_id: str) -> dict | None:
             .single()
             .execute()
         )
-        return result.data or None
+        row = result.data or None
+        if row:
+            record_brief_view(brief_id, provider_id)
+        return row
     except Exception as e:
         print(f"Error in get_provider_brief_by_id: {e}")
         return None

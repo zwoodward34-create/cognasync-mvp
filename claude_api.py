@@ -1,6 +1,9 @@
+import logging
 import os
 import json
 import anthropic
+
+logger = logging.getLogger(__name__)
 
 CLAUDE_MODEL = os.environ.get('CLAUDE_MODEL', 'claude-haiku-4-5-20251001')
 
@@ -33,6 +36,268 @@ CRISIS_KEYWORDS = [
     'unalive', 'unaliving', 'kms', 'sewerslide',
 ]
 
+# ── Graduated crisis scoring — five-level system ──────────────────────────
+# Each key maps feature names to the keyword phrases that signal that feature.
+# Weights: direct_intent=4, specific_plan=3, means_access=3,
+#          recent_self_harm=3, preparatory_behavior=2, recurrent_ideation=2,
+#          cannot_safety_plan=2, hopelessness=1, worsening_distress=1
+#
+# Level 4 (Imminent): adjusted_score >= 8 OR (direct_intent AND (plan OR means))
+# Level 3 (High Risk): adjusted_score >= 6
+# Level 2 (Elevated):  adjusted_score >= 3
+# Level 1 (Passive):   adjusted_score >= 1
+# Level 0 (None):      adjusted_score == 0
+#
+# Used by score_crisis() for provider/transcript channels.
+# Patient-facing channels continue to use _check_crisis() (binary, maximum caution).
+
+_CRISIS_FEATURE_KEYWORDS = {
+    'direct_intent': [
+        'kill myself', 'take my own life', 'taking my own life',
+        'end my life', 'ending my life', 'want to die', 'want to end it all',
+        'planning to hurt myself', 'going to hurt myself', 'going to kill myself',
+    ],
+    'specific_plan': [
+        'have a plan', 'made a plan', 'planning to use', 'going to use',
+        'know exactly how', 'figured out how', 'know how i would',
+        'with a gun', 'with pills', 'with a knife', 'overdose on',
+        'jump from', 'hang myself', 'step in front of',
+    ],
+    'means_access': [
+        'have a gun', 'have access to a gun', 'have pills', 'stockpiled',
+        'have the means', 'already have what i need', 'i have the',
+        'bought a', 'bought pills',
+    ],
+    'recent_self_harm': [
+        'tried before', 'attempted before', 'last time i tried', 'hurt myself before',
+        'tried to die', 'prior attempt', 'woke up in the hospital after',
+        'they found me', 'cut myself', 'burned myself', 'overdosed before',
+    ],
+    'preparatory_behavior': [
+        'giving away my', 'gave away my', 'writing a note', 'wrote a note',
+        'saying goodbye', 'said my goodbyes', 'last time i see',
+        'updating my will', 'changed my will', 'settled my affairs',
+        'put my things in order', 'gave my stuff away',
+    ],
+    'recurrent_ideation': [
+        'keep thinking about', 'thinking about it again', 'still thinking about dying',
+        'thoughts keep coming back', "suicidal thoughts", "thoughts of suicide",
+        "thoughts of death", "death thoughts", "ideation", "can't stop thinking about it",
+        'been having these thoughts for', 'thoughts of ending',
+    ],
+    'cannot_safety_plan': [
+        "can't promise", "won't promise", "can't agree to keep myself safe",
+        "won't agree", "can't keep myself safe", "don't think i can stay safe",
+        "not sure i can stay safe", "can't say i won't",
+    ],
+    'hopelessness': [
+        'no point', 'pointless', 'hopeless', 'no hope', 'never get better',
+        'nothing will change', 'things will never improve', 'no future',
+        'no reason to continue', "what's the point of living",
+        'better off dead', 'better off without me', 'everyone would be better off',
+        'world would be better without me', 'burden to everyone',
+        'wish i was dead', 'wish i wasn\'t here', "don't want to be here",
+        "don't want to live", "don't want to be alive", 'no reason to live',
+    ],
+    'worsening_distress': [
+        'getting worse', 'worse than before', 'harder and harder',
+        "can't take it anymore", 'reached my limit', 'at my limit',
+        "can't do this anymore", "don't know how much longer i can",
+        "can't go on like this", 'spiraling', 'falling apart',
+    ],
+}
+
+# Population modifiers — passive-signal amplification per group.
+# These only raise the adjusted score when raw_score is in the passive range.
+# Direct intent / plan / means always produce Level 3+ regardless.
+_POPULATION_PASSIVE_MODIFIER = {
+    'adolescent':             1,
+    'older_adult':            1,
+    'veteran':                1,
+    'prior_self_harm':        1,
+    'serious_mental_illness': 1,
+}
+
+# Population-specific amplifier keywords — additional contextual signals
+# that add +1 to the population modifier when present alongside passive signals.
+_POPULATION_AMPLIFIERS = {
+    'adolescent': [
+        'failing school', 'kicked out', 'parents fighting', 'being bullied',
+        'not eating', 'missing school', 'kicked off the team', 'no friends left',
+    ],
+    'older_adult': [
+        'giving things away', 'gave things away', 'changed my will',
+        'chronic pain', "can't walk", "can't take care of myself",
+        'no one visits', 'completely alone', 'no family left', 'memory problems',
+        'neglecting medications', 'stopped eating',
+    ],
+    'veteran': [
+        'deployment', 'combat', 'fellow soldier', 'my unit',
+        'firearm', 'have a weapon', 'ptsd', 'nightmares', 'flashback',
+        "can't reintegrate", "don't fit in anymore", 'back home feels wrong',
+        'mission', 'trauma from service',
+    ],
+    'prior_self_harm': [
+        'like last time', 'same as before', 'similar to when i',
+        'before my attempt', 'after i got out of the hospital',
+        'when i was in the hospital',
+    ],
+    'serious_mental_illness': [
+        'voices', 'hearing things', 'seeing things',
+        'not taking my medication', 'stopped my medication', 'off my meds',
+        'manic episode', 'psychotic episode', "can't tell what's real",
+    ],
+}
+
+CRISIS_LEVEL_LABELS = {
+    0: 'No apparent risk',
+    1: 'Passive concern',
+    2: 'Elevated concern',
+    3: 'High risk',
+    4: 'Imminent danger',
+}
+
+# Provider-facing Mode D alert text per crisis level.
+# Never shown to patients. Never says "confirmed" — always routes to human review.
+CRISIS_LEVEL_NOTES = {
+    1: (
+        "🔵 Passive Concern — Language patterns suggesting hopelessness or worsening "
+        "distress detected. No direct intent or plan present. Recommend monitoring and "
+        "clinical discussion at next session."
+    ),
+    2: (
+        "🟡 Elevated Concern — Passive ideation or multiple distress signals detected. "
+        "Possible self-harm risk detected. Immediate human review recommended before "
+        "next appointment. Safety planning discussion advised."
+    ),
+    3: (
+        "🔴 High Risk — Language consistent with self-harm intent, plan, or means access "
+        "detected. Immediate human review recommended. Emergency escalation protocol "
+        "should be considered. 988 Suicide & Crisis Lifeline: call or text 988."
+    ),
+    4: (
+        "🚨 Imminent Danger — Credible immediate self-harm intent detected. "
+        "Emergency response protocol required. "
+        "988 Suicide & Crisis Lifeline: call or text 988. Emergency: 911."
+    ),
+}
+
+
+def _score_crisis_features(text: str, population_flags: dict | None = None) -> dict:
+    """
+    Scan text for crisis signal features and return a structured result.
+
+    Args:
+        text:             The text to scan.
+        population_flags: Optional {population_name: bool} indicating which
+                          population groups apply to this patient.
+                          Valid keys: 'adolescent', 'older_adult', 'veteran',
+                          'prior_self_harm', 'serious_mental_illness'
+
+    Returns:
+        {
+            'level':             int (0-4),
+            'score':             int (raw weighted score),
+            'adjusted_score':    int (score after population modifier),
+            'features':          dict of {feature_name: bool},
+            'population_modifier': int,
+        }
+
+    Level assignment (spec §22):
+        Level 4: adjusted_score >= 8 OR (direct_intent AND (specific_plan OR means_access))
+        Level 3: adjusted_score >= 6
+        Level 2: adjusted_score >= 3
+        Level 1: adjusted_score >= 1
+        Level 0: adjusted_score == 0
+    """
+    lower = text.lower()
+    features_found = {}
+    raw_score = 0
+
+    weights = {
+        'direct_intent':         4,
+        'specific_plan':         3,
+        'means_access':          3,
+        'recent_self_harm':      3,
+        'preparatory_behavior':  2,
+        'recurrent_ideation':    2,
+        'cannot_safety_plan':    2,
+        'hopelessness':          1,
+        'worsening_distress':    1,
+    }
+
+    for feature, keywords in _CRISIS_FEATURE_KEYWORDS.items():
+        detected = any(kw in lower for kw in keywords)
+        features_found[feature] = detected
+        if detected:
+            raw_score += weights.get(feature, 0)
+
+    # Population modifier — applies only to passive-range signals
+    pop_modifier = 0
+    if population_flags:
+        for pop, active in population_flags.items():
+            if active and pop in _POPULATION_PASSIVE_MODIFIER:
+                pop_modifier += _POPULATION_PASSIVE_MODIFIER[pop]
+                amplifiers = _POPULATION_AMPLIFIERS.get(pop, [])
+                if any(kw in lower for kw in amplifiers):
+                    pop_modifier += 1
+
+    pop_modifier = min(pop_modifier, 2)  # cap total modifier at +2
+    adjusted_score = raw_score + pop_modifier
+
+    # Level assignment — direct intent + plan/means is always Level 4 regardless of score
+    direct = features_found.get('direct_intent', False)
+    plan   = features_found.get('specific_plan', False)
+    means  = features_found.get('means_access', False)
+
+    if adjusted_score >= 8 or (direct and (plan or means)):
+        level = 4
+    elif adjusted_score >= 6:
+        level = 3
+    elif adjusted_score >= 3:
+        level = 2
+    elif adjusted_score >= 1:
+        level = 1
+    else:
+        level = 0
+
+    return {
+        'level':               level,
+        'score':               raw_score,
+        'adjusted_score':      adjusted_score,
+        'features':            features_found,
+        'population_modifier': pop_modifier,
+    }
+
+
+def score_crisis(text: str, population_flags: dict | None = None) -> dict:
+    """
+    Public API for graduated crisis scoring. For provider/transcript channels.
+
+    Returns the full crisis assessment dict from _score_crisis_features().
+    Safe to call from any route. Never raises.
+
+    Patient-facing channels use _check_crisis() (binary, maximum caution).
+    This function is for the provider intelligence layer where graduated
+    routing is appropriate and clinical judgment is always in the loop.
+
+    Usage:
+        result = score_crisis(transcript_text, population_flags)
+        if result['level'] >= 3:
+            # route to emergency protocol
+        elif result['level'] == 2:
+            # priority queue for provider review
+        elif result['level'] == 1:
+            # silent context flag in Mode C brief
+    """
+    if not text or not isinstance(text, str):
+        return {
+            'level': 0, 'score': 0, 'adjusted_score': 0,
+            'features': {}, 'population_modifier': 0,
+        }
+    return _score_crisis_features(text, population_flags=population_flags)
+
+
 CRISIS_RESPONSE = (
     "I noticed your entry may contain thoughts of self-harm. "
     "If you're struggling, please reach out:\n\n"
@@ -48,9 +313,12 @@ FORBIDDEN_PATTERNS = [
     ('diagnosed with', 'this pattern'),
     ('you are depressed', 'you\'ve described feeling down'),
     ('you are anxious', 'you\'ve noted anxiety'),
+    ('you are manic', 'you\'ve described an elevated period'),
     ('stop taking', 'discuss with your provider changes to'),
+    ('reduce your dose', 'discuss dosing with your provider'),
     ('you should take', 'some people find it helpful to discuss'),
     ('this will make you better', 'many people find this approach helpful'),
+    ('this explains your', 'this pattern coincides with'),
 ]
 
 
@@ -72,6 +340,10 @@ def _sanitize_output(text):
     lower = text.lower()
     for forbidden, _ in FORBIDDEN_PATTERNS:
         if forbidden in lower:
+            logger.warning(
+                "FORBIDDEN_PATTERN caught in output: %r — output suppressed.",
+                forbidden,
+            )
             return None
     return text
 
@@ -661,7 +933,7 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         f"{what_worked_section}"
     )
 
-    raw = _call_claude(summary_system, user_content, max_tokens=1000)
+    raw = _call_claude(summary_system, user_content, max_tokens=900)   # spec §15: 900 for Mode B/C
     clean = _sanitize_output(raw)
     if clean is None:
         clean = (
@@ -929,7 +1201,7 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         f"{therapy_safety_section}"
     )
 
-    raw = _call_claude(summary_system, user_content, max_tokens=1000)
+    raw = _call_claude(summary_system, user_content, max_tokens=900)   # spec §15: 900 for Mode B/C
     clean = _sanitize_output(raw)
     if clean is None:
         clean = (

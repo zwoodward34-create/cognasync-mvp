@@ -367,10 +367,14 @@ def _background_process_audio(
 
     # ── Feature extraction ────────────────────────────────────────
     db.update_clinical_session_status(session_id, 'extracting')
+    # Fetch population flags so the graduated crisis scorer (spec §23) can apply
+    # population-aware modifiers. Returns {} if no flags are set — safe default.
+    population_flags = db.get_patient_population_flags(patient_id)
     extraction = extract_features(
         transcript_text=transcript_text,
         session_date=session_date,
         session_type=session_type,
+        population_flags=population_flags or None,
     )
 
     # ── Persist features ──────────────────────────────────────────

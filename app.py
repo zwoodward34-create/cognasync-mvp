@@ -3201,10 +3201,12 @@ def api_intel_upload_session(patient_id):
 
     # 2. Extract features (crisis detection runs inside extract_features)
     from transcript_engine import extract_features
+    population_flags = db.get_patient_population_flags(patient_id)
     extraction = extract_features(
         transcript_text=transcript,
         session_date=session_date,
         session_type=session_type,
+        population_flags=population_flags or None,
     )
 
     # 3. Persist features
