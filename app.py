@@ -5,7 +5,7 @@ import json
 import re
 import hmac
 from datetime import date, timedelta
-from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, Response
+from flask import Flask, request, jsonify, render_template, render_template_string, redirect, url_for, session, flash, Response
 from flask_cors import CORS
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
@@ -3405,6 +3405,286 @@ def api_intel_get_brief(brief_id):
 
 
 # ── end intelligence layer routes ────────────────────────────────────────────
+
+
+# ── SMS / Voice Note routes ───────────────────────────────────────────────────
+
+import sms_engine as _sms
+
+def _validate_checkin_token(token_str):
+    """Return token record dict or None. Does not mark used."""
+    from datetime import datetime, timezone
+    try:
+        res = db.supabase_admin.table('checkin_tokens').select('*').eq(
+            'token', token_str).limit(1).execute()
+        if not res.data:
+            return None
+        tok = res.data[0]
+        if tok.get('used_at'):
+            return None
+        expires = tok.get('expires_at', '')
+        if expires:
+            exp_dt = datetime.fromisoformat(expires.replace('Z', '+00:00'))
+            if datetime.now(timezone.utc) > exp_dt:
+                return None
+        return tok
+    except Exception:
+        return None
+
+
+@app.route('/checkin/go/<token_str>')
+def checkin_magic_link(token_str):
+    """Magic link entry point from SMS. Validates token then redirects to check-in."""
+    tok = _validate_checkin_token(token_str)
+    if not tok:
+        return render_template_string("""
+        <!doctype html><html><head><title>Link Invalid</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>body{font-family:sans-serif;text-align:center;padding:60px 24px;color:#374151}
+        h2{color:#dc2626}p{color:#6b7280}</style></head><body>
+        <h2>This link is no longer valid</h2>
+        <p>Check-in links expire after 48 hours and can only be used once.</p>
+        <p>Your provider can send a new link if needed.</p>
+        </body></html>"""), 410
+    # Mark used
+    db.supabase_admin.table('checkin_tokens').update(
+        {'used_at': 'now()'}
+    ).eq('token', token_str).execute()
+    appt_id = tok.get('appointment_id')
+    qs = '?mode=sms'
+    if appt_id:
+        qs += f'&appointment_id={appt_id}'
+    return redirect(f'/checkin{qs}')
+
+
+@app.route('/voice/<token_str>')
+def voice_note_page(token_str):
+    """Patient-facing voice note recording page. No login required."""
+    tok = _validate_checkin_token(token_str)
+    if not tok:
+        return render_template_string("""
+        <!doctype html><html><head><title>Link Invalid</title>
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <style>body{font-family:sans-serif;text-align:center;padding:60px 24px;color:#374151}
+        h2{color:#dc2626}p{color:#6b7280}</style></head><body>
+        <h2>This link is no longer valid</h2>
+        <p>Voice note links expire after 48 hours.</p>
+        </body></html>"""), 410
+    prompt = tok.get('voice_prompt') or _sms.DEFAULT_VOICE_PROMPTS['default']
+    return render_template('patient/voice_note.html',
+                           token=token_str,
+                           guiding_question=prompt)
+
+
+@app.route('/api/voice/submit/<token_str>', methods=['POST'])
+def api_voice_submit(token_str):
+    """Receive patient voice note audio. No login required."""
+    tok = _validate_checkin_token(token_str)
+    if not tok:
+        return jsonify({'error': 'Invalid or expired link'}), 410
+
+    if 'audio' not in request.files:
+        return jsonify({'error': 'No audio file provided'}), 400
+
+    audio_file = request.files['audio']
+    audio_bytes = audio_file.read()
+    if len(audio_bytes) > 10 * 1024 * 1024:
+        return jsonify({'error': 'Audio file too large (max 10 MB)'}), 413
+
+    patient_id = tok['patient_id']
+    file_name = f"{patient_id}/{token_str}.webm"
+
+    # Upload to Supabase Storage
+    audio_url = None
+    try:
+        db.supabase_admin.storage.from_('voice-notes').upload(
+            path=file_name,
+            file=audio_bytes,
+            file_options={'content-type': audio_file.mimetype or 'audio/webm'},
+        )
+        audio_url = db.supabase_admin.storage.from_('voice-notes').get_public_url(file_name)
+    except Exception as e:
+        app.logger.error(f'[voice] Storage upload failed: {e}')
+        # Continue — we can still store the note without a URL
+
+    # Insert voice_notes row
+    vn_row = {
+        'patient_id':        patient_id,
+        'token_id':          tok['id'],
+        'guiding_question':  tok.get('voice_prompt'),
+        'audio_url':         audio_url,
+        'processing_status': 'pending',
+    }
+    if tok.get('appointment_id'):
+        vn_row['appointment_id'] = tok['appointment_id']
+    if tok.get('provider_id'):
+        vn_row['provider_id'] = tok['provider_id']
+
+    res = db.supabase_admin.table('voice_notes').insert(vn_row).execute()
+    voice_note_id = res.data[0]['id'] if res.data else None
+
+    # Mark token used
+    db.supabase_admin.table('checkin_tokens').update(
+        {'used_at': 'now()'}
+    ).eq('token', token_str).execute()
+
+    # Background transcription — reuses audio_engine transcription pipeline
+    if voice_note_id and audio_bytes:
+        import threading as _threading
+        _audio_bytes_snapshot = audio_bytes
+        _mime_snapshot = audio_file.mimetype or 'audio/webm'
+        def _transcribe():
+            try:
+                import uuid as _uuid
+                from audio_engine import transcribe_audio_file
+                result = transcribe_audio_file(
+                    file_bytes=_audio_bytes_snapshot,
+                    filename='voice_note.webm',
+                    patient_id=patient_id,
+                    session_id=str(_uuid.uuid4()),
+                )
+                if result.get('status') == 'completed' and result.get('text'):
+                    db.supabase_admin.table('voice_notes').update({
+                        'transcript':        result['text'],
+                        'processing_status': 'complete',
+                    }).eq('id', voice_note_id).execute()
+                else:
+                    db.supabase_admin.table('voice_notes').update({
+                        'processing_status': 'error',
+                        'processing_error':  result.get('error', 'Transcription failed'),
+                    }).eq('id', voice_note_id).execute()
+            except Exception as ex:
+                app.logger.error(f'[voice] Transcription failed: {ex}')
+                db.supabase_admin.table('voice_notes').update({
+                    'processing_status': 'error',
+                    'processing_error':  str(ex),
+                }).eq('id', voice_note_id).execute()
+        _threading.Thread(target=_transcribe, daemon=True).start()
+
+    return jsonify({'ok': True, 'voice_note_id': voice_note_id}), 201
+
+
+@app.route('/api/sms/inbound', methods=['POST'])
+def api_sms_inbound():
+    """Twilio inbound SMS webhook. Handles medication Y/N replies."""
+    from_number = request.form.get('From', '')
+    body        = request.form.get('Body', '').strip()
+
+    taken = _sms.parse_medication_reply(body)
+    if taken is not None and from_number:
+        # Find patient by phone number
+        try:
+            prof_res = db.supabase_admin.table('profiles').select(
+                'id').eq('phone_number', from_number).limit(1).execute()
+            if prof_res.data:
+                patient_id = prof_res.data[0]['id']
+                # Update most recent medication SMS log
+                log_res = db.supabase_admin.table('medication_sms_logs').select(
+                    'id').eq('patient_id', patient_id).is_(
+                    'replied_at', 'null').order('sent_at', desc=True).limit(1).execute()
+                if log_res.data:
+                    db.supabase_admin.table('medication_sms_logs').update({
+                        'replied_at': 'now()',
+                        'taken':      taken,
+                        'raw_reply':  body[:200],
+                    }).eq('id', log_res.data[0]['id']).execute()
+        except Exception as e:
+            app.logger.error(f'[sms_inbound] Error processing reply: {e}')
+
+    # Always return empty TwiML
+    return app.response_class(
+        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        mimetype='text/xml',
+    )
+
+
+@app.route('/api/internal/send-appointment-sms', methods=['POST', 'GET'])
+def api_send_appointment_sms():
+    """Cron endpoint: send check-in SMS for appointments in the next 24-48 hours."""
+    secret = request.headers.get('X-Internal-Secret', '')
+    if not _INTERNAL_SECRET or secret != _INTERNAL_SECRET:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    dry_run = request.args.get('dry_run', '').lower() == 'true'
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    window_start = now + timedelta(hours=24)
+    window_end   = now + timedelta(hours=48)
+
+    try:
+        appt_res = db.supabase_admin.table('provider_appointments').select(
+            'id, patient_id, provider_id, appointment_date'
+        ).gte('appointment_date', window_start.date().isoformat()).lte(
+            'appointment_date', window_end.date().isoformat()
+        ).execute()
+        appointments = appt_res.data or []
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    results = []
+    for appt in appointments:
+        patient_id = appt['patient_id']
+        try:
+            prof = db.supabase_admin.table('profiles').select(
+                'full_name, phone_number'
+            ).eq('id', patient_id).single().execute()
+            phone = (prof.data or {}).get('phone_number')
+            name  = (prof.data or {}).get('full_name', '')
+            if not phone:
+                results.append({'patient_id': patient_id, 'action': 'skipped', 'reason': 'no phone'})
+                continue
+            if dry_run:
+                results.append({'patient_id': patient_id, 'action': 'dry_run', 'phone': phone[-4:]})
+                continue
+            token = _sms.create_checkin_token(
+                patient_id=patient_id,
+                appointment_id=appt['id'],
+                provider_id=appt.get('provider_id'),
+            )
+            res = _sms.send_checkin_sms(phone, name, token)
+            results.append({'patient_id': patient_id, 'action': 'sent' if res.get('ok') else 'failed'})
+        except Exception as e:
+            results.append({'patient_id': patient_id, 'action': 'error', 'error': str(e)})
+
+    return jsonify({'sent': sum(1 for r in results if r.get('action') == 'sent'),
+                   'skipped': sum(1 for r in results if r.get('action') == 'skipped'),
+                   'dry_run': dry_run, 'results': results})
+
+
+@app.route('/api/provider/patient/<patient_id>/send-checkin-sms', methods=['POST'])
+def api_send_patient_checkin_sms(patient_id):
+    """Provider manually triggers check-in SMS for a specific patient."""
+    provider, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(provider['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+
+    data         = request.get_json(silent=True) or {}
+    voice_prompt = data.get('voice_prompt')
+
+    prof = db.supabase_admin.table('profiles').select(
+        'full_name, phone_number'
+    ).eq('id', patient_id).single().execute()
+    phone = (prof.data or {}).get('phone_number')
+    name  = (prof.data or {}).get('full_name', '')
+
+    if not phone:
+        return jsonify({'error': 'Patient has no phone number on file'}), 400
+
+    token = _sms.create_checkin_token(
+        patient_id=patient_id,
+        provider_id=provider['id'],
+        voice_prompt=voice_prompt,
+    )
+    result = _sms.send_checkin_sms(phone, name, token, voice_prompt=voice_prompt)
+
+    if not result.get('ok'):
+        return jsonify({'error': result.get('error', 'SMS send failed')}), 500
+
+    return jsonify({'ok': True, 'phone_last4': phone[-4:] if len(phone) >= 4 else '****'})
+
+# ── end SMS / Voice Note routes ───────────────────────────────────────────────
 
 
 if __name__ == '__main__':

@@ -1,0 +1,219 @@
+{% extends "layout.html" %}
+{% block title %}Voice Note — CognaSync{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block full_page %}
+<div class="voice-note-shell">
+
+  <div class="voice-brand">
+    <div class="voice-logo">CS</div>
+    <span class="voice-brand-name">CognaSync</span>
+  </div>
+
+  <div id="state-idle">
+    <div class="voice-question-card">
+      <p class="voice-question-label">Your provider wants to know:</p>
+      <blockquote class="voice-question-text">{{ guiding_question or "How have you been feeling since your last appointment?" }}</blockquote>
+    </div>
+    <p class="voice-instructions">Tap the button below and speak for up to 60 seconds. We'll transcribe your response and share it with your provider before your appointment.</p>
+    <button id="btn-record" class="voice-record-btn" aria-label="Start recording">
+      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+        <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+        <line x1="12" y1="19" x2="12" y2="23"/>
+        <line x1="8" y1="23" x2="16" y2="23"/>
+      </svg>
+      Start Recording
+    </button>
+  </div>
+
+  <div id="state-recording" style="display:none">
+    <canvas id="waveform" width="320" height="60" style="display:block;margin:0 auto 16px;opacity:0.7"></canvas>
+    <div class="voice-timer" id="timer">1:00</div>
+    <button id="btn-stop" class="voice-stop-btn">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>
+      Stop Recording
+    </button>
+  </div>
+
+  <div id="state-review" style="display:none">
+    <p class="voice-review-label">Review your recording</p>
+    <audio id="playback" controls style="width:100%;margin-bottom:16px"></audio>
+    <div class="voice-review-actions">
+      <button id="btn-rerecord" class="btn btn-secondary">Re-record</button>
+      <button id="btn-submit" class="btn btn-primary">Submit Voice Note</button>
+    </div>
+  </div>
+
+  <div id="state-uploading" style="display:none">
+    <div class="voice-uploading">
+      <div class="voice-spinner"></div>
+      <p>Sending your voice note&hellip;</p>
+    </div>
+  </div>
+
+  <div id="state-done" style="display:none">
+    <div class="voice-done">
+      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#16a34a" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <polyline points="8 12 11 15 16 9"/>
+      </svg>
+      <h2>Voice note received</h2>
+      <p>Your provider will have it before your appointment. You can close this page.</p>
+    </div>
+  </div>
+
+  <div id="state-error" style="display:none">
+    <div class="voice-error">
+      <p id="error-msg">Something went wrong. Please try again.</p>
+      <button id="btn-retry" class="btn btn-secondary">Try again</button>
+    </div>
+  </div>
+
+</div>
+
+<style>
+.voice-note-shell { max-width: 480px; margin: 40px auto; padding: 24px; font-family: inherit; }
+.voice-brand { display: flex; align-items: center; gap: 10px; margin-bottom: 32px; }
+.voice-logo { width: 36px; height: 36px; background: #4f46e5; color: #fff; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 14px; }
+.voice-brand-name { font-weight: 700; font-size: 18px; color: #111; }
+.voice-question-card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 12px; padding: 20px 24px; margin-bottom: 24px; }
+.voice-question-label { font-size: 12px; font-weight: 600; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin: 0 0 8px; }
+.voice-question-text { font-size: 18px; line-height: 1.5; color: #1e293b; font-style: italic; margin: 0; border-left: 3px solid #4f46e5; padding-left: 16px; }
+.voice-instructions { color: #64748b; font-size: 14px; line-height: 1.6; margin-bottom: 28px; }
+.voice-record-btn { display: flex; align-items: center; gap: 10px; background: #dc2626; color: #fff; border: none; border-radius: 50px; padding: 14px 28px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background .15s; }
+.voice-record-btn:hover { background: #b91c1c; }
+.voice-timer { font-size: 48px; font-weight: 700; color: #dc2626; text-align: center; font-variant-numeric: tabular-nums; margin-bottom: 20px; }
+.voice-stop-btn { display: flex; align-items: center; gap: 8px; background: #1e293b; color: #fff; border: none; border-radius: 50px; padding: 12px 24px; font-size: 15px; font-weight: 600; cursor: pointer; margin: 0 auto; }
+.voice-review-label { font-size: 15px; color: #475569; margin-bottom: 12px; }
+.voice-review-actions { display: flex; gap: 12px; }
+.voice-uploading, .voice-done, .voice-error { text-align: center; padding: 40px 0; }
+.voice-done h2 { margin: 16px 0 8px; color: #15803d; }
+.voice-done p, .voice-error p { color: #64748b; }
+.voice-spinner { width: 36px; height: 36px; border: 3px solid #e2e8f0; border-top-color: #4f46e5; border-radius: 50%; animation: spin .7s linear infinite; margin: 0 auto 16px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+</style>
+
+<script>
+(function () {
+  const TOKEN = {{ token | tojson }};
+  const SUBMIT_URL = '/api/voice/submit/' + TOKEN;
+  const MAX_SECONDS = 60;
+
+  let mediaRecorder, chunks = [], audioBlob, timerInterval, secondsLeft = MAX_SECONDS;
+  let analyser, animFrame;
+
+  const states = ['idle','recording','review','uploading','done','error'];
+  function show(s) {
+    states.forEach(function(st) {
+      document.getElementById('state-' + st).style.display = st === s ? '' : 'none';
+    });
+  }
+
+  // ── Waveform ────────────────────────────────────────────────────────────────
+  function drawWaveform(stream) {
+    const ctx = new AudioContext();
+    const src = ctx.createMediaStreamSource(stream);
+    analyser = ctx.createAnalyser();
+    analyser.fftSize = 256;
+    src.connect(analyser);
+    const buf = new Uint8Array(analyser.frequencyBinCount);
+    const canvas = document.getElementById('waveform');
+    const c = canvas.getContext('2d');
+    function draw() {
+      animFrame = requestAnimationFrame(draw);
+      analyser.getByteFrequencyData(buf);
+      c.clearRect(0, 0, canvas.width, canvas.height);
+      const barW = canvas.width / buf.length * 2;
+      let x = 0;
+      for (let i = 0; i < buf.length; i++) {
+        const h = buf[i] / 255 * canvas.height;
+        c.fillStyle = '#dc2626';
+        c.fillRect(x, canvas.height - h, barW, h);
+        x += barW + 1;
+      }
+    }
+    draw();
+  }
+
+  // ── Timer ────────────────────────────────────────────────────────────────────
+  function startTimer() {
+    secondsLeft = MAX_SECONDS;
+    updateTimer();
+    timerInterval = setInterval(function() {
+      secondsLeft--;
+      updateTimer();
+      if (secondsLeft <= 0) stopRecording();
+    }, 1000);
+  }
+  function updateTimer() {
+    const m = Math.floor(secondsLeft / 60);
+    const s = secondsLeft % 60;
+    document.getElementById('timer').textContent = m + ':' + String(s).padStart(2, '0');
+  }
+
+  // ── Record ────────────────────────────────────────────────────────────────────
+  document.getElementById('btn-record').addEventListener('click', async function() {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chunks = [];
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus' : 'audio/mp4';
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+      mediaRecorder.ondataavailable = function(e) { if (e.data.size > 0) chunks.push(e.data); };
+      mediaRecorder.onstop = function() {
+        stream.getTracks().forEach(function(t) { t.stop(); });
+        cancelAnimationFrame(animFrame);
+        audioBlob = new Blob(chunks, { type: mime });
+        document.getElementById('playback').src = URL.createObjectURL(audioBlob);
+        show('review');
+      };
+      mediaRecorder.start(250);
+      drawWaveform(stream);
+      startTimer();
+      show('recording');
+    } catch (e) {
+      document.getElementById('error-msg').textContent = 'Microphone access denied. Please allow mic access and try again.';
+      show('error');
+    }
+  });
+
+  function stopRecording() {
+    clearInterval(timerInterval);
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  }
+
+  document.getElementById('btn-stop').addEventListener('click', stopRecording);
+
+  document.getElementById('btn-rerecord').addEventListener('click', function() {
+    audioBlob = null; chunks = [];
+    show('idle');
+  });
+
+  // ── Submit ────────────────────────────────────────────────────────────────────
+  document.getElementById('btn-submit').addEventListener('click', async function() {
+    if (!audioBlob) return;
+    show('uploading');
+    try {
+      const fd = new FormData();
+      fd.append('audio', audioBlob, 'voice_note.webm');
+      const res = await fetch(SUBMIT_URL, { method: 'POST', body: fd });
+      if (res.ok) {
+        show('done');
+      } else {
+        const err = await res.json().catch(function() { return {}; });
+        document.getElementById('error-msg').textContent = err.error || 'Upload failed. Please try again.';
+        show('error');
+      }
+    } catch (e) {
+      document.getElementById('error-msg').textContent = 'Network error. Please check your connection.';
+      show('error');
+    }
+  });
+
+  document.getElementById('btn-retry').addEventListener('click', function() { show('idle'); });
+
+  show('idle');
+})();
+</script>
+{% endblock %}
