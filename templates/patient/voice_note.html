@@ -1,0 +1,452 @@
+{% extends "layout.html" %}
+{% block title %}Voice Note — CognaSync{% endblock %}
+{% block sidebar %}{% endblock %}
+
+{% block full_page %}
+<style>
+.vn-shell {
+  min-height: 100vh;
+  background: var(--bg);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 40px 20px 60px;
+}
+
+.vn-card {
+  width: 100%;
+  max-width: 480px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.vn-brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.vn-body {
+  padding: 28px 24px;
+}
+
+/* Question card */
+.vn-question-card {
+  background: var(--bg);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 18px 20px;
+  margin-bottom: 20px;
+}
+
+.vn-question-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.vn-question-text {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 1.1rem;
+  line-height: 1.5;
+  color: var(--text);
+  margin: 0;
+}
+
+.vn-instructions {
+  font-size: 0.855rem;
+  line-height: 1.6;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+
+/* Record button */
+.vn-record-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  background: var(--red);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius);
+  padding: 14px 20px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+.vn-record-btn:hover { opacity: 0.88; }
+
+/* Waveform + timer */
+.vn-waveform-wrap {
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  background: var(--bg);
+  padding: 12px;
+  margin-bottom: 16px;
+  overflow: hidden;
+}
+
+.vn-timer {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 3rem;
+  font-weight: 400;
+  color: var(--red);
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  margin-bottom: 20px;
+  line-height: 1;
+}
+
+.vn-recording-label {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--red);
+  margin-bottom: 16px;
+}
+
+.vn-recording-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--red);
+  border-radius: 50%;
+  animation: vn-pulse 1s ease-in-out infinite;
+}
+
+@keyframes vn-pulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.25; }
+}
+
+/* Stop button */
+.vn-stop-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 100%;
+  background: var(--text);
+  color: var(--surface);
+  border: none;
+  border-radius: var(--radius);
+  padding: 12px 20px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: opacity var(--transition);
+}
+
+.vn-stop-btn:hover { opacity: 0.85; }
+
+/* Review state */
+.vn-review-label {
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.vn-audio-player {
+  width: 100%;
+  margin-bottom: 16px;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+}
+
+.vn-review-actions {
+  display: flex;
+  gap: 10px;
+}
+
+/* Uploading / done / error states */
+.vn-status-block {
+  text-align: center;
+  padding: 32px 0;
+}
+
+.vn-spinner {
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--border-light);
+  border-top-color: var(--text);
+  border-radius: 50%;
+  animation: vn-spin .7s linear infinite;
+  margin: 0 auto 16px;
+}
+
+@keyframes vn-spin { to { transform: rotate(360deg); } }
+
+.vn-status-icon {
+  font-size: 2rem;
+  margin-bottom: 12px;
+  line-height: 1;
+}
+
+.vn-status-title {
+  font-family: 'DM Serif Display', Georgia, serif;
+  font-size: 1.2rem;
+  color: var(--text);
+  margin-bottom: 6px;
+}
+
+.vn-status-sub {
+  font-size: 0.855rem;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+
+.vn-error-msg {
+  font-size: 0.855rem;
+  color: var(--red);
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+@media (max-width: 520px) {
+  .vn-shell { padding: 0; align-items: stretch; }
+  .vn-card  { border-left: none; border-right: none; border-radius: 0; min-height: 100vh; }
+}
+</style>
+
+<div class="vn-shell">
+  <div class="vn-card">
+
+    <!-- Brand header -->
+    <div class="vn-brand">
+      <span class="brand-mark">CS</span>
+      <span class="brand-name">CognaSync</span>
+    </div>
+
+    <div class="vn-body">
+
+      <!-- IDLE -->
+      <div id="state-idle">
+        <div class="vn-question-card">
+          <div class="vn-question-label">Your provider wants to know</div>
+          <p class="vn-question-text">{{ guiding_question or "How have you been feeling since your last appointment?" }}</p>
+        </div>
+        <p class="vn-instructions">
+          Tap the button below and speak for up to 60 seconds.
+          Your response will be transcribed and shared with your provider before your appointment.
+        </p>
+        <button id="btn-record" class="vn-record-btn" aria-label="Start recording">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="8" y1="23" x2="16" y2="23"/>
+          </svg>
+          Start Recording
+        </button>
+      </div>
+
+      <!-- RECORDING -->
+      <div id="state-recording" style="display:none">
+        <div class="vn-recording-label">
+          <span class="vn-recording-dot"></span>
+          Recording
+        </div>
+        <div class="vn-timer" id="vn-timer">1:00</div>
+        <div class="vn-waveform-wrap">
+          <canvas id="vn-waveform" width="432" height="48" style="display:block;width:100%;"></canvas>
+        </div>
+        <button id="btn-stop" class="vn-stop-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+            <rect x="4" y="4" width="16" height="16" rx="1"/>
+          </svg>
+          Stop Recording
+        </button>
+      </div>
+
+      <!-- REVIEW -->
+      <div id="state-review" style="display:none">
+        <div class="vn-review-label">Review your recording</div>
+        <audio id="vn-playback" controls class="vn-audio-player"></audio>
+        <div class="vn-review-actions">
+          <button id="btn-rerecord" class="btn btn-secondary" style="flex:1">Re-record</button>
+          <button id="btn-submit"   class="btn btn-primary"   style="flex:2">Submit Voice Note</button>
+        </div>
+      </div>
+
+      <!-- UPLOADING -->
+      <div id="state-uploading" style="display:none">
+        <div class="vn-status-block">
+          <div class="vn-spinner"></div>
+          <div class="vn-status-sub">Sending your voice note&hellip;</div>
+        </div>
+      </div>
+
+      <!-- DONE -->
+      <div id="state-done" style="display:none">
+        <div class="vn-status-block">
+          <div class="vn-status-icon">✓</div>
+          <div class="vn-status-title">Voice note received</div>
+          <div class="vn-status-sub">
+            Your provider will have it before your appointment.<br>
+            You can close this page.
+          </div>
+        </div>
+      </div>
+
+      <!-- ERROR -->
+      <div id="state-error" style="display:none">
+        <div class="vn-status-block">
+          <div class="vn-error-msg" id="vn-error-msg">Something went wrong. Please try again.</div>
+          <button id="btn-retry" class="btn btn-secondary">Try again</button>
+        </div>
+      </div>
+
+    </div><!-- /vn-body -->
+  </div><!-- /vn-card -->
+</div>
+
+<script>
+(function () {
+  const TOKEN = {{ token | tojson }};
+  const SUBMIT_URL = '/api/voice/submit/' + TOKEN;
+  const MAX_SECONDS = 60;
+
+  let mediaRecorder, chunks = [], audioBlob, timerInterval, secondsLeft = MAX_SECONDS;
+  let audioCtx, analyser, animFrame;
+
+  const states = ['idle', 'recording', 'review', 'uploading', 'done', 'error'];
+  function show(s) {
+    states.forEach(function (st) {
+      document.getElementById('state-' + st).style.display = st === s ? '' : 'none';
+    });
+  }
+
+  // ── Waveform ─────────────────────────────────────────────────────────────────
+  function drawWaveform(stream) {
+    audioCtx = new AudioContext();
+    const src = audioCtx.createMediaStreamSource(stream);
+    analyser = audioCtx.createAnalyser();
+    analyser.fftSize = 128;
+    src.connect(analyser);
+    const buf    = new Uint8Array(analyser.frequencyBinCount);
+    const canvas = document.getElementById('vn-waveform');
+    const ctx    = canvas.getContext('2d');
+
+    function draw() {
+      animFrame = requestAnimationFrame(draw);
+      analyser.getByteFrequencyData(buf);
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      const barW = (canvas.width / buf.length) - 1;
+      for (let i = 0; i < buf.length; i++) {
+        const h = (buf[i] / 255) * canvas.height;
+        ctx.fillStyle = getComputedStyle(document.documentElement)
+          .getPropertyValue('--red').trim() || '#8B1A1A';
+        ctx.fillRect(i * (barW + 1), canvas.height - h, barW, h);
+      }
+    }
+    draw();
+  }
+
+  // ── Timer ─────────────────────────────────────────────────────────────────────
+  function startTimer() {
+    secondsLeft = MAX_SECONDS;
+    updateTimer();
+    timerInterval = setInterval(function () {
+      secondsLeft--;
+      updateTimer();
+      if (secondsLeft <= 0) stopRecording();
+    }, 1000);
+  }
+
+  function updateTimer() {
+    const m = Math.floor(secondsLeft / 60);
+    const s = secondsLeft % 60;
+    document.getElementById('vn-timer').textContent = m + ':' + String(s).padStart(2, '0');
+  }
+
+  // ── Record ────────────────────────────────────────────────────────────────────
+  document.getElementById('btn-record').addEventListener('click', async function () {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      chunks = [];
+      const mime = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+        ? 'audio/webm;codecs=opus' : 'audio/mp4';
+      mediaRecorder = new MediaRecorder(stream, { mimeType: mime });
+      mediaRecorder.ondataavailable = function (e) {
+        if (e.data.size > 0) chunks.push(e.data);
+      };
+      mediaRecorder.onstop = function () {
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        cancelAnimationFrame(animFrame);
+        if (audioCtx) audioCtx.close();
+        audioBlob = new Blob(chunks, { type: mime });
+        document.getElementById('vn-playback').src = URL.createObjectURL(audioBlob);
+        show('review');
+      };
+      mediaRecorder.start(250);
+      drawWaveform(stream);
+      startTimer();
+      show('recording');
+    } catch (e) {
+      document.getElementById('vn-error-msg').textContent =
+        'Microphone access denied. Please allow mic access and try again.';
+      show('error');
+    }
+  });
+
+  function stopRecording() {
+    clearInterval(timerInterval);
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+  }
+
+  document.getElementById('btn-stop').addEventListener('click', stopRecording);
+
+  document.getElementById('btn-rerecord').addEventListener('click', function () {
+    audioBlob = null;
+    chunks = [];
+    show('idle');
+  });
+
+  // ── Submit ─────────────────────────────────────────────────────────────────────
+  document.getElementById('btn-submit').addEventListener('click', async function () {
+    if (!audioBlob) return;
+    show('uploading');
+    try {
+      const fd = new FormData();
+      fd.append('audio', audioBlob, 'voice_note.webm');
+      const res = await fetch(SUBMIT_URL, { method: 'POST', body: fd });
+      if (res.ok) {
+        show('done');
+      } else {
+        const err = await res.json().catch(function () { return {}; });
+        document.getElementById('vn-error-msg').textContent =
+          err.error || 'Upload failed. Please try again.';
+        show('error');
+      }
+    } catch (e) {
+      document.getElementById('vn-error-msg').textContent =
+        'Network error. Please check your connection.';
+      show('error');
+    }
+  });
+
+  document.getElementById('btn-retry').addEventListener('click', function () { show('idle'); });
+
+  show('idle');
+})();
+</script>
+{% endblock %}

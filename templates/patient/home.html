@@ -10,7 +10,7 @@
   display: flex; align-items: center; justify-content: space-between;
   margin-bottom: 24px; gap: 12px; flex-wrap: wrap;
 }
-.home-greeting { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+.home-greeting { font-size: 1.5rem; font-weight: 500; letter-spacing: -0.02em; }
 .home-date     { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
 
 .home-layout {
@@ -52,11 +52,11 @@
   transition: var(--transition);
 }
 .checkin-hero-body { flex: 1; min-width: 0; }
-.checkin-hero-title { font-size: 0.95rem; font-weight: 700; margin-bottom: 2px; }
+.checkin-hero-title { font-size: 0.95rem; font-weight: 500; margin-bottom: 2px; }
 .checkin-hero-sub   { font-size: 0.8rem; color: var(--text-muted); }
 
 .checkin-hero-btn {
-  flex-shrink: 0; font-size: 0.8rem; font-weight: 600;
+  flex-shrink: 0; font-size: 0.8rem; font-weight: 500;
   padding: 7px 15px; background: var(--text); color: var(--surface);
   border-radius: var(--radius); border: 1px solid var(--border);
   transition: var(--transition); white-space: nowrap;
@@ -86,12 +86,12 @@
   justify-content: space-between;
   margin-bottom: 14px; gap: 12px; flex-wrap: wrap;
 }
-.section-title { font-size: 0.95rem; font-weight: 700; }
+.section-title { font-size: 0.95rem; font-weight: 500; }
 .section-meta  { font-size: 0.78rem; color: var(--text-muted); }
 
 /* ── Intel panel components ───────────────────────────────────────────── */
 .intel-section-label {
-  font-size: 0.65rem; font-weight: 800;
+  font-size: 0.65rem; font-weight: 500;
   text-transform: uppercase; letter-spacing: .1em;
   color: var(--text-muted); margin-bottom: 6px;
   padding-left: 2px;
@@ -112,7 +112,7 @@
 .insight-row-icon { font-size: 0.95rem; line-height: 1.6; flex-shrink: 0; }
 .insight-row-content { flex: 1; min-width: 0; }
 .insight-row-label {
-  display: inline-block; font-size: 0.63rem; font-weight: 700;
+  display: inline-block; font-size: 0.63rem; font-weight: 500;
   text-transform: uppercase; letter-spacing: .06em;
   color: #2B5C3E; background: #d4eadb;
   border-radius: 3px; padding: 1px 6px; margin-bottom: 4px;
@@ -144,13 +144,13 @@
 .appt-compact-icon { font-size: 1.05rem; flex-shrink: 0; }
 .appt-compact-body { flex: 1; min-width: 0; }
 .appt-compact-label {
-  font-size: 0.6rem; font-weight: 800; text-transform: uppercase;
+  font-size: 0.6rem; font-weight: 500; text-transform: uppercase;
   letter-spacing: .08em; color: #1d4ed8; margin-bottom: 2px;
 }
-.appt-compact-provider { font-size: 0.86rem; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.appt-compact-provider { font-size: 0.86rem; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .appt-compact-date    { font-size: 0.76rem; color: #3b6ea8; }
 .appt-compact-badge {
-  font-size: 0.7rem; font-weight: 600;
+  font-size: 0.7rem; font-weight: 500;
   color: #1d4ed8; background: #dbeafe;
   border-radius: 20px; padding: 2px 9px;
   white-space: nowrap; flex-shrink: 0;
@@ -166,7 +166,7 @@
   margin-bottom: 10px; gap: 8px;
 }
 .summary-preview-title {
-  font-size: 0.65rem; font-weight: 800;
+  font-size: 0.65rem; font-weight: 500;
   text-transform: uppercase; letter-spacing: .1em; color: var(--text-muted);
 }
 .summary-preview-date { font-size: 0.73rem; color: var(--text-muted); }
@@ -179,10 +179,10 @@
 }
 /* Rendered markdown inside preview */
 .summary-preview-text h3 {
-  font-size: 0.78rem; font-weight: 700; color: var(--text);
+  font-size: 0.78rem; font-weight: 500; color: var(--text);
   margin: 8px 0 3px; text-transform: uppercase; letter-spacing: .04em;
 }
-.summary-preview-text strong { font-weight: 600; color: var(--text); }
+.summary-preview-text strong { font-weight: 500; color: var(--text); }
 .summary-preview-text ul { margin: 3px 0 6px 14px; padding: 0; }
 .summary-preview-text li { margin-bottom: 1px; }
 .summary-preview-link {
@@ -211,8 +211,12 @@
 .home-quick-card:hover { background: var(--bg); text-decoration: none; }
 /* Remove right border on every 3rd card */
 .home-quick-card:nth-child(3n) { border-right: none; }
-/* Remove bottom border on last row (cards 4-6) */
-.home-quick-card:nth-child(n+4) { border-bottom: none; }
+/* Remove bottom border on last row (cards 5-7 for 3-col 7-card grid) */
+.home-quick-card:nth-child(n+7) { border-bottom: none; }
+/* Restore border on rows 2 (cards 4-6 are no longer the last row) */
+.home-quick-card:nth-child(4),
+.home-quick-card:nth-child(5),
+.home-quick-card:nth-child(6) { border-bottom: 1px solid var(--border-light); }
 
 .home-quick-icon {
   width: 32px; height: 32px; flex-shrink: 0;
@@ -222,7 +226,7 @@
 }
 .home-quick-body  { flex: 1; min-width: 0; }
 .home-quick-title {
-  font-size: 0.83rem; font-weight: 600;
+  font-size: 0.83rem; font-weight: 500;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .home-quick-sub   { font-size: 0.73rem; color: var(--text-muted); margin-top: 1px; }
@@ -244,7 +248,7 @@
   border-top: 1px solid var(--border-light);
 }
 .gs-steps li:first-child { border-top: none; }
-.gs-step-num { font-size: 0.68rem; font-weight: 700; color: var(--text-muted); min-width: 16px; padding-top: 1px; }
+.gs-step-num { font-size: 0.68rem; font-weight: 500; color: var(--text-muted); min-width: 16px; padding-top: 1px; }
 .gs-step-text strong { color: var(--text); }
 
 /* ── Responsive ───────────────────────────────────────────────────────── */
@@ -296,7 +300,7 @@
   .home-quick-card:nth-child(3n)  { border-right: 1px solid var(--border-light); }
   .home-quick-card:nth-child(n+4) { border-bottom: 1px solid var(--border-light); }
   .home-quick-card:nth-child(2n)  { border-right: none; }
-  .home-quick-card:nth-child(n+5) { border-bottom: none; }
+  .home-quick-card:nth-child(n+7) { border-bottom: none; }
 
   /* Streak badge */
   .streak-number { font-size: 1.5rem; }
@@ -413,6 +417,14 @@
         <div class="home-quick-body">
           <div class="home-quick-title">Appointments</div>
           <div class="home-quick-sub">History &amp; requests</div>
+        </div>
+        <span class="home-quick-arrow">→</span>
+      </a>
+      <a href="{{ url_for('patient_voice_notes_page') }}" class="home-quick-card">
+        <div class="home-quick-icon">🎙</div>
+        <div class="home-quick-body">
+          <div class="home-quick-title">Voice Notes</div>
+          <div class="home-quick-sub">Pre-appt recordings</div>
         </div>
         <span class="home-quick-arrow">→</span>
       </a>

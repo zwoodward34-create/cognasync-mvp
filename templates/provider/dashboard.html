@@ -9,7 +9,7 @@
     align-items: center;
     gap: 2px;
     font-size: 0.72rem;
-    font-weight: 600;
+    font-weight: 500;
     padding: 1px 5px;
     border-radius: 3px;
     margin-left: 4px;
@@ -28,7 +28,7 @@
     display: inline-flex;
     align-items: center;
     font-size: 0.65rem;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.03em;
     text-transform: uppercase;
     padding: 2px 6px;
@@ -46,13 +46,33 @@
     border: 1px solid var(--color-border, #ddd);
     border-radius: 5px;
     font-size: 0.72rem;
-    font-weight: 600;
+    font-weight: 500;
     color: var(--color-text-muted, #666);
     padding: 2px 9px;
     cursor: pointer;
     line-height: 1.6;
   }
   .pd-brief-btn:hover { background: var(--color-surface-alt, #f5f5f5); }
+
+  /* SMS button inside card footer */
+  .pd-sms-btn {
+    background: none;
+    border: 1px solid var(--border-light, #ccc);
+    border-radius: 5px;
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--text-muted, #666);
+    padding: 2px 9px;
+    cursor: pointer;
+    line-height: 1.6;
+    white-space: nowrap;
+    transition: background 0.12s, color 0.12s;
+    flex-shrink: 0;
+  }
+  .pd-sms-btn:hover { background: var(--bg, #f5f5f5); }
+  .pd-sms-btn:disabled { opacity: 0.5; cursor: default; }
+  .pd-sms-btn--sent  { color: #1a7f3c; border-color: #90c8a8; background: #e6f4ea; }
+  .pd-sms-btn--error { color: #c0392b; border-color: #e0a0a0; background: #fdecea; }
 
   .pd-card-footer {
     display: flex;
@@ -66,7 +86,7 @@
     align-items: center;
     gap: 4px;
     font-size: 10px;
-    font-weight: 700;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: .06em;
     color: #2a7a2a;
@@ -88,7 +108,7 @@
   .pd-brief-appt-btn {
     display: inline-block;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 500;
     padding: 7px 14px;
     background: var(--color-primary, #111);
     color: #fff;
@@ -100,7 +120,7 @@
   .pd-brief-appt-btn-ghost {
     display: inline-block;
     font-size: 12px;
-    font-weight: 600;
+    font-weight: 500;
     padding: 7px 14px;
     background: transparent;
     color: var(--color-text, #111);
@@ -130,7 +150,7 @@
   }
   .pd-brief-title {
     font-size: 1rem;
-    font-weight: 700;
+    font-weight: 500;
     color: var(--color-text, #111);
   }
   .pd-brief-subtitle {
@@ -161,7 +181,7 @@
   }
   .pd-brief-stat-label {
     font-size: 0.7rem;
-    font-weight: 700;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--color-text-muted, #888);
@@ -169,7 +189,7 @@
   }
   .pd-brief-stat-val {
     font-size: 1.05rem;
-    font-weight: 700;
+    font-weight: 500;
     color: var(--color-text, #111);
   }
   .pd-brief-stat-val small {
@@ -183,7 +203,7 @@
   }
   .pd-brief-themes-label {
     font-size: 0.7rem;
-    font-weight: 700;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.04em;
     color: var(--color-text-muted, #888);
@@ -205,7 +225,7 @@
     border-radius: 6px;
     padding: 8px 14px;
     font-size: 0.83rem;
-    font-weight: 600;
+    font-weight: 500;
     margin-bottom: 14px;
   }
   .pd-brief-footer-note {
@@ -221,7 +241,7 @@
     display: inline-flex;
     align-items: center;
     font-size: 0.62rem;
-    font-weight: 700;
+    font-weight: 500;
     letter-spacing: 0.04em;
     text-transform: uppercase;
     padding: 1px 6px;
@@ -244,7 +264,7 @@
   }
   .pd-brief-beh-title {
     font-size: 0.68rem;
-    font-weight: 800;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.07em;
     color: #1a7f3c;
@@ -271,7 +291,7 @@
   }
   .pd-therapy-ai-title {
     font-size: 0.68rem;
-    font-weight: 800;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.07em;
     color: var(--color-text-muted, #888);
@@ -283,14 +303,14 @@
     line-height: 1.65;
     white-space: pre-wrap;
   }
-  .pd-therapy-ai-body strong { font-weight: 700; }
+  .pd-therapy-ai-body strong { font-weight: 500; }
   .pd-brief-gen-btn {
     background: #1a7f3c;
     color: #fff;
     border: none;
     border-radius: 5px;
     font-size: 0.78rem;
-    font-weight: 600;
+    font-weight: 500;
     padding: 6px 14px;
     cursor: pointer;
     line-height: 1.5;
@@ -306,7 +326,7 @@
   }
   .pd-session-notes-title {
     font-size: 0.68rem;
-    font-weight: 800;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.07em;
     color: var(--color-text-muted, #888);
@@ -328,7 +348,7 @@
   }
   .pd-session-notes-label {
     font-size: 0.65rem;
-    font-weight: 700;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: #aaa;
@@ -357,7 +377,7 @@
     background: #e53e3e;
     color: #fff;
     font-size: 0.6rem;
-    font-weight: 700;
+    font-weight: 500;
     border-radius: 8px;
     padding: 0 4px;
     margin-left: 5px;
@@ -373,7 +393,7 @@
   }
   .pd-flags-section-title {
     font-size: 0.68rem;
-    font-weight: 800;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.07em;
     color: var(--color-text-muted, #888);
@@ -383,15 +403,15 @@
     border-radius: 7px;
     padding: 10px 13px;
     margin-bottom: 8px;
-    border-left: 3px solid;
+    border: 0.5px solid;
     background: var(--color-surface, #fff);
     border-color: var(--color-border, #ddd);
   }
-  .pd-flag-card-concern         { border-color: #e53e3e; background: #fff8f8; }
-  .pd-flag-card-observation     { border-color: #3182ce; background: #f7fbff; }
-  .pd-flag-card-progress        { border-color: #38a169; background: #f0faf4; }
-  .pd-flag-card-coordination_needed { border-color: #d69e2e; background: #fffbf0; }
-  .pd-flag-card-mine            { border-color: #a0aec0; background: #f8f9fa; opacity: 0.85; }
+  .pd-flag-card-concern         { border-color: #f0b8b8; background: #fff8f8; }
+  .pd-flag-card-observation     { border-color: #c0d8f5; background: #f7fbff; }
+  .pd-flag-card-progress        { border-color: #9FE1CB; background: #f0faf4; }
+  .pd-flag-card-coordination_needed { border-color: #E8C97A; background: #fffbf0; }
+  .pd-flag-card-mine            { border-color: #D3D1C7; background: #f8f9fa; opacity: 0.85; }
 
   .pd-flag-card-top {
     display: flex;
@@ -402,7 +422,7 @@
   .pd-flag-type-badge {
     display: inline-block;
     font-size: 0.6rem;
-    font-weight: 800;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 1px 6px;
@@ -421,7 +441,7 @@
     border: 1px solid var(--color-border, #ccc);
     border-radius: 4px;
     font-size: 0.66rem;
-    font-weight: 600;
+    font-weight: 500;
     color: var(--color-text-muted, #888);
     padding: 1px 7px;
     cursor: pointer;
@@ -449,7 +469,7 @@
   }
   .pd-flag-create-title {
     font-size: 0.68rem;
-    font-weight: 700;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--color-text-muted, #999);
@@ -488,7 +508,7 @@
     border: none;
     border-radius: 5px;
     font-size: 0.75rem;
-    font-weight: 600;
+    font-weight: 500;
     padding: 6px 13px;
     cursor: pointer;
     flex-shrink: 0;
@@ -510,7 +530,7 @@
   }
   .pd-proactive-title {
     font-size: 0.68rem;
-    font-weight: 800;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.07em;
     color: #2B5C3E;
@@ -521,21 +541,19 @@
     align-items: flex-start;
     gap: 10px;
     background: #f5f9f6;
-    border: 1px solid #b8d4c0;
-    border-left: 3px solid #2B5C3E;
+    border: 0.5px solid #9FE1CB;
     border-radius: 7px;
     padding: 10px 13px;
     margin-bottom: 8px;
   }
   .pd-proactive-card--positive {
     background: #fdf9ee;
-    border-color: #e0d0a0;
-    border-left-color: #C4A76B;
+    border-color: #E8C97A;
   }
   .pd-proactive-label {
     display: inline-block;
     font-size: 0.6rem;
-    font-weight: 800;
+    font-weight: 500;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     padding: 1px 6px;
@@ -559,6 +577,26 @@
     color: var(--color-text-muted, #aaa);
     margin-top: 3px;
   }
+
+  /* Provider type badge */
+  .pd-provider-type-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: 0.68rem;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 8px;
+    vertical-align: middle;
+    background: var(--color-surface-alt, #f0f0f0);
+    color: var(--color-text-muted, #555);
+    border: 1px solid var(--color-border, #ddd);
+  }
+  .pd-provider-type-badge.psychiatrist { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
+  .pd-provider-type-badge.therapist    { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+  .pd-provider-type-badge.counselor    { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
 </style>
 {% endblock %}
 
@@ -566,12 +604,12 @@
 <div class="pd-page">
 
   <!-- Inbound patient request banner -->
-  <div id="inbound-banner" style="display:none;background:var(--surface);border:1px solid var(--border);
-       border-left:3px solid var(--color-primary,#6c47ff);border-radius:var(--radius);
+  <div id="inbound-banner" style="display:none;background:var(--green-light);border:0.5px solid #9FE1CB;
+       border-radius:var(--radius);
        padding:12px 16px;margin-bottom:16px;align-items:center;
        justify-content:space-between;gap:12px;">
     <div style="font-size:0.85rem;">
-      <span id="inbound-banner-text" style="font-weight:600;"></span>
+      <span id="inbound-banner-text" style="font-weight:500;"></span>
       <span style="color:var(--text-muted);margin-left:6px;">— patient-initiated connection request(s) waiting for your response.</span>
     </div>
     <button class="btn btn-primary btn-sm" onclick="openAddPatient()" style="white-space:nowrap;flex-shrink:0;">
@@ -582,7 +620,11 @@
   <!-- Page header -->
   <div class="pd-page-hdr">
     <div>
-      <h1 class="pd-page-title">My Patients</h1>
+      <h1 class="pd-page-title">My Patients
+        {% if user.provider_type %}
+        <span class="pd-provider-type-badge {{ user.provider_type }}">{{ user.provider_type | title }}</span>
+        {% endif %}
+      </h1>
       <div class="pd-page-sub">{{ patients|length }} patient{{ 's' if patients|length != 1 }} · {{ today_str }}</div>
     </div>
     <div class="pd-page-hdr-actions">
@@ -592,7 +634,7 @@
         + Add Patient
         <span id="inbound-badge" style="display:none;position:absolute;top:-6px;right:-6px;
               background:#e53e3e;color:#fff;border-radius:999px;font-size:0.65rem;
-              font-weight:700;min-width:16px;height:16px;line-height:16px;
+              font-weight:500;min-width:16px;height:16px;line-height:16px;
               text-align:center;padding:0 4px;"></span>
       </button>
     </div>
@@ -775,6 +817,12 @@
                 onclick="event.preventDefault(); event.stopPropagation(); openBrief(this)">
           Brief
         </button>
+        <button class="pd-sms-btn"
+                data-patient-id="{{ p.patient_id }}"
+                data-patient-name="{{ p.full_name }}"
+                onclick="event.preventDefault(); event.stopPropagation(); sendCheckinSMS(this)">
+          SMS ↗
+        </button>
         <span class="pd-card-arrow">→</span>
       </div>
 
@@ -805,6 +853,73 @@
 </div>
 
 <script>
+// ── Send Check-in SMS ────────────────────────────────────────────────────────
+
+async function sendCheckinSMS(btn) {
+  const patientId   = btn.dataset.patientId;
+  const patientName = btn.dataset.patientName;
+
+  // Two-click confirmation: first click sets confirm state
+  if (!btn.dataset.confirming) {
+    btn.dataset.confirming = '1';
+    btn.textContent = 'Confirm?';
+    btn.style.borderColor = 'var(--border)';
+    btn.style.color = 'var(--text)';
+    // Auto-reset after 3s if not confirmed
+    setTimeout(function () {
+      if (btn.dataset.confirming) {
+        delete btn.dataset.confirming;
+        btn.textContent = 'SMS ↗';
+        btn.style.borderColor = '';
+        btn.style.color = '';
+      }
+    }, 3000);
+    return;
+  }
+
+  // Second click — fire
+  delete btn.dataset.confirming;
+  btn.disabled = true;
+  btn.textContent = '…';
+
+  try {
+    const res = await fetch('/api/provider/patient/' + patientId + '/send-checkin-sms', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({}),
+    });
+    const data = res.ok ? await res.json() : null;
+    if (data && data.ok) {
+      btn.textContent = 'Sent ✓';
+      btn.classList.add('pd-sms-btn--sent');
+      btn.disabled = false;
+      // Fade back to default after 4s
+      setTimeout(function () {
+        btn.textContent = 'SMS ↗';
+        btn.classList.remove('pd-sms-btn--sent');
+      }, 4000);
+    } else {
+      const msg = (data && data.error) || 'Send failed';
+      btn.textContent = msg.includes('phone') ? 'No phone' : 'Error';
+      btn.classList.add('pd-sms-btn--error');
+      btn.disabled = false;
+      setTimeout(function () {
+        btn.textContent = 'SMS ↗';
+        btn.classList.remove('pd-sms-btn--error');
+      }, 4000);
+    }
+  } catch (_) {
+    btn.textContent = 'Error';
+    btn.classList.add('pd-sms-btn--error');
+    btn.disabled = false;
+    setTimeout(function () {
+      btn.textContent = 'SMS ↗';
+      btn.classList.remove('pd-sms-btn--error');
+    }, 4000);
+  }
+}
+
 function filterCards(q) {
   q = q.toLowerCase().trim();
   let visible = 0;
@@ -882,7 +997,7 @@ function renderBriefBody(d, patientId) {
       const lastSeen  = safetyFlag.most_recent_date || '—';
       const recency   = safetyFlag.recency_days != null ? safetyFlag.recency_days + 'd ago' : '';
       html += `<div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:8px;">
-        <div style="font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:#c0392b;margin-bottom:6px;">
+        <div style="font-size:0.68rem;font-weight:500;text-transform:uppercase;letter-spacing:0.07em;color:#c0392b;margin-bottom:6px;">
           🔴 Interpersonal Safety Signal
         </div>
         <div style="font-size:0.82rem;color:#721c24;line-height:1.5;">
@@ -910,7 +1025,7 @@ function renderBriefBody(d, patientId) {
                         ? substanceFlag.avg_units_per_drinking_day.toFixed(1) : '—';
       const jFlags  = (substanceFlag.journal_flags || []).length;
       html += `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 16px;">
-        <div style="font-size:0.68rem;font-weight:800;text-transform:uppercase;letter-spacing:0.07em;color:${lblClr};margin-bottom:6px;">
+        <div style="font-size:0.68rem;font-weight:500;text-transform:uppercase;letter-spacing:0.07em;color:${lblClr};margin-bottom:6px;">
           ${icon} ${label}
         </div>
         <div style="font-size:0.82rem;color:${txtClr};line-height:1.5;">
@@ -1228,11 +1343,11 @@ async function loadCareFlags(patientId) {
       html += `<p style="font-size:0.78rem;color:var(--color-text-muted,#aaa);margin-bottom:8px;">No active flags from care team members.</p>`;
     } else {
       if (others.length > 0) {
-        html += `<div style="margin-bottom:4px;font-size:0.72rem;font-weight:600;color:var(--color-text-muted,#888);">From care team (${others.length})</div>`;
+        html += `<div style="margin-bottom:4px;font-size:0.72rem;font-weight:500;color:var(--color-text-muted,#888);">From care team (${others.length})</div>`;
         others.forEach(f => { html += _renderFlagCard(f, false).replace(/__PID__/g, patientId); });
       }
       if (mine.length > 0) {
-        html += `<div style="margin:10px 0 4px;font-size:0.72rem;font-weight:600;color:var(--color-text-muted,#888);">Posted by you (${mine.length})</div>`;
+        html += `<div style="margin:10px 0 4px;font-size:0.72rem;font-weight:500;color:var(--color-text-muted,#888);">Posted by you (${mine.length})</div>`;
         mine.forEach(f => { html += _renderFlagCard(f, true).replace(/__PID__/g, patientId); });
       }
     }
@@ -1482,14 +1597,14 @@ async function loadInboundRequests() {
       <div id="inbound-row-${r.id}" style="padding:8px 0;border-bottom:1px solid var(--border-light);">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
           <div>
-            <span style="font-size:0.85rem;font-weight:600;">${r.patient_name}</span>
+            <span style="font-size:0.85rem;font-weight:500;">${r.patient_name}</span>
             <span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px;">${r.patient_email}</span>
             <span style="font-size:0.7rem;color:var(--text-muted);margin-left:6px;">· ${r.role_label}</span>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0;">
             <button onclick="respondInbound('${r.id}','accept')"
                     style="font-size:0.75rem;padding:4px 10px;border-radius:6px;border:none;
-                           background:#1a7f3c;color:#fff;cursor:pointer;font-weight:600;">Accept</button>
+                           background:#1a7f3c;color:#fff;cursor:pointer;font-weight:500;">Accept</button>
             <button onclick="respondInbound('${r.id}','decline')"
                     style="font-size:0.75rem;padding:4px 10px;border-radius:6px;border:1px solid var(--border);
                            background:transparent;color:var(--text-muted);cursor:pointer;">Decline</button>
@@ -1544,7 +1659,7 @@ async function loadOutboundRequests() {
     el.innerHTML = data.map(r =>
       `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-light);">
         <div>
-          <span style="font-size:0.85rem;font-weight:600;">${r.patient_name}</span>
+          <span style="font-size:0.85rem;font-weight:500;">${r.patient_name}</span>
           <span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px;">${r.patient_email}</span>
         </div>
         <span style="font-size:0.7rem;color:var(--text-muted);">${r.role_label} · Pending</span>
@@ -1598,13 +1713,13 @@ updateInboundBadge();
     </form>
 
     <div style="margin-top:22px;">
-      <div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+      <div style="font-size:0.7rem;font-weight:500;text-transform:uppercase;letter-spacing:.08em;
                   color:var(--text-muted);margin-bottom:8px;">Requests From Patients</div>
       <div id="ap-inbound-list"><p style="font-size:0.8rem;color:var(--text-muted);">Loading…</p></div>
     </div>
 
     <div style="margin-top:18px;">
-      <div style="font-size:0.7rem;font-weight:800;text-transform:uppercase;letter-spacing:.08em;
+      <div style="font-size:0.7rem;font-weight:500;text-transform:uppercase;letter-spacing:.08em;
                   color:var(--text-muted);margin-bottom:8px;">Your Pending Outbound Requests</div>
       <div id="ap-pending-list"><p style="font-size:0.8rem;color:var(--text-muted);">Loading…</p></div>
     </div>

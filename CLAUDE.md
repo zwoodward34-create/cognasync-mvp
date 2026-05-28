@@ -435,7 +435,18 @@ Hyperbolic or emotionally charged language in journal entries ("I'm a disaster,"
 
 ## 10. Crisis Escalation Protocol
 
-### Detection
+### Dual Crisis Path
+
+CognaSync uses two distinct crisis detection mechanisms depending on channel. They must never be swapped.
+
+| Channel | Function | Behavior |
+|---|---|---|
+| **Patient-facing** (journal, check-in) | `_check_crisis()` | Binary — any keyword triggers immediate Tier 3 response. Maximum caution; no nuance. |
+| **Provider/transcript** (session transcripts, provider summaries) | `score_crisis()` | Graduated — 5-level weighted scoring with population modifiers. Non-blocking at Levels 1–2; blocking at Levels 3–4. See §22–23. |
+
+The rationale: a patient in crisis cannot wait for nuanced triage. A provider reviewing a session transcript benefits from graduated context to inform clinical response. Never apply graduated scoring to patient-facing channels.
+
+### Detection — Patient-Facing Channel
 Crisis is triggered by any of the following in journal text or check-in notes:
 - "suicide," "suicidal," "kill myself," "end my life," "ending my life"
 - "don't want to live," "don't want to be alive," "want to die," "better off dead"
@@ -1124,3 +1135,146 @@ The forward-looking commitment is to **periodic regression testing** of model be
 ### Integration with Existing Architecture
 
 None of the safeguards in this section are new functionality. The bias-agnostic scoring, three-layer verification, and version-aware logging already exist in the product. This section names them under the formal framework used in published guidance so that clinical advisors and regulatory reviewers can map CognaSync's architecture to the standards they're already evaluating against.
+
+---
+
+## 22. Graduated Crisis Detection — Transcript and Provider Channels
+
+### Purpose
+
+Binary keyword detection is correct for patient-facing channels where maximum caution is required. Provider and transcript channels — where a licensed clinician is always in the loop — benefit from graduated context that distinguishes passive ideation from imminent risk. `score_crisis()` in `claude_api.py` implements this graduated path.
+
+### Feature Scoring Weights
+
+Each feature is detected by keyword scan. Features co-occur and scores accumulate.
+
+| Feature | Weight | Examples |
+|---|---|---|
+| `direct_intent` | +4 | "kill myself," "take my own life," "want to end it" |
+| `specific_plan` | +3 | "have a plan," "with a gun," "I know how I'll do it" |
+| `means_access` | +3 | "have a gun," "stockpiled pills," "I have what I need" |
+| `recent_self_harm` | +3 | "tried before," "attempted before," "cut myself last week" |
+| `preparatory_behavior` | +2 | "giving away my things," "writing a note," "changed my will" |
+| `recurrent_ideation` | +2 | "keep thinking about it," "suicidal thoughts," "ideation" |
+| `cannot_safety_plan` | +2 | "can't promise," "can't keep myself safe," "don't care anymore" |
+| `hopelessness` | +1 | "no point," "hopeless," "better off dead," "don't want to live" |
+| `worsening_distress` | +1 | "getting worse," "can't take it anymore," "spiraling" |
+
+Maximum raw score: 21. Level thresholds applied to `adjusted_score` (after population modifier).
+
+### Level Definitions
+
+| Level | Threshold | Label | Blocking? |
+|---|---|---|---|
+| 4 | score ≥ 8 OR (direct_intent AND (plan OR means)) | Imminent Danger | Yes |
+| 3 | score ≥ 6 | High Risk | Yes |
+| 2 | score ≥ 3 | Elevated Concern | No |
+| 1 | score ≥ 1 | Passive Concern | No |
+| 0 | score = 0 | No apparent risk | No |
+
+**Blocking** means `extract_features()` halts feature extraction and returns only a `safety_note` with no session content. Levels 1–2 pass through but include a `passive_safety_note` in the output for provider review.
+
+### Output Language
+
+Use `CRISIS_LEVEL_NOTES` constants from `claude_api.py`. Never write:
+- "confirmed suicidal ideation" — certainty overclaim
+- "patient is suicidal" — diagnostic label
+
+Always write:
+- "Possible self-harm risk detected"
+- "Immediate human review recommended"
+- Language consistent with the provider making the clinical determination
+
+### Integration Point
+
+`score_crisis()` is the public API. `extract_features()` in `transcript_engine.py` calls it before any Claude invocation. The patient-facing `_check_crisis()` is never replaced — the two functions serve distinct channels.
+
+---
+
+## 23. Population Escalation Modifiers
+
+### Purpose
+
+Certain populations carry systematically elevated risk that baseline keyword scoring does not capture. Population-aware modifiers add clinical context without changing the scoring logic for high-confidence signals.
+
+### Population Flags
+
+Stored as JSONB in `patient_profiles.population_flags`. Managed via `get_patient_population_flags()` / `set_patient_population_flags()` in `database.py`.
+
+Supported keys (all boolean):
+
+| Flag | Clinical Basis |
+|---|---|
+| `adolescent` | Higher impulsivity; elevated completion risk at lower passive ideation thresholds |
+| `older_adult` | Social isolation, chronic pain, and means access compound passive signals |
+| `veteran` | Military-specific stressors; firearms access; cultural reluctance to disclose |
+| `prior_self_harm` | Prior attempt is strongest single predictor of future attempt |
+| `serious_mental_illness` | Command hallucinations, medication discontinuation create acute risk windows |
+
+### Modifier Logic
+
+1. For each active population flag, add +1 to the adjusted score if the base level is **passive** (Level 0–2). Maximum total modifier: **+2**.
+2. Population-specific amplifier keywords (e.g., "firearm" for veteran, "voices" for serious_mental_illness) add an additional +1 when present in the text, subject to the same +2 cap.
+3. **Level 3 and Level 4 scores are never modified.** Modifiers only affect passive-range signals where clinical sensitivity is most important and false negatives are most costly.
+4. Modifiers never reduce sensitivity — they can only increase the adjusted score, never decrease it.
+
+### Implementation
+
+`_score_crisis_features(text, population_flags)` in `claude_api.py` handles all modifier logic. `score_crisis()` is the public wrapper that passes `population_flags` through. Call sites in `transcript_engine.extract_features()` pass `population_flags` from the caller, which should retrieve them via `db.get_patient_population_flags(patient_id)`.
+
+### Provider Output
+
+When a modifier was applied, the `safety_note` includes:
+> "Population context applied: [flag names]. Adjusted score: [n]/14."
+
+Never expose the modifier calculation to patients. It is provider-channel only.
+
+---
+
+## 24. Auditory Feature Vocabulary
+
+### Purpose
+
+Transcripts contain more than semantic content — they contain paralinguistic signals. The structured extraction schema in `transcript_engine._EXTRACTION_SYSTEM` includes a `speech_features` block that captures auditory observations from the transcript text itself (not audio). This documents the vocabulary that extraction and all downstream display must use consistently.
+
+### Feature Labels and Severity Scale
+
+All speech features use a constrained value set. Deviations from these strings must not be introduced.
+
+| Feature | Values | Notes |
+|---|---|---|
+| `speech_rate` | `normal` \| `slowed` \| `pressured` \| `null` | `pressured` = racing, rapid, hard to interrupt |
+| `prosody` | `normal` \| `flat` \| `elevated` \| `null` | Intonation variation; `flat` = monotone |
+| `pauses` | `normal` \| `increased` \| `decreased` \| `null` | Relative to baseline, not absolute duration |
+| `speech_coherence` | `intact` \| `disorganized` \| `null` | Logical flow and connectivity of ideas |
+| `arousal` | `normal` \| `low` \| `elevated` \| `agitated` \| `null` | Physiological activation level |
+| `vocal_affect` | `normal` \| `flat` \| `strained` \| `null` | Emotional coloring of voice |
+
+The `confidence` field (`high` | `medium` | `low`) reflects how clearly the transcript supports the feature value. Transcripts derived from audio transcription are less reliable than direct text; flag `confidence: low` when the source is ambiguous.
+
+`severity_note` is a free-text string for any observation not captured by the structured labels. It must follow all forbidden-language rules — no diagnostic claims.
+
+`baseline_deviation` is a free-text summary of how the current session's speech compares to prior sessions (if available). It must be framed as change description, not clinical interpretation: "Speech rate appeared faster than prior sessions" not "Pressured speech suggests mania."
+
+### Clinical Pattern Types
+
+The `clinical_pattern_type` field maps observed feature clusters to a clinical concern category. The extraction model assigns this; it is not computed deterministically.
+
+| Pattern | Typical Feature Profile |
+|---|---|
+| `depressive` | slowed rate, flat prosody, increased pauses, low arousal, flat affect |
+| `anxiety_stress` | normal/elevated rate, increased pauses, elevated arousal, strained affect |
+| `mania_hypomania` | pressured rate, elevated prosody, decreased pauses, elevated arousal |
+| `psychosis_risk` | disorganized coherence ± any rate, with content-level indicators |
+| `crisis` | any profile accompanied by crisis-level content |
+| `mixed` | features from ≥2 pattern categories without clear dominance |
+| `none_detected` | no clinically relevant speech pattern observable from transcript |
+
+**Language rules for clinical_pattern_type output:**
+- The field labels a feature pattern — not a diagnosis. A `depressive` pattern type does not mean the patient has depression.
+- In any provider-facing output that surfaces `clinical_pattern_type`, frame it as: "Session speech features were consistent with a [X] pattern" not "Patient showed signs of [condition]."
+- Never surface `clinical_pattern_type` in patient-facing output (Mode A or Mode B).
+
+### Baseline Comparison
+
+All speech feature observations are most meaningful when compared against prior sessions. `score_transcript_batch()` aggregates `speech_features_by_session` and `speech_concern_sessions` to support trend comparison. A single-session `speech_concern_flag = True` is a prompt for monitoring; a trend of concern flags across sessions warrants explicit provider surfacing.

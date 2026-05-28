@@ -14,7 +14,7 @@
      style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;
             display:flex;align-items:center;justify-content:center;padding:16px;">
   <div style="background:#fff;border:2px solid #dc2626;max-width:480px;width:100%;padding:28px 24px;">
-    <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#dc2626;margin-bottom:12px;">&#9888; Urgent Safety Concern</div>
+    <div style="font-size:13px;font-weight:500;text-transform:uppercase;color:#dc2626;margin-bottom:12px;">&#9888; Urgent Safety Concern</div>
     <p style="font-size:13px;color:#333;line-height:1.65;margin:0 0 18px;">
       Recent entries for {{ patient.full_name }} contain crisis-level language.
       Review flagged content before continuing.
@@ -22,7 +22,7 @@
     <div style="display:flex;gap:8px;">
       <button onclick="document.getElementById('crisis-overlay').style.display='none'"
               style="padding:9px 18px;background:#dc2626;color:#fff;border:none;
-                     font-family:'DM Sans',sans-serif;font-size:13px;font-weight:600;cursor:pointer;">
+                     font-family:'DM Sans',sans-serif;font-size:13px;font-weight:500;cursor:pointer;">
         Acknowledge
       </button>
     </div>
@@ -42,7 +42,7 @@
   <div class="pv-sidebar" id="pv-sidebar">
     <div class="pv-sidebar-head">
       <a href="{{ url_for('provider_patient_detail', patient_id=patient.patient_id) }}"
-         style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:600;
+         style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500;
                 text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);
                 text-decoration:none;margin-bottom:12px;">
         ← Patient Profile
@@ -104,7 +104,7 @@
       <div class="pv-alert-item {{ a.level }}">
         <span class="pv-alert-label {{ a.level }}">{{ a.level | upper }}</span>
         <div>
-          <div style="font-weight:600;font-size:13px;margin-bottom:2px;">{{ a.title }}</div>
+          <div style="font-weight:500;font-size:13px;margin-bottom:2px;">{{ a.title }}</div>
           <div style="font-size:12px;color:var(--text-muted);">{{ a.desc }}</div>
         </div>
       </div>
@@ -204,7 +204,7 @@
       {% set ss = trends.stability_score %}
       {% set cr = trends.crash_risk %}
       {% if ss or cr %}
-      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:700;margin-bottom:8px;">Computed Scores</div>
+      <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);font-weight:500;margin-bottom:8px;">Computed Scores</div>
       <div class="stats-row" style="margin-bottom:20px;">
         {% if ss %}
         <div class="stat-card {% if ss.average and ss.average < 4 %}stat-card-alert{% endif %}">
@@ -297,7 +297,7 @@
         </div>
         <div style="display:flex;gap:10px;align-items:flex-end;margin-bottom:14px;flex-wrap:wrap;">
           <div>
-            <label style="display:block;font-size:11px;font-weight:600;color:var(--text-muted);
+            <label style="display:block;font-size:11px;font-weight:500;color:var(--text-muted);
                           text-transform:uppercase;letter-spacing:.06em;margin-bottom:4px;">Appointment date</label>
             <input type="date" id="appt-date" value="{{ today_str }}"
                    style="font-size:13px;padding:5px 8px;border:1px solid var(--border-light);background:var(--surface);">
@@ -429,7 +429,7 @@
             <div id="actions-list" class="aw-actions-list"></div>
             {% if appt.status != 'completed' %}
             <div class="aw-action-templates" style="margin-top:12px;">
-              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;margin-bottom:8px;">Common Actions</div>
+              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:500;margin-bottom:8px;">Common Actions</div>
               <div style="display:flex;flex-wrap:wrap;gap:6px;">
                 {% for tmpl in [
                   'Schedule follow-up labs',
@@ -549,9 +549,9 @@
 
         {% if appt.next_appointment_date %}
         <div class="aw-schedule-current">
-          <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;
+          <div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;
                       color:var(--green);margin-bottom:6px;">Currently Scheduled</div>
-          <div style="font-size:18px;font-weight:600;color:var(--text);">
+          <div style="font-size:18px;font-weight:500;color:var(--text);">
             {{ appt.next_appointment_date }}{% if appt.next_appointment_time %} &middot; {{ appt.next_appointment_time }}{% endif %}
           </div>
           {% if appt.next_appointment_notes %}
@@ -617,10 +617,10 @@
             <table id="synth-table" style="width:100%;border-collapse:collapse;font-size:13px;">
               <thead>
                 <tr style="border-bottom:2px solid var(--border-light);">
-                  <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;">Metric</th>
-                  <th style="text-align:right;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;">Pre-Appt<br><span id="synth-pre-n" style="font-weight:400;text-transform:none;letter-spacing:0;"></span></th>
-                  <th style="text-align:right;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;">Post-Appt<br><span id="synth-post-n" style="font-weight:400;text-transform:none;letter-spacing:0;"></span></th>
-                  <th style="text-align:right;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:700;">Δ Change</th>
+                  <th style="text-align:left;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:500;">Metric</th>
+                  <th style="text-align:right;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:500;">Pre-Appt<br><span id="synth-pre-n" style="font-weight:400;text-transform:none;letter-spacing:0;"></span></th>
+                  <th style="text-align:right;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:500;">Post-Appt<br><span id="synth-post-n" style="font-weight:400;text-transform:none;letter-spacing:0;"></span></th>
+                  <th style="text-align:right;padding:8px 10px;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:500;">Δ Change</th>
                 </tr>
               </thead>
               <tbody id="synth-table-body"></tbody>
@@ -773,8 +773,8 @@
               padding:14px 18px;border-bottom:1px solid var(--border-light);position:sticky;top:0;background:#fff;">
     <div>
       <div style="font-size:10px;text-transform:uppercase;letter-spacing:.08em;
-                  color:var(--text-muted);font-weight:700;">Check-in Detail</div>
-      <div id="dd-title" style="font-size:16px;font-weight:700;margin-top:2px;"></div>
+                  color:var(--text-muted);font-weight:500;">Check-in Detail</div>
+      <div id="dd-title" style="font-size:16px;font-weight:500;margin-top:2px;"></div>
     </div>
     <button onclick="closeDayDetail()"
             style="background:none;border:1px solid var(--border-light);
@@ -945,7 +945,7 @@ function row(label, v, unit) {
   return `<div style="display:flex;justify-content:space-between;padding:5px 0;
                       border-bottom:1px solid var(--border-light);font-size:13px;">
     <span style="color:var(--text-muted);">${label}</span>
-    <span style="font-weight:600;">${display}</span>
+    <span style="font-weight:500;">${display}</span>
   </div>`;
 }
 
@@ -976,7 +976,7 @@ async function openDayDetail(dateIso) {
         <div style="margin-bottom:${i < d.checkins.length - 1 ? '20px' : '0'};
                     ${i < d.checkins.length - 1 ? 'padding-bottom:20px;border-bottom:2px solid var(--border-light);' : ''}">
           <div style="font-size:10px;text-transform:uppercase;letter-spacing:.07em;
-                      font-weight:700;color:var(--text-muted);margin-bottom:10px;">${escHtml(label)}</div>
+                      font-weight:500;color:var(--text-muted);margin-bottom:10px;">${escHtml(label)}</div>
           <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 16px;">
             <div>
               ${row('Mood',        c.mood_score,   '/10')}
@@ -997,11 +997,11 @@ async function openDayDetail(dateIso) {
           </div>
           ${meds.length ? `<div style="margin-top:10px;font-size:12px;">
             <span style="color:var(--text-muted);">Medications:</span>
-            <span style="font-weight:600;">${meds.map(m => escHtml(m)).join(', ')}</span>
+            <span style="font-weight:500;">${meds.map(m => escHtml(m)).join(', ')}</span>
           </div>` : ''}
           ${c.notes ? `<div style="margin-top:10px;font-size:12px;line-height:1.55;
-                                   background:var(--surface-alt,#f7f7f7);padding:8px 10px;
-                                   border-left:3px solid var(--border-light);">
+                                   background:var(--bg);padding:8px 10px;
+                                   border:0.5px solid var(--border);border-radius:6px;">
             <div style="font-size:10px;text-transform:uppercase;letter-spacing:.06em;
                         color:var(--text-muted);margin-bottom:4px;">Notes</div>
             ${escHtml(c.notes)}
@@ -1321,11 +1321,11 @@ async function loadSynthesis(force) {
           const isGood = (m.higherGood && delta > 0) || (!m.higherGood && delta < 0);
           const isBad  = (m.higherGood && delta < 0) || (!m.higherGood && delta > 0);
           const color  = isGood ? 'var(--green,#2e7d32)' : (isBad ? '#c0392b' : 'var(--text-muted)');
-          deltaHtml = `<span style="color:${color};font-weight:600;">${sign}${delta}</span>`;
+          deltaHtml = `<span style="color:${color};font-weight:500;">${sign}${delta}</span>`;
         }
 
         return `<tr style="border-bottom:1px solid var(--border-light);">
-          <td style="padding:9px 10px;font-weight:600;">${m.label}</td>
+          <td style="padding:9px 10px;font-weight:500;">${m.label}</td>
           <td style="padding:9px 10px;text-align:right;">${preVal != null ? preVal + m.unit : '—'}</td>
           <td style="padding:9px 10px;text-align:right;">${postVal != null ? postVal + m.unit : '—'}</td>
           <td style="padding:9px 10px;text-align:right;">${deltaHtml}</td>
@@ -1437,14 +1437,14 @@ function exportRecap() {
 <title>Appointment Recap — ${patientName}</title>
 <style>
   body { font-family: 'Helvetica Neue', Helvetica, Arial, sans-serif; font-size: 13px; color: #1a1a1a; max-width: 780px; margin: 0 auto; padding: 32px 40px; }
-  h1 { font-size: 22px; font-weight: 700; margin: 0 0 4px; }
+  h1 { font-size: 22px; font-weight: 500; margin: 0 0 4px; }
   .meta { font-size: 12px; color: #666; margin-bottom: 28px; }
   .section { margin-bottom: 28px; }
-  .section-title { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .08em; color: #666; border-bottom: 1px solid #e0e0e0; padding-bottom: 5px; margin-bottom: 12px; }
+  .section-title { font-size: 11px; font-weight: 500; text-transform: uppercase; letter-spacing: .08em; color: #666; border-bottom: 1px solid #e0e0e0; padding-bottom: 5px; margin-bottom: 12px; }
   .stats-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; margin-bottom: 8px; }
   .stat-box { border: 1px solid #e0e0e0; padding: 10px 12px; }
   .stat-label { font-size: 10px; text-transform: uppercase; color: #888; margin-bottom: 4px; }
-  .stat-val { font-size: 22px; font-weight: 700; }
+  .stat-val { font-size: 22px; font-weight: 500; }
   .stat-unit { font-size: 11px; color: #888; }
   .summary-text { font-size: 13px; line-height: 1.7; white-space: pre-wrap; background: #f8f8f8; border: 1px solid #e8e8e8; padding: 14px 16px; }
   .notes-text { white-space: pre-wrap; font-size: 13px; line-height: 1.65; }
@@ -1457,7 +1457,7 @@ function exportRecap() {
   .action-item.done { color: #888; text-decoration: line-through; }
   .chk { font-size: 14px; flex-shrink: 0; color: #333; }
   .next-box { border: 1px solid #e0e0e0; padding: 14px 16px; }
-  .next-date { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .next-date { font-size: 20px; font-weight: 500; margin-bottom: 6px; }
   .footer { margin-top: 40px; padding-top: 16px; border-top: 1px solid #e0e0e0; font-size: 11px; color: #aaa; }
   @media print { body { padding: 0; } }
 </style>

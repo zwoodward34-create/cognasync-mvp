@@ -1,0 +1,158 @@
+{% extends "layout.html" %}
+{% block title %}Voice Notes — CognaSync{% endblock %}
+
+{% block head %}
+<style>
+.vn-list-wrap { max-width: 680px; }
+
+.vn-list-empty {
+  text-align: center;
+  padding: 60px 20px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+.vn-list-empty-icon { font-size: 2rem; margin-bottom: 12px; }
+.vn-list-empty-title { font-family: 'DM Serif Display', serif; font-size: 1.2rem; margin-bottom: 6px; }
+.vn-list-empty-sub   { font-size: 0.855rem; color: var(--text-muted); line-height: 1.55; }
+
+.vn-note-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.vn-note-hdr {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--border-light);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.vn-note-date {
+  font-size: 0.78rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.vn-note-status {
+  display: inline-flex;
+  align-items: center;
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  padding: 2px 8px;
+  border-radius: 3px;
+  border: 1px solid;
+  white-space: nowrap;
+}
+.vn-note-status--complete { color: var(--green); background: var(--green-light); border-color: #90c8a8; }
+.vn-note-status--pending  { color: var(--amber); background: var(--amber-light); border-color: #c8b060; }
+.vn-note-status--error    { color: var(--red);   background: var(--red-light);   border-color: #e0a0a0; }
+
+.vn-note-body { padding: 14px 18px; }
+
+.vn-note-question {
+  font-size: 0.78rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.vn-note-question-text {
+  font-size: 0.9rem;
+  color: var(--text-mid);
+  font-style: italic;
+  margin-bottom: 14px;
+  line-height: 1.5;
+  padding-left: 10px;
+}
+
+.vn-note-transcript-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+
+.vn-note-transcript {
+  font-size: 0.875rem;
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-wrap;
+}
+
+.vn-note-processing {
+  font-size: 0.855rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="vn-list-wrap">
+
+  <div class="page-header">
+    <div>
+      <h1 class="page-title">Voice Notes</h1>
+      <div class="page-sub">Recordings submitted before your appointments</div>
+    </div>
+  </div>
+
+  {% if not voice_notes %}
+  <div class="vn-list-empty">
+    <div class="vn-list-empty-icon">🎙</div>
+    <div class="vn-list-empty-title">No voice notes yet</div>
+    <div class="vn-list-empty-sub">
+      When your provider sends you a voice note request before an appointment,<br>
+      your recording will appear here after you submit it.
+    </div>
+  </div>
+
+  {% else %}
+  {% for note in voice_notes %}
+  <div class="vn-note-card">
+    <div class="vn-note-hdr">
+      <span class="vn-note-date">
+        {{ note.created_at[:10] if note.created_at else '—' }}
+      </span>
+      {% if note.processing_status == 'complete' %}
+        <span class="vn-note-status vn-note-status--complete">Transcribed</span>
+      {% elif note.processing_status == 'error' %}
+        <span class="vn-note-status vn-note-status--error">Processing error</span>
+      {% else %}
+        <span class="vn-note-status vn-note-status--pending">Processing</span>
+      {% endif %}
+    </div>
+    <div class="vn-note-body">
+      {% if note.guiding_question %}
+      <div class="vn-note-question">Provider asked</div>
+      <div class="vn-note-question-text">{{ note.guiding_question }}</div>
+      {% endif %}
+
+      <div class="vn-note-transcript-label">Your response</div>
+      {% if note.transcript %}
+        <div class="vn-note-transcript">{{ note.transcript }}</div>
+      {% elif note.processing_status == 'error' %}
+        <div class="vn-note-processing">Transcription failed — your audio was received but could not be processed.</div>
+      {% else %}
+        <div class="vn-note-processing">Your recording is being transcribed. Check back shortly.</div>
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+  {% endif %}
+
+</div>
+{% endblock %}

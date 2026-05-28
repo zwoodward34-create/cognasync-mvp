@@ -283,17 +283,33 @@ def register_post():
     full_name = request.form.get('full_name', '').strip()
     role = request.form.get('role', 'patient')
     invite_token = request.form.get('invite_token', '').strip()
+    provider_type = request.form.get('provider_type', '').strip() or None
     # Rebuild invite context for re-rendering on error
     invite_context = db.get_patient_invite_by_token(invite_token) if invite_token else None
+
+    # Validate provider_type when registering as provider
+    valid_provider_types = ('psychiatrist', 'therapist', 'counselor')
+    if role == 'provider' and provider_type not in valid_provider_types:
+        flash('Please select a provider type (Psychiatrist, Therapist, or Counselor).', 'error')
+        return render_template('auth/register.html', email=email, full_name=full_name, role=role,
+                               provider_type=provider_type,
+                               invite_token=invite_token, invite_email=email if invite_token else None,
+                               invite_context=invite_context)
+
     if password != confirm_password:
         flash('Passwords do not match.', 'error')
         return render_template('auth/register.html', email=email, full_name=full_name, role=role,
+                               provider_type=provider_type,
                                invite_token=invite_token, invite_email=email if invite_token else None,
                                invite_context=invite_context)
-    result, error = auth_module.register_user(email, password, full_name, role)
+    result, error = auth_module.register_user(
+        email, password, full_name, role,
+        provider_type=provider_type if role == 'provider' else None,
+    )
     if error:
         flash(error, 'error')
         return render_template('auth/register.html', email=email, full_name=full_name, role=role,
+                               provider_type=provider_type,
                                invite_token=invite_token, invite_email=email if invite_token else None,
                                invite_context=invite_context)
     email_sent = result.get('email_sent', True)
@@ -638,6 +654,15 @@ def settings_page():
         linked_provider = db.get_user_by_id(profile['provider_id'])
     return render_template('patient/settings.html', user=user, profile=profile,
                            linked_provider=linked_provider)
+
+
+@app.route('/voice-notes')
+def patient_voice_notes_page():
+    user, redir = _require_patient()
+    if redir:
+        return redir
+    notes = db.get_voice_notes_for_patient(user['id'], limit=20)
+    return render_template('patient/voice_notes.html', user=user, voice_notes=notes or [])
 
 
 @app.route('/provider')
@@ -2515,19 +2540,32 @@ def api_provider_generate_summary(patient_id):
     flags = db.get_patient_flags(patient_id, days=summary_days)
     what_worked = db.get_what_worked_patterns(patient_id, days=max(summary_days, 60))
 
+    provider_type = user.get('provider_type')
     try:
-        result = claude_api.generate_appointment_summary(
-            checkins, journals,
-            days=summary_days,
-            period_start=period_start,
-            period_end=period_end,
-            appointment_date=appointment_date,
-            audience='provider',
-            symptom_patterns=symptom_patterns,
-            substance_flags=flags.get('substance'),
-            safety_flags=flags.get('safety'),
-            what_worked=what_worked,
-        )
+        if provider_type in ('therapist', 'counselor'):
+            result = claude_api.generate_therapy_summary(
+                checkins, journals,
+                days=summary_days,
+                period_start=period_start,
+                period_end=period_end,
+                appointment_date=appointment_date,
+                safety_flags=flags.get('safety'),
+                substance_flags=flags.get('substance'),
+            )
+        else:
+            # psychiatrist, unknown, or None — default to Mode C provider brief
+            result = claude_api.generate_appointment_summary(
+                checkins, journals,
+                days=summary_days,
+                period_start=period_start,
+                period_end=period_end,
+                appointment_date=appointment_date,
+                audience='provider',
+                symptom_patterns=symptom_patterns,
+                substance_flags=flags.get('substance'),
+                safety_flags=flags.get('safety'),
+                what_worked=what_worked,
+            )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
 
@@ -2585,6 +2623,28 @@ def api_update_profile():
     if updates:
         db.update_patient_profile(user['id'], **updates)
     return jsonify({'message': 'Profile updated'}), 200
+
+
+@app.route('/api/settings/provider-profile', methods=['POST'])
+def api_update_provider_profile():
+    user, err = _api_user('provider')
+    if err:
+        return err
+    data = request.json or {}
+
+    updates = {}
+    if 'provider_type' in data:
+        pt = data['provider_type']
+        if pt not in ('psychiatrist', 'therapist', 'counselor'):
+            return jsonify({'error': 'Invalid provider_type. Must be psychiatrist, therapist, or counselor'}), 400
+        updates['provider_type'] = pt
+
+    if updates:
+        try:
+            db.supabase_admin.table('profiles').update(updates).eq('id', user['id']).execute()
+        except Exception as e:
+            return jsonify({'error': f'Could not update profile: {e}'}), 500
+    return jsonify({'message': 'Provider profile updated'}), 200
 
 
 @app.route('/api/settings/password', methods=['POST'])
@@ -3405,6 +3465,669 @@ def api_intel_get_brief(brief_id):
 
 
 # ── end intelligence layer routes ────────────────────────────────────────────
+
+
+# ── SMS / Voice Note routes ───────────────────────────────────────────────────
+
+import sms_engine as _sms
+
+def _validate_checkin_token(token_str):
+    """Return token record dict or None. Does not mark used."""
+    from datetime import datetime, timezone
+    try:
+        res = db.supabase_admin.table('checkin_tokens').select('*').eq(
+            'token', token_str).limit(1).execute()
+        if not res.data:
+            return None
+        tok = res.data[0]
+        if tok.get('used_at'):
+            return None
+        expires = tok.get('expires_at', '')
+        if expires:
+            exp_dt = datetime.fromisoformat(expires.replace('Z', '+00:00'))
+            if datetime.now(timezone.utc) > exp_dt:
+                return None
+        return tok
+    except Exception:
+        return None
+
+
+@app.route('/checkin/go/<token_str>')
+def checkin_magic_link(token_str):
+    """Magic link entry point from SMS. Validates token then redirects to check-in."""
+    tok = _validate_checkin_token(token_str)
+    if not tok:
+        return render_template('token_invalid.html',
+            message='Check-in links expire after 48 hours and can only be used once. Your provider can send a new link if needed.'), 410
+    # Mark used
+    db.supabase_admin.table('checkin_tokens').update(
+        {'used_at': 'now()'}
+    ).eq('token', token_str).execute()
+    appt_id = tok.get('appointment_id')
+    qs = '?mode=sms'
+    if appt_id:
+        qs += f'&appointment_id={appt_id}'
+    return redirect(f'/checkin{qs}')
+
+
+@app.route('/voice/<token_str>')
+def voice_note_page(token_str):
+    """Patient-facing voice note recording page. No login required."""
+    tok = _validate_checkin_token(token_str)
+    if not tok:
+        return render_template('token_invalid.html',
+            message='Voice note links expire after 48 hours. Your provider can send a new link if needed.'), 410
+    prompt = tok.get('voice_prompt') or _sms.DEFAULT_VOICE_PROMPTS['default']
+    return render_template('patient/voice_note.html',
+                           token=token_str,
+                           guiding_question=prompt)
+
+
+@app.route('/api/voice/submit/<token_str>', methods=['POST'])
+def api_voice_submit(token_str):
+    """Receive patient voice note audio. No login required."""
+    tok = _validate_checkin_token(token_str)
+    if not tok:
+        return jsonify({'error': 'Invalid or expired link'}), 410
+
+    if 'audio' not in request.files:
+        return jsonify({'error': 'No audio file provided'}), 400
+
+    audio_file = request.files['audio']
+    audio_bytes = audio_file.read()
+    if len(audio_bytes) > 10 * 1024 * 1024:
+        return jsonify({'error': 'Audio file too large (max 10 MB)'}), 413
+
+    patient_id = tok['patient_id']
+    file_name = f"{patient_id}/{token_str}.webm"
+
+    # Upload to Supabase Storage
+    audio_url = None
+    try:
+        db.supabase_admin.storage.from_('voice-notes').upload(
+            path=file_name,
+            file=audio_bytes,
+            file_options={'content-type': audio_file.mimetype or 'audio/webm'},
+        )
+        audio_url = db.supabase_admin.storage.from_('voice-notes').get_public_url(file_name)
+    except Exception as e:
+        app.logger.error(f'[voice] Storage upload failed: {e}')
+        # Continue — we can still store the note without a URL
+
+    # Insert voice_notes row
+    vn_row = {
+        'patient_id':        patient_id,
+        'token_id':          tok['id'],
+        'guiding_question':  tok.get('voice_prompt'),
+        'audio_url':         audio_url,
+        'processing_status': 'pending',
+    }
+    if tok.get('appointment_id'):
+        vn_row['appointment_id'] = tok['appointment_id']
+    if tok.get('provider_id'):
+        vn_row['provider_id'] = tok['provider_id']
+
+    res = db.supabase_admin.table('voice_notes').insert(vn_row).execute()
+    voice_note_id = res.data[0]['id'] if res.data else None
+
+    # Mark token used
+    db.supabase_admin.table('checkin_tokens').update(
+        {'used_at': 'now()'}
+    ).eq('token', token_str).execute()
+
+    # Background transcription — reuses audio_engine transcription pipeline
+    if voice_note_id and audio_bytes:
+        import threading as _threading
+        _audio_bytes_snapshot = audio_bytes
+        _mime_snapshot = audio_file.mimetype or 'audio/webm'
+        def _transcribe():
+            try:
+                import uuid as _uuid
+                from audio_engine import transcribe_audio_file
+                result = transcribe_audio_file(
+                    file_bytes=_audio_bytes_snapshot,
+                    filename='voice_note.webm',
+                    patient_id=patient_id,
+                    session_id=str(_uuid.uuid4()),
+                )
+                if result.get('status') == 'completed' and result.get('text'):
+                    db.supabase_admin.table('voice_notes').update({
+                        'transcript':        result['text'],
+                        'processing_status': 'complete',
+                    }).eq('id', voice_note_id).execute()
+                else:
+                    db.supabase_admin.table('voice_notes').update({
+                        'processing_status': 'error',
+                        'processing_error':  result.get('error', 'Transcription failed'),
+                    }).eq('id', voice_note_id).execute()
+            except Exception as ex:
+                app.logger.error(f'[voice] Transcription failed: {ex}')
+                db.supabase_admin.table('voice_notes').update({
+                    'processing_status': 'error',
+                    'processing_error':  str(ex),
+                }).eq('id', voice_note_id).execute()
+        _threading.Thread(target=_transcribe, daemon=True).start()
+
+    return jsonify({'ok': True, 'voice_note_id': voice_note_id}), 201
+
+
+@app.route('/api/sms/inbound', methods=['POST'])
+def api_sms_inbound():
+    """Twilio inbound SMS webhook. Handles medication Y/N replies."""
+    from_number = request.form.get('From', '')
+    body        = request.form.get('Body', '').strip()
+
+    taken = _sms.parse_medication_reply(body)
+    if taken is not None and from_number:
+        # Find patient by phone number
+        try:
+            prof_res = db.supabase_admin.table('profiles').select(
+                'id').eq('phone_number', from_number).limit(1).execute()
+            if prof_res.data:
+                patient_id = prof_res.data[0]['id']
+                # Update most recent medication SMS log
+                log_res = db.supabase_admin.table('medication_sms_logs').select(
+                    'id').eq('patient_id', patient_id).is_(
+                    'replied_at', 'null').order('sent_at', desc=True).limit(1).execute()
+                if log_res.data:
+                    db.supabase_admin.table('medication_sms_logs').update({
+                        'replied_at': 'now()',
+                        'taken':      taken,
+                        'raw_reply':  body[:200],
+                    }).eq('id', log_res.data[0]['id']).execute()
+        except Exception as e:
+            app.logger.error(f'[sms_inbound] Error processing reply: {e}')
+
+    # Always return empty TwiML
+    return app.response_class(
+        '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        mimetype='text/xml',
+    )
+
+
+@app.route('/api/internal/send-appointment-sms', methods=['POST', 'GET'])
+def api_send_appointment_sms():
+    """Cron endpoint: send check-in SMS for appointments in the next 24-48 hours."""
+    secret = request.headers.get('X-Internal-Secret', '')
+    if not _INTERNAL_SECRET or secret != _INTERNAL_SECRET:
+        return jsonify({'error': 'Unauthorized'}), 401
+
+    dry_run = request.args.get('dry_run', '').lower() == 'true'
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    window_start = now + timedelta(hours=24)
+    window_end   = now + timedelta(hours=48)
+
+    try:
+        appt_res = db.supabase_admin.table('provider_appointments').select(
+            'id, patient_id, provider_id, appointment_date'
+        ).gte('appointment_date', window_start.date().isoformat()).lte(
+            'appointment_date', window_end.date().isoformat()
+        ).execute()
+        appointments = appt_res.data or []
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+    results = []
+    for appt in appointments:
+        patient_id = appt['patient_id']
+        try:
+            prof = db.supabase_admin.table('profiles').select(
+                'full_name, phone_number'
+            ).eq('id', patient_id).single().execute()
+            phone = (prof.data or {}).get('phone_number')
+            name  = (prof.data or {}).get('full_name', '')
+            if not phone:
+                results.append({'patient_id': patient_id, 'action': 'skipped', 'reason': 'no phone'})
+                continue
+            if dry_run:
+                results.append({'patient_id': patient_id, 'action': 'dry_run', 'phone': phone[-4:]})
+                continue
+            token = _sms.create_checkin_token(
+                patient_id=patient_id,
+                appointment_id=appt['id'],
+                provider_id=appt.get('provider_id'),
+            )
+            res = _sms.send_checkin_sms(phone, name, token)
+            results.append({'patient_id': patient_id, 'action': 'sent' if res.get('ok') else 'failed'})
+        except Exception as e:
+            results.append({'patient_id': patient_id, 'action': 'error', 'error': str(e)})
+
+    return jsonify({'sent': sum(1 for r in results if r.get('action') == 'sent'),
+                   'skipped': sum(1 for r in results if r.get('action') == 'skipped'),
+                   'dry_run': dry_run, 'results': results})
+
+
+@app.route('/api/provider/patient/<patient_id>/send-checkin-sms', methods=['POST'])
+def api_send_patient_checkin_sms(patient_id):
+    """Provider manually triggers check-in SMS for a specific patient."""
+    provider, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(provider['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+
+    data         = request.get_json(silent=True) or {}
+    voice_prompt = data.get('voice_prompt')
+
+    prof = db.supabase_admin.table('profiles').select(
+        'full_name, phone_number'
+    ).eq('id', patient_id).single().execute()
+    phone = (prof.data or {}).get('phone_number')
+    name  = (prof.data or {}).get('full_name', '')
+
+    if not phone:
+        return jsonify({'error': 'Patient has no phone number on file'}), 400
+
+    token = _sms.create_checkin_token(
+        patient_id=patient_id,
+        provider_id=provider['id'],
+        voice_prompt=voice_prompt,
+    )
+    result = _sms.send_checkin_sms(phone, name, token, voice_prompt=voice_prompt)
+
+    if not result.get('ok'):
+        return jsonify({'error': result.get('error', 'SMS send failed')}), 500
+
+    return jsonify({'ok': True, 'phone_last4': phone[-4:] if len(phone) >= 4 else '****'})
+
+@app.route('/api/provider/patient/<patient_id>/voice-notes', methods=['GET'])
+def api_get_patient_voice_notes(patient_id):
+    """Return voice notes + transcripts for a patient (provider view)."""
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    notes = db.get_voice_notes_for_patient(patient_id, limit=20)
+    return jsonify({'ok': True, 'voice_notes': notes or []})
+
+
+# ── end SMS / Voice Note routes ───────────────────────────────────────────────
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# TWILIO INBOUND WEBHOOKS
+# These endpoints receive data POSTed by Twilio Studio at the end of each flow.
+# Every request is validated against the X-Twilio-Signature header before any
+# data is processed. Invalid signatures → 403 immediately.
+#
+# Crisis detection runs on ALL free-text inputs before storage.
+# ═══════════════════════════════════════════════════════════════════════════════
+
+import twilio_client as _twilio
+
+_INTERNAL_SECRET = os.environ.get('INTERNAL_SECRET', '')
+
+
+def _validate_twilio_signature():
+    """
+    Validate X-Twilio-Signature on inbound webhook requests.
+    Returns (True, None) if valid, (False, error_response) if invalid.
+    Uses the full request URL as seen by Twilio (including https scheme).
+    """
+    sig = request.headers.get('X-Twilio-Signature', '')
+    url = request.url
+    params = request.form.to_dict()
+
+    if not _twilio.validate_webhook_signature(url, params, sig):
+        app.logger.warning(f"[twilio] Invalid webhook signature from {request.remote_addr}")
+        return False, (jsonify({'error': 'Invalid Twilio signature'}), 403)
+    return True, None
+
+
+def _validate_internal_secret():
+    """
+    Validate the INTERNAL_SECRET header on cron-triggered endpoints.
+    Returns (True, None) if valid, (False, error_response) if invalid.
+    """
+    provided = request.headers.get('X-Internal-Secret', '')
+    if not _INTERNAL_SECRET or not hmac.compare_digest(provided, _INTERNAL_SECRET):
+        app.logger.warning(f"[internal] Invalid secret from {request.remote_addr}")
+        return False, (jsonify({'error': 'Unauthorized'}), 403)
+    return True, None
+
+
+@app.route('/api/twilio/medication-adherence', methods=['POST'])
+@limiter.limit('500/hour')
+def twilio_medication_adherence():
+    """
+    Inbound webhook from Twilio Flow 1 (Medication Adherence).
+
+    Expected POST fields (from Twilio Studio HTTP Request widget):
+      token           : SMS token identifying the patient
+      result          : 'Y' or 'N' (patient's reply)
+      medication_name : medication name passed into the flow
+      responded_at    : ISO timestamp of the patient's reply (optional)
+    """
+    valid, err = _validate_twilio_signature()
+    if not valid:
+        return err
+
+    token = request.form.get('token', '').strip()
+    result_raw = request.form.get('result', '').strip().upper()
+    medication_name = request.form.get('medication_name', 'medication').strip()
+    responded_at = request.form.get('responded_at')
+
+    token_data = db.validate_and_consume_token(token)
+    if not token_data:
+        app.logger.warning(f"[twilio/med] Invalid or expired token={token!r}")
+        return jsonify({'error': 'Invalid token'}), 400
+
+    if token_data['flow_type'] != 'medication':
+        app.logger.warning(f"[twilio/med] Wrong flow_type={token_data['flow_type']!r}")
+        return jsonify({'error': 'Token flow_type mismatch'}), 400
+
+    patient_id = token_data['patient_id']
+    adhered = result_raw == 'Y'
+
+    db.log_medication_adherence_from_sms(
+        patient_id=patient_id,
+        adhered=adhered,
+        medication_name=medication_name,
+        responded_at=responded_at,
+    )
+
+    app.logger.info(f"[twilio/med] patient={patient_id!r} adhered={adhered} med={medication_name!r}")
+    return jsonify({'ok': True})
+
+
+@app.route('/api/twilio/checkin', methods=['POST'])
+@limiter.limit('500/hour')
+def twilio_checkin():
+    """
+    Inbound webhook from Twilio Flow 2 (Short Check-In) or Flow 3 (Full Check-In).
+
+    Expected POST fields:
+      token           : SMS token identifying the patient
+      check_in_type   : 'short' or 'full'
+      mood            : 1-10 integer string
+      sleep_hours     : float string (e.g. '7' or '6.5')
+      stress          : 1-10 integer string
+      energy          : 1-10 integer string (full only)
+      follow_up_note  : free text (adaptive follow-up response, if triggered)
+      follow_up_type  : 'mood' | 'stress' | 'sleep' | 'energy' (which triggered it)
+      medication_note : free text from Q5 branch (full only)
+      agenda_note     : free text from Q6 (full only)
+    """
+    valid, err = _validate_twilio_signature()
+    if not valid:
+        return err
+
+    token = request.form.get('token', '').strip()
+    token_data = db.validate_and_consume_token(token)
+    if not token_data:
+        app.logger.warning(f"[twilio/checkin] Invalid or expired token={token!r}")
+        return jsonify({'error': 'Invalid token'}), 400
+
+    check_in_type = request.form.get('check_in_type', 'short').strip()
+    if token_data['flow_type'] not in ('short', 'full'):
+        app.logger.warning(f"[twilio/checkin] Wrong flow_type={token_data['flow_type']!r}")
+        return jsonify({'error': 'Token flow_type mismatch'}), 400
+
+    patient_id = token_data['patient_id']
+
+    # Collect all fields — missing fields stay None (handled in log_checkin_from_sms)
+    def _safe_int(key):
+        try:
+            v = request.form.get(key, '').strip()
+            n = int(v)
+            return n if 1 <= n <= 10 else None
+        except (ValueError, TypeError):
+            return None
+
+    def _safe_float(key):
+        try:
+            return float(request.form.get(key, '').strip())
+        except (ValueError, TypeError):
+            return None
+
+    data = {
+        'mood':            _safe_int('mood'),
+        'sleep_hours':     _safe_float('sleep_hours'),
+        'stress':          _safe_int('stress'),
+        'energy':          _safe_int('energy'),
+        'follow_up_note':  request.form.get('follow_up_note', '').strip() or None,
+        'follow_up_type':  request.form.get('follow_up_type', '').strip() or None,
+        'medication_note': request.form.get('medication_note', '').strip() or None,
+        'agenda_note':     request.form.get('agenda_note', '').strip() or None,
+    }
+
+    # Crisis detection on ALL free-text fields before storage
+    free_text_fields = ['follow_up_note', 'medication_note', 'agenda_note']
+    for field in free_text_fields:
+        text = data.get(field)
+        if text:
+            crisis = claude_api._check_crisis(text)
+            if crisis:
+                app.logger.critical(
+                    f"[twilio/checkin] CRISIS DETECTED patient={patient_id!r} field={field!r}"
+                )
+                # Notify provider immediately — crisis takes priority over normal flow
+                # (Provider notification implemented in claude_api or a dedicated alert fn)
+                # Store the check-in anyway so the provider sees it in context
+                break
+
+    checkin_id = db.log_checkin_from_sms(
+        patient_id=patient_id,
+        data=data,
+        check_in_type=check_in_type,
+    )
+
+    app.logger.info(
+        f"[twilio/checkin] stored id={checkin_id!r} type={check_in_type!r} patient={patient_id!r}"
+    )
+    return jsonify({'ok': True, 'checkin_id': checkin_id})
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# INTERNAL TRIGGER ENDPOINTS (called by Render cron jobs)
+# These endpoints kick off Twilio Studio flow executions for patients who are
+# due for a particular SMS flow. They are NOT callable by patients or providers.
+# Protected by INTERNAL_SECRET header (set as Render env var on cron service).
+# ═══════════════════════════════════════════════════════════════════════════════
+
+@app.route('/api/internal/trigger-medication-sms', methods=['POST'])
+def internal_trigger_medication_sms():
+    """
+    Called every 15 minutes by Render cron.
+    Finds patients whose medication dose time falls in the current window
+    and fires Twilio Flow 1 for each.
+    """
+    valid, err = _validate_internal_secret()
+    if not valid:
+        return err
+
+    from datetime import timezone as _tz
+    import pytz
+
+    now_utc = datetime.now(_tz.utc)
+    window_start = now_utc
+    window_end = now_utc + timedelta(minutes=15)
+
+    patients = db.get_patients_due_medication_sms(
+        window_start=window_start.strftime('%H:%M'),
+        window_end=window_end.strftime('%H:%M'),
+    )
+
+    triggered = 0
+    skipped = 0
+
+    for patient in patients:
+        # Convert patient's dose time to UTC for accurate comparison
+        try:
+            tz = pytz.timezone(patient['timezone'])
+            dose_local = datetime.strptime(patient['dose_time_local'], '%H:%M').time()
+            # Build a full datetime in patient's local tz for today
+            local_now = now_utc.astimezone(tz)
+            dose_dt_local = tz.localize(
+                datetime(local_now.year, local_now.month, local_now.day,
+                         dose_local.hour, dose_local.minute)
+            )
+            dose_dt_utc = dose_dt_local.astimezone(_tz.utc)
+
+            # Skip if dose time not in this 15-min window
+            if not (window_start <= dose_dt_utc < window_end):
+                skipped += 1
+                continue
+        except Exception as e:
+            app.logger.warning(f"[internal/med] TZ error patient={patient['patient_id']!r}: {e}")
+            skipped += 1
+            continue
+
+        token = db.create_sms_token(
+            patient_id=patient['patient_id'],
+            flow_type='medication',
+            metadata={'medication_name': patient['medication_name']},
+        )
+        if not token:
+            skipped += 1
+            continue
+
+        sid = _twilio.trigger_flow(
+            flow_type='medication',
+            to_phone=patient['phone'],
+            parameters={
+                'token':           token,
+                'medication_name': patient['medication_name'],
+                'patient_name':    '',  # optional — add to patient profile if desired
+            },
+        )
+        if sid:
+            triggered += 1
+        else:
+            skipped += 1
+
+    app.logger.info(f"[internal/med] triggered={triggered} skipped={skipped}")
+    return jsonify({'ok': True, 'triggered': triggered, 'skipped': skipped})
+
+
+@app.route('/api/internal/trigger-checkin-sms', methods=['POST'])
+def internal_trigger_checkin_sms():
+    """
+    Called on check-in schedule by Render cron.
+    Body JSON: {"type": "short"} or {"type": "full"}
+    Finds patients due for this check-in type and fires the appropriate flow.
+    """
+    valid, err = _validate_internal_secret()
+    if not valid:
+        return err
+
+    body = request.get_json(silent=True) or {}
+    check_in_type = body.get('type', 'short')
+
+    if check_in_type not in ('short', 'full'):
+        return jsonify({'error': 'type must be short or full'}), 400
+
+    base_url = os.environ.get('APP_URL', '').rstrip('/')
+    patients = db.get_patients_due_checkin_sms(check_in_type=check_in_type)
+
+    triggered = 0
+    skipped = 0
+
+    for patient in patients:
+        # Build token metadata
+        metadata = {}
+        if check_in_type == 'full' and patient.get('appt_id'):
+            metadata['appt_id'] = patient['appt_id']
+            metadata['provider_name'] = patient.get('provider_name', 'your provider')
+
+        token = db.create_sms_token(
+            patient_id=patient['patient_id'],
+            flow_type=check_in_type,
+            metadata=metadata,
+        )
+        if not token:
+            skipped += 1
+            continue
+
+        parameters = {
+            'token':          token,
+            'check_in_type':  check_in_type,
+            'patient_name':   '',
+        }
+
+        if check_in_type == 'full':
+            # Generate voice recording link with its own token
+            voice_token = db.create_sms_token(
+                patient_id=patient['patient_id'],
+                flow_type='voice',
+                metadata={'source': 'full_checkin', 'appt_id': patient.get('appt_id', '')},
+                ttl_hours=48,
+            )
+            parameters['provider_name'] = patient.get('provider_name', 'your provider')
+            parameters['appt_time'] = patient.get('appt_time', '')
+            parameters['voice_prompt'] = (
+                'How have you been feeling since your last appointment? '
+                'Have you noticed any changes in how your medication is working?'
+            )
+            parameters['voice_link'] = f"{base_url}/voice?token={voice_token}" if voice_token else ''
+
+            # Mark appointment so the cron doesn't fire again for this appt
+            if patient.get('appt_id'):
+                db.mark_appointment_checkin_triggered(patient['appt_id'])
+
+        sid = _twilio.trigger_flow(
+            flow_type=check_in_type,
+            to_phone=patient['phone'],
+            parameters=parameters,
+        )
+        if sid:
+            triggered += 1
+        else:
+            skipped += 1
+
+    app.logger.info(f"[internal/checkin/{check_in_type}] triggered={triggered} skipped={skipped}")
+    return jsonify({'ok': True, 'type': check_in_type, 'triggered': triggered, 'skipped': skipped})
+
+
+@app.route('/api/internal/trigger-voice-sms', methods=['POST'])
+def internal_trigger_voice_sms():
+    """
+    Called weekly on voice_day_of_week by Render cron.
+    Finds patients due for mid-week standalone voice recording and fires Flow 4.
+    """
+    valid, err = _validate_internal_secret()
+    if not valid:
+        return err
+
+    base_url = os.environ.get('APP_URL', '').rstrip('/')
+    patients = db.get_patients_due_voice_sms()
+
+    triggered = 0
+    skipped = 0
+
+    for patient in patients:
+        token = db.create_sms_token(
+            patient_id=patient['patient_id'],
+            flow_type='voice',
+            metadata={'source': 'standalone_weekly'},
+            ttl_hours=48,
+        )
+        if not token:
+            skipped += 1
+            continue
+
+        voice_link = f"{base_url}/voice?token={token}"
+
+        sid = _twilio.trigger_flow(
+            flow_type='voice',
+            to_phone=patient['phone'],
+            parameters={
+                'provider_name': patient.get('provider_name', 'your provider'),
+                'voice_prompt':  patient.get('voice_prompt', 'How have you been feeling this week?'),
+                'voice_link':    voice_link,
+            },
+        )
+        if sid:
+            triggered += 1
+        else:
+            skipped += 1
+
+    app.logger.info(f"[internal/voice] triggered={triggered} skipped={skipped}")
+    return jsonify({'ok': True, 'triggered': triggered, 'skipped': skipped})
+
+
+# ── end Twilio routes ─────────────────────────────────────────────────────────
 
 
 if __name__ == '__main__':

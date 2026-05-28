@@ -321,7 +321,7 @@ function injectCardInteractions(name, idx) {
   let crossHtml = '';
   if (relevant.length > 0) {
     crossHtml = `<div style="margin-bottom:12px">
-      <div style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:#b94a48;margin-bottom:6px">⚠ Active Interactions With Your Medications</div>
+      <div style="font-size:0.78rem;font-weight:500;text-transform:uppercase;letter-spacing:.06em;color:#b94a48;margin-bottom:6px">⚠ Active Interactions With Your Medications</div>
       ${relevant.map(ia => `
         <div class="interaction-alert interaction-alert--${ia.severity}" style="margin-bottom:6px">
           <div class="ia-drugs">${ia.drug_a} + ${ia.drug_b}</div>
@@ -780,7 +780,7 @@ initMedications();
   gap: 6px;
   padding: 3px 10px;
   border-radius: 4px;
-  font-weight: 600;
+  font-weight: 500;
 }
 .sev-serious  { background: #fde8e8; color: #b91c1c; border: 1px solid #fca5a5; }
 .sev-moderate { background: #fef9c3; color: #92400e; border: 1px solid #fde68a; }
@@ -801,14 +801,14 @@ initMedications();
 }
 .matrix-col-head, .matrix-row-head {
   background: var(--surface-2, #f9fafb);
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-primary, #111827);
 }
 .matrix-row-head { text-align: left; }
 .matrix-self { color: var(--text-muted, #9ca3af); background: var(--surface-2, #f3f4f6); }
-.matrix-cell.sev-serious  { background: #fde8e8; color: #b91c1c; font-weight: 600; }
-.matrix-cell.sev-moderate { background: #fef9c3; color: #92400e; font-weight: 600; }
-.matrix-cell.sev-caution  { background: #dbeafe; color: #1e40af; font-weight: 600; }
+.matrix-cell.sev-serious  { background: #fde8e8; color: #b91c1c; font-weight: 500; }
+.matrix-cell.sev-moderate { background: #fef9c3; color: #92400e; font-weight: 500; }
+.matrix-cell.sev-caution  { background: #dbeafe; color: #1e40af; font-weight: 500; }
 .matrix-cell.sev-none     { background: #f0fdf4; color: #166534; }
 .matrix-has-tip { cursor: pointer; position: relative; }
 .matrix-has-tip:hover { opacity: 0.85; }
@@ -834,7 +834,7 @@ initMedications();
 .matrix-alerts { margin-top: 20px; }
 .matrix-alerts-title {
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted, #6b7280);
@@ -847,7 +847,7 @@ initMedications();
   padding: 1px 7px;
   border-radius: 3px;
   font-size: 0.72rem;
-  font-weight: 700;
+  font-weight: 500;
   margin-left: 8px;
   vertical-align: middle;
 }
@@ -871,7 +871,7 @@ initMedications();
   padding: 14px 16px;
 }
 .wd-icon { font-size: 1.3rem; line-height: 1; flex-shrink: 0; padding-top: 1px; }
-.wd-title { font-size: 0.82rem; font-weight: 700; color: #92400e; margin-bottom: 6px; }
+.wd-title { font-size: 0.82rem; font-weight: 500; color: #92400e; margin-bottom: 6px; }
 .wd-text  { font-size: 0.88rem; color: var(--text-primary, #1f2937); line-height: 1.6; }
 
 /* ── ref-card additions ────────────────────────────────────────────────────── */
@@ -887,7 +887,7 @@ initMedications();
 .comparator-slot-label {
   display: block;
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-muted, #6b7280);
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -945,13 +945,13 @@ initMedications();
 .compare-card-header { margin-bottom: 10px; }
 .compare-card-name {
   font-size: 1rem;
-  font-weight: 700;
+  font-weight: 500;
   color: var(--text-primary, #111827);
   margin-bottom: 2px;
 }
 .compare-card-cat {
   font-size: 0.72rem;
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted, #6b7280);
@@ -970,7 +970,7 @@ initMedications();
   align-items: flex-start;
 }
 .compare-meta-label {
-  font-weight: 600;
+  font-weight: 500;
   color: var(--text-muted, #6b7280);
   flex-shrink: 0;
   min-width: 46px;
@@ -980,7 +980,7 @@ initMedications();
 /* ── Side-effect comparison table ─────────────────────────────────────────── */
 .compare-section-title {
   font-size: 0.78rem;
-  font-weight: 700;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.06em;
   color: var(--text-muted, #6b7280);
@@ -1000,8 +1000,8 @@ initMedications();
   border: 1px solid var(--border, #e5e7eb);
   text-align: center;
 }
-.cet-label-col { text-align: left; background: var(--surface-2, #f9fafb); font-weight: 600; white-space: nowrap; }
-.cet-med-col { font-weight: 600; font-size: 0.78rem; white-space: nowrap; }
+.cet-label-col { text-align: left; background: var(--surface-2, #f9fafb); font-weight: 500; white-space: nowrap; }
+.cet-med-col { font-weight: 500; font-size: 0.78rem; white-space: nowrap; }
 
 .compare-col-head-1 { background: var(--c1-bg); color: var(--c1); border-bottom: 2px solid var(--c1-border); }
 .compare-col-head-2 { background: var(--c2-bg); color: var(--c2); border-bottom: 2px solid var(--c2-border); }
@@ -1010,7 +1010,7 @@ initMedications();
 
 .cet-effect-name { text-align: left; color: var(--text-primary, #111827); }
 .cet-shared { background: #fefce8; }
-.cet-shared .cet-effect-name { font-weight: 600; }
+.cet-shared .cet-effect-name { font-weight: 500; }
 .cet-cell { position: relative; }
 .cet-dot { font-size: 1.1rem; }
 .cet-dash { color: var(--text-muted, #d1d5db); font-size: 1rem; }
@@ -1040,7 +1040,7 @@ initMedications();
   border-radius: 4px;
   padding: 1px 7px;
   font-size: 0.78rem;
-  font-weight: 600;
+  font-weight: 500;
   margin: 1px 2px;
 }
 
@@ -1073,7 +1073,7 @@ initMedications();
 }
 .compare-wd-name {
   font-size: 0.88rem;
-  font-weight: 700;
+  font-weight: 500;
   color: #92400e;
   margin-bottom: 6px;
 }
