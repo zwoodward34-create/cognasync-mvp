@@ -35,6 +35,27 @@
   </div>
 
   <div class="settings-card">
+    <h2 class="settings-heading">Phone Number</h2>
+    <p class="text-muted" style="margin-bottom:14px;font-size:13px;">
+      Used when your provider sends an SMS check-in link or voice note request.
+    </p>
+    <form id="phone-form">
+      <div class="form-group">
+        <label for="phone_number">Mobile phone number</label>
+        <input type="tel" id="phone_number" name="phone_number"
+               value="{{ profile.phone_number if profile and profile.phone_number else '' }}"
+               placeholder="+1 (555) 123-4567" class="form-input"
+               autocomplete="tel">
+        <p class="label-hint" style="margin-top:5px;font-size:12px;color:var(--text-muted);">
+          Include country code (e.g. +1 for US/Canada).
+        </p>
+      </div>
+      <button type="submit" class="btn btn-primary btn-sm">Save</button>
+      <span id="phone-msg" style="display:none;font-size:12px;margin-left:10px;"></span>
+    </form>
+  </div>
+
+  <div class="settings-card">
     <h2 class="settings-heading">Emergency Contact</h2>
     <form id="emergency-form">
       <div class="form-group">
@@ -240,6 +261,24 @@ function unlinkProvider() {
 function toggleLinkForm(show) {
   document.getElementById('provider-link-form').style.display = show ? '' : 'none';
 }
+
+document.getElementById('phone-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  const phone = document.getElementById('phone_number').value.trim();
+  const msg = document.getElementById('phone-msg');
+  msg.style.display = 'inline';
+  msg.style.color = 'var(--text-muted)';
+  msg.textContent = 'Saving…';
+  try {
+    await apiPost('/api/settings/profile', { phone_number: phone });
+    msg.textContent = 'Saved.';
+    msg.style.color = 'var(--green)';
+    setTimeout(() => { msg.style.display = 'none'; }, 2500);
+  } catch (err) {
+    msg.textContent = err.message || 'Failed to save.';
+    msg.style.color = 'var(--red)';
+  }
+});
 
 async function setReminders(enabled) {
   const msg = document.getElementById('reminder-msg');

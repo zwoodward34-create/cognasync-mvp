@@ -2596,6 +2596,12 @@ def api_update_profile():
     data = request.json or {}
 
     updates = {}
+    if 'phone_number' in data:
+        raw = (data['phone_number'] or '').strip()
+        # Strip formatting to E.164-friendly digits+plus; accept empty to clear
+        import re as _re
+        cleaned = _re.sub(r'[\s\-\(\)\.]+', '', raw)
+        updates['phone_number'] = cleaned or None
     if 'emergency_contact' in data:
         updates['emergency_contact'] = data['emergency_contact']
     if 'date_of_birth' in data:
