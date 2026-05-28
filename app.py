@@ -3735,11 +3735,16 @@ def api_send_patient_checkin_sms(patient_id):
         voice_prompt=voice_prompt,
     )
     result = _sms.send_checkin_sms(phone, name, token, voice_prompt=voice_prompt)
+    print(f'[sms_route] result={result}', flush=True)
 
     if not result.get('ok'):
         return jsonify({'error': result.get('error', 'SMS send failed')}), 500
 
-    return jsonify({'ok': True, 'phone_last4': phone[-4:] if len(phone) >= 4 else '****'})
+    return jsonify({
+        'ok': True,
+        'phone_last4': phone[-4:] if len(phone) >= 4 else '****',
+        'sid': result.get('sid', ''),
+    })
 
 @app.route('/api/provider/patient/<patient_id>/voice-notes', methods=['GET'])
 def api_get_patient_voice_notes(patient_id):

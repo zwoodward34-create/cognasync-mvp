@@ -1240,7 +1240,8 @@ async function sendCheckinSms() {
       prompt ? { voice_prompt: prompt } : {}
     );
     status.style.color = 'var(--green)';
-    status.textContent = 'Sent to …' + (data.phone_last4 || '');
+    status.textContent = 'Sent to …' + (data.phone_last4 || '')
+      + (data.sid ? ' (SID: ' + data.sid.slice(-8) + ')' : '');
     setTimeout(closeSmsModal, 2000);
   } catch (err) {
     status.style.color = 'var(--red)';

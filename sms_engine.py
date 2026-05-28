@@ -24,7 +24,12 @@ logger = logging.getLogger(__name__)
 
 TWILIO_ACCOUNT_SID = os.environ.get('TWILIO_ACCOUNT_SID', '')
 TWILIO_AUTH_TOKEN  = os.environ.get('TWILIO_AUTH_TOKEN', '')
-TWILIO_FROM_NUMBER = os.environ.get('TWILIO_FROM_NUMBER', '')
+# Accept either name — .env.example uses TWILIO_PHONE_NUMBER, older deploys use TWILIO_FROM_NUMBER
+TWILIO_FROM_NUMBER = (
+    os.environ.get('TWILIO_PHONE_NUMBER') or
+    os.environ.get('TWILIO_FROM_NUMBER') or
+    ''
+)
 APP_BASE_URL       = os.environ.get('APP_BASE_URL', 'https://cognasync.com').rstrip('/')
 
 DEFAULT_VOICE_PROMPTS = {
@@ -51,9 +56,17 @@ DEFAULT_VOICE_PROMPTS = {
 
 def send_sms(to_number: str, body: str) -> dict:
     """Send an SMS via Twilio. Returns {'ok': bool, 'sid': str} or {'ok': False, 'error': str}."""
+    print(f'[sms] send_sms called: to={to_number} from={TWILIO_FROM_NUMBER or "(not set)"} '
+          f'sid_set={bool(TWILIO_ACCOUNT_SID)} token_set={bool(TWILIO_AUTH_TOKEN)}', flush=True)
+
     if not all([TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_FROM_NUMBER]):
-        logger.warning('[sms] Twilio not configured — SMS not sent')
-        return {'ok': False, 'error': 'Twilio not configured'}
+        missing = [k for k, v in [
+            ('TWILIO_ACCOUNT_SID', TWILIO_ACCOUNT_SID),
+            ('TWILIO_AUTH_TOKEN', TWILIO_AUTH_TOKEN),
+            ('TWILIO_PHONE_NUMBER', TWILIO_FROM_NUMBER),
+        ] if not v]
+        print(f'[sms] ERROR: missing env vars: {missing}', flush=True)
+        return {'ok': False, 'error': f'Twilio not configured (missing: {", ".join(missing)})'}
     try:
         url = f'https://api.twilio.com/2010-04-01/Accounts/{TWILIO_ACCOUNT_SID}/Messages.json'
         resp = http_requests.post(
@@ -63,15 +76,18 @@ def send_sms(to_number: str, body: str) -> dict:
             timeout=10,
         )
         data = resp.json()
+        sid    = data.get('sid', '')
+        status = data.get('status', '')
+        print(f'[sms] Twilio response: status={resp.status_code} sid={sid} msg_status={status}', flush=True)
         if resp.status_code in (200, 201):
-            logger.info(f'[sms] sent to={to_number} sid={data.get("sid")}')
-            return {'ok': True, 'sid': data.get('sid', '')}
+            return {'ok': True, 'sid': sid, 'twilio_status': status}
         else:
             err = data.get('message', resp.text)
-            logger.error(f'[sms] Twilio error {resp.status_code}: {err}')
-            return {'ok': False, 'error': err}
+            code = data.get('code', '')
+            print(f'[sms] Twilio error {resp.status_code} code={code}: {err}', flush=True)
+            return {'ok': False, 'error': f'Twilio {resp.status_code}: {err}', 'twilio_code': code}
     except Exception as e:
-        logger.exception(f'[sms] send_sms exception: {e}')
+        print(f'[sms] Exception in send_sms: {e}', flush=True)
         return {'ok': False, 'error': str(e)}
 
 
