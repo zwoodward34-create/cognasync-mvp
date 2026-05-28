@@ -5,29 +5,29 @@
 <style>
 .appt-header        { display: flex; align-items: flex-end; justify-content: space-between;
                       flex-wrap: wrap; gap: 12px; margin-bottom: 24px; }
-.appt-title         { font-size: 1.4rem; font-weight: 700; color: var(--text); }
+.appt-title         { font-size: 1.4rem; font-weight: 500; color: var(--text); }
 .appt-subtitle      { font-size: 0.82rem; color: var(--text-muted); margin-top: 3px; }
 
-.appt-section-label { font-size: 0.7rem; font-weight: 800; text-transform: uppercase;
+.appt-section-label { font-size: 0.7rem; font-weight: 500; text-transform: uppercase;
                       letter-spacing: .1em; color: var(--text-muted); margin-bottom: 12px; }
 
 .appt-card          { background: var(--surface); border: 1px solid var(--border);
                       border-radius: var(--radius); padding: 18px 20px; margin-bottom: 10px;
                       display: flex; align-items: flex-start; gap: 14px; }
-.appt-card.upcoming { border-left: 3px solid var(--accent); }
+.appt-card.upcoming { border-color: var(--accent); background: var(--green-light); }
 .appt-card.past     { opacity: 0.75; }
 
 .appt-date-block    { flex-shrink: 0; width: 52px; text-align: center;
                       background: var(--bg); border-radius: 6px; padding: 6px 4px; }
-.appt-date-month    { font-size: 0.6rem; font-weight: 800; text-transform: uppercase;
+.appt-date-month    { font-size: 0.6rem; font-weight: 500; text-transform: uppercase;
                       letter-spacing: .06em; color: var(--text-muted); }
-.appt-date-day      { font-size: 1.5rem; font-weight: 700; color: var(--text); line-height: 1.1; }
+.appt-date-day      { font-size: 1.5rem; font-weight: 500; color: var(--text); line-height: 1.1; }
 .appt-date-year     { font-size: 0.65rem; color: var(--text-muted); }
 
 .appt-body          { flex: 1; min-width: 0; }
-.appt-provider      { font-size: 0.95rem; font-weight: 700; color: var(--text); }
+.appt-provider      { font-size: 0.95rem; font-weight: 500; color: var(--text); }
 .appt-type          { font-size: 0.8rem; color: var(--text-muted); margin-top: 2px; }
-.appt-upcoming-pill { display: inline-block; font-size: 0.62rem; font-weight: 700;
+.appt-upcoming-pill { display: inline-block; font-size: 0.62rem; font-weight: 500;
                       text-transform: uppercase; letter-spacing: .06em;
                       background: #dbeafe; color: #1d4ed8; padding: 2px 7px;
                       border-radius: 3px; margin-left: 8px; vertical-align: middle; }
@@ -41,7 +41,7 @@
 .request-section    { margin-top: 32px; }
 .request-card       { background: var(--surface); border: 1px solid var(--border);
                       border-radius: var(--radius); padding: 22px 24px; }
-.request-card h3    { font-size: 1rem; font-weight: 700; margin-bottom: 4px; }
+.request-card h3    { font-size: 1rem; font-weight: 500; margin-bottom: 4px; }
 .request-card p     { font-size: 0.82rem; color: var(--text-muted); margin-bottom: 18px; }
 .request-result     { font-size: 0.82rem; margin-top: 12px; padding: 10px 12px;
                       border-radius: 4px; display: none; }
@@ -110,7 +110,7 @@
   {% else %}
     <div class="appt-empty">
       <div class="appt-empty-icon">📅</div>
-      <div style="font-weight:600;margin-bottom:6px;">No appointments yet</div>
+      <div style="font-weight:500;margin-bottom:6px;">No appointments yet</div>
       <div>Your appointment history will appear here once your provider starts a session with you.</div>
     </div>
   {% endif %}

@@ -81,6 +81,16 @@
   --cs-space-8:  32px;
   --cs-space-10: 40px;
   --cs-space-12: 48px;
+
+  /* — Shadows (warm-tinted: Carbon Ink at opacity, never pure black) — */
+  --cs-shadow-resting:  0 1px 2px rgba(26,26,24,0.05), 0 1px 3px rgba(26,26,24,0.04);
+  --cs-shadow-lifted:   0 2px 8px rgba(26,26,24,0.08), 0 4px 16px rgba(26,26,24,0.05);
+  --cs-shadow-elevated: 0 8px 32px rgba(26,26,24,0.12), 0 16px 48px rgba(26,26,24,0.06);
+
+  /* — Motion — */
+  --cs-ease-out: cubic-bezier(0.25, 1, 0.5, 1);
+  --cs-duration-fast: 120ms;
+  --cs-duration-base: 200ms;
 }
 
 /* ============================================================
@@ -101,14 +111,16 @@
 .cs-t-hint  { color: var(--cs-text-tertiary); }
 .cs-t-teal  { color: var(--cs-teal-600); }
 
-.cs-card    { background: var(--cs-bg-primary); border: 0.5px solid var(--cs-border-default); border-radius: var(--cs-radius-lg); padding: var(--cs-space-5); }
-.cs-card-sm { background: var(--cs-bg-primary); border: 0.5px solid var(--cs-border-default); border-radius: var(--cs-radius-md); padding: var(--cs-space-3) var(--cs-space-4); }
+.cs-card    { background: var(--cs-bg-primary); border: 0.5px solid var(--cs-border-default); border-radius: var(--cs-radius-lg); padding: var(--cs-space-5); box-shadow: var(--cs-shadow-resting); }
+.cs-card-sm { background: var(--cs-bg-primary); border: 0.5px solid var(--cs-border-default); border-radius: var(--cs-radius-md); padding: var(--cs-space-3) var(--cs-space-4); box-shadow: var(--cs-shadow-resting); }
 .cs-surface { background: var(--cs-bg-secondary); border-radius: var(--cs-radius-md); padding: var(--cs-space-3) var(--cs-space-4); }
 
 /* — Buttons — */
-.cs-btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: var(--cs-radius-md); font-family: var(--cs-font-body); font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: opacity .15s; text-decoration: none; }
+.cs-btn { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: var(--cs-radius-md); font-family: var(--cs-font-body); font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: opacity var(--cs-duration-fast) var(--cs-ease-out), transform 80ms; text-decoration: none; }
 .cs-btn:hover { opacity: 0.88; }
-.cs-btn-primary   { background: var(--cs-teal-600); color: #fff; }
+.cs-btn:active { transform: scale(0.98); }
+.cs-btn:focus-visible { outline: 2px solid var(--cs-teal-400); outline-offset: 2px; }
+.cs-btn-primary   { background: var(--cs-teal-600); color: #FAFAF8; border: none; }
 .cs-btn-secondary { background: transparent; color: var(--cs-teal-600); border: 1px solid var(--cs-teal-600); }
 .cs-btn-ghost     { background: var(--cs-bg-secondary); color: var(--cs-text-secondary); border: 0.5px solid var(--cs-border-default); }
 .cs-btn-danger    { background: var(--cs-red-50); color: var(--cs-red-800); border: 1px solid var(--cs-red-400); }
@@ -121,17 +133,17 @@
 .cs-badge-decline  { background: var(--cs-red-50);   color: var(--cs-red-800); }
 .cs-badge-neutral  { background: var(--cs-bg-tertiary); color: var(--cs-text-secondary); }
 
-/* — Insight cards — */
-.cs-insight    { border-left: 2.5px solid; padding: 8px 0 8px 12px; }
-.cs-insight-l1 { border-color: var(--cs-teal-600); }
-.cs-insight-l2 { border-color: var(--cs-blue-600); }
-.cs-insight-l3 { border-color: var(--cs-amber-600); }
-.cs-insight-l4 { border-color: var(--cs-red-600); }
-.cs-insight-tag  { font-size: 10px; font-weight: 500; letter-spacing: .07em; text-transform: uppercase; margin-bottom: 3px; }
-.cs-insight-l1 .cs-insight-tag { color: var(--cs-teal-600); }
-.cs-insight-l2 .cs-insight-tag { color: var(--cs-blue-600); }
-.cs-insight-l3 .cs-insight-tag { color: var(--cs-amber-600); }
-.cs-insight-l4 .cs-insight-tag { color: var(--cs-red-600); }
+/* — Insight rows — tinted background + badge label, no side-stripe — */
+.cs-insight    { padding: 10px 12px; border-radius: var(--cs-radius-md); border: 0.5px solid; }
+.cs-insight-l1 { background: var(--cs-teal-50);  border-color: var(--cs-teal-100); }
+.cs-insight-l2 { background: #EAF2FC;             border-color: #C0D8F5; }
+.cs-insight-l3 { background: var(--cs-amber-50); border-color: #E8C97A; }
+.cs-insight-l4 { background: var(--cs-red-50);   border-color: #F0B8B8; }
+.cs-insight-tag  { display: inline-flex; align-items: center; font-size: 10px; font-weight: 500; letter-spacing: .07em; text-transform: uppercase; margin-bottom: 4px; padding: 2px 7px; border-radius: 20px; }
+.cs-insight-l1 .cs-insight-tag { color: var(--cs-teal-800);  background: var(--cs-teal-100); }
+.cs-insight-l2 .cs-insight-tag { color: #0D4075;             background: #C0D8F5; }
+.cs-insight-l3 .cs-insight-tag { color: var(--cs-amber-800); background: #F5D98A; }
+.cs-insight-l4 .cs-insight-tag { color: var(--cs-red-800);   background: #F0B8B8; }
 .cs-insight-text { font-size: 13px; color: var(--cs-text-primary); line-height: 1.5; }
 
 /* — Crisis banner (hard override) — */

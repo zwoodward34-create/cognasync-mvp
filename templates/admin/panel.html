@@ -11,7 +11,7 @@
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:var(--text-muted);margin-bottom:4px;">
         CognaSync
       </div>
-      <h1 style="font-size:20px;font-weight:700;margin:0;">Admin Panel</h1>
+      <h1 style="font-size:20px;font-weight:500;margin:0;">Admin Panel</h1>
     </div>
     <a href="{{ url_for('admin_logout') }}"
        style="font-size:12px;color:var(--text-muted);text-decoration:none;border:1px solid var(--border);
@@ -35,7 +35,7 @@
   <!-- Pending Approvals -->
   <div style="border:1px solid var(--border);margin-bottom:24px;">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;">
-      <span style="font-size:13px;font-weight:600;">Pending Approval</span>
+      <span style="font-size:13px;font-weight:500;">Pending Approval</span>
       {% if pending %}
         <span style="font-size:11px;background:#8b1a1a;color:#fff;padding:2px 8px;border-radius:10px;">
           {{ pending|length }}
@@ -47,11 +47,11 @@
       <table style="width:100%;border-collapse:collapse;">
         <thead>
           <tr style="background:var(--surface-alt);">
-            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Name</th>
-            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Email</th>
-            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Role</th>
-            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Requested</th>
-            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Actions</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:500;">Name</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:500;">Email</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:500;">Role</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:500;">Requested</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:500;">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -94,7 +94,7 @@
   <!-- Recently Approved -->
   <div style="border:1px solid var(--border);">
     <div style="padding:14px 18px;border-bottom:1px solid var(--border);">
-      <span style="font-size:13px;font-weight:600;">Recently Approved</span>
+      <span style="font-size:13px;font-weight:500;">Recently Approved</span>
       <span style="font-size:12px;color:var(--text-muted);margin-left:8px;">(last 20)</span>
     </div>
 
@@ -102,10 +102,10 @@
       <table style="width:100%;border-collapse:collapse;">
         <thead>
           <tr style="background:var(--surface-alt);">
-            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Name</th>
-            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Email</th>
-            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Role</th>
-            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:600;">Approved</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:500;">Name</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:500;">Email</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:500;">Role</th>
+            <th style="text-align:left;padding:8px 14px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--text-muted);font-weight:500;">Approved</th>
           </tr>
         </thead>
         <tbody>

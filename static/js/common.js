@@ -116,3 +116,12 @@ document.addEventListener('DOMContentLoaded', () => {
     setTimeout(() => el.remove(), 4600);
   });
 });
+
+// Nav scroll shadow
+(function () {
+  const nav = document.querySelector('.top-nav');
+  if (!nav) return;
+  const update = () => nav.classList.toggle('scrolled', window.scrollY > 4);
+  window.addEventListener('scroll', update, { passive: true });
+  update();
+})();

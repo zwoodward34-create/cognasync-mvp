@@ -3497,15 +3497,8 @@ def checkin_magic_link(token_str):
     """Magic link entry point from SMS. Validates token then redirects to check-in."""
     tok = _validate_checkin_token(token_str)
     if not tok:
-        return render_template_string("""
-        <!doctype html><html><head><title>Link Invalid</title>
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>body{font-family:sans-serif;text-align:center;padding:60px 24px;color:#374151}
-        h2{color:#dc2626}p{color:#6b7280}</style></head><body>
-        <h2>This link is no longer valid</h2>
-        <p>Check-in links expire after 48 hours and can only be used once.</p>
-        <p>Your provider can send a new link if needed.</p>
-        </body></html>"""), 410
+        return render_template('token_invalid.html',
+            message='Check-in links expire after 48 hours and can only be used once. Your provider can send a new link if needed.'), 410
     # Mark used
     db.supabase_admin.table('checkin_tokens').update(
         {'used_at': 'now()'}
@@ -3522,14 +3515,8 @@ def voice_note_page(token_str):
     """Patient-facing voice note recording page. No login required."""
     tok = _validate_checkin_token(token_str)
     if not tok:
-        return render_template_string("""
-        <!doctype html><html><head><title>Link Invalid</title>
-        <meta name="viewport" content="width=device-width,initial-scale=1">
-        <style>body{font-family:sans-serif;text-align:center;padding:60px 24px;color:#374151}
-        h2{color:#dc2626}p{color:#6b7280}</style></head><body>
-        <h2>This link is no longer valid</h2>
-        <p>Voice note links expire after 48 hours.</p>
-        </body></html>"""), 410
+        return render_template('token_invalid.html',
+            message='Voice note links expire after 48 hours. Your provider can send a new link if needed.'), 410
     prompt = tok.get('voice_prompt') or _sms.DEFAULT_VOICE_PROMPTS['default']
     return render_template('patient/voice_note.html',
                            token=token_str,

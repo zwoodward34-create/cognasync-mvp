@@ -1,0 +1,140 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-28T00:00:00Z",
+  "title": "Design System: CognaSync",
+  "extensions": {
+    "colorMeta": {
+      "teal-primary":    { "role": "primary",   "displayName": "Reed Green",       "canonical": "oklch(40% 0.12 163)", "tonalRamp": ["#04342C","#085041","#0F6E56","#1D9E75","#47BF98","#9FE1CB","#C8EEE2","#E1F5EE"] },
+      "amber-mid":       { "role": "secondary",  "displayName": "Harvest Amber",    "canonical": "oklch(52% 0.11 60)",  "tonalRamp": ["#633806","#854F0B","#BA7517","#D48B2A","#E9B060","#F3D090","#FAE8C0","#FAEEDA"] },
+      "red-mid":         { "role": "tertiary",   "displayName": "Signal Red",       "canonical": "oklch(58% 0.18 22)",  "tonalRamp": ["#791F1F","#A32D2D","#C84040","#E24B4A","#EE7A79","#F4ADAC","#F9D4D3","#FCEBEB"] },
+      "blue-notation":   { "role": "accent",     "displayName": "Notation Blue",    "canonical": "oklch(42% 0.10 250)", "tonalRamp": ["#0D2E52","#185FA5","#2676C8","#4A96E0","#80B9EE","#B3D4F5","#D8EAFA","#EBF4FC"] },
+      "surface-card":    { "role": "neutral",    "displayName": "Ivory Card",       "canonical": "oklch(98.5% 0.003 90)", "tonalRamp": ["#2C2C2A","#5F5E5A","#888780","#D3D1C7","#EDEBE6","#F4F2ED","#F7F5F1","#FAFAF8"] },
+      "surface-page":    { "role": "neutral-bg", "displayName": "Warm Parchment",   "canonical": "oklch(96% 0.006 90)",   "tonalRamp": ["#2C2C2A","#5F5E5A","#888780","#D3D1C7","#EDEBE6","#F4F2ED","#F7F5F1","#FAFAF8"] },
+      "ink":             { "role": "text",       "displayName": "Carbon Ink",        "canonical": "oklch(13% 0.004 90)",   "tonalRamp": ["#1A1A18","#2C2C2A","#3E3E3B","#5F5E5A","#888780","#B0AFA8","#D3D1C7","#EDEBE6"] }
+    },
+    "typographyMeta": {
+      "display":    { "displayName": "Display",    "purpose": "Major score displays and hero section headings. Used sparingly." },
+      "display-sm": { "displayName": "Display SM", "purpose": "Section titles, patient names, pre-appointment summary headings." },
+      "heading":    { "displayName": "Heading",    "purpose": "Card headings, page section anchors." },
+      "body":       { "displayName": "Body",       "purpose": "Standard content, AI insight text, journal reflections. Max 68ch." },
+      "label":      { "displayName": "Label",      "purpose": "Supporting metadata, secondary labels, timestamps." },
+      "micro":      { "displayName": "Micro",      "purpose": "Status tags, category labels, badge text. Always uppercase at this size." },
+      "mono":       { "displayName": "Mono",       "purpose": "Every numeric value in the interface: scores, timestamps, deltas, statistical values." }
+    },
+    "shadows": [
+      { "name": "resting", "value": "0 1px 2px rgba(26,26,24,0.05), 0 1px 3px rgba(26,26,24,0.04)", "purpose": "Default card shadow. Present at rest. Distinguishes card from page background." },
+      { "name": "lifted",  "value": "0 2px 8px rgba(26,26,24,0.08), 0 4px 16px rgba(26,26,24,0.05)", "purpose": "Hover state on interactive cards, focused input fields, sticky nav on scroll." },
+      { "name": "elevated","value": "0 8px 32px rgba(26,26,24,0.12), 0 16px 48px rgba(26,26,24,0.06)", "purpose": "Dropdowns, floating panels, modals. Reserved for elements that truly layer above the page." }
+    ],
+    "motion": [
+      { "name": "ease-out-quart", "value": "cubic-bezier(0.25, 1, 0.5, 1)",  "purpose": "Default easing for state transitions and hover effects." },
+      { "name": "ease-out-expo",  "value": "cubic-bezier(0.16, 1, 0.3, 1)",  "purpose": "Entrance animations (panel open, tooltip appear)." },
+      { "name": "duration-fast",  "value": "120ms", "purpose": "Opacity, color transitions. Default for most interactive state changes." },
+      { "name": "duration-base",  "value": "200ms", "purpose": "Shadow transitions, panel reveals." }
+    ],
+    "breakpoints": [
+      { "name": "mobile",  "value": "480px" },
+      { "name": "tablet",  "value": "600px" },
+      { "name": "nav-collapse", "value": "768px" },
+      { "name": "desktop", "value": "960px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Default action. Used for primary patient actions (submit check-in, save) and provider actions (generate summary, send SMS).",
+      "html": "<button class=\"ds-btn-primary\">Log Check-In</button>",
+      "css": ".ds-btn-primary { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: 10px; font-family: 'DM Sans', system-ui, sans-serif; font-size: 13px; font-weight: 500; color: #FAFAF8; background: #0F6E56; border: none; cursor: pointer; transition: background 120ms cubic-bezier(0.25,1,0.5,1), opacity 120ms, transform 80ms; text-decoration: none; } .ds-btn-primary:hover { opacity: 0.88; } .ds-btn-primary:active { transform: scale(0.98); } .ds-btn-primary:focus-visible { outline: 2px solid #1D9E75; outline-offset: 2px; }"
+    },
+    {
+      "name": "Ghost Button",
+      "kind": "button",
+      "refersTo": "button-ghost",
+      "description": "Low-priority actions. Used for secondary/cancel actions alongside a primary button.",
+      "html": "<button class=\"ds-btn-ghost\">Cancel</button>",
+      "css": ".ds-btn-ghost { display: inline-flex; align-items: center; gap: 6px; padding: 10px 18px; border-radius: 10px; font-family: 'DM Sans', system-ui, sans-serif; font-size: 13px; font-weight: 500; color: #5F5E5A; background: #F4F2ED; border: 0.5px solid rgba(0,0,0,0.12); cursor: pointer; transition: opacity 120ms, transform 80ms; text-decoration: none; } .ds-btn-ghost:hover { opacity: 0.88; } .ds-btn-ghost:active { transform: scale(0.98); } .ds-btn-ghost:focus-visible { outline: 2px solid #1D9E75; outline-offset: 2px; }"
+    },
+    {
+      "name": "Status Badge — Stable",
+      "kind": "chip",
+      "refersTo": "badge-stable",
+      "description": "Communicates stable trend or positive status. Always paired with text, never color-only.",
+      "html": "<span class=\"ds-badge ds-badge-stable\">Stable</span>",
+      "css": ".ds-badge { display: inline-block; padding: 3px 9px; border-radius: 20px; font-family: 'DM Sans', system-ui, sans-serif; font-size: 10px; font-weight: 500; letter-spacing: 0.04em; text-transform: uppercase; } .ds-badge-stable { background: #E1F5EE; color: #04342C; } .ds-badge-watch { background: #FAEEDA; color: #854F0B; } .ds-badge-decline { background: #FCEBEB; color: #A32D2D; } .ds-badge-neutral { background: #EDEBE6; color: #5F5E5A; }"
+    },
+    {
+      "name": "Card",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Primary content container. Resting shadow at rest; lifted shadow on hover for interactive cards.",
+      "html": "<div class=\"ds-card\"><p style=\"font-family:'DM Sans',sans-serif;font-size:14px;color:#1A1A18;margin:0;\">Card content here.</p></div>",
+      "css": ".ds-card { background: #FAFAF8; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 16px; padding: 20px; box-shadow: 0 1px 2px rgba(26,26,24,0.05), 0 1px 3px rgba(26,26,24,0.04); transition: box-shadow 200ms cubic-bezier(0.25,1,0.5,1); } .ds-card:hover { box-shadow: 0 2px 8px rgba(26,26,24,0.08), 0 4px 16px rgba(26,26,24,0.05); }"
+    },
+    {
+      "name": "Text Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Standard form field. Focus state activates reed-green border and lifted shadow.",
+      "html": "<div class=\"ds-field\"><label class=\"ds-field-label\" for=\"ex1\">Mood score</label><input class=\"ds-input\" id=\"ex1\" type=\"text\" placeholder=\"Enter a value\"></div>",
+      "css": ".ds-field { display: flex; flex-direction: column; gap: 6px; } .ds-field-label { font-family: 'DM Sans', system-ui, sans-serif; font-size: 12px; font-weight: 500; color: #5F5E5A; } .ds-input { background: #FAFAF8; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 10px; padding: 10px 14px; font-family: 'DM Sans', system-ui, sans-serif; font-size: 14px; color: #1A1A18; outline: none; transition: border-color 120ms, box-shadow 200ms; } .ds-input::placeholder { color: #888780; } .ds-input:focus { border: 1.5px solid #0F6E56; box-shadow: 0 2px 8px rgba(26,26,24,0.08), 0 4px 16px rgba(26,26,24,0.05); } .ds-input:disabled { opacity: 0.4; cursor: not-allowed; }"
+    },
+    {
+      "name": "Score Cell",
+      "kind": "custom",
+      "refersTo": "score-cell",
+      "description": "Compact score display used in the 2-column score grid. Label in Fieldnote Mist, value in JetBrains Mono.",
+      "html": "<div class=\"ds-score-cell\"><div class=\"ds-score-cell-label\">Stability Score</div><div class=\"ds-score-cell-val\">7.4</div><div class=\"ds-score-cell-track\"><div class=\"ds-score-cell-fill\" style=\"width:74%;background:#0F6E56;\"></div></div></div>",
+      "css": ".ds-score-cell { background: #FAFAF8; border: 0.5px solid rgba(0,0,0,0.12); border-radius: 10px; padding: 10px 12px; } .ds-score-cell-label { font-family: 'DM Sans', system-ui, sans-serif; font-size: 10px; color: #888780; margin-bottom: 3px; } .ds-score-cell-val { font-family: 'JetBrains Mono', monospace; font-size: 18px; font-weight: 500; color: #1A1A18; } .ds-score-cell-track { height: 2px; background: #EDEBE6; border-radius: 1px; overflow: hidden; margin-top: 6px; } .ds-score-cell-fill { height: 100%; border-radius: 1px; }"
+    },
+    {
+      "name": "Navigation Bar",
+      "kind": "nav",
+      "refersTo": "nav",
+      "description": "Fixed top navigation. Patient variant with 11 items; collapses to hamburger below 768px.",
+      "html": "<header class=\"ds-nav\"><div class=\"ds-nav-brand\"><span class=\"ds-brand-mark\">CS</span><span class=\"ds-brand-name\">CognaSync</span></div><nav class=\"ds-nav-links\"><a class=\"ds-nav-item ds-nav-item--active\" href=\"#\">Home</a><a class=\"ds-nav-item\" href=\"#\">Check-In</a><a class=\"ds-nav-item\" href=\"#\">Journal</a></nav></header>",
+      "css": ".ds-nav { position: fixed; top: 0; left: 0; right: 0; height: 52px; background: #FAFAF8; border-bottom: 1px solid #1A1A18; display: flex; align-items: center; padding: 0 28px; gap: 0; z-index: 1000; box-shadow: none; transition: box-shadow 200ms; } .ds-nav-brand { display: flex; align-items: center; gap: 8px; margin-right: 32px; flex-shrink: 0; text-decoration: none; } .ds-brand-mark { background: #1A1A18; color: #FAFAF8; font-family: 'DM Serif Display', serif; font-size: 12px; width: 28px; height: 28px; border-radius: 2px; display: flex; align-items: center; justify-content: center; } .ds-brand-name { font-family: 'DM Serif Display', serif; font-size: 16px; color: #1A1A18; text-decoration: none; } .ds-nav-links { display: flex; align-items: center; gap: 0; } .ds-nav-item { font-family: 'DM Sans', system-ui, sans-serif; font-size: 13px; font-weight: 500; color: #5F5E5A; text-decoration: none; padding: 6px 12px; border-radius: 6px; transition: color 120ms; } .ds-nav-item:hover { color: #1A1A18; } .ds-nav-item--active { color: #0F6E56; }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Field Notebook",
+    "overview": "CognaSync looks like data kept by a thoughtful person, not generated by software. The aesthetic owes something to a well-worn researcher's notebook: warm paper tones, editorial serif type alongside precise monospaced numbers, ink-dark text on parchment surfaces. Every screen carries the sense that someone cared enough to record this carefully.\n\nThe system holds two audiences with different needs on the same visual plane. Patient surfaces breathe more, let the serif work, make space for the human dimension of tracking. Provider surfaces compress, structure, flag, and get out of the way.\n\nThis system explicitly rejects generic SaaS dashboards (hero metrics, identical card grids, gradient number callouts, navy sidebars) and clinical EHR software (cold white forms, sterile field grids, the thing that makes a patient feel like a record number).",
+    "keyCharacteristics": [
+      "Warm parchment surfaces with ink-dark text; teal reserved for actionable elements only",
+      "DM Serif Display for names, scores, and section titles; DM Sans for everything else; JetBrains Mono for every number",
+      "Structured shadow vocabulary: surfaces feel placed, not floating",
+      "Tactile interactions: micro-feedback on press, opacity transitions on hover",
+      "Status communicates through color + label together; color alone is never the signal",
+      "No side-stripe borders, no gradient text, no SaaS hero-metric templates"
+    ],
+    "rules": [
+      { "name": "The Reed Rule", "body": "Teal is the only brand color. Amber, red, and notation blue are semantic signals, not accent options. If a new element needs color and it is not communicating status, it uses teal or a neutral.", "section": "colors" },
+      { "name": "The No-White Rule", "body": "Neither #fff nor #000 appears anywhere. Every surface is #FAFAF8 or warmer. Every text is #1A1A18 or lighter.", "section": "colors" },
+      { "name": "The Mono Number Rule", "body": "Every score, delta, timestamp, or computed value renders in JetBrains Mono. No exceptions.", "section": "typography" },
+      { "name": "The Weight Ceiling Rule", "body": "Maximum font weight is 500. Hierarchy comes from scale contrast, font-family contrast, and opacity. Never from bold weight.", "section": "typography" },
+      { "name": "The Warm Shadow Rule", "body": "Shadows use rgba(26,26,24,...) not rgba(0,0,0,...). A cold black shadow on a warm parchment surface reads as a mistake.", "section": "elevation" },
+      { "name": "The State-Responsive Rule", "body": "Cards carry the Resting shadow at rest. Lifted shadow appears only in response to hover, focus, or scroll state. Elevated shadow is reserved for elements that truly float above the page surface.", "section": "elevation" }
+    ],
+    "dos": [
+      "Do use rgba(26,26,24,...) for all shadows. Warm tint, never pure black.",
+      "Do render every numeric value in JetBrains Mono.",
+      "Do use DM Serif Display for display headings, section anchors, and score labels.",
+      "Do pair every status color signal with a text label.",
+      "Do apply transform: scale(0.98) on button active/press states.",
+      "Do keep body line length at 65-75ch.",
+      "Do cap font weight at 500."
+    ],
+    "donts": [
+      "Don't use border-left or border-right greater than 1px as a colored stripe. The current .cs-insight side-stripe pattern is deprecated.",
+      "Don't use generic SaaS dashboard patterns: hero-metric cards, gradient accents, identical card grids, navy-sidebar chrome.",
+      "Don't make the interface feel like clinical EHR software: cold white form fields, sterile field grids.",
+      "Don't use gradient text (background-clip: text + gradient).",
+      "Don't use #000000 or #ffffff anywhere.",
+      "Don't apply semantic colors (amber, red, notation blue) decoratively.",
+      "Don't use glassmorphism.",
+      "Don't nest cards.",
+      "Don't use font weight above 500."
+    ]
+  }
+}
