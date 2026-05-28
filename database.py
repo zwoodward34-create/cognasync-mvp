@@ -5665,4 +5665,548 @@ def update_voice_note_transcript(
         return True
     except Exception as e:
         print(f'[db] update_voice_note_transcript error: {e}')
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TWILIO SMS — TOKEN LIFECYCLE
+# Pre-authenticated single-use tokens that identify a patient in Twilio flows.
+# Tokens are embedded in webhook POSTs and voice recording URLs.
+# All operations use supabase_admin (service role) — token table is backend-only.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def create_sms_token(
+    patient_id: str,
+    flow_type: str,
+    metadata: dict | None = None,
+    ttl_hours: int = 24,
+) -> str | None:
+    """
+    Generate a pre-authenticated single-use token for a Twilio SMS flow.
+
+    The token is a UUID v4 string. It is stored in sms_tokens with an
+    expiry time and optional metadata (e.g. appointment_id, voice_prompt).
+
+    Returns the token string, or None on failure.
+    """
+    import uuid as _uuid
+    from datetime import timezone as _tz
+
+    token = str(_uuid.uuid4())
+    expires_at = (datetime.now(_tz.utc) + timedelta(hours=ttl_hours)).isoformat()
+
+    try:
+        supabase_admin.table('sms_tokens').insert({
+            'token':      token,
+            'patient_id': str(patient_id),
+            'flow_type':  flow_type,
+            'metadata':   metadata or {},
+            'expires_at': expires_at,
+        }).execute()
+        return token
+    except Exception as e:
+        print(f'[db] create_sms_token error: {e}')
+        return None
+
+
+def validate_and_consume_token(token: str) -> dict | None:
+    """
+    Validate a token and mark it as used in a single atomic-like operation.
+
+    Checks:
+      - Token exists in sms_tokens
+      - used_at is NULL (not yet consumed)
+      - expires_at > now()
+
+    On success, sets used_at = now() and returns:
+      {'patient_id': str, 'flow_type': str, 'metadata': dict}
+
+    Returns None if the token is invalid, expired, or already used.
+    """
+    from datetime import timezone as _tz
+
+    if not token:
+        return None
+
+    try:
+        now_iso = datetime.now(_tz.utc).isoformat()
+
+        result = supabase_admin.table('sms_tokens') \
+            .select('id, patient_id, flow_type, metadata, expires_at, used_at') \
+            .eq('token', token) \
+            .execute()
+
+        if not result.data:
+            print(f'[db] validate_token: not found token={token!r}')
+            return None
+
+        row = result.data[0]
+
+        if row['used_at'] is not None:
+            print(f'[db] validate_token: already used token={token!r}')
+            return None
+
+        if row['expires_at'] < now_iso:
+            print(f'[db] validate_token: expired token={token!r}')
+            return None
+
+        # Mark consumed
+        supabase_admin.table('sms_tokens') \
+            .update({'used_at': now_iso}) \
+            .eq('id', row['id']) \
+            .execute()
+
+        return {
+            'patient_id': row['patient_id'],
+            'flow_type':  row['flow_type'],
+            'metadata':   row['metadata'] or {},
+        }
+
+    except Exception as e:
+        print(f'[db] validate_and_consume_token error: {e}')
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TWILIO SMS — LOGGING
+# ═══════════════════════════════════════════════════════════════════════════
+
+def log_medication_adherence_from_sms(
+    patient_id: str,
+    adhered: bool,
+    medication_name: str,
+    responded_at: str | None = None,
+) -> bool:
+    """
+    Log a medication adherence event received via Twilio SMS.
+
+    Inserts a row into medication_events with source='sms'.
+    Also checks for 3+ consecutive non-adherence days and sets a provider flag
+    on patient_profiles if the threshold is crossed.
+
+    Returns True on success, False on failure.
+    """
+    from datetime import timezone as _tz
+
+    try:
+        now_iso = responded_at or datetime.now(_tz.utc).isoformat()
+        today = datetime.fromisoformat(now_iso.replace('Z', '+00:00')).date().isoformat()
+
+        # Find the medication record for this patient + medication name
+        med_result = supabase_admin.table('medications') \
+            .select('id') \
+            .eq('name', medication_name) \
+            .limit(1) \
+            .execute()
+
+        medication_id = med_result.data[0]['id'] if med_result.data else None
+
+        event_data = {
+            'patient_id':    str(patient_id),
+            'medication_id': medication_id,
+            'taken':         adhered,
+            'taken_at':      now_iso if adhered else None,
+            'notes':         f'SMS adherence response: {"Y" if adhered else "N"}',
+            'date':          today,
+        }
+
+        supabase_admin.table('medication_events').insert(event_data).execute()
+
+        # Check consecutive non-adherence (3+ days) — flag for provider review
+        if not adhered:
+            _check_consecutive_non_adherence(patient_id, medication_id)
+
+        return True
+
+    except Exception as e:
+        print(f'[db] log_medication_adherence_from_sms error: {e}')
+        return False
+
+
+def _check_consecutive_non_adherence(patient_id: str, medication_id: str | None) -> None:
+    """
+    Internal: check last 3 medication events for consecutive non-adherence.
+    If 3+ consecutive misses, set a flag on patient_profiles for provider review.
+    Non-response is treated the same as non-adherence (NULL taken_at with taken=False).
+    """
+    try:
+        query = supabase_admin.table('medication_events') \
+            .select('taken, date') \
+            .eq('patient_id', str(patient_id)) \
+            .order('date', desc=True) \
+            .limit(3)
+
+        if medication_id:
+            query = query.eq('medication_id', str(medication_id))
+
+        result = query.execute()
+        events = result.data or []
+
+        if len(events) >= 3 and all(not e.get('taken') for e in events):
+            # 3+ consecutive misses — flag on patient profile
+            supabase_admin.table('patient_profiles') \
+                .update({'adherence_alert': True}) \
+                .eq('user_id', str(patient_id)) \
+                .execute()
+            print(f'[db] Consecutive non-adherence flag set for patient={patient_id!r}')
+
+    except Exception as e:
+        print(f'[db] _check_consecutive_non_adherence error: {e}')
+
+
+def log_checkin_from_sms(
+    patient_id: str,
+    data: dict,
+    check_in_type: str = 'short',
+) -> str | None:
+    """
+    Store a check-in received via Twilio SMS.
+
+    data keys (all optional except those marked required):
+      mood          (int, 1-10)  required for short/full
+      sleep_hours   (float)      required for short/full
+      stress        (int, 1-10)  required for short/full
+      energy        (int, 1-10)  full only
+      medication_note (str)      full only — free text from Q5 branch
+      agenda_note   (str)        full only — Q6 response
+      follow_up_note (str)       adaptive follow-up free text
+      follow_up_type (str)       mood | stress | sleep | energy
+
+    Runs _compute_checkin_scores() on the incoming data before storing.
+    Sets silent flags based on threshold values.
+    Returns checkin_id (str UUID) on success, None on failure.
+    """
+    from datetime import timezone as _tz
+
+    try:
+        now_iso = datetime.now(_tz.utc).isoformat()
+        today = datetime.now(_tz.utc).date().isoformat()
+
+        # Build checkin record — map SMS field names to existing schema columns
+        checkin = {
+            'user_id':        str(patient_id),
+            'date':           today,
+            'created_at':     now_iso,
+            'source':         'sms',
+            'check_in_type':  check_in_type,
+        }
+
+        # Core numeric fields
+        if data.get('mood') is not None:
+            checkin['mood'] = int(data['mood'])
+        if data.get('sleep_hours') is not None:
+            checkin['sleep_hours'] = float(data['sleep_hours'])
+        if data.get('stress') is not None:
+            checkin['stress_score'] = int(data['stress'])
+        if data.get('energy') is not None:
+            checkin['energy'] = int(data['energy'])
+
+        # Adaptive follow-up
+        if data.get('follow_up_note'):
+            checkin['follow_up_note'] = str(data['follow_up_note'])[:1000]
+        if data.get('follow_up_type'):
+            checkin['follow_up_type'] = str(data['follow_up_type'])
+
+        # Full check-in extras — stored in extended_data JSONB
+        extended = {}
+        if data.get('medication_note'):
+            extended['medication_note'] = str(data['medication_note'])[:500]
+        if data.get('agenda_note'):
+            extended['agenda_note'] = str(data['agenda_note'])[:500]
+        if extended:
+            checkin['extended_data'] = extended
+
+        # Compute behavioral scores using the existing deterministic engine
+        scores = _compute_checkin_scores(checkin)
+        checkin.update(scores)
+
+        # Build silent flags based on thresholds
+        flags = _compute_sms_flags(data)
+        if flags:
+            checkin['flags'] = flags
+
+        result = supabase_admin.table('checkins').insert(checkin).execute()
+
+        if result.data:
+            checkin_id = result.data[0]['id']
+            print(f'[db] SMS check-in stored id={checkin_id!r} type={check_in_type!r} patient={patient_id!r}')
+            return checkin_id
+
+        return None
+
+    except Exception as e:
+        print(f'[db] log_checkin_from_sms error: {e}')
+        return None
+
+
+def set_checkin_flags(checkin_id: str, flags: dict) -> bool:
+    """
+    Merge additional flags into an existing checkin's flags JSONB column.
+    Safe to call multiple times — merges rather than overwrites.
+    """
+    try:
+        # Fetch current flags first, then merge
+        result = supabase_admin.table('checkins') \
+            .select('flags') \
+            .eq('id', str(checkin_id)) \
+            .execute()
+
+        current = (result.data[0].get('flags') or {}) if result.data else {}
+        current.update(flags)
+
+        supabase_admin.table('checkins') \
+            .update({'flags': current}) \
+            .eq('id', str(checkin_id)) \
+            .execute()
+        return True
+
+    except Exception as e:
+        print(f'[db] set_checkin_flags error: {e}')
+        return False
+
+
+def _compute_sms_flags(data: dict) -> dict:
+    """
+    Internal: derive silent provider flags from check-in values.
+    These flags are stored in checkins.flags and surfaced on the provider dashboard.
+    No patient-facing use.
+    """
+    flags = {}
+    mood = data.get('mood')
+    stress = data.get('stress')
+    sleep = data.get('sleep_hours')
+    energy = data.get('energy')
+
+    if mood is not None:
+        if int(mood) <= 2:
+            flags['provider_review'] = True
+            flags['tier1_watch'] = True
+        elif int(mood) <= 3:
+            flags['tier1_watch'] = True
+
+    if stress is not None and int(stress) >= 8:
+        flags['stress_flag'] = True
+
+    if sleep is not None and float(sleep) <= 4:
+        flags['sleep_flag'] = True
+
+    if energy is not None and int(energy) <= 3:
+        flags['low_energy_flag'] = True
+
+    return flags
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# TWILIO SMS — SCHEDULING QUERIES
+# These functions determine which patients should receive which SMS flows
+# on a given run. Called by the internal trigger endpoints in app.py,
+# which are themselves called by Render cron jobs.
+# ═══════════════════════════════════════════════════════════════════════════
+
+def get_patients_due_medication_sms(window_start: str, window_end: str) -> list:
+    """
+    Return patients whose medication dose time falls within [window_start, window_end]
+    in their local timezone, and who haven't already received the medication SMS today.
+
+    window_start / window_end: HH:MM strings in UTC (cron runs in UTC).
+
+    Returns a list of dicts:
+      [{patient_id, phone, medication_name, timezone, dose_time_local}, ...]
+
+    The caller is responsible for timezone-aware comparison. We return the
+    timezone so the Flask route can filter accurately before triggering.
+    """
+    try:
+        # Join checkin_schedules with patient_profiles to get phone + medication
+        result = supabase_admin.table('checkin_schedules') \
+            .select(
+                'patient_id, medication_dose_time, timezone, '
+                'patient_profiles!inner(phone_number, current_medications)'
+            ) \
+            .not_.is_('medication_dose_time', 'null') \
+            .execute()
+
+        patients = []
+        for row in (result.data or []):
+            profile = row.get('patient_profiles') or {}
+            meds = profile.get('current_medications') or []
+            primary_med = meds[0].get('name', 'medication') if meds else 'medication'
+
+            patients.append({
+                'patient_id':       row['patient_id'],
+                'phone':            profile.get('phone_number'),
+                'medication_name':  primary_med,
+                'timezone':         row['timezone'],
+                'dose_time_local':  row['medication_dose_time'],
+            })
+
+        return [p for p in patients if p['phone']]  # exclude patients without phone
+
+    except Exception as e:
+        print(f'[db] get_patients_due_medication_sms error: {e}')
+        return []
+
+
+def get_patients_due_checkin_sms(check_in_type: str, target_date: date | None = None) -> list:
+    """
+    Return patients due for a short or full check-in SMS on target_date.
+
+    For 'short': returns patients whose short_checkin_days includes the
+                 weekday of target_date (ISO weekday: 0=Mon, 6=Sun).
+
+    For 'full':  returns patients who have an appointment within the next
+                 full_checkin_offset_hrs hours and haven't received a full
+                 check-in trigger for that appointment yet.
+
+    Returns a list of dicts:
+      [{patient_id, phone, provider_name, appt_time, voice_link, token_metadata}, ...]
+      (voice_link and provider_name are None for short check-ins)
+    """
+    from datetime import timezone as _tz
+
+    if target_date is None:
+        target_date = datetime.now(_tz.utc).date()
+
+    try:
+        if check_in_type == 'short':
+            weekday = target_date.weekday()  # 0=Mon, 6=Sun
+
+            result = supabase_admin.table('checkin_schedules') \
+                .select(
+                    'patient_id, short_checkin_days, timezone, '
+                    'patient_profiles!inner(phone_number)'
+                ) \
+                .execute()
+
+            patients = []
+            for row in (result.data or []):
+                days = row.get('short_checkin_days') or []
+                if weekday not in days:
+                    continue
+                profile = row.get('patient_profiles') or {}
+                phone = profile.get('phone_number')
+                if not phone:
+                    continue
+                patients.append({
+                    'patient_id':    row['patient_id'],
+                    'phone':         phone,
+                    'provider_name': None,
+                    'appt_time':     None,
+                })
+            return patients
+
+        elif check_in_type == 'full':
+            # Look for appointments in the next 24-48 hours
+            now = datetime.now(_tz.utc)
+            window_start = now.isoformat()
+            window_end = (now + timedelta(hours=48)).isoformat()
+
+            # Query appointments table for upcoming appointments
+            appt_result = supabase_admin.table('appointments') \
+                .select(
+                    'id, patient_id, provider_id, scheduled_at, '
+                    'checkin_triggered, '
+                    'profiles!provider_id(full_name), '
+                    'patient_profiles!patient_id(phone_number)'
+                ) \
+                .gte('scheduled_at', window_start) \
+                .lte('scheduled_at', window_end) \
+                .eq('checkin_triggered', False) \
+                .execute()
+
+            patients = []
+            for appt in (appt_result.data or []):
+                phone = (appt.get('patient_profiles') or {}).get('phone_number')
+                provider_name = (appt.get('profiles') or {}).get('full_name', 'your provider')
+                if not phone:
+                    continue
+                patients.append({
+                    'patient_id':    appt['patient_id'],
+                    'phone':         phone,
+                    'appt_id':       appt['id'],
+                    'provider_name': provider_name,
+                    'appt_time':     appt['scheduled_at'],
+                })
+            return patients
+
+        return []
+
+    except Exception as e:
+        print(f'[db] get_patients_due_checkin_sms error: {e}')
+        return []
+
+
+def get_patients_due_voice_sms(target_date: date | None = None) -> list:
+    """
+    Return patients due for a mid-week standalone voice recording SMS
+    on target_date (defaults to today UTC).
+
+    A patient is due if:
+      - Their voice_day_of_week matches target_date's weekday
+      - They haven't received a voice invite this calendar week
+        (checked via sms_tokens: no 'voice' token created in the past 7 days)
+
+    Returns [{patient_id, phone, provider_name, voice_prompt}, ...]
+    Voice prompt defaults to the provider's default — provider lookup TBD in V2.
+    """
+    from datetime import timezone as _tz
+
+    if target_date is None:
+        target_date = datetime.now(_tz.utc).date()
+
+    weekday = target_date.weekday()
+
+    try:
+        result = supabase_admin.table('checkin_schedules') \
+            .select(
+                'patient_id, voice_day_of_week, timezone, '
+                'patient_profiles!inner(phone_number, provider_id)'
+            ) \
+            .eq('voice_day_of_week', weekday) \
+            .execute()
+
+        # Get patient IDs who already received a voice token this week
+        week_start = (target_date - timedelta(days=weekday)).isoformat()
+        recent_voice = supabase_admin.table('sms_tokens') \
+            .select('patient_id') \
+            .eq('flow_type', 'voice') \
+            .gte('created_at', week_start) \
+            .execute()
+        already_sent = {r['patient_id'] for r in (recent_voice.data or [])}
+
+        patients = []
+        for row in (result.data or []):
+            pid = row['patient_id']
+            if pid in already_sent:
+                continue
+            profile = row.get('patient_profiles') or {}
+            phone = profile.get('phone_number')
+            if not phone:
+                continue
+            patients.append({
+                'patient_id':   pid,
+                'phone':        phone,
+                'voice_prompt': 'How have you been feeling since your last appointment?',
+            })
+
+        return patients
+
+    except Exception as e:
+        print(f'[db] get_patients_due_voice_sms error: {e}')
+        return []
+
+
+def mark_appointment_checkin_triggered(appt_id: str) -> bool:
+    """
+    Mark an appointment's full check-in SMS as triggered to prevent double-firing.
+    Called after successfully triggering Flow 3 for a patient.
+    """
+    try:
+        supabase_admin.table('appointments') \
+            .update({'checkin_triggered': True}) \
+            .eq('id', str(appt_id)) \
+            .execute()
+        return True
+    except Exception as e:
+        print(f'[db] mark_appointment_checkin_triggered error: {e}')
+        return False
         return False
