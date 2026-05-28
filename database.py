@@ -1258,6 +1258,7 @@ def get_patient_detail(patient_id, days=30):
             'patient_id':          patient_id,
             'full_name':           user['full_name'] if user else 'Unknown',
             'email':               user['email']     if user else '',
+            'phone_number':        profile.get('phone_number') if profile else None,
             'current_medications': meds,
             'checkins_last_period': len(checkins),
             'last_checkin_date':   last_checkin_date,

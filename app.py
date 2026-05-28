@@ -3716,11 +3716,15 @@ def api_send_patient_checkin_sms(patient_id):
     data         = request.get_json(silent=True) or {}
     voice_prompt = data.get('voice_prompt')
 
+    # phone_number lives in patient_profiles; full_name in profiles
     prof = db.supabase_admin.table('profiles').select(
-        'full_name, phone_number'
+        'full_name'
     ).eq('id', patient_id).single().execute()
-    phone = (prof.data or {}).get('phone_number')
     name  = (prof.data or {}).get('full_name', '')
+    pat_prof = db.supabase_admin.table('patient_profiles').select(
+        'phone_number'
+    ).eq('user_id', patient_id).maybe_single().execute()
+    phone = (pat_prof.data or {}).get('phone_number') if pat_prof else None
 
     if not phone:
         return jsonify({'error': 'Patient has no phone number on file'}), 400
