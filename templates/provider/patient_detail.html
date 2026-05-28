@@ -1208,5 +1208,50 @@ async function submitAddMedication() {
 
 // Load flags on page ready
 loadFlags();
+
+// ── SMS modal ────────────────────────────────────────────────────────────────
+const PATIENT_ID = {{ patient.patient_id | tojson }};
+
+function openSmsModal() {
+  const modal = document.getElementById('sms-modal');
+  modal.style.display = 'flex';
+  document.getElementById('sms-status').textContent = '';
+  document.getElementById('sms-send-btn').disabled = {{ 'true' if not patient.phone_number else 'false' }};
+}
+
+function closeSmsModal() {
+  document.getElementById('sms-modal').style.display = 'none';
+  document.getElementById('sms-voice-prompt').value = '';
+  document.getElementById('sms-status').textContent = '';
+}
+
+async function sendCheckinSms() {
+  const btn    = document.getElementById('sms-send-btn');
+  const status = document.getElementById('sms-status');
+  const prompt = document.getElementById('sms-voice-prompt').value.trim();
+
+  btn.disabled = true;
+  status.style.color = 'var(--text-muted)';
+  status.textContent = 'Sending…';
+
+  try {
+    const data = await apiPost(
+      '/api/provider/patient/' + PATIENT_ID + '/send-checkin-sms',
+      prompt ? { voice_prompt: prompt } : {}
+    );
+    status.style.color = 'var(--green)';
+    status.textContent = 'Sent to …' + (data.phone_last4 || '');
+    setTimeout(closeSmsModal, 2000);
+  } catch (err) {
+    status.style.color = 'var(--red)';
+    status.textContent = err.message || 'Failed to send — try again.';
+    btn.disabled = false;
+  }
+}
+
+// Close modal on backdrop click
+document.getElementById('sms-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeSmsModal();
+});
 </script>
 {% endblock %}
