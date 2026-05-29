@@ -1220,7 +1220,8 @@ const PATIENT_ID = {{ patient.patient_id | tojson }};
 const PATIENT_NAME = {{ patient.full_name | tojson }};
 
 // ── Section toggle ────────────────────────────────────────────────────────────
-function toggleSection(id) {
+// Named hubToggle to avoid collision with common.js toggleSection
+function hubToggle(id) {
   const el = document.getElementById('section-' + id);
   if (el) el.classList.toggle('collapsed');
 }
@@ -1230,8 +1231,7 @@ function toggleSection(id) {
   document.querySelectorAll('.hub-section-hdr[data-toggle]').forEach(function (hdr) {
     hdr.addEventListener('click', function (e) {
       if (e.target.closest('.hub-action-btn')) return;
-      var sectionId = hdr.getAttribute('data-toggle');
-      toggleSection(sectionId);
+      hubToggle(hdr.getAttribute('data-toggle'));
     });
   });
 
