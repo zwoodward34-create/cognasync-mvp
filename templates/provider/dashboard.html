@@ -138,7 +138,7 @@
     transition: margin-right 0.26s cubic-bezier(0.4, 0, 0.2, 1);
   }
   .pd-roster-col.hub-open {
-    margin-right: 440px;
+    margin-right: 500px;
   }
 
   /* ── Section dividers ────────────────────────────────────────────────────── */
@@ -368,12 +368,12 @@
   .pd-brief-drawer {
     position: fixed;
     top: 0;
-    right: -460px;
-    width: 440px;
+    right: -520px;
+    width: 500px;
     height: 100vh;
     background: var(--surface);
     border-left: 1px solid var(--border);
-    box-shadow: -6px 0 32px rgba(0, 0, 0, 0.08);
+    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.09);
     display: flex;
     flex-direction: column;
     z-index: 200;
@@ -386,39 +386,40 @@
   /* Hub top bar */
   .pd-hub-topbar {
     display: flex;
-    align-items: center;
+    align-items: flex-start;
     justify-content: space-between;
-    padding: 14px 18px 12px;
+    padding: 22px 24px 18px;
     border-bottom: 1px solid var(--border);
     background: var(--surface);
     flex-shrink: 0;
+    gap: 12px;
   }
   .pd-hub-patient-name {
     font-family: 'DM Serif Display', serif;
-    font-size: 1.1rem;
+    font-size: 1.3rem;
     color: var(--text);
-    margin: 0;
+    margin: 0 0 4px;
     line-height: 1.2;
   }
   .pd-hub-patient-email {
-    font-size: 0.72rem;
+    font-size: 0.78rem;
     color: var(--text-muted);
-    margin-top: 2px;
   }
   .pd-hub-topbar-right {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: 10px;
     flex-shrink: 0;
+    padding-top: 3px;
   }
   .pd-hub-profile-link {
-    font-size: 0.72rem;
+    font-size: 0.75rem;
     font-weight: 500;
     color: var(--accent);
     text-decoration: none;
-    padding: 4px 10px;
+    padding: 5px 12px;
     border: 1px solid var(--accent);
-    border-radius: 5px;
+    border-radius: 6px;
     white-space: nowrap;
     transition: background 0.1s;
   }
@@ -427,35 +428,36 @@
     background: none;
     border: none;
     cursor: pointer;
-    font-size: 1rem;
+    font-size: 1.1rem;
     color: var(--text-muted);
-    padding: 4px 6px;
+    padding: 5px 7px;
     border-radius: 4px;
-    transition: background 0.1s;
+    line-height: 1;
+    transition: background 0.1s, color 0.1s;
   }
-  .pd-brief-close:hover { background: var(--bg); }
+  .pd-brief-close:hover { background: var(--bg); color: var(--text); }
 
   /* Hub scrollable body */
   .pd-hub-body {
     flex: 1;
     overflow-y: auto;
-    padding-bottom: 40px;
+    padding: 24px 24px 40px;
   }
 
   /* ── Data stream tiles ───────────────────────────────────────────────────── */
   .pd-stream-tiles {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    padding: 14px 16px;
+    gap: 10px;
+    padding: 20px 24px;
     border-bottom: 1px solid var(--border);
     background: var(--bg);
   }
   .pd-stream-tile {
     background: var(--surface);
     border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 12px;
+    border-radius: 9px;
+    padding: 13px 15px;
     transition: border-color 0.12s;
   }
   .pd-stream-tile:hover { border-color: #b0d4c3; }
@@ -464,12 +466,12 @@
     cursor: default;
   }
   .pd-stream-tile-label {
-    font-size: 0.6rem;
-    font-weight: 700;
+    font-size: 0.62rem;
+    font-weight: 500;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.07em;
     color: var(--text-muted);
-    margin-bottom: 5px;
+    margin-bottom: 7px;
     display: flex;
     align-items: center;
     gap: 5px;
@@ -483,8 +485,8 @@
   }
   .pd-stream-tile--placeholder .pd-stream-tile-dot { background: var(--border); }
   .pd-stream-tile-val {
-    font-size: 1.05rem;
-    font-weight: 700;
+    font-size: 1.25rem;
+    font-weight: 400;
     color: var(--text);
     font-family: 'DM Serif Display', serif;
     line-height: 1.1;
@@ -492,28 +494,28 @@
   .pd-stream-tile-val.low  { color: #c0392b; }
   .pd-stream-tile-val.good { color: #1a7f3c; }
   .pd-stream-tile-sub {
-    font-size: 0.7rem;
+    font-size: 0.72rem;
     color: var(--text-muted);
-    margin-top: 3px;
+    margin-top: 4px;
     line-height: 1.4;
   }
 
   /* ── Patient Hub CTA button ──────────────────────────────────────────────── */
   .pd-hub-open-btn {
     display: block;
-    margin: 18px 16px 0;
-    padding: 11px 16px;
+    padding: 13px 20px;
     background: var(--accent);
     color: #fff;
     border: none;
-    border-radius: 7px;
-    font-size: 0.84rem;
+    border-radius: 8px;
+    font-size: 0.88rem;
     font-weight: 500;
     font-family: 'DM Sans', sans-serif;
     text-align: center;
     text-decoration: none;
     cursor: pointer;
     transition: opacity 0.12s;
+    letter-spacing: 0.01em;
   }
   .pd-hub-open-btn:hover { opacity: 0.88; color: #fff; }
 
@@ -1300,6 +1302,7 @@
       <div id="brief-drawer-body"></div>
 
       <!-- Patient Hub CTA -->
+      <p style="font-size:0.72rem;font-weight:500;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-muted);margin:0 0 10px;">Full Patient View</p>
       <a id="hub-open-btn" href="#" class="pd-hub-open-btn">
         Open Patient Hub →
       </a>
