@@ -1370,21 +1370,9 @@ function openHub(pid) {
   // Populate stream tiles
   _populateStreamTiles(pid, pt);
 
-  // Wire outreach button
-  const smsBtn = document.getElementById('hub-sms-btn');
-  smsBtn.dataset.pid  = pid;
-  smsBtn.dataset.name = pt.name;
-  smsBtn.textContent = 'Send Check-in SMS ↗';
-  smsBtn.disabled    = false;
-  smsBtn.className   = 'pd-sms-btn';
-  delete smsBtn.dataset.confirming;
-
   // Reset brief area
   document.getElementById('brief-drawer-body').innerHTML  = '';
   document.getElementById('hub-brief-preview').style.display = 'none';
-  const briefBtn = document.getElementById('hub-create-brief-btn');
-  briefBtn.textContent = '✦  Create Brief';
-  briefBtn.disabled    = false;
 
   // Pre-populate data summary preview table
   _buildPreviewTable(pid, pt);
