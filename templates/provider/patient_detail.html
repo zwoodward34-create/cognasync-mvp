@@ -735,28 +735,32 @@
       <div class="hub-stat">
         <div class="hub-stat-label">Avg Mood</div>
         <div class="hub-stat-val">
-          {% if trends and trends.mood %}{{ "%.1f"|format(trends.mood.avg) }}<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/10</span>{% else %}&mdash;{% endif %}
+          {% set mood_avg = trends.get('mood', {}).get('average') if trends else none %}
+          {% if mood_avg is not none %}{{ "%.1f"|format(mood_avg) }}<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/10</span>{% else %}&mdash;{% endif %}
         </div>
         <div class="hub-stat-sub">14-day avg</div>
       </div>
       <div class="hub-stat">
         <div class="hub-stat-label">Avg Sleep</div>
         <div class="hub-stat-val">
-          {% if trends and trends.sleep %}{{ "%.1f"|format(trends.sleep.avg) }}<span style="font-size:12px;font-weight:400;color:var(--text-muted)">h</span>{% else %}&mdash;{% endif %}
+          {% set sleep_avg = trends.get('sleep', {}).get('average') if trends else none %}
+          {% if sleep_avg is not none %}{{ "%.1f"|format(sleep_avg) }}<span style="font-size:12px;font-weight:400;color:var(--text-muted)">h</span>{% else %}&mdash;{% endif %}
         </div>
         <div class="hub-stat-sub">14-day avg</div>
       </div>
       <div class="hub-stat">
         <div class="hub-stat-label">Avg Stress</div>
         <div class="hub-stat-val">
-          {% if trends and trends.stress %}{{ "%.1f"|format(trends.stress.avg) }}<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/10</span>{% else %}&mdash;{% endif %}
+          {% set stress_avg = trends.get('stress', {}).get('average') if trends else none %}
+          {% if stress_avg is not none %}{{ "%.1f"|format(stress_avg) }}<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/10</span>{% else %}&mdash;{% endif %}
         </div>
         <div class="hub-stat-sub">14-day avg</div>
       </div>
       <div class="hub-stat">
         <div class="hub-stat-label">Med Adherence</div>
         <div class="hub-stat-val">
-          {% if trends and trends.medication_adherence %}{{ trends.medication_adherence.rate }}%{% else %}&mdash;{% endif %}
+          {% set adh = trends.get('medication_adherence') if trends else none %}
+          {% if adh is not none %}{{ adh }}%{% else %}&mdash;{% endif %}
         </div>
         <div class="hub-stat-sub">14-day rate</div>
       </div>
@@ -838,39 +842,39 @@
       <div class="hub-stream-hdr">
         <span class="hub-stream-dot hub-stream-dot--checkin"></span>
         <span class="hub-stream-name">SMS Check-in Stream</span>
-        {% if trends and trends.mood and trends.mood.count %}
-        <span class="hub-stream-badge">{{ trends.mood.count }} logged</span>
+        {% set ci_count = trends.get('checkin_count') if trends else none %}
+        {% if ci_count %}
+        <span class="hub-stream-badge">{{ ci_count }} logged</span>
         {% endif %}
       </div>
       <div class="hub-stream-body">
-        {% if trends and trends.mood %}
+        {% set ci_mood = trends.get('mood', {}) if trends else {} %}
+        {% if ci_mood.get('average') is not none %}
         <div class="hub-ci-grid">
           <div class="hub-ci-stat">
             <div class="hub-ci-stat-label">Mood</div>
-            <div class="hub-ci-stat-val">{{ "%.1f"|format(trends.mood.avg) }}</div>
-            <div class="hub-ci-stat-trend
-              {% if trends.mood.slope and trends.mood.slope > 0.05 %}hub-ci-stat-trend--up
-              {% elif trends.mood.slope and trends.mood.slope < -0.05 %}hub-ci-stat-trend--down{% endif %}">
-              {% if trends.mood.slope %}
-                {% if trends.mood.slope > 0.05 %}↑ Improving
-                {% elif trends.mood.slope < -0.05 %}↓ Declining
-                {% else %}→ Stable{% endif %}
-              {% else %}No trend{% endif %}
+            <div class="hub-ci-stat-val">{{ "%.1f"|format(ci_mood.get('average', 0)) }}</div>
+            {% set sl = ci_mood.get('slope') %}
+            <div class="hub-ci-stat-trend{% if sl and sl > 0.05 %} hub-ci-stat-trend--up{% elif sl and sl < -0.05 %} hub-ci-stat-trend--down{% endif %}">
+              {% if sl %}{% if sl > 0.05 %}↑ Improving{% elif sl < -0.05 %}↓ Declining{% else %}→ Stable{% endif %}{% else %}No trend{% endif %}
             </div>
           </div>
           <div class="hub-ci-stat">
             <div class="hub-ci-stat-label">Sleep (hrs)</div>
-            <div class="hub-ci-stat-val">{% if trends.sleep %}{{ "%.1f"|format(trends.sleep.avg) }}{% else %}&mdash;{% endif %}</div>
+            {% set sl2 = trends.get('sleep', {}).get('average') if trends else none %}
+            <div class="hub-ci-stat-val">{% if sl2 is not none %}{{ "%.1f"|format(sl2) }}{% else %}&mdash;{% endif %}</div>
             <div class="hub-ci-stat-trend">14-day avg</div>
           </div>
           <div class="hub-ci-stat">
             <div class="hub-ci-stat-label">Stress</div>
-            <div class="hub-ci-stat-val">{% if trends.stress %}{{ "%.1f"|format(trends.stress.avg) }}{% else %}&mdash;{% endif %}</div>
+            {% set st2 = trends.get('stress', {}).get('average') if trends else none %}
+            <div class="hub-ci-stat-val">{% if st2 is not none %}{{ "%.1f"|format(st2) }}{% else %}&mdash;{% endif %}</div>
             <div class="hub-ci-stat-trend">14-day avg</div>
           </div>
           <div class="hub-ci-stat">
             <div class="hub-ci-stat-label">Adherence</div>
-            <div class="hub-ci-stat-val">{% if trends.medication_adherence %}{{ trends.medication_adherence.rate }}%{% else %}&mdash;{% endif %}</div>
+            {% set adh2 = trends.get('medication_adherence') if trends else none %}
+            <div class="hub-ci-stat-val">{% if adh2 is not none %}{{ adh2 }}%{% else %}&mdash;{% endif %}</div>
             <div class="hub-ci-stat-trend">Medication rate</div>
           </div>
         </div>
@@ -883,7 +887,7 @@
           <div class="hub-placeholder-title">No check-ins yet</div>
           <div class="hub-placeholder-sub">Send a Quick Check-in or Full Check-in via the outreach console above.</div>
         </div>
-        {% endif %}
+        {% endif %}{# /ci_mood #}
       </div>
     </div>
 
@@ -917,23 +921,23 @@
           <div class="hub-session-item">
             <div class="hub-session-dot-col">
               <span class="hub-session-dot
-                {% if appt.status == 'completed' %}hub-session-dot--completed
-                {% elif appt.status == 'upcoming' or appt.status == 'scheduled' %}hub-session-dot--upcoming{% endif %}">
+                {% if appt.get('status') == 'completed' %}hub-session-dot--completed
+                {% elif appt.get('status') in ('active','in_progress') %}hub-session-dot--upcoming{% endif %}">
               </span>
             </div>
             <div class="hub-session-body">
-              <div class="hub-session-date">{{ appt.appointment_date }}</div>
+              <div class="hub-session-date">{{ appt.get('started_at', '')[:10] }}</div>
               <span class="hub-session-badge
-                {% if appt.status == 'completed' %}hub-session-badge--completed
-                {% elif appt.status == 'upcoming' or appt.status == 'scheduled' %}hub-session-badge--upcoming
+                {% if appt.get('status') == 'completed' %}hub-session-badge--completed
+                {% elif appt.get('status') in ('active','in_progress') %}hub-session-badge--upcoming
                 {% else %}hub-session-badge--cancelled{% endif %}">
-                {{ appt.status | title }}
+                {{ (appt.get('status') or 'unknown') | title }}
               </span>
-              {% if appt.notes %}
+              {% if appt.get('notes') %}
               <div class="hub-session-preview">{{ appt.notes[:120] }}{% if appt.notes|length > 120 %}…{% endif %}</div>
               {% endif %}
-              {% if appt.appointment_id %}
-              <a href="{{ url_for('provider_appointment_workspace', appointment_id=appt.appointment_id) }}"
+              {% if appt.get('id') %}
+              <a href="{{ url_for('provider_appointment_workspace', patient_id=patient.patient_id, appt_id=appt.id) }}"
                  class="hub-session-link">Open workspace →</a>
               {% endif %}
             </div>
@@ -946,8 +950,11 @@
           <div class="hub-placeholder-title">No appointments yet</div>
         </div>
         {% endif %}
-        <a href="{{ url_for('provider_appointment_new', patient_id=patient.patient_id) }}"
-           class="hub-new-appt">+ Schedule Appointment</a>
+        <form method="POST"
+              action="{{ url_for('provider_appointment_new', patient_id=patient.patient_id) }}"
+              style="margin:0;">
+          <button type="submit" class="hub-new-appt">+ Schedule Appointment</button>
+        </form>
       </div>
     </div>
 
@@ -990,13 +997,12 @@
   }
 
   /* ─── Mood sparkline ────────────────────────────────────── */
-  {% if trends and trends.mood and trends.mood.series %}
+  {% if trends and trends.get('mood', {}).get('daily_scores') %}
   (function() {
     const canvas = document.getElementById('mood-sparkline');
     if (!canvas) return;
-    const series = {{ trends.mood.series | tojson }};
-    const labels = series.map(function(p) { return p.date || ''; });
-    const vals   = series.map(function(p) { return p.value; });
+    const vals   = {{ trends.mood.daily_scores | tojson }};
+    const labels = {{ trends.mood.dates | tojson }};
     new Chart(canvas, {
       type: 'line',
       data: {
