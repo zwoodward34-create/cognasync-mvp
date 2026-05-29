@@ -2226,6 +2226,18 @@ def api_resolve_care_flag(patient_id, flag_id):
     return jsonify({'error': result.get('error', 'Failed to resolve flag.')}), 400
 
 
+@app.route('/api/provider/patient/<patient_id>/flags/all', methods=['GET'])
+def api_get_all_care_flags(patient_id):
+    """Return all flags (active + resolved) for the persistent flags panel on the hub."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+    flags = db.get_all_care_flags_for_hub(patient_id)
+    return jsonify({'flags': flags}), 200
+
+
 @app.route('/api/provider/patient/<patient_id>/care-team-members', methods=['GET'])
 def api_get_care_team_for_flag(patient_id):
     """Returns active care team members (excluding the requesting provider) for

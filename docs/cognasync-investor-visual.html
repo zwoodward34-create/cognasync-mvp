@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CognaSync — Clinical Intelligence Layer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #0a0e1a;
+    color: #f0f2f8;
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 24px 60px;
+  }
+  .logo { font-size: 0.75rem; letter-spacing: 0.18em; text-transform: uppercase; color: #6b7aff; font-weight: 600; margin-bottom: 8px; }
+  h1 { font-size: 1.75rem; font-weight: 700; text-align: center; color: #f0f2f8; line-height: 1.25; margin-bottom: 6px; }
+  .subtitle { font-size: 0.95rem; color: #8892b0; text-align: center; max-width: 560px; line-height: 1.6; margin-bottom: 52px; }
+  .diagram { width: 100%; max-width: 960px; }
+  .row-label { font-size: 0.65rem; letter-spacing: 0.12em; text-transform: uppercase; color: #4a5568; font-weight: 600; margin-bottom: 12px; text-align: center; }
+  .problem-row { display: flex; align-items: center; justify-content: center; gap: 0; margin-bottom: 8px; }
+  .gap-box { background: #12172a; border: 1px dashed #2d3748; border-radius: 10px; padding: 18px 22px; text-align: center; flex: 1; max-width: 200px; }
+  .gap-box .gap-icon { font-size: 1.4rem; margin-bottom: 6px; }
+  .gap-box .gap-title { font-size: 0.78rem; font-weight: 600; color: #cbd5e0; margin-bottom: 3px; }
+  .gap-box .gap-desc { font-size: 0.68rem; color: #4a5568; line-height: 1.4; }
+  .gap-arrow { flex: 0 0 auto; width: 40px; text-align: center; color: #2d3748; font-size: 1.1rem; }
+  .sources-row { display: flex; gap: 12px; justify-content: center; margin-bottom: 0; }
+  .source-card { flex: 1; max-width: 200px; background: #111827; border: 1px solid #1e2a45; border-radius: 12px; padding: 18px 14px; text-align: center; }
+  .source-icon { font-size: 1.6rem; margin-bottom: 8px; }
+  .source-title { font-size: 0.82rem; font-weight: 600; color: #e2e8f0; margin-bottom: 6px; }
+  .source-items { list-style: none; }
+  .source-items li { font-size: 0.68rem; color: #718096; padding: 2px 0; border-top: 1px solid #1a2035; line-height: 1.4; }
+  .source-items li:first-child { border-top: none; }
+  .connectors { display: flex; justify-content: center; gap: 12px; height: 36px; margin: 0; }
+  .connector-line { flex: 1; max-width: 200px; display: flex; align-items: center; justify-content: center; }
+  .connector-line::after { content: '▼'; font-size: 0.75rem; color: #6b7aff; animation: pulse 2s ease-in-out infinite; }
+  @keyframes pulse { 0%, 100% { opacity: 0.4; transform: translateY(0); } 50% { opacity: 1; transform: translateY(3px); } }
+  .engine-wrap { display: flex; justify-content: center; margin-bottom: 0; }
+  .engine { background: linear-gradient(135deg, #0f1a3a 0%, #0d1530 100%); border: 1px solid #6b7aff; border-radius: 16px; padding: 28px 32px; width: 100%; max-width: 680px; box-shadow: 0 0 40px rgba(107,122,255,0.12); }
+  .engine-header { display: flex; align-items: center; gap: 12px; margin-bottom: 20px; }
+  .engine-badge { background: #6b7aff; color: #fff; font-size: 0.62rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; }
+  .engine-name { font-size: 1.05rem; font-weight: 700; color: #f0f2f8; }
+  .engine-steps { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .engine-step { background: #0a0e1a; border: 1px solid #1e2a45; border-radius: 8px; padding: 12px 14px; display: flex; align-items: flex-start; gap: 10px; }
+  .step-num { background: #1e2a45; color: #6b7aff; font-size: 0.65rem; font-weight: 700; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .step-text { font-size: 0.73rem; color: #a0aec0; line-height: 1.45; }
+  .step-text strong { color: #e2e8f0; display: block; margin-bottom: 2px; }
+  .safety-bar { margin-top: 14px; background: #0a0e1a; border: 1px solid #2d3748; border-radius: 8px; padding: 10px 14px; display: flex; align-items: center; gap: 10px; }
+  .safety-text { font-size: 0.7rem; color: #718096; line-height: 1.4; }
+  .safety-text strong { color: #68d391; }
+  .output-connectors { display: flex; gap: 32px; justify-content: center; height: 36px; }
+  .output-connector { display: flex; align-items: center; justify-content: center; flex: 1; max-width: 280px; }
+  .output-connector::after { content: '▼'; font-size: 0.75rem; color: #48bb78; animation: pulse 2s ease-in-out infinite; animation-delay: 0.5s; }
+  .outputs-row { display: flex; gap: 16px; justify-content: center; margin-bottom: 0; }
+  .output-card { flex: 1; max-width: 290px; border-radius: 12px; padding: 20px 18px; }
+  .output-provider { background: #0f1f14; border: 1px solid #2d6a4f; }
+  .output-patient { background: #0f1a2e; border: 1px solid #2b4a7a; }
+  .output-header { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .output-icon { font-size: 1.2rem; }
+  .output-title { font-size: 0.85rem; font-weight: 700; color: #e2e8f0; }
+  .output-role { font-size: 0.65rem; color: #718096; margin-top: 1px; }
+  .output-preview { background: #0a0e1a; border-radius: 8px; padding: 12px; font-size: 0.68rem; color: #718096; line-height: 1.6; }
+  .preview-label { font-size: 0.6rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 6px; }
+  .provider-label { color: #48bb78; }
+  .patient-label { color: #63b3ed; }
+  .preview-section { margin-bottom: 4px; }
+  .preview-section strong { color: #a0aec0; }
+  .outcomes-section { margin-top: 44px; width: 100%; max-width: 960px; }
+  .outcomes-label { text-align: center; font-size: 0.65rem; letter-spacing: 0.12em; text-transform: uppercase; color: #4a5568; font-weight: 600; margin-bottom: 16px; }
+  .outcomes-row { display: flex; gap: 12px; justify-content: center; }
+  .outcome-card { flex: 1; max-width: 220px; background: #111827; border: 1px solid #1e2a45; border-radius: 10px; padding: 16px 14px; text-align: center; }
+  .outcome-num { font-size: 1.4rem; font-weight: 800; color: #6b7aff; margin-bottom: 4px; }
+  .outcome-desc { font-size: 0.7rem; color: #718096; line-height: 1.45; }
+  .buyers-section { margin-top: 44px; width: 100%; max-width: 960px; }
+  .buyers-row { display: flex; gap: 12px; justify-content: center; }
+  .buyer-card { flex: 1; max-width: 300px; background: #111827; border: 1px solid #1e2a45; border-radius: 10px; padding: 16px 18px; display: flex; align-items: flex-start; gap: 12px; }
+  .buyer-num { background: #1e2a45; color: #6b7aff; font-size: 0.7rem; font-weight: 700; width: 24px; height: 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-top: 1px; }
+  .buyer-name { font-size: 0.8rem; font-weight: 600; color: #e2e8f0; margin-bottom: 3px; }
+  .buyer-examples { font-size: 0.68rem; color: #4a5568; margin-bottom: 5px; }
+  .buyer-value { font-size: 0.68rem; color: #718096; line-height: 1.45; }
+  .buyer-contract { font-size: 0.65rem; color: #6b7aff; font-weight: 600; margin-top: 5px; }
+  .footer { margin-top: 52px; text-align: center; font-size: 0.65rem; color: #2d3748; letter-spacing: 0.06em; }
+</style>
+</head>
+<body>
+
+<div class="logo">CognaSync</div>
+<h1>The Intelligence Layer for Behavioral Health</h1>
+<p class="subtitle">Patients generate behavioral data every day. Providers see none of it until the 15-minute appointment. CognaSync closes that gap.</p>
+
+<div class="diagram">
+  <div class="row-label">The information gap today</div>
+  <div class="problem-row">
+    <div class="gap-box">
+      <div class="gap-icon">🏥</div>
+      <div class="gap-title">Last appointment</div>
+      <div class="gap-desc">Provider makes decisions based on recall and 15 minutes of conversation</div>
+    </div>
+    <div class="gap-arrow">— — —</div>
+    <div class="gap-box" style="border-color:#2d1f1f; background:#130a0a;">
+      <div class="gap-icon">⬛</div>
+      <div class="gap-title" style="color:#8b4444;">4–8 weeks of darkness</div>
+      <div class="gap-desc" style="color:#4a2020;">Medication changes, sleep collapse, adherence gaps — invisible to the provider</div>
+    </div>
+    <div class="gap-arrow">— — —</div>
+    <div class="gap-box">
+      <div class="gap-icon">📋</div>
+      <div class="gap-title">Next appointment</div>
+      <div class="gap-desc">Provider still working from patient recall. The data exists — it's just inaccessible</div>
+    </div>
+  </div>
+
+  <div style="text-align:center; margin: 20px 0 28px; font-size:0.8rem; color:#4a5568;">CognaSync illuminates the gap without requiring patients to change their behavior</div>
+
+  <div class="row-label">What CognaSync ingests passively</div>
+  <div class="sources-row">
+    <div class="source-card">
+      <div class="source-icon">🎙</div>
+      <div class="source-title">Session Intelligence</div>
+      <ul class="source-items">
+        <li>HIPAA-compliant session recording</li>
+        <li>Speaker-separated transcript</li>
+        <li>Acoustic biomarkers: speech rate, vocal energy, pausing</li>
+        <li>90-second weekly voice memo</li>
+      </ul>
+    </div>
+    <div class="source-card">
+      <div class="source-icon">⌚</div>
+      <div class="source-title">Wearable Biometrics</div>
+      <ul class="source-items">
+        <li>Sleep staging (deep, REM, light)</li>
+        <li>Heart rate variability (HRV)</li>
+        <li>Resting heart rate trend</li>
+        <li>Activity &amp; recovery scores</li>
+      </ul>
+    </div>
+    <div class="source-card">
+      <div class="source-icon">💊</div>
+      <div class="source-title">Medication Adherence</div>
+      <ul class="source-items">
+        <li>Pharmacy fill records (FHIR)</li>
+        <li>Smart pillbox dose timing</li>
+        <li>Medication reminder apps</li>
+        <li>Gap detection between fills</li>
+      </ul>
+    </div>
+    <div class="source-card">
+      <div class="source-icon">📱</div>
+      <div class="source-title">Behavioral Signals</div>
+      <ul class="source-items">
+        <li>Calendar patterns</li>
+        <li>Consented AI chat logs</li>
+        <li>Screen time metadata</li>
+        <li>One-tap daily mood check</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="connectors">
+    <div class="connector-line"></div>
+    <div class="connector-line"></div>
+    <div class="connector-line"></div>
+    <div class="connector-line"></div>
+  </div>
+
+  <div class="engine-wrap">
+    <div class="engine">
+      <div class="engine-header">
+        <span class="engine-badge">Intelligence Layer</span>
+        <span class="engine-name">CognaSync Processing Engine</span>
+      </div>
+      <div class="engine-steps">
+        <div class="engine-step">
+          <div class="step-num">1</div>
+          <div class="step-text"><strong>Normalize all data sources</strong>A mood signal from a transcript, an HRV reading from a wearable, and a missed pharmacy fill all arrive in the same internal format</div>
+        </div>
+        <div class="engine-step">
+          <div class="step-num">2</div>
+          <div class="step-text"><strong>Deterministic scoring engine</strong>8 composite clinical scores computed in Python before AI is involved: Stability, Sleep Disruption, Crash Risk, Medication Adherence Signal, and more</div>
+        </div>
+        <div class="engine-step">
+          <div class="step-num">3</div>
+          <div class="step-text"><strong>Pattern detection across history</strong>The 20th brief is built on 19 sessions of structured data. Patterns invisible at a single appointment become visible across months</div>
+        </div>
+        <div class="engine-step">
+          <div class="step-num">4</div>
+          <div class="step-text"><strong>Clinical-grade AI output</strong>AI describes what the data shows. It never diagnoses, never recommends medication changes, never crosses into clinical judgment — that's the provider's job</div>
+        </div>
+      </div>
+      <div class="safety-bar">
+        <span>🛡</span>
+        <div class="safety-text"><strong>Clinical safety architecture:</strong> 21-section behavioral specification · crisis detection before every AI call · forbidden-language sanitization · FDA CDS Software exemption documented · the AI describes data, clinicians make decisions</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="output-connectors">
+    <div class="output-connector"></div>
+    <div class="output-connector"></div>
+  </div>
+
+  <div class="row-label">What gets delivered before every appointment</div>
+  <div class="outputs-row">
+    <div class="output-card output-provider">
+      <div class="output-header">
+        <span class="output-icon">👩‍⚕️</span>
+        <div>
+          <div class="output-title">Provider Pre-Visit Brief</div>
+          <div class="output-role">Structured clinical summary</div>
+        </div>
+      </div>
+      <div class="output-preview">
+        <div class="preview-label provider-label">Sample brief excerpt</div>
+        <div class="preview-section"><strong>Trajectory:</strong> 6-week period showing mood decline in weeks 3–5, partial recovery in week 6.</div>
+        <div class="preview-section"><strong>Medication signal:</strong> 11-day gap in pharmacy fills detected April 12–23. Adherence rate 68% this period vs 91% prior.</div>
+        <div class="preview-section"><strong>Sleep:</strong> Avg 5.1 hrs · HRV declined 22% in weeks 4–5 · 3 nights under 4 hrs.</div>
+        <div class="preview-section"><strong>🚩 Flag:</strong> Acoustic markers in session 4 showed speech rate −18%, elevated pause rate.</div>
+      </div>
+    </div>
+    <div class="output-card output-patient">
+      <div class="output-header">
+        <span class="output-icon">🙋</span>
+        <div>
+          <div class="output-title">Patient Session Summary</div>
+          <div class="output-role">Plain-language, no clinical terms</div>
+        </div>
+      </div>
+      <div class="output-preview">
+        <div class="preview-label patient-label">Sample patient summary</div>
+        <div class="preview-section">Over the past six weeks, your sleep averaged about 5 hours a night — lower than your usual. The weeks around mid-April seemed harder.</div>
+        <div class="preview-section">You mentioned work stress and difficulty with your morning routine in two recent sessions.</div>
+        <div class="preview-section"><strong>Worth discussing:</strong> How your sleep and mood have been connecting lately, and whether your current routine feels sustainable.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="outcomes-section">
+  <div class="outcomes-label">The clinical and financial case</div>
+  <div class="outcomes-row">
+    <div class="outcome-card"><div class="outcome-num">50%</div><div class="outcome-desc">of psychiatric patients discontinue medication within 6 months — under conditions their provider never sees</div></div>
+    <div class="outcome-card"><div class="outcome-num">$35K</div><div class="outcome-desc">average cost per psychiatric hospitalization when decompensation is caught in the ED instead of the clinic</div></div>
+    <div class="outcome-card"><div class="outcome-num">15 min</div><div class="outcome-desc">average appointment — the only window where a provider can act on months of behavioral data</div></div>
+    <div class="outcome-card"><div class="outcome-num">0</div><div class="outcome-desc">behavior changes required from the patient — consent once, the data flows automatically</div></div>
+  </div>
+</div>
+
+<div class="buyers-section">
+  <div class="outcomes-label">Three buyers, in order</div>
+  <div class="buyers-row">
+    <div class="buyer-card">
+      <div class="buyer-num">1</div>
+      <div>
+        <div class="buyer-name">Value-Based Care Organizations</div>
+        <div class="buyer-examples">Headway · Talkiatry · LifeStance · Brave Health</div>
+        <div class="buyer-value">Reimbursement tied to clinical outcomes. The pre-visit brief makes every appointment more effective and cuts documentation time.</div>
+        <div class="buyer-contract">$75/clinician/month · 3–6 month sales cycle</div>
+      </div>
+    </div>
+    <div class="buyer-card">
+      <div class="buyer-num">2</div>
+      <div>
+        <div class="buyer-name">Pharma Medical Affairs</div>
+        <div class="buyer-examples">AstraZeneca · Janssen · Otsuka · Lundbeck</div>
+        <div class="buyer-value">Medication abandonment within 6 months is their primary post-launch failure. CognaSync detects the behavioral signatures that precede abandonment.</div>
+        <div class="buyer-contract">7–8 figure contracts · 18–24 month cycle</div>
+      </div>
+    </div>
+    <div class="buyer-card">
+      <div class="buyer-num">3</div>
+      <div>
+        <div class="buyer-name">Payers &amp; Medicaid Managed Care</div>
+        <div class="buyer-examples">Regional Blues · Medicaid MCOs</div>
+        <div class="buyer-value">Each avoided psychiatric hospitalization is $20K–$50K in direct cost. A validated decompensation signal commands PMPM pricing.</div>
+        <div class="buyer-contract">PMPM pricing · longest cycle, largest contracts</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="footer">CognaSync · Clinical Intelligence Layer · Confidential — Not for Distribution · 2026</div>
+</body>
+</html>

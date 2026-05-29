@@ -4459,6 +4459,54 @@ def resolve_care_flag(flag_id: str, resolving_provider_id: str, patient_id: str)
         return {'ok': False, 'error': str(e)}
 
 
+def get_all_care_flags_for_hub(patient_id: str) -> list:
+    """
+    Returns ALL care flags for a patient (active + resolved), with resolver info.
+    Used by the persistent flags panel on the provider hub.
+    """
+    try:
+        res = supabase_admin.table('care_flags').select(
+            'id, flag_type, body, created_at, resolved_at, resolved_by, author_provider_id'
+        ).eq('patient_id', str(patient_id)).order('created_at', desc=True).execute()
+        rows = res.data or []
+
+        # Collect provider IDs to look up names
+        provider_ids = set()
+        for r in rows:
+            if r.get('author_provider_id'):
+                provider_ids.add(r['author_provider_id'])
+            if r.get('resolved_by'):
+                provider_ids.add(r['resolved_by'])
+
+        name_map: dict = {}
+        if provider_ids:
+            try:
+                prov_res = supabase_admin.table('providers').select(
+                    'id, full_name'
+                ).in_('id', list(provider_ids)).execute()
+                for p in (prov_res.data or []):
+                    name_map[p['id']] = p.get('full_name') or 'Provider'
+            except Exception:
+                pass
+
+        out = []
+        for r in rows:
+            out.append({
+                'id':             r.get('id'),
+                'flag_type':      r.get('flag_type'),
+                'body':           r.get('body'),
+                'created_at':     (r.get('created_at') or '')[:10],
+                'author_name':    name_map.get(r.get('author_provider_id', ''), 'Provider'),
+                'resolved':       bool(r.get('resolved_at')),
+                'resolved_at':    (r.get('resolved_at') or '')[:10] if r.get('resolved_at') else None,
+                'resolved_by_name': name_map.get(r.get('resolved_by', ''), 'Provider') if r.get('resolved_by') else None,
+            })
+        return out
+    except Exception as e:
+        print(f"get_all_care_flags_for_hub error: {e}")
+        return []
+
+
 def get_unresolved_flag_counts(provider_id: str, patient_ids: list) -> dict:
     """
     Bulk-fetch unresolved flag counts for a list of patients, visible to provider.

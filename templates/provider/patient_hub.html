@@ -168,23 +168,44 @@
   .brief-modal-body p { margin: 0 0 12px; }
   .brief-modal-body strong { font-weight: 500; }
 
+  /* ── Two-column layout ───────────────────────────────────────────────────── */
+  .hub-layout {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    gap: 20px;
+    align-items: flex-start;
+  }
+  .hub-main { min-width: 0; }
+  .hub-sidebar { position: sticky; top: 20px; }
+  @media (max-width: 900px) {
+    .hub-layout { grid-template-columns: 1fr; }
+    .hub-sidebar { position: static; }
+  }
+
   /* ── Sections ────────────────────────────────────────────────────────────── */
   .hub-section {
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--radius);
-    margin-bottom: 18px;
+    margin-bottom: 14px;
     overflow: hidden;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    transition: box-shadow 0.15s;
   }
+  .hub-section:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
   .hub-section-hdr {
     display: flex;
     align-items: center;
     justify-content: space-between;
     padding: 13px 18px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
+    background: var(--surface);
     cursor: pointer;
     user-select: none;
+    transition: background 0.12s;
+  }
+  .hub-section-hdr:hover { background: var(--bg); }
+  .hub-section:not(.collapsed) .hub-section-hdr {
+    border-bottom: 1px solid var(--border);
   }
   .hub-section-hdr-left {
     display: flex;
@@ -211,14 +232,16 @@
     color: var(--text-muted);
   }
   .hub-section-chevron {
-    font-size: 0.9rem;
+    font-size: 11px;
     color: var(--text-muted);
-    transition: transform 0.15s;
+    transition: transform 0.18s;
+    display: inline-block;
+    line-height: 1;
   }
-  .hub-section.collapsed .hub-section-chevron { transform: rotate(-90deg); }
-  .hub-section-body {
-    padding: 0;
-  }
+  /* Collapsed = chevron points right (▶). Expanded = chevron points down (▼). */
+  .hub-section.collapsed .hub-section-chevron { transform: rotate(0deg); }
+  .hub-section:not(.collapsed) .hub-section-chevron { transform: rotate(90deg); }
+  .hub-section-body { padding: 0; }
   .hub-section.collapsed .hub-section-body { display: none; }
 
   /* ── Empty state ─────────────────────────────────────────────────────────── */
@@ -465,6 +488,149 @@
   .flag-body { font-size: 0.84rem; color: var(--text); line-height: 1.55; }
   .flag-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
 
+  /* ── Flags sidebar panel ─────────────────────────────────────────────────── */
+  .flags-panel {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06);
+    overflow: hidden;
+  }
+  .flags-panel-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .flags-panel-title {
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+  .flags-panel-count {
+    background: var(--accent);
+    color: #fff;
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 10px;
+  }
+  .flags-panel-body { padding: 0; }
+  .flags-panel-empty {
+    padding: 24px 16px;
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    text-align: center;
+  }
+  .flag-item {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    position: relative;
+  }
+  .flag-item:last-child { border-bottom: none; }
+  .flag-item--resolved {
+    opacity: 0.55;
+    background: var(--bg);
+  }
+  .flag-item-hdr {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 6px;
+    flex-wrap: wrap;
+  }
+  .flag-type-badge {
+    font-size: 0.62rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 6px;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+  .flag-type-badge--concern      { background: #fdecea; color: #c0392b; }
+  .flag-type-badge--observation  { background: #e8f0fe; color: #1a56a4; }
+  .flag-type-badge--progress     { background: #d4edda; color: #1a7f3c; }
+  .flag-type-badge--coordination { background: #fff3cd; color: #856404; }
+  .flag-item-author {
+    font-size: 0.71rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .flag-item-body {
+    font-size: 0.83rem;
+    color: var(--text);
+    line-height: 1.5;
+    margin-bottom: 6px;
+  }
+  .flag-item-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .flag-item-date {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+  }
+  .flag-resolve-btn {
+    font-size: 0.7rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    white-space: nowrap;
+    font-family: 'DM Sans', sans-serif;
+    transition: border-color 0.12s, color 0.12s;
+  }
+  .flag-resolve-btn:hover { border-color: #1a7f3c; color: #1a7f3c; }
+  .flag-resolved-label {
+    font-size: 0.7rem;
+    color: #1a7f3c;
+    display: flex;
+    align-items: center;
+    gap: 3px;
+  }
+  .flags-resolved-section {
+    border-top: 1px solid var(--border);
+  }
+  .flags-resolved-toggle {
+    width: 100%;
+    padding: 9px 16px;
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    background: var(--bg);
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    font-family: 'DM Sans', sans-serif;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .flags-resolved-toggle:hover { color: var(--text); }
+  #flags-resolved-list { display: none; }
+
+  /* ── Flag post form ──────────────────────────────────────────────────────── */
+  .flag-post-form {
+    display: none;
+    padding: 14px 16px;
+    border-top: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .flag-post-form.open { display: block; }
+
   /* ── Upload area ─────────────────────────────────────────────────────────── */
   .upload-drop-zone {
     border: 2px dashed var(--border);
@@ -634,6 +800,10 @@
     <div class="risk-strip-date">Last check-in: {{ risk_snap.date }}</div>
   </div>
   {% endif %}
+
+  <!-- ── Two-column layout: main sections left, flags panel right ─────────── -->
+  <div class="hub-layout">
+  <div class="hub-main">
 
   <!-- ── Check-in Data ──────────────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-checkins">
@@ -865,28 +1035,19 @@
     </div>
   </div>
 
-  <!-- ── Care Team & Flags ──────────────────────────────────────────────────── -->
+  <!-- ── Care Team ─────────────────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-care-team">
     <div class="hub-section-hdr" onclick="toggleSection('care-team')">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
-        <span class="hub-section-title">Care Team & Flags</span>
-        <span class="hub-section-meta">
-          {{ care_team.active|length }} provider{{ 's' if care_team.active|length != 1 }}
-        </span>
+        <span class="hub-section-title">Care Team</span>
+        <span class="hub-section-meta">{{ care_team.active|length }} provider{{ 's' if care_team.active|length != 1 }}</span>
       </div>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;"
-                onclick="event.stopPropagation();openFlagForm()">+ Post Flag</button>
-        <span class="hub-section-chevron">›</span>
-      </div>
+      <span class="hub-section-chevron">▶</span>
     </div>
     <div class="hub-section-body">
-
-      <!-- Care team members -->
       {% if care_team.active %}
-      <div style="padding:10px 18px 6px;font-size:0.7rem;font-weight:500;text-transform:uppercase;
-                  letter-spacing:.07em;color:var(--text-muted);">Active Providers</div>
+      <div style="padding:10px 18px 6px;font-size:0.7rem;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);">Active Providers</div>
       {% for member in care_team.active %}
       <div class="care-member">
         <div class="care-avatar-sm">{{ member.provider_name[0]|upper }}</div>
@@ -898,11 +1059,8 @@
       </div>
       {% endfor %}
       {% endif %}
-
-      <!-- Pending invites -->
       {% if care_team.pending %}
-      <div style="padding:10px 18px 6px;font-size:0.7rem;font-weight:500;text-transform:uppercase;
-                  letter-spacing:.07em;color:var(--text-muted);">Pending</div>
+      <div style="padding:10px 18px 6px;font-size:0.7rem;font-weight:500;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);">Pending</div>
       {% for member in care_team.pending %}
       <div class="care-member" style="opacity:0.7;">
         <div class="care-avatar-sm" style="background:var(--text-muted);">{{ member.provider_name[0]|upper }}</div>
@@ -914,39 +1072,9 @@
       </div>
       {% endfor %}
       {% endif %}
-
       {% if not care_team.active and not care_team.pending %}
       <div class="hub-empty">No other providers on this patient's care team.</div>
       {% endif %}
-
-      <!-- Flag form (hidden) -->
-      <div id="hub-flag-form" style="display:none;padding:14px 18px;border-top:1px solid var(--border);background:var(--bg);">
-        <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
-                    color:var(--text-muted);margin-bottom:10px;">Post a Flag</div>
-        <div style="display:grid;gap:10px;">
-          <select id="hub-flag-type"
-                  style="font-size:0.84rem;padding:7px 9px;border:1px solid var(--border);
-                         background:var(--surface);color:var(--text);border-radius:6px;">
-            <option value="observation">Observation</option>
-            <option value="concern">Concern</option>
-            <option value="progress">Progress</option>
-            <option value="coordination_needed">Needs Coordination</option>
-          </select>
-          <textarea id="hub-flag-body" rows="3" placeholder="What do you want to share with the care team?"
-                    style="font-family:'DM Sans',sans-serif;font-size:0.84rem;padding:8px 10px;
-                           border:1px solid var(--border);background:var(--surface);color:var(--text);
-                           border-radius:6px;resize:vertical;box-sizing:border-box;width:100%;"></textarea>
-        </div>
-        <div id="hub-flag-err" style="font-size:0.75rem;color:#c0392b;margin-top:5px;display:none;"></div>
-        <div style="display:flex;gap:8px;margin-top:10px;">
-          <button class="hub-action-btn hub-action-btn--primary" id="hub-flag-submit" onclick="submitHubFlag()">Post Flag</button>
-          <button class="hub-action-btn" onclick="closeFlagForm()">Cancel</button>
-        </div>
-      </div>
-
-      <!-- Existing flags -->
-      <div id="hub-flags-list"></div>
-
     </div>
   </div>
 
@@ -958,7 +1086,7 @@
         <span class="hub-section-title">Wearables Data</span>
         <span class="hub-section-meta">Coming soon</span>
       </div>
-      <span class="hub-section-chevron">›</span>
+      <span class="hub-section-chevron">▶</span>
     </div>
     <div class="hub-section-body">
       <div class="wearable-placeholder">
@@ -972,7 +1100,61 @@
     </div>
   </div>
 
-</div>
+  </div>{# /hub-main #}
+
+  <!-- ── Flags sidebar (persistent, always visible) ────────────────────────── -->
+  <div class="hub-sidebar">
+    <div class="flags-panel">
+      <div class="flags-panel-hdr">
+        <div class="flags-panel-title">
+          🚩 Care Team Flags
+          <span class="flags-panel-count" id="flags-active-count" style="display:none;">0</span>
+        </div>
+        <button class="hub-action-btn" style="font-size:0.7rem;padding:3px 9px;"
+                onclick="toggleFlagForm()">+ Flag</button>
+      </div>
+
+      <!-- Post flag form -->
+      <div class="flag-post-form" id="hub-flag-form">
+        <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">New Flag</div>
+        <select id="hub-flag-type"
+                style="width:100%;font-size:0.82rem;padding:6px 8px;border:1px solid var(--border);
+                       background:var(--surface);color:var(--text);border-radius:6px;margin-bottom:8px;box-sizing:border-box;">
+          <option value="observation">Observation</option>
+          <option value="concern">Concern</option>
+          <option value="progress">Progress</option>
+          <option value="coordination_needed">Needs Coordination</option>
+        </select>
+        <textarea id="hub-flag-body" rows="3" placeholder="Note for the care team…"
+                  style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;
+                         padding:7px 9px;border:1px solid var(--border);background:var(--surface);
+                         color:var(--text);border-radius:6px;resize:vertical;"></textarea>
+        <div id="hub-flag-err" style="font-size:0.75rem;color:#c0392b;margin-top:5px;display:none;"></div>
+        <div style="display:flex;gap:7px;margin-top:9px;">
+          <button class="hub-action-btn hub-action-btn--primary" id="hub-flag-submit" onclick="submitHubFlag()" style="flex:1;justify-content:center;">Post</button>
+          <button class="hub-action-btn" onclick="toggleFlagForm()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Active flags -->
+      <div class="flags-panel-body" id="flags-active-list">
+        <div class="flags-panel-empty" id="flags-empty-msg">No open flags.</div>
+      </div>
+
+      <!-- Resolved flags (collapsed by default) -->
+      <div class="flags-resolved-section" id="flags-resolved-section" style="display:none;">
+        <button class="flags-resolved-toggle" id="flags-resolved-toggle" onclick="toggleResolvedFlags()">
+          <span id="flags-resolved-toggle-icon">▶</span>
+          <span id="flags-resolved-toggle-label">Show resolved</span>
+        </button>
+        <div id="flags-resolved-list"></div>
+      </div>
+    </div>
+  </div>
+
+  </div>{# /hub-layout #}
+
+</div>{# /hub-page #}
 
 <script>
 const PATIENT_ID = {{ patient.patient_id | tojson }};
@@ -1193,28 +1375,29 @@ async function submitVoiceUpload() {
   }
 }
 
-// ── Care team flags ───────────────────────────────────────────────────────────
+// ── Care team flags — sidebar panel ──────────────────────────────────────────
 const _FLAG_TYPE_LABELS = {
   observation: 'Observation', concern: 'Concern',
   progress: 'Progress', coordination_needed: 'Needs Coordination',
 };
+const _FLAG_TYPE_CLASS = {
+  observation: 'observation', concern: 'concern',
+  progress: 'progress', coordination_needed: 'coordination',
+};
 
-function openFlagForm() {
-  document.getElementById('hub-flag-form').style.display = 'block';
-  document.getElementById('hub-flag-body').focus();
-  // Also expand the section
-  const sec = document.getElementById('section-care-team');
-  if (sec) sec.classList.remove('collapsed');
-}
+let _resolvedVisible = false;
 
-function closeFlagForm() {
-  document.getElementById('hub-flag-form').style.display = 'none';
+function toggleFlagForm() {
+  const form = document.getElementById('hub-flag-form');
+  if (!form) return;
+  const isOpen = form.classList.toggle('open');
+  if (isOpen) setTimeout(() => document.getElementById('hub-flag-body').focus(), 40);
 }
 
 async function submitHubFlag() {
-  const typeEl   = document.getElementById('hub-flag-type');
-  const bodyEl   = document.getElementById('hub-flag-body');
-  const errEl    = document.getElementById('hub-flag-err');
+  const typeEl    = document.getElementById('hub-flag-type');
+  const bodyEl    = document.getElementById('hub-flag-body');
+  const errEl     = document.getElementById('hub-flag-err');
   const submitBtn = document.getElementById('hub-flag-submit');
   errEl.style.display = 'none';
   const body = (bodyEl.value || '').trim();
@@ -1230,7 +1413,7 @@ async function submitHubFlag() {
     const data = await res.json();
     if (res.ok && data.ok) {
       bodyEl.value = '';
-      closeFlagForm();
+      toggleFlagForm();
       showToast('Flag posted');
       loadHubFlags();
     } else {
@@ -1239,36 +1422,107 @@ async function submitHubFlag() {
   } catch (e) {
     errEl.textContent = e.message || 'Failed — try again.';
     errEl.style.display = '';
-    submitBtn.disabled = false; submitBtn.textContent = 'Post Flag';
+  }
+  submitBtn.disabled = false; submitBtn.textContent = 'Post';
+}
+
+async function resolveFlag(flagId) {
+  const btn = document.getElementById('resolve-btn-' + flagId);
+  if (btn) { btn.disabled = true; btn.textContent = 'Resolving…'; }
+  try {
+    const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/flags/' + flagId + '/resolve', {
+      method: 'PATCH',
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      showToast('Flag resolved');
+      loadHubFlags();
+    } else {
+      throw new Error(data.error || 'Resolve failed');
+    }
+  } catch (e) {
+    showToast(e.message || 'Failed to resolve', true);
+    if (btn) { btn.disabled = false; btn.textContent = 'Resolve'; }
   }
 }
 
+function toggleResolvedFlags() {
+  _resolvedVisible = !_resolvedVisible;
+  const list = document.getElementById('flags-resolved-list');
+  const icon = document.getElementById('flags-resolved-toggle-icon');
+  const label = document.getElementById('flags-resolved-toggle-label');
+  if (list) list.style.display = _resolvedVisible ? 'block' : 'none';
+  if (icon) icon.textContent = _resolvedVisible ? '▼' : '▶';
+  if (label) label.textContent = _resolvedVisible ? 'Hide resolved' : 'Show resolved';
+}
+
 async function loadHubFlags() {
-  const listEl = document.getElementById('hub-flags-list');
-  if (!listEl) return;
+  const activeList  = document.getElementById('flags-active-list');
+  const resolvedList = document.getElementById('flags-resolved-list');
+  const emptyMsg    = document.getElementById('flags-empty-msg');
+  const countBadge  = document.getElementById('flags-active-count');
+  const resolvedSec = document.getElementById('flags-resolved-section');
+  if (!activeList) return;
+
   try {
-    const res  = await fetch('/api/provider/patient/' + PATIENT_ID + '/flags', { credentials: 'same-origin' });
+    const res  = await fetch('/api/provider/patient/' + PATIENT_ID + '/flags/all', { credentials: 'same-origin' });
     const data = res.ok ? await res.json() : {};
     const flags = data.flags || [];
-    if (!flags.length) { listEl.innerHTML = ''; return; }
-    listEl.innerHTML = flags.map(f => {
-      const typeClass = {
-        observation: 'observation', concern: 'concern',
-        progress: 'progress', coordination_needed: 'coordination',
-      }[f.flag_type] || 'observation';
-      return `<div class="flag-card">
-        <div class="flag-card-hdr">
-          <span class="flag-type-badge flag-type-badge--${typeClass}">${_esc(_FLAG_TYPE_LABELS[f.flag_type] || f.flag_type)}</span>
-          <span class="flag-meta" style="margin:0;">${_esc(f.provider_name || 'You')}</span>
+
+    const active   = flags.filter(f => !f.resolved);
+    const resolved = flags.filter(f =>  f.resolved);
+
+    // Active count badge
+    if (countBadge) {
+      if (active.length > 0) {
+        countBadge.textContent = active.length;
+        countBadge.style.display = 'inline-flex';
+      } else {
+        countBadge.style.display = 'none';
+      }
+    }
+
+    // Active flags
+    if (emptyMsg) emptyMsg.style.display = active.length ? 'none' : 'block';
+    activeList.innerHTML = active.map(f => {
+      const tc = _FLAG_TYPE_CLASS[f.flag_type] || 'observation';
+      return `<div class="flag-item">
+        <div class="flag-item-hdr">
+          <span class="flag-type-badge flag-type-badge--${tc}">${_esc(_FLAG_TYPE_LABELS[f.flag_type] || f.flag_type)}</span>
+          <button class="flag-resolve-btn" id="resolve-btn-${_esc(f.id)}" onclick="resolveFlag('${_esc(f.id)}')">Resolve</button>
         </div>
-        <div class="flag-body">${_esc(f.body || '')}</div>
-        <div class="flag-meta">${_esc((f.created_at || '').substring(0, 10))}</div>
+        <div class="flag-item-body">${_esc(f.body || '')}</div>
+        <div class="flag-item-footer">
+          <span class="flag-item-author">${_esc(f.author_name || 'Provider')}</span>
+          <span class="flag-item-date">${_esc(f.created_at || '')}</span>
+        </div>
       </div>`;
     }).join('');
+
+    // Resolved flags
+    if (resolvedSec) resolvedSec.style.display = resolved.length ? 'block' : 'none';
+    if (resolvedList) {
+      resolvedList.style.display = _resolvedVisible ? 'block' : 'none';
+      resolvedList.innerHTML = resolved.map(f => {
+        const tc = _FLAG_TYPE_CLASS[f.flag_type] || 'observation';
+        return `<div class="flag-item flag-item--resolved">
+          <div class="flag-item-hdr">
+            <span class="flag-type-badge flag-type-badge--${tc}">${_esc(_FLAG_TYPE_LABELS[f.flag_type] || f.flag_type)}</span>
+            <span class="flag-resolved-label">✓ Resolved</span>
+          </div>
+          <div class="flag-item-body">${_esc(f.body || '')}</div>
+          <div class="flag-item-footer">
+            <span class="flag-item-author">${_esc(f.author_name || 'Provider')}</span>
+            <span class="flag-item-date">Resolved by ${_esc(f.resolved_by_name || 'Provider')} on ${_esc(f.resolved_at || '')}</span>
+          </div>
+        </div>`;
+      }).join('');
+    }
   } catch(_) {}
 }
 
-// Load flags on page ready (section is collapsed but data loads silently)
+// Load flags on page ready
 loadHubFlags();
 </script>
 {% endblock %}
