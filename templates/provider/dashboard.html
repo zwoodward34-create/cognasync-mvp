@@ -1106,7 +1106,7 @@
            data-patient-id="{{ p.patient_id }}"
            data-name="{{ p.full_name | lower }}"
            data-state="alert"
-           onclick="openHub('{{ p.patient_id }}')">
+           onclick="window.location.href='{{ url_for('provider_patient_detail', patient_id=p.patient_id) }}'">
 
         <div class="pd-row-avatar">{{ p.full_name[0] | upper }}</div>
 
@@ -1210,7 +1210,7 @@
            data-patient-id="{{ p.patient_id }}"
            data-name="{{ p.full_name | lower }}"
            data-state="{% if inactive %}inactive{% else %}recent{% endif %}"
-           onclick="openHub('{{ p.patient_id }}')">
+           onclick="window.location.href='{{ url_for('provider_patient_detail', patient_id=p.patient_id) }}'">
 
         <div class="pd-row-avatar">{{ p.full_name[0] | upper }}</div>
 

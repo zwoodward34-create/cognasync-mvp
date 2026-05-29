@@ -3757,6 +3757,113 @@ def api_get_patient_voice_notes(patient_id):
     return jsonify({'ok': True, 'voice_notes': notes or []})
 
 
+@app.route('/api/provider/patient/<patient_id>/send-flow-sms', methods=['POST'])
+def api_send_flow_sms(patient_id):
+    """Provider manually triggers a specific Twilio flow SMS for a patient.
+    Body: { "flow_type": "medication" | "short" | "full" | "voice",
+            "voice_prompt": "..." (optional, voice/full only),
+            "medication_name": "..." (optional, medication only) }
+    """
+    provider, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(provider['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+
+    data      = request.get_json(silent=True) or {}
+    flow_type = data.get('flow_type', 'short')
+    if flow_type not in ('medication', 'short', 'full', 'voice'):
+        return jsonify({'error': 'flow_type must be one of: medication, short, full, voice'}), 400
+
+    # Check flow is configured
+    configured = _twilio.get_configured_flows()
+    if not configured.get(flow_type):
+        return jsonify({'error': f'Flow "{flow_type}" is not configured — set the Twilio env var and redeploy'}), 503
+
+    # Resolve patient phone + name
+    prof = db.supabase_admin.table('profiles').select('full_name').eq('id', patient_id).single().execute()
+    name = (prof.data or {}).get('full_name', '')
+    pat_prof = db.supabase_admin.table('patient_profiles').select('phone_number').eq('user_id', patient_id).maybe_single().execute()
+    phone = (pat_prof.data or {}).get('phone_number') if pat_prof else None
+    if not phone:
+        return jsonify({'error': 'Patient has no phone number on file'}), 400
+
+    # Resolve provider name (for full/voice flows)
+    prov_prof = db.supabase_admin.table('profiles').select('full_name').eq('id', provider['id']).maybe_single().execute()
+    provider_name = (prov_prof.data or {}).get('full_name', 'your provider') if prov_prof else 'your provider'
+
+    base_url = os.environ.get('APP_URL', '').rstrip('/')
+
+    # Build token + parameters per flow type
+    metadata   = {}
+    parameters = {'token': '', 'patient_name': name}
+
+    if flow_type == 'medication':
+        med_name = data.get('medication_name', '')
+        if not med_name:
+            p_data = db.get_patient_detail(patient_id, days=1)
+            meds   = (p_data or {}).get('current_medications') or []
+            med_name = meds[0]['name'].title() if meds else 'your medication'
+        metadata = {'medication_name': med_name}
+        parameters['medication_name'] = med_name
+
+    elif flow_type == 'full':
+        voice_prompt = data.get('voice_prompt',
+            'How have you been feeling since your last appointment? '
+            'Have you noticed any changes in how your medication is working?')
+        voice_token = db.create_sms_token(
+            patient_id=patient_id, flow_type='voice',
+            metadata={'source': 'manual_full'}, ttl_hours=48,
+        )
+        metadata = {'provider_name': provider_name}
+        parameters.update({
+            'provider_name': provider_name,
+            'appt_time':     '',
+            'voice_prompt':  voice_prompt,
+            'voice_link':    f"{base_url}/voice?token={voice_token}" if voice_token else '',
+        })
+
+    elif flow_type == 'voice':
+        voice_prompt = data.get('voice_prompt', 'How have you been feeling this week?')
+        metadata = {'source': 'manual_voice', 'provider_name': provider_name}
+        # voice token IS the main token — link points to /voice?token=...
+        token = db.create_sms_token(
+            patient_id=patient_id, flow_type='voice', metadata=metadata, ttl_hours=48,
+        )
+        if not token:
+            return jsonify({'error': 'Could not create session token'}), 500
+        parameters.update({
+            'token':         token,
+            'provider_name': provider_name,
+            'voice_prompt':  voice_prompt,
+            'voice_link':    f"{base_url}/voice?token={token}",
+        })
+        sid = _twilio.trigger_flow(flow_type='voice', to_phone=phone, parameters=parameters)
+        if not sid:
+            return jsonify({'error': 'Failed to send SMS — check Twilio configuration'}), 500
+        return jsonify({'ok': True, 'flow_type': 'voice', 'phone_last4': phone[-4:] if len(phone) >= 4 else '****', 'sid': sid})
+
+    # For medication / short / full: create token now
+    token = db.create_sms_token(
+        patient_id=patient_id, flow_type=flow_type, metadata=metadata,
+        ttl_hours=24,
+    )
+    if not token:
+        return jsonify({'error': 'Could not create session token'}), 500
+    parameters['token'] = token
+
+    sid = _twilio.trigger_flow(flow_type=flow_type, to_phone=phone, parameters=parameters)
+    if not sid:
+        return jsonify({'error': 'Failed to send SMS — check Twilio configuration'}), 500
+
+    return jsonify({
+        'ok': True,
+        'flow_type': flow_type,
+        'phone_last4': phone[-4:] if len(phone) >= 4 else '****',
+        'sid': sid,
+    })
+
+
 # ── end SMS / Voice Note routes ───────────────────────────────────────────────
 
 

@@ -1,15 +1,632 @@
 {% extends "layout.html" %}
 {% block title %}{{ patient.full_name }} — CognaSync{% endblock %}
-{% block body_class %}pv-body{% endblock %}
+{% block body_class %}hub-body{% endblock %}
 
 {% block head %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<style>
+/* ─── Hub Page ──────────────────────────────────────────────── */
+.hub-body { background: var(--bg); }
+
+.hub-page {
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+/* ─── Sticky Nav ────────────────────────────────────────────── */
+.hub-nav {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 0 28px;
+  height: 52px;
+}
+
+.hub-back-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted);
+  text-decoration: none;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.hub-back-btn:hover { background: var(--bg); color: var(--text); }
+
+.hub-nav-name {
+  flex: 1;
+  font-family: 'DM Serif Display', serif;
+  font-size: 16px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.hub-nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hub-nav-btn {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+  transition: background .15s;
+}
+.hub-nav-btn:hover { background: var(--bg); }
+.hub-nav-btn--primary {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+.hub-nav-btn--primary:hover { opacity: .88; background: var(--accent); }
+
+/* ─── Header ────────────────────────────────────────────────── */
+.hub-header {
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  padding: 24px 28px 20px;
+}
+
+.hub-header-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.hub-avatar {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-family: 'DM Serif Display', serif;
+  font-size: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.hub-patient-name {
+  font-family: 'DM Serif Display', serif;
+  font-size: 26px;
+  color: var(--text);
+  margin: 0 0 2px;
+  line-height: 1.15;
+}
+
+.hub-patient-email {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+}
+
+.hub-patient-meds {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.hub-med-chip {
+  font-size: 11px;
+  font-weight: 500;
+  background: #EAF3F0;
+  color: var(--accent);
+  border: 1px solid #C4DDD6;
+  border-radius: 20px;
+  padding: 2px 10px;
+}
+
+.hub-urgency-badge {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: #FFF3F3;
+  border: 1px solid #f0b8b8;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  color: #A32D2D;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* ─── Stats Bar ─────────────────────────────────────────────── */
+.hub-stats-bar {
+  display: flex;
+  gap: 0;
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.hub-stat {
+  flex: 1;
+  padding: 10px 16px;
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hub-stat:last-child { border-right: none; }
+
+.hub-stat-label {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted);
+}
+
+.hub-stat-val {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-stat-sub {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ─── Outreach Console ──────────────────────────────────────── */
+.hub-outreach {
+  padding: 20px 28px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.hub-outreach-title {
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+.hub-outreach-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.hub-flow-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  cursor: pointer;
+  font-family: 'DM Sans', sans-serif;
+  transition: border-color .15s, background .15s;
+  text-align: left;
+  position: relative;
+}
+.hub-flow-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  background: #F0F7F5;
+}
+.hub-flow-btn:disabled { opacity: .55; cursor: not-allowed; }
+
+.hub-flow-btn-icon { font-size: 18px; margin-bottom: 2px; }
+.hub-flow-btn-label { font-size: 12px; font-weight: 600; color: var(--text); }
+.hub-flow-btn-desc { font-size: 11px; color: var(--text-muted); line-height: 1.4; }
+
+.hub-flow-btn-status {
+  font-size: 10px;
+  font-weight: 500;
+  margin-top: 4px;
+  color: var(--text-muted);
+}
+.hub-flow-btn--sent .hub-flow-btn-status { color: var(--accent); }
+.hub-flow-btn--error .hub-flow-btn-status { color: #dc2626; }
+
+.hub-no-phone {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-style: italic;
+  padding: 10px 0;
+}
+
+/* Confirm overlay on button */
+.hub-flow-confirm {
+  position: absolute;
+  inset: 0;
+  background: var(--accent);
+  border-radius: 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 500;
+}
+.hub-flow-confirm-btns { display: flex; gap: 6px; }
+.hub-flow-confirm-btns button {
+  font-family: 'DM Sans', sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  border: none;
+}
+.hub-confirm-yes { background: #fff; color: var(--accent); }
+.hub-confirm-no  { background: rgba(255,255,255,.2); color: #fff; }
+
+/* ─── Alerts ────────────────────────────────────────────────── */
+.hub-alerts {
+  padding: 16px 28px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.hub-alert {
+  padding: 10px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+.hub-alert--crisis {
+  background: #FFF3F3;
+  border: 1px solid #f0b8b8;
+  color: #A32D2D;
+  cursor: pointer;
+}
+.hub-alert--interaction {
+  background: #FFFBF0;
+  border: 1px solid #E8D88A;
+  color: #7A5C00;
+}
+
+/* ─── Streams Grid ──────────────────────────────────────────── */
+.hub-streams {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  padding: 24px 28px 40px;
+}
+
+@media (max-width: 900px) {
+  .hub-streams { grid-template-columns: 1fr; }
+  .hub-outreach-grid { grid-template-columns: repeat(2, 1fr); }
+  .hub-stats-bar { flex-wrap: wrap; }
+  .hub-stat { min-width: 120px; }
+}
+
+.hub-stream {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.hub-stream-hdr {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 13px 16px 11px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg);
+}
+
+.hub-stream-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.hub-stream-dot--checkin  { background: #0F6E56; }
+.hub-stream-dot--voice    { background: #6E4B0F; }
+.hub-stream-dot--session  { background: #2C5F8A; }
+.hub-stream-dot--wearable { background: #7A3F9E; }
+
+.hub-stream-name {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: var(--text);
+}
+
+.hub-stream-badge {
+  margin-left: auto;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 20px;
+  padding: 1px 8px;
+}
+
+.hub-stream-body { padding: 16px; flex: 1; }
+
+/* Check-in stream */
+.hub-ci-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.hub-ci-stat {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 10px 12px;
+}
+
+.hub-ci-stat-label {
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  color: var(--text-muted);
+  margin-bottom: 3px;
+}
+
+.hub-ci-stat-val {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+.hub-ci-stat-trend {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 1px;
+}
+.hub-ci-stat-trend--up   { color: #0F6E56; }
+.hub-ci-stat-trend--down { color: #C0392B; }
+
+.hub-spark-wrap {
+  height: 56px;
+  position: relative;
+}
+
+/* Voice stream */
+.hub-voice-note {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.hub-voice-note:last-child { border-bottom: none; }
+
+.hub-voice-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.hub-voice-date {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.hub-voice-duration {
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  padding: 1px 6px;
+  color: var(--text-muted);
+}
+
+.hub-voice-transcript {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.55;
+  margin-bottom: 8px;
+}
+
+.hub-voice-features {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.hub-voice-feature-chip {
+  font-size: 10px;
+  font-weight: 500;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #F0F0EA;
+  color: #555;
+  border: 1px solid #E0E0D8;
+}
+.hub-voice-feature-chip--concern {
+  background: #FFF3F0;
+  color: #A03A00;
+  border-color: #F0C0A0;
+}
+
+/* Session stream */
+.hub-session-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-bottom: 14px;
+}
+
+.hub-session-item {
+  display: flex;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.hub-session-item:last-child { border-bottom: none; }
+
+.hub-session-dot-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding-top: 3px;
+}
+
+.hub-session-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--border);
+  flex-shrink: 0;
+}
+.hub-session-dot--completed { background: var(--accent); }
+.hub-session-dot--upcoming  { background: #2C5F8A; }
+
+.hub-session-body { flex: 1; }
+
+.hub-session-date {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.hub-session-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+}
+.hub-session-badge--completed { background: #EAF3F0; color: var(--accent); }
+.hub-session-badge--upcoming  { background: #EBF2FA; color: #2C5F8A; }
+.hub-session-badge--cancelled { background: #F5F5F5; color: #888; }
+
+.hub-session-preview {
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.45;
+}
+
+.hub-session-link {
+  font-size: 11px;
+  color: var(--accent);
+  text-decoration: none;
+  font-weight: 500;
+}
+.hub-session-link:hover { text-decoration: underline; }
+
+.hub-new-appt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 8px 14px;
+  border: 1px dashed var(--border);
+  border-radius: 5px;
+  background: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  width: 100%;
+  justify-content: center;
+  transition: border-color .15s, color .15s;
+  text-decoration: none;
+}
+.hub-new-appt:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Wearable / placeholder stream */
+.hub-placeholder {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 140px;
+  text-align: center;
+  gap: 10px;
+  color: var(--text-muted);
+}
+
+.hub-placeholder-icon { font-size: 28px; opacity: .45; }
+.hub-placeholder-title { font-size: 13px; font-weight: 500; color: var(--text-muted); }
+.hub-placeholder-sub   { font-size: 12px; color: var(--text-muted); line-height: 1.5; max-width: 220px; }
+
+.hub-placeholder-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin-top: 4px;
+}
+.hub-placeholder-chip {
+  font-size: 11px;
+  padding: 3px 10px;
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  color: var(--text-muted);
+  background: var(--bg);
+}
+
+/* Loading state */
+.hub-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 80px;
+  color: var(--text-muted);
+  font-size: 12px;
+  gap: 8px;
+}
+</style>
 {% endblock %}
 
 {% block content %}
 
+{# ── Crisis overlay (safety-critical — do not remove) ── #}
 {% if patient_has_crisis %}
-<!-- Crisis overlay (same as before) -->
 <div id="crisis-overlay"
      style="position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:2000;
             display:flex;align-items:center;justify-content:center;padding:16px;">
@@ -65,1194 +682,475 @@
 </div>
 {% endif %}
 
-<div class="pv-shell">
+<div class="hub-page">
 
-  <!-- Sidebar: patient list -->
-  <button class="pv-sidebar-toggle" id="pv-sidebar-toggle" aria-expanded="false">
-    <span>☰</span>
-    <span id="pv-toggle-label">{{ patient.full_name }}</span>
-    <span class="pv-toggle-arrow">▾</span>
-  </button>
-
-  <div class="pv-sidebar" id="pv-sidebar">
-    <div class="pv-sidebar-head">
-      <a href="{{ url_for('provider_dashboard') }}"
-         style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:500;
-                text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);
-                text-decoration:none;margin-bottom:12px;">
-        ← All Patients
-      </a>
-      <input type="text" class="pv-search" placeholder="Search patients…"
-             oninput="filterPatients(this.value)">
+  {# ── Sticky nav bar ── #}
+  <nav class="hub-nav">
+    <a href="{{ url_for('provider_dashboard') }}" class="hub-back-btn">← Dashboard</a>
+    <span class="hub-nav-name">{{ patient.full_name }}</span>
+    <div class="hub-nav-actions">
+      <a href="{{ url_for('provider_patient_trends', patient_id=patient.patient_id) }}"
+         class="hub-nav-btn">📊 Full Data</a>
+      <a href="{{ url_for('provider_summary_print', patient_id=patient.patient_id) }}"
+         target="_blank" class="hub-nav-btn">🖨 Print Brief</a>
+      <a href="{{ url_for('provider_intel_dashboard') }}"
+         class="hub-nav-btn">🧠 Intelligence</a>
+      <a href="{{ url_for('provider_summary_print', patient_id=patient.patient_id) }}"
+         target="_blank" class="hub-nav-btn hub-nav-btn--primary">Create Brief</a>
     </div>
-    <div class="pv-patient-list" id="patient-list">
-      {% for p in patients %}
-      <a href="{{ url_for('provider_patient_detail', patient_id=p.patient_id) }}"
-         class="pv-patient-item {% if p.patient_id == patient.patient_id %}active{% endif %}"
-         data-name="{{ p.full_name | lower }}">
-        <div class="pv-patient-name">
-          {{ p.full_name }}
-          {% if p.suicide_risk %}
-          <span class="crisis-indicator" title="Crisis risk detected"
-                style="color:#dc2626;font-size:13px;margin-left:5px;">&#9888;</span>
+  </nav>
+
+  {# ── Patient header ── #}
+  <div class="hub-header">
+    <div class="hub-header-row">
+      <div class="hub-avatar">{{ patient.full_name[0] | upper }}</div>
+      <div style="flex:1">
+        <h1 class="hub-patient-name">
+          {{ patient.full_name }}
+          {% if patient_has_crisis %}
+          <span style="color:#dc2626;font-size:18px;cursor:pointer;vertical-align:middle;"
+                onclick="document.getElementById('crisis-context-modal').style.display='flex'"
+                title="Crisis flag — click to view">&#9888;</span>
           {% endif %}
+        </h1>
+        <div class="hub-patient-email">{{ patient.email }}{% if patient.phone_number %} · {{ patient.phone_number[-4:] | default('') | rjust(10, '·') }}{% endif %}</div>
+        {% if perms.medication_data and patient.current_medications %}
+        <div class="hub-patient-meds">
+          {% for med in patient.current_medications %}
+          <span class="hub-med-chip">{{ med.name | title }}{% if med.dose %} {{ med.dose }}{% endif %}</span>
+          {% endfor %}
         </div>
-        <div class="pv-patient-sub">
-          <span>{% if p.last_checkin %}{{ p.last_checkin }}{% else %}No check-ins{% endif %}</span>
+        {% endif %}
+      </div>
+      {% if patient_has_crisis %}
+      <div class="hub-urgency-badge"
+           onclick="document.getElementById('crisis-context-modal').style.display='flex'">
+        &#9888; Crisis Flag — Click to Review
+      </div>
+      {% endif %}
+    </div>
+
+    {# ── At-a-glance stats bar ── #}
+    <div class="hub-stats-bar" style="margin-top:18px;">
+      <div class="hub-stat">
+        <div class="hub-stat-label">Avg Mood</div>
+        <div class="hub-stat-val">
+          {% if trends and trends.mood %}{{ "%.1f"|format(trends.mood.avg) }}<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/10</span>{% else %}&mdash;{% endif %}
         </div>
-      </a>
-      {% endfor %}
+        <div class="hub-stat-sub">14-day avg</div>
+      </div>
+      <div class="hub-stat">
+        <div class="hub-stat-label">Avg Sleep</div>
+        <div class="hub-stat-val">
+          {% if trends and trends.sleep %}{{ "%.1f"|format(trends.sleep.avg) }}<span style="font-size:12px;font-weight:400;color:var(--text-muted)">h</span>{% else %}&mdash;{% endif %}
+        </div>
+        <div class="hub-stat-sub">14-day avg</div>
+      </div>
+      <div class="hub-stat">
+        <div class="hub-stat-label">Avg Stress</div>
+        <div class="hub-stat-val">
+          {% if trends and trends.stress %}{{ "%.1f"|format(trends.stress.avg) }}<span style="font-size:12px;font-weight:400;color:var(--text-muted)">/10</span>{% else %}&mdash;{% endif %}
+        </div>
+        <div class="hub-stat-sub">14-day avg</div>
+      </div>
+      <div class="hub-stat">
+        <div class="hub-stat-label">Med Adherence</div>
+        <div class="hub-stat-val">
+          {% if trends and trends.medication_adherence %}{{ trends.medication_adherence.rate }}%{% else %}&mdash;{% endif %}
+        </div>
+        <div class="hub-stat-sub">14-day rate</div>
+      </div>
+      <div class="hub-stat">
+        <div class="hub-stat-label">Last Check-in</div>
+        <div class="hub-stat-val" style="font-size:15px;">
+          {% if days_since_last_checkin is not none %}
+            {% if days_since_last_checkin == 0 %}Today
+            {% elif days_since_last_checkin == 1 %}Yesterday
+            {% else %}{{ days_since_last_checkin }}d ago{% endif %}
+          {% else %}&mdash;{% endif %}
+        </div>
+        <div class="hub-stat-sub">via SMS</div>
+      </div>
     </div>
   </div>
 
-  <!-- Main content -->
-  <div class="pv-main">
-
-    <!-- Breadcrumb -->
-    <div class="pv-breadcrumb">
-      <a href="{{ url_for('provider_dashboard') }}">All Patients</a>
-      <span class="pv-breadcrumb-sep">›</span>
-      <span>{{ patient.full_name }}</span>
+  {# ── Drug interaction alerts ── #}
+  {% if interactions %}
+  <div class="hub-alerts">
+    {% for ix in interactions %}
+    <div class="hub-alert hub-alert--interaction">
+      <span>⚠</span>
+      <span>{{ ix.description }}</span>
     </div>
+    {% endfor %}
+  </div>
+  {% endif %}
 
-    <!-- Patient header -->
-    <div class="ph-header">
-      <div class="ph-header-left">
-        <div class="ph-avatar">{{ patient.full_name[0] | upper }}</div>
-        <div>
-          <h1 class="ph-name">
-            {{ patient.full_name }}
-            {% if patient_has_crisis %}
-            <span style="color:#dc2626;font-size:18px;margin-left:8px;"
-                  onclick="document.getElementById('crisis-context-modal').style.display='flex'"
-                  title="Crisis flag — click to view" style="cursor:pointer;">&#9888;</span>
-            {% endif %}
-          </h1>
-          <div class="ph-email">{{ patient.email }}</div>
-          {% if perms.medication_data and patient.current_medications %}
-          <div class="ph-meds">
-            {% for med in patient.current_medications %}
-            <span class="pd-med-chip">{{ med.name | title }} {% if med.dose %}{{ med.dose }}{% endif %}</span>
-            {% endfor %}
-          </div>
-          {% endif %}
-        </div>
-      </div>
-      <div class="ph-header-right" style="display:flex;gap:8px;flex-wrap:wrap;">
-        <a href="{{ url_for('provider_patient_trends', patient_id=patient.patient_id) }}"
-           class="btn btn-sm">View Full Data →</a>
-        <a href="{{ url_for('provider_summary_print', patient_id=patient.patient_id) }}"
-           target="_blank" class="btn btn-sm" style="display:flex;align-items:center;gap:5px;">
-          🖨 Print Summary
-        </a>
-        <button onclick="openSmsModal()" class="btn btn-sm"
-                style="display:flex;align-items:center;gap:5px;">
-          📱 Send Check-in SMS
-        </button>
-        <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}"
-           class="btn btn-sm btn-primary" style="display:flex;align-items:center;gap:5px;">
-          ⚡ Intelligence Layer
-        </a>
-      </div>
-    </div>
+  {# ── Outreach console ── #}
+  <div class="hub-outreach">
+    <div class="hub-outreach-title">SMS Outreach</div>
+    {% if patient.phone_number %}
+    <div class="hub-outreach-grid">
 
-    <!-- Quick stats bar -->
-    <div class="ph-stats-bar">
-      <div class="ph-stat">
-        <div class="ph-stat-label">Avg Mood (30d)</div>
-        <div class="ph-stat-val">
-          {% if trends.mood and trends.mood.average %}
-            {{ trends.mood.average }}<span style="font-size:12px;font-weight:400;color:var(--text-muted);">/10</span>
-          {% else %}—{% endif %}
-        </div>
-      </div>
-      <div class="ph-stat">
-        <div class="ph-stat-label">Avg Sleep (30d)</div>
-        <div class="ph-stat-val">
-          {% if trends.sleep and trends.sleep.average %}
-            {{ trends.sleep.average }}<span style="font-size:12px;font-weight:400;color:var(--text-muted);">h</span>
-          {% else %}—{% endif %}
-        </div>
-      </div>
-      <div class="ph-stat">
-        <div class="ph-stat-label">Med Adherence</div>
-        <div class="ph-stat-val">
-          {% if trends.medication_adherence and trends.medication_adherence > 0 %}
-            {{ trends.medication_adherence }}<span style="font-size:12px;font-weight:400;color:var(--text-muted);">%</span>
-          {% else %}—{% endif %}
-        </div>
-      </div>
-      <div class="ph-stat">
-        <div class="ph-stat-label">Last Check-in</div>
-        <div class="ph-stat-val {% if days_since_last_checkin is not none and days_since_last_checkin > 7 %}ph-stat-warn{% endif %}">
-          {% if days_since_last_checkin == 0 %}Today
-          {% elif days_since_last_checkin == 1 %}Yesterday
-          {% elif days_since_last_checkin is not none %}{{ days_since_last_checkin }}d ago
-          {% else %}Never{% endif %}
-        </div>
-      </div>
-      <div class="ph-stat">
-        <div class="ph-stat-label">Check-ins (30d)</div>
-        <div class="ph-stat-val">{{ patient.checkins_last_period or 0 }}</div>
-      </div>
-    </div>
+      <button class="hub-flow-btn" id="flow-btn-medication"
+              onclick="confirmFlow('medication', this)">
+        <span class="hub-flow-btn-icon">💊</span>
+        <span class="hub-flow-btn-label">Med Adherence</span>
+        <span class="hub-flow-btn-desc">Send medication check-in via SMS</span>
+        <span class="hub-flow-btn-status" id="flow-status-medication"></span>
+      </button>
 
-    <!-- Mini mood sparkline -->
-    {% if trends.mood and trends.mood.daily_scores %}
-    <div class="ph-sparkline-wrap">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);font-weight:500;margin-bottom:8px;">
-        30-day Mood Trend
-      </div>
-      <canvas id="mood-spark" height="90"></canvas>
+      <button class="hub-flow-btn" id="flow-btn-short"
+              onclick="confirmFlow('short', this)">
+        <span class="hub-flow-btn-icon">📝</span>
+        <span class="hub-flow-btn-label">Quick Check-in</span>
+        <span class="hub-flow-btn-desc">3-question mood &amp; stress snapshot</span>
+        <span class="hub-flow-btn-status" id="flow-status-short"></span>
+      </button>
+
+      <button class="hub-flow-btn" id="flow-btn-full"
+              onclick="confirmFlow('full', this)">
+        <span class="hub-flow-btn-icon">📋</span>
+        <span class="hub-flow-btn-label">Full Check-in</span>
+        <span class="hub-flow-btn-desc">Complete check-in with all metrics</span>
+        <span class="hub-flow-btn-status" id="flow-status-full"></span>
+      </button>
+
+      <button class="hub-flow-btn" id="flow-btn-voice"
+              onclick="confirmFlow('voice', this)">
+        <span class="hub-flow-btn-icon">🎙️</span>
+        <span class="hub-flow-btn-label">Voice Recording</span>
+        <span class="hub-flow-btn-desc">Send link for async voice note</span>
+        <span class="hub-flow-btn-status" id="flow-status-voice"></span>
+      </button>
+
     </div>
+    {% else %}
+    <div class="hub-no-phone">No phone number on file — SMS outreach unavailable.</div>
     {% endif %}
+  </div>
 
-    <!-- Interactions banner -->
-    {% if perms.medication_data and interactions %}
-    <div class="pv-alert-banner" style="margin-bottom:20px;">
-      {% for ia in interactions %}
-      <div class="pv-alert-item {{ 'urgent' if ia.severity == 'serious' else 'warning' }}">
-        <span class="pv-alert-label {{ 'urgent' if ia.severity == 'serious' else 'warning' }}">INTERACTION</span>
-        <div>
-          <div style="font-weight:500;font-size:13px;margin-bottom:2px;">{{ ia.drug_a }} + {{ ia.drug_b }}</div>
-          <div style="font-size:12px;color:var(--text-muted);">{{ ia.warning }}</div>
-        </div>
+  {# ── Data streams grid ── #}
+  <div class="hub-streams">
+
+    {# ── Stream 1: SMS Check-in ── #}
+    <div class="hub-stream">
+      <div class="hub-stream-hdr">
+        <span class="hub-stream-dot hub-stream-dot--checkin"></span>
+        <span class="hub-stream-name">SMS Check-in Stream</span>
+        {% if trends and trends.mood and trends.mood.count %}
+        <span class="hub-stream-badge">{{ trends.mood.count }} logged</span>
+        {% endif %}
       </div>
-      {% endfor %}
+      <div class="hub-stream-body">
+        {% if trends and trends.mood %}
+        <div class="hub-ci-grid">
+          <div class="hub-ci-stat">
+            <div class="hub-ci-stat-label">Mood</div>
+            <div class="hub-ci-stat-val">{{ "%.1f"|format(trends.mood.avg) }}</div>
+            <div class="hub-ci-stat-trend
+              {% if trends.mood.slope and trends.mood.slope > 0.05 %}hub-ci-stat-trend--up
+              {% elif trends.mood.slope and trends.mood.slope < -0.05 %}hub-ci-stat-trend--down{% endif %}">
+              {% if trends.mood.slope %}
+                {% if trends.mood.slope > 0.05 %}↑ Improving
+                {% elif trends.mood.slope < -0.05 %}↓ Declining
+                {% else %}→ Stable{% endif %}
+              {% else %}No trend{% endif %}
+            </div>
+          </div>
+          <div class="hub-ci-stat">
+            <div class="hub-ci-stat-label">Sleep (hrs)</div>
+            <div class="hub-ci-stat-val">{% if trends.sleep %}{{ "%.1f"|format(trends.sleep.avg) }}{% else %}&mdash;{% endif %}</div>
+            <div class="hub-ci-stat-trend">14-day avg</div>
+          </div>
+          <div class="hub-ci-stat">
+            <div class="hub-ci-stat-label">Stress</div>
+            <div class="hub-ci-stat-val">{% if trends.stress %}{{ "%.1f"|format(trends.stress.avg) }}{% else %}&mdash;{% endif %}</div>
+            <div class="hub-ci-stat-trend">14-day avg</div>
+          </div>
+          <div class="hub-ci-stat">
+            <div class="hub-ci-stat-label">Adherence</div>
+            <div class="hub-ci-stat-val">{% if trends.medication_adherence %}{{ trends.medication_adherence.rate }}%{% else %}&mdash;{% endif %}</div>
+            <div class="hub-ci-stat-trend">Medication rate</div>
+          </div>
+        </div>
+        <div class="hub-spark-wrap">
+          <canvas id="mood-sparkline"></canvas>
+        </div>
+        {% else %}
+        <div class="hub-placeholder">
+          <div class="hub-placeholder-icon">📲</div>
+          <div class="hub-placeholder-title">No check-ins yet</div>
+          <div class="hub-placeholder-sub">Send a Quick Check-in or Full Check-in via the outreach console above.</div>
+        </div>
+        {% endif %}
+      </div>
     </div>
-    {% endif %}
 
-    <!-- ─── APPOINTMENT HISTORY ──────────────────────────────────────── -->
-    <div class="ah-section">
-      <div class="ah-section-hdr">
-        <div>
-          <div class="pv-panel-title" style="margin:0 0 3px;">Appointments</div>
-          <div style="font-size:11px;color:var(--text-muted);">
-            {{ appointments|length }} session{{ 's' if appointments|length != 1 }}
-          </div>
-        </div>
-
-        <!-- Start new appointment -->
-        <form method="POST"
-              action="{{ url_for('provider_appointment_new', patient_id=patient.patient_id) }}"
-              style="display:flex;align-items:center;gap:10px;">
-          <div>
-            <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
-              Review period
-            </label>
-            <select name="period_days"
-                    style="font-size:13px;padding:6px 8px;border:1px solid var(--border-light);
-                           background:var(--surface);color:var(--text);">
-              <option value="7">7 days</option>
-              <option value="14">14 days</option>
-              <option value="30" selected>30 days</option>
-              <option value="60">60 days</option>
-              <option value="90">90 days</option>
-            </select>
-          </div>
-          <button type="submit" class="btn btn-primary"
-                  style="align-self:flex-end;">
-            + Start New Appointment
-          </button>
-        </form>
+    {# ── Stream 2: Voice ── #}
+    <div class="hub-stream">
+      <div class="hub-stream-hdr">
+        <span class="hub-stream-dot hub-stream-dot--voice"></span>
+        <span class="hub-stream-name">Voice Stream</span>
+        <span class="hub-stream-badge" id="voice-count-badge" style="display:none"></span>
       </div>
+      <div class="hub-stream-body" id="voice-stream-body">
+        <div class="hub-loading" id="voice-loading">
+          <span style="opacity:.5">○</span> Loading voice notes…
+        </div>
+      </div>
+    </div>
 
-      {% if appointments %}
-      <div class="ah-timeline">
-        {% for appt in appointments %}
-        <div class="ah-item {% if appt.status == 'active' %}ah-item-active{% elif appt.status == 'completed' %}ah-item-done{% else %}ah-item-cancelled{% endif %}">
-          <div class="ah-item-dot"></div>
-          <div class="ah-item-body">
-            <div class="ah-item-hdr">
-              <div>
-                <span class="ah-item-date">
-                  {{ appt.started_at[:10] if appt.started_at else '—' }}
-                </span>
-                <span class="ah-item-badge ah-badge-{{ appt.status }}">
-                  {{ appt.status | title }}
-                </span>
-                <span style="font-size:11px;color:var(--text-muted);margin-left:8px;">
-                  {{ appt.period_days }}d review window
-                </span>
-              </div>
-              <a href="{{ url_for('provider_appointment_workspace', patient_id=patient.patient_id, appt_id=appt.id) }}"
-                 class="btn btn-sm" style="text-decoration:none;">
-                {% if appt.status == 'active' %}Continue →{% else %}View →{% endif %}
-              </a>
-            </div>
-
-            <!-- Notes preview -->
-            {% if appt.notes and appt.notes|trim %}
-            <div class="ah-item-preview">
-              {{ appt.notes[:200] }}{% if appt.notes|length > 200 %}…{% endif %}
-            </div>
-            {% endif %}
-
-            <!-- Actions count -->
-            {% if appt.actions %}
-            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;">
-              {% set done_count = appt.actions | selectattr('done') | list | length %}
-              {% set total_count = appt.actions | length %}
-              <span style="font-size:11px;color:var(--text-muted);">
-                Actions: {{ done_count }}/{{ total_count }} completed
+    {# ── Stream 3: Sessions ── #}
+    <div class="hub-stream">
+      <div class="hub-stream-hdr">
+        <span class="hub-stream-dot hub-stream-dot--session"></span>
+        <span class="hub-stream-name">Session Stream</span>
+        {% if appointments %}
+        <span class="hub-stream-badge">{{ appointments | length }}</span>
+        {% endif %}
+      </div>
+      <div class="hub-stream-body">
+        {% if appointments %}
+        <div class="hub-session-timeline">
+          {% for appt in appointments %}
+          <div class="hub-session-item">
+            <div class="hub-session-dot-col">
+              <span class="hub-session-dot
+                {% if appt.status == 'completed' %}hub-session-dot--completed
+                {% elif appt.status == 'upcoming' or appt.status == 'scheduled' %}hub-session-dot--upcoming{% endif %}">
               </span>
-              {% if appt.next_appointment_date %}
-              <span style="font-size:11px;color:var(--green);border:1px solid var(--green-light);padding:1px 7px;">
-                Next appt: {{ appt.next_appointment_date }}
+            </div>
+            <div class="hub-session-body">
+              <div class="hub-session-date">{{ appt.appointment_date }}</div>
+              <span class="hub-session-badge
+                {% if appt.status == 'completed' %}hub-session-badge--completed
+                {% elif appt.status == 'upcoming' or appt.status == 'scheduled' %}hub-session-badge--upcoming
+                {% else %}hub-session-badge--cancelled{% endif %}">
+                {{ appt.status | title }}
               </span>
+              {% if appt.notes %}
+              <div class="hub-session-preview">{{ appt.notes[:120] }}{% if appt.notes|length > 120 %}…{% endif %}</div>
+              {% endif %}
+              {% if appt.appointment_id %}
+              <a href="{{ url_for('provider_appointment_workspace', appointment_id=appt.appointment_id) }}"
+                 class="hub-session-link">Open workspace →</a>
               {% endif %}
             </div>
-            {% endif %}
-
-            <!-- Guided Q count -->
-            {% if appt.guided_qa %}
-            <div style="margin-top:5px;font-size:11px;color:var(--text-muted);">
-              {{ appt.guided_qa | selectattr('answer') | list | length }} of
-              {{ appt.guided_qa | length }} questions answered
-            </div>
-            {% endif %}
           </div>
+          {% endfor %}
         </div>
-        {% endfor %}
-      </div>
-
-      {% else %}
-      <div class="ah-empty">
-        <div style="font-size:13px;color:var(--text-muted);line-height:1.7;">
-          No appointments recorded yet.
-          Click <strong>Start New Appointment</strong> above to begin the first session.
+        {% else %}
+        <div class="hub-placeholder" style="min-height:100px;">
+          <div class="hub-placeholder-icon">🗓</div>
+          <div class="hub-placeholder-title">No appointments yet</div>
         </div>
-      </div>
-      {% endif %}
-    </div><!-- /ah-section -->
-
-    <!-- ─── VOICE NOTES ──────────────────────────────────────────────────── -->
-    <div class="ah-section" style="margin-top:28px;" id="voice-notes-section">
-      <div class="ah-section-hdr" style="align-items:flex-start;flex-wrap:wrap;gap:12px;">
-        <div>
-          <div class="pv-panel-title" style="margin:0 0 3px;">Voice Notes</div>
-          <div style="font-size:11px;color:var(--text-muted);">
-            Patient voice recordings submitted before appointments
-          </div>
-        </div>
-        <button class="btn btn-sm" onclick="openSmsModal()"
-                style="align-self:center;">
-          📱 Send Check-in Request
-        </button>
-      </div>
-      <div id="voice-notes-list">
-        <div style="font-size:13px;color:var(--text-muted);padding:16px 0;">Loading…</div>
+        {% endif %}
+        <a href="{{ url_for('provider_appointment_new', patient_id=patient.patient_id) }}"
+           class="hub-new-appt">+ Schedule Appointment</a>
       </div>
     </div>
 
-    <!-- ─── SMS CHECK-IN MODAL ────────────────────────────────────────────── -->
-    <div id="sms-modal"
-         style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);
-                z-index:1500;align-items:center;justify-content:center;padding:16px;">
-      <div style="background:#fff;max-width:460px;width:100%;padding:28px 24px 24px;
-                  box-shadow:0 8px 32px rgba(0,0,0,.18);">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
-          <div style="font-size:13px;font-weight:500;text-transform:uppercase;
-                      letter-spacing:.08em;color:var(--text);">Send Check-in SMS</div>
-          <button onclick="closeSmsModal()"
-                  style="background:none;border:none;font-size:18px;cursor:pointer;color:#666;">✕</button>
-        </div>
-
-        <p style="font-size:13px;color:var(--text-muted);line-height:1.65;margin:0 0 18px;">
-          This will send a text message to
-          <strong id="sms-patient-name">{{ patient.full_name }}</strong>
-          with a link to record a voice note before their next appointment.
-          {% if not patient.phone_number %}
-          <span id="sms-no-phone" style="display:block;margin-top:8px;color:#dc2626;
-                font-size:12px;font-weight:500;">
-            ⚠ No phone number on file for this patient. Ask them to add one in their profile.
-          </span>
-          {% endif %}
-        </p>
-
-        <div style="margin-bottom:16px;">
-          <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                        letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:6px;">
-            Guiding question (optional)
-          </label>
-          <textarea id="sms-voice-prompt" rows="3"
-                    style="width:100%;font-size:13px;padding:8px;border:1px solid var(--border-light);
-                           background:var(--surface);color:var(--text);resize:vertical;box-sizing:border-box;"
-                    placeholder="E.g. How have you been feeling since your last appointment?"></textarea>
-          <div style="font-size:11px;color:var(--text-muted);margin-top:4px;">
-            If left blank, a default prompt based on your provider type will be used.
+    {# ── Stream 4: Wearable ── #}
+    <div class="hub-stream">
+      <div class="hub-stream-hdr">
+        <span class="hub-stream-dot hub-stream-dot--wearable"></span>
+        <span class="hub-stream-name">Wearable Stream</span>
+      </div>
+      <div class="hub-stream-body">
+        <div class="hub-placeholder">
+          <div class="hub-placeholder-icon">⌚</div>
+          <div class="hub-placeholder-title">Wearable integration coming soon</div>
+          <div class="hub-placeholder-sub">Passive biometric data from connected devices will appear here.</div>
+          <div class="hub-placeholder-chips">
+            <span class="hub-placeholder-chip">Apple Watch</span>
+            <span class="hub-placeholder-chip">Oura Ring</span>
+            <span class="hub-placeholder-chip">Fitbit</span>
+            <span class="hub-placeholder-chip">Garmin</span>
           </div>
-        </div>
-
-        <div style="display:flex;gap:10px;align-items:center;">
-          <button id="sms-send-btn" onclick="sendCheckinSms()"
-                  class="btn btn-primary"
-                  {% if not patient.phone_number %}disabled title="No phone number on file"{% endif %}>
-            Send SMS
-          </button>
-          <button onclick="closeSmsModal()" class="btn btn-sm">Cancel</button>
-          <span id="sms-status" style="font-size:12px;color:var(--text-muted);margin-left:4px;"></span>
         </div>
       </div>
     </div>
 
-    <!-- Crisis history (if any) -->
-    {% if crisis_history %}
-    <div class="pv-panel-full" style="margin-top:24px;">
-      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
-        <div class="pv-panel-title" style="margin:0;">Crisis Log</div>
-        <span style="font-size:11px;color:#dc2626;border:1px solid #dc2626;padding:1px 7px;font-weight:500;">
-          {{ crisis_history|length }} flag{{ 's' if crisis_history|length != 1 }}
-        </span>
-      </div>
-      {% for item in crisis_history %}
-      <div style="border:0.5px solid {% if item.resolved %}#D3D1C7{% else %}#f0b8b8{% endif %};border-radius:8px;
-                  padding:10px 14px;margin-bottom:8px;cursor:pointer;
-                  background:{% if item.resolved %}#f9fafb{% else %}#fff8f8{% endif %};"
-           onclick="this.querySelector('.crisis-body').style.display=this.querySelector('.crisis-body').style.display==='none'?'block':'none'">
-        <div style="display:flex;align-items:center;gap:10px;">
-          <span style="font-size:13px;font-weight:500;">{{ item.date }}</span>
-          <span style="font-size:11px;color:var(--text-muted);border:1px solid var(--border-light);padding:1px 6px;">{{ item.source }}</span>
-          {% if item.resolved %}<span style="font-size:11px;color:#6b7280;">Resolved</span>
-          {% else %}<span style="font-size:11px;color:#dc2626;font-weight:500;">Active</span>{% endif %}
-        </div>
-        <div class="crisis-body" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid #e5e7eb;">
-          <p style="font-size:13px;color:#222;line-height:1.7;margin:0;white-space:pre-wrap;">{{ item.text }}</p>
-        </div>
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
+  </div>{# /hub-streams #}
 
-    <!-- ─── CARE TEAM FLAGS ──────────────────────────────────────────────── -->
-    <div class="ah-section" style="margin-top:28px;" id="flags-section">
-      <div class="ah-section-hdr" style="align-items:flex-start;flex-wrap:wrap;gap:12px;">
-        <div>
-          <div class="pv-panel-title" style="margin:0 0 3px;">Care Team Flags</div>
-          <div style="font-size:11px;color:var(--text-muted);">
-            Notes and observations shared across the care team
-          </div>
-        </div>
-        <button class="btn btn-sm" onclick="toggleFlagForm()"
-                style="align-self:center;" id="add-flag-btn">
-          + Post Flag
-        </button>
-      </div>
+</div>{# /hub-page #}
 
-      <!-- New flag form (hidden by default) -->
-      <div id="flag-form-wrap" style="display:none;margin:16px 0;padding:16px;
-           border:1px solid var(--border-light);background:var(--surface);">
-        <div style="font-size:12px;font-weight:500;text-transform:uppercase;
-                    letter-spacing:.07em;color:var(--text-muted);margin-bottom:12px;">
-          Post a Flag
-        </div>
-        <div style="display:grid;gap:10px;">
-          <div>
-            <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
-              Type
-            </label>
-            <select id="pd-flag-type"
-                    style="width:100%;font-size:13px;padding:7px 8px;
-                           border:1px solid var(--border-light);background:var(--surface);color:var(--text);">
-              <option value="observation">Observation</option>
-              <option value="concern">Concern</option>
-              <option value="progress">Progress</option>
-              <option value="coordination_needed">Needs Coordination</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
-              Note (10–1000 chars)
-            </label>
-            <textarea id="pd-flag-body" rows="3"
-                      style="width:100%;font-size:13px;padding:7px 8px;
-                             border:1px solid var(--border-light);background:var(--surface);
-                             color:var(--text);resize:vertical;box-sizing:border-box;"
-                      placeholder="What do you want to share with the care team?"></textarea>
-          </div>
-          <div id="pd-flag-visibility-wrap">
-            <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:6px;">
-              Visible to
-            </label>
-            <div id="pd-flag-visibility-options">
-              <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-                <input type="radio" name="pd-flag-vis" value="all" checked>
-                All care team members
-              </label>
-            </div>
-            <div id="pd-flag-member-list" style="margin-top:8px;display:none;"></div>
-          </div>
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <button class="btn btn-primary" style="font-size:13px;padding:8px 18px;"
-                    id="pd-flag-submit-btn" onclick="submitPatientFlag()">Post Flag</button>
-            <button class="btn btn-sm" onclick="toggleFlagForm()" style="font-size:13px;">Cancel</button>
-            <span id="pd-flag-err" style="font-size:12px;color:#dc2626;"></span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Flags list (loaded async) -->
-      <div id="pd-flags-list">
-        <div style="font-size:13px;color:var(--text-muted);padding:12px 0;">Loading flags…</div>
-      </div>
-    </div>
-
-    {% if provider_role == 'psychiatrist' and perms.medication_data %}
-    <!-- ─── PSYCHIATRIST: ADD MEDICATION ──────────────────────────────── -->
-    <div class="ah-section" style="margin-top:28px;" id="med-add-section">
-      <div class="ah-section-hdr" style="align-items:flex-start;flex-wrap:wrap;gap:12px;">
-        <div>
-          <div class="pv-panel-title" style="margin:0 0 3px;">Medications</div>
-          <div style="font-size:11px;color:var(--text-muted);">
-            Psychiatrist access — you can add medications to this patient's record
-          </div>
-        </div>
-        <button class="btn btn-sm" onclick="toggleMedForm()"
-                style="align-self:center;" id="add-med-btn">
-          + Add Medication
-        </button>
-      </div>
-
-      <!-- Existing medications -->
-      {% if patient.current_medications %}
-      <div class="pd-med-chip-wrap" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;">
-        {% for med in patient.current_medications %}
-        <span class="pd-med-chip">{{ med.name | title }}{% if med.dose %} {{ med.dose }}{% endif %}{% if med.dose_unit %} {{ med.dose_unit }}{% endif %}</span>
-        {% endfor %}
-      </div>
-      {% else %}
-      <div class="no-med-msg" style="font-size:13px;color:var(--text-muted);margin-bottom:16px;">No medications on record.</div>
-      {% endif %}
-
-      <!-- Add medication form (hidden by default) -->
-      <div id="med-form-wrap" style="display:none;padding:16px;
-           border:1px solid var(--border-light);background:var(--surface);">
-        <div style="font-size:12px;font-weight:500;text-transform:uppercase;
-                    letter-spacing:.07em;color:var(--text-muted);margin-bottom:12px;">
-          Add Medication
-        </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
-
-          <!-- Row 1: select from existing or add new -->
-          <div style="grid-column:1/-1;">
-            <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
-              Medication
-            </label>
-            <select id="med-select" onchange="onMedSelect(this)"
-                    style="width:100%;font-size:13px;padding:7px 8px;
-                           border:1px solid var(--border-light);background:var(--surface);
-                           color:var(--text);">
-              <option value="">-- Select existing or add new --</option>
-              <option value="__new__">+ Add new medication…</option>
-            </select>
-          </div>
-
-          <!-- Row 1b: new medication name input (shown only when "__new__" selected) -->
-          <div style="grid-column:1/-1;display:none;" id="med-new-wrap">
-            <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
-              Medication Name
-            </label>
-            <input id="med-name" type="text" list="med-name-list"
-                   style="width:100%;font-size:13px;padding:7px 8px;
-                          border:1px solid var(--border-light);background:var(--surface);
-                          color:var(--text);box-sizing:border-box;"
-                   placeholder="Type to search medication database…">
-            <datalist id="med-name-list"></datalist>
-          </div>
-
-          <!-- Row 2: category + frequency -->
-          <div>
-            <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
-              Category
-            </label>
-            <select id="med-category"
-                    style="width:100%;font-size:13px;padding:7px 8px;
-                           border:1px solid var(--border-light);background:var(--surface);color:var(--text);">
-              <option value="stimulant">Stimulant</option>
-              <option value="antidepressant">Antidepressant</option>
-              <option value="mood_stabilizer">Mood Stabilizer</option>
-              <option value="antipsychotic">Antipsychotic</option>
-              <option value="anxiolytic">Anxiolytic</option>
-              <option value="sleep_aid">Sleep Aid</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
-              Frequency / Timing
-            </label>
-            <select id="med-frequency"
-                    style="width:100%;font-size:13px;padding:7px 8px;
-                           border:1px solid var(--border-light);background:var(--surface);color:var(--text);">
-              <option value="">-- Select timing --</option>
-              <option value="once_daily">Once daily</option>
-              <option value="twice_daily">Twice daily</option>
-              <option value="three_times_daily">Three times daily</option>
-              <option value="every_morning">Every morning</option>
-              <option value="at_bedtime">At bedtime</option>
-              <option value="as_needed">As needed (PRN)</option>
-              <option value="every_other_day">Every other day</option>
-              <option value="weekly">Weekly</option>
-            </select>
-          </div>
-
-          <!-- Row 3: dose + unit + date started -->
-          <div style="display:flex;gap:8px;">
-            <div style="flex:1;">
-              <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                            letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
-                Dose
-              </label>
-              <input id="med-dose" type="number" min="0" step="0.5"
-                     style="width:100%;font-size:13px;padding:7px 8px;
-                            border:1px solid var(--border-light);background:var(--surface);
-                            color:var(--text);box-sizing:border-box;"
-                     placeholder="e.g. 20">
-            </div>
-            <div>
-              <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                            letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
-                Unit
-              </label>
-              <select id="med-dose-unit"
-                      style="font-size:13px;padding:7px 8px;
-                             border:1px solid var(--border-light);background:var(--surface);color:var(--text);">
-                <option value="mg">mg</option>
-                <option value="mcg">mcg</option>
-                <option value="ml">ml</option>
-                <option value="units">units</option>
-              </select>
-            </div>
-          </div>
-          <div>
-            <label style="font-size:11px;font-weight:500;text-transform:uppercase;
-                          letter-spacing:.06em;color:var(--text-muted);display:block;margin-bottom:4px;">
-              Date Started (optional)
-            </label>
-            <input id="med-date-started" type="date"
-                   style="width:100%;font-size:13px;padding:7px 8px;
-                          border:1px solid var(--border-light);background:var(--surface);
-                          color:var(--text);box-sizing:border-box;">
-          </div>
-
-          <!-- Row 4: actions -->
-          <div style="grid-column:1/-1;display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
-            <button class="btn btn-primary" style="font-size:13px;padding:8px 18px;"
-                    id="med-submit-btn" onclick="submitAddMedication()">Add Medication</button>
-            <button class="btn btn-sm" onclick="toggleMedForm()" style="font-size:13px;">Cancel</button>
-            <span id="med-err" style="font-size:12px;color:#dc2626;"></span>
-          </div>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
-    <div style="padding-top:16px;border-top:1px solid var(--border-light);font-size:11px;color:var(--text-muted);margin-top:24px;">
-      All patient data access is logged for HIPAA compliance ·
-      Only journals marked "Share with provider" are visible to you
-    </div>
-
-  </div><!-- /pv-main -->
-</div><!-- /pv-shell -->
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <script>
-// Sidebar search
-function filterPatients(q) {
-  document.querySelectorAll('.pv-patient-item').forEach(function(item) {
-    item.style.display = item.dataset.name?.includes(q.toLowerCase()) ? '' : 'none';
-  });
-}
-
-// Mobile sidebar toggle
 (function () {
-  const toggleBtn = document.getElementById('pv-sidebar-toggle');
-  const sidebar   = document.getElementById('pv-sidebar');
-  if (!toggleBtn || !sidebar) return;
-  toggleBtn.addEventListener('click', function () {
-    const open = sidebar.classList.toggle('open');
-    toggleBtn.setAttribute('aria-expanded', open);
-    toggleBtn.querySelector('.pv-toggle-arrow').textContent = open ? '▴' : '▾';
-  });
-  sidebar.querySelectorAll('.pv-patient-item').forEach(function (a) {
-    a.addEventListener('click', function () {
-      sidebar.classList.remove('open');
-      toggleBtn.querySelector('.pv-toggle-arrow').textContent = '▾';
-    });
-  });
-})();
+  const PATIENT_ID = {{ patient.patient_id | tojson }};
 
-// Mini sparkline
-{% if trends.mood and trends.mood.daily_scores %}
-(function() {
-  const scores = {{ trends.mood.daily_scores | tojson }};
-  const dates  = {{ (trends.mood.dates or []) | tojson }};
-  const ctx = document.getElementById('mood-spark');
-  if (!ctx) return;
-  function fmtD(iso) {
-    const d = new Date(iso + 'T12:00:00');
-    return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  /* ─── Escape helper ─────────────────────────────────────── */
+  function _esc(s) {
+    return String(s)
+      .replace(/&/g,'&amp;')
+      .replace(/</g,'&lt;')
+      .replace(/>/g,'&gt;')
+      .replace(/"/g,'&quot;');
   }
-  new Chart(ctx, {
-    type: 'line',
-    data: {
-      labels: dates.length ? dates : scores.map(() => ''),
-      datasets: [{
-        data: scores,
-        borderColor: '#111',
-        backgroundColor: 'rgba(0,0,0,0.05)',
-        fill: true,
-        tension: 0.3,
-        pointRadius: 0,
-        borderWidth: 2,
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: true,
-      plugins: { legend: { display: false }, tooltip: { enabled: false } },
-      scales: {
-        y: { min: 0, max: 10, display: false },
-        x: {
-          grid: { display: false },
-          ticks: {
-            font: { family: 'DM Sans', size: 10 },
-            maxTicksLimit: 6,
-            maxRotation: 0,
-            callback: function(val, i) { return dates[i] ? fmtD(dates[i]) : ''; }
-          }
+
+  /* ─── Mood sparkline ────────────────────────────────────── */
+  {% if trends and trends.mood and trends.mood.series %}
+  (function() {
+    const canvas = document.getElementById('mood-sparkline');
+    if (!canvas) return;
+    const series = {{ trends.mood.series | tojson }};
+    const labels = series.map(function(p) { return p.date || ''; });
+    const vals   = series.map(function(p) { return p.value; });
+    new Chart(canvas, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [{
+          data: vals,
+          borderColor: '#0F6E56',
+          borderWidth: 1.5,
+          pointRadius: 0,
+          tension: 0.35,
+          fill: true,
+          backgroundColor: 'rgba(15,110,86,0.07)'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: { legend: { display: false }, tooltip: { enabled: false } },
+        scales: {
+          x: { display: false },
+          y: { display: false, min: 0, max: 10 }
+        },
+        animation: false
+      }
+    });
+  })();
+  {% endif %}
+
+  /* ─── Load voice notes ──────────────────────────────────── */
+  function loadVoiceNotes() {
+    const body  = document.getElementById('voice-stream-body');
+    const badge = document.getElementById('voice-count-badge');
+
+    fetch('/api/provider/patient/' + PATIENT_ID + '/voice-notes')
+      .then(function(r) { return r.json(); })
+      .then(function(data) {
+        var notes = data.notes || [];
+        if (!notes.length) {
+          body.innerHTML = '<div class="hub-placeholder" style="min-height:120px;">'
+            + '<div class="hub-placeholder-icon">🎙️</div>'
+            + '<div class="hub-placeholder-title">No voice notes yet</div>'
+            + '<div class="hub-placeholder-sub">Send a Voice Recording via the outreach console to collect async audio.</div>'
+            + '</div>';
+          return;
         }
-      }
-    }
-  });
-})();
-{% endif %}
-
-// ── Care Team Flags ────────────────────────────────────────────────────────
-
-const _PATIENT_ID = {{ patient.patient_id | tojson }};
-
-const _FLAG_TYPE_LABELS = {
-  observation:         'Observation',
-  concern:             'Concern',
-  progress:            'Progress',
-  coordination_needed: 'Needs Coordination',
-};
-
-const _FLAG_TYPE_COLORS = {
-  observation:         '#3182ce',
-  concern:             '#e53e3e',
-  progress:            '#38a169',
-  coordination_needed: '#d69e2e',
-};
-
-function _relTime(iso) {
-  if (!iso) return '';
-  const d = (Date.now() - new Date(iso).getTime()) / 1000;
-  if (d < 60)    return 'just now';
-  if (d < 3600)  return Math.floor(d / 60) + 'm ago';
-  if (d < 86400) return Math.floor(d / 3600) + 'h ago';
-  return Math.floor(d / 86400) + 'd ago';
-}
-
-function _escHtml(s) {
-  return (s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-function _renderResponse(r) {
-  return `<div style="margin-top:8px;padding:8px 10px;background:#f8f9fa;
-                      border:0.5px solid #D3D1C7;border-radius:6px;font-size:12px;">
-    <div style="font-weight:500;color:var(--text-muted);margin-bottom:3px;">
-      ${_escHtml(r.author_name)} · ${_escHtml(r.author_role)}
-      <span style="font-weight:400;margin-left:6px;">${_relTime(r.created_at)}</span>
-    </div>
-    <div style="white-space:pre-wrap;">${_escHtml(r.body)}</div>
-  </div>`;
-}
-
-function _renderFlagCard(f, isMine) {
-  const typeLabel = _FLAG_TYPE_LABELS[f.flag_type] || f.flag_type;
-  const accent    = _FLAG_TYPE_COLORS[f.flag_type] || '#aaa';
-  const authorLine = isMine
-    ? '<span style="font-size:11px;color:var(--text-muted);">Posted by you</span>'
-    : `<span style="font-size:11px;color:var(--text-muted);">${_escHtml(f.author_name || 'Provider')} · ${_escHtml(f.author_role || '')}</span>`;
-
-  const responsesHtml = (f.responses || []).map(_renderResponse).join('');
-  const flagId = f.id;
-
-  return `<div id="pd-flag-${flagId}" style="border:0.5px solid ${accent};
-               border-radius:8px;padding:12px 14px;margin-bottom:12px;background:var(--surface);">
-    <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:6px;">
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
-        <span style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;
-                     color:#fff;background:${accent};padding:2px 7px;border-radius:4px;">${_escHtml(typeLabel)}</span>
-        ${authorLine}
-        <span style="font-size:11px;color:var(--text-muted);">${_relTime(f.created_at)}</span>
-      </div>
-      <button onclick="resolveFlag('${flagId}')"
-              style="font-size:11px;padding:3px 10px;background:none;border:1px solid var(--border-light);
-                     cursor:pointer;color:var(--text-muted);">
-        Resolve
-      </button>
-    </div>
-    <div style="font-size:13px;line-height:1.65;white-space:pre-wrap;margin-bottom:8px;">${_escHtml(f.body)}</div>
-    <div id="pd-flag-responses-${flagId}">${responsesHtml}</div>
-    <div style="margin-top:10px;display:flex;gap:8px;align-items:flex-start;">
-      <textarea id="pd-resp-body-${flagId}" rows="2"
-                style="flex:1;font-size:12px;padding:5px 7px;border:1px solid var(--border-light);
-                       background:var(--surface);color:var(--text);resize:none;box-sizing:border-box;"
-                placeholder="Reply to this flag…"></textarea>
-      <button onclick="submitFlagResponse('${flagId}')"
-              id="pd-resp-btn-${flagId}"
-              style="font-size:12px;padding:6px 12px;background:#111;color:#fff;
-                     border:none;cursor:pointer;white-space:nowrap;align-self:flex-end;">
-        Reply
-      </button>
-    </div>
-    <div id="pd-resp-err-${flagId}" style="font-size:11px;color:#dc2626;margin-top:4px;"></div>
-  </div>`;
-}
-
-async function loadFlags() {
-  const el = document.getElementById('pd-flags-list');
-  if (!el) return;
-  try {
-    const res  = await fetch('/api/provider/patient/' + _PATIENT_ID + '/flags', { credentials: 'same-origin' });
-    const data = res.ok ? await res.json() : null;
-    if (!data) { el.innerHTML = '<p style="font-size:13px;color:#c0392b;">Failed to load flags.</p>'; return; }
-
-    const others = data.from_others || [];
-    const mine   = data.my_flags   || [];
-
-    // Pre-fetch responses for all flags
-    const allFlags = [...others.map(f => ({...f, _mine: false})), ...mine.map(f => ({...f, _mine: true}))];
-    await Promise.all(allFlags.map(async f => {
-      try {
-        const r = await fetch('/api/provider/patient/' + _PATIENT_ID + '/flags/' + f.id + '/responses',
-                              { credentials: 'same-origin' });
-        f.responses = r.ok ? (await r.json()).responses || [] : [];
-      } catch(_) { f.responses = []; }
-    }));
-
-    let html = '';
-    if (others.length === 0 && mine.length === 0) {
-      html = '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">No active flags for this patient.</div>';
-    } else {
-      if (others.length > 0) {
-        html += `<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;
-                             color:var(--text-muted);margin-bottom:8px;">From care team (${others.length})</div>`;
-        others.forEach(f => { html += _renderFlagCard(f, false); });
-      }
-      if (mine.length > 0) {
-        html += `<div style="font-size:11px;font-weight:500;text-transform:uppercase;letter-spacing:.07em;
-                             color:var(--text-muted);margin:${others.length > 0 ? '16px' : '0'} 0 8px;">
-                   Posted by you (${mine.length})</div>`;
-        mine.forEach(f => { html += _renderFlagCard(f, true); });
-      }
-    }
-    el.innerHTML = html;
-  } catch(e) {
-    document.getElementById('pd-flags-list').innerHTML =
-      '<p style="font-size:13px;color:#c0392b;">Network error loading flags.</p>';
-  }
-}
-
-async function resolveFlag(flagId) {
-  const card = document.getElementById('pd-flag-' + flagId);
-  if (card) { card.style.opacity = '0.4'; card.style.pointerEvents = 'none'; }
-  try {
-    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/flags/' + flagId + '/resolve',
-                            { method: 'PATCH', credentials: 'same-origin' });
-    if (res.ok) { loadFlags(); }
-    else { if (card) { card.style.opacity = ''; card.style.pointerEvents = ''; } }
-  } catch(_) { if (card) { card.style.opacity = ''; card.style.pointerEvents = ''; } }
-}
-
-async function submitFlagResponse(flagId) {
-  const bodyEl = document.getElementById('pd-resp-body-' + flagId);
-  const btnEl  = document.getElementById('pd-resp-btn-' + flagId);
-  const errEl  = document.getElementById('pd-resp-err-' + flagId);
-  const body   = (bodyEl.value || '').trim();
-  errEl.textContent = '';
-  if (body.length < 5) { errEl.textContent = 'At least 5 characters required.'; return; }
-  if (body.length > 500) { errEl.textContent = 'Limit 500 characters.'; return; }
-  btnEl.disabled = true; btnEl.textContent = '…';
-  try {
-    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/flags/' + flagId + '/responses', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ body }),
-      credentials: 'same-origin',
-    });
-    const data = await res.json();
-    if (res.ok && data.ok) {
-      bodyEl.value = '';
-      loadFlags();
-    } else {
-      errEl.textContent = data.error || 'Failed to post — try again.';
-      btnEl.disabled = false; btnEl.textContent = 'Reply';
-    }
-  } catch(_) {
-    errEl.textContent = 'Network error.';
-    btnEl.disabled = false; btnEl.textContent = 'Reply';
-  }
-}
-
-// ── Flag form toggle + visibility selector ────────────────────────────────
-
-let _careTeamMembers = [];
-
-function toggleFlagForm() {
-  const wrap = document.getElementById('flag-form-wrap');
-  const showing = wrap.style.display !== 'none';
-  wrap.style.display = showing ? 'none' : 'block';
-  if (!showing) { loadCareTeamMembers(); }
-}
-
-async function loadCareTeamMembers() {
-  if (_careTeamMembers.length > 0) { _renderVisibilitySelector(); return; }
-  try {
-    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/care-team-members',
-                            { credentials: 'same-origin' });
-    const data = res.ok ? await res.json() : {};
-    _careTeamMembers = data.members || [];
-    _renderVisibilitySelector();
-  } catch(_) {}
-}
-
-function _renderVisibilitySelector() {
-  const optWrap = document.getElementById('pd-flag-visibility-options');
-  const listWrap = document.getElementById('pd-flag-member-list');
-  if (!optWrap) return;
-
-  if (_careTeamMembers.length === 0) {
-    optWrap.innerHTML = `<div style="font-size:12px;color:var(--text-muted);">No other care team members — flag will be visible to all.</div>`;
-    return;
-  }
-
-  optWrap.innerHTML = `
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">
-      <input type="radio" name="pd-flag-vis" value="all" checked onchange="_toggleMemberList(false)">
-      All care team members
-    </label>
-    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;">
-      <input type="radio" name="pd-flag-vis" value="select" onchange="_toggleMemberList(true)">
-      Specific members only
-    </label>`;
-
-  listWrap.innerHTML = _careTeamMembers.map(m =>
-    `<label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer;margin-bottom:4px;">
-       <input type="checkbox" class="pd-flag-member-cb" value="${_escHtml(m.provider_id)}">
-       ${_escHtml(m.provider_name)} <span style="font-size:11px;color:var(--text-muted);">(${_escHtml(m.role_label)})</span>
-     </label>`
-  ).join('');
-}
-
-function _toggleMemberList(show) {
-  const el = document.getElementById('pd-flag-member-list');
-  if (el) el.style.display = show ? 'block' : 'none';
-}
-
-async function submitPatientFlag() {
-  const typeEl   = document.getElementById('pd-flag-type');
-  const bodyEl   = document.getElementById('pd-flag-body');
-  const submitBtn = document.getElementById('pd-flag-submit-btn');
-  const errEl    = document.getElementById('pd-flag-err');
-  errEl.textContent = '';
-
-  const flagType = typeEl.value;
-  const body     = (bodyEl.value || '').trim();
-  if (body.length < 10) { errEl.textContent = 'At least 10 characters required.'; return; }
-  if (body.length > 1000) { errEl.textContent = 'Limit 1000 characters.'; return; }
-
-  // Determine visibility
-  const visMode = document.querySelector('input[name="pd-flag-vis"]:checked');
-  let visible_to = null;
-  if (visMode && visMode.value === 'select') {
-    const checked = [...document.querySelectorAll('.pd-flag-member-cb:checked')].map(cb => cb.value);
-    if (checked.length === 0) { errEl.textContent = 'Select at least one care team member.'; return; }
-    visible_to = checked;
-  }
-
-  submitBtn.disabled = true; submitBtn.textContent = 'Posting…';
-  try {
-    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/flags', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ flag_type: flagType, body, visible_to }),
-      credentials: 'same-origin',
-    });
-    const data = await res.json();
-    if (res.ok && data.ok) {
-      bodyEl.value = '';
-      document.getElementById('flag-form-wrap').style.display = 'none';
-      loadFlags();
-    } else {
-      errEl.textContent = data.error || 'Failed to post — try again.';
-      submitBtn.disabled = false; submitBtn.textContent = 'Post Flag';
-    }
-  } catch(_) {
-    errEl.textContent = 'Network error.';
-    submitBtn.disabled = false; submitBtn.textContent = 'Post Flag';
-  }
-}
-
-// ── Psychiatrist: Add Medication ───────────────────────────────────────────
-
-{% if provider_role == 'psychiatrist' %}
-
-// ── Patient medication data (keyed by id) ─────────────────────────────────
-let _patientMeds = null;  // null = not yet loaded
-
-async function _ensurePatientMeds() {
-  if (_patientMeds !== null) return;
-  _patientMeds = {};
-  try {
-    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/medications',
-                            { credentials: 'same-origin' });
-    const data = res.ok ? await res.json() : {};
-    (data.medications || []).forEach(m => { _patientMeds[m.id] = m; });
-  } catch(_) {}
-}
-
-async function _populateMedSelect() {
-  await _ensurePatientMeds();
-  const sel = document.getElementById('med-select');
-  if (!sel) return;
-  // Remove any previously injected options (keep first blank + last __new__)
-  sel.querySelectorAll('option[data-existing]').forEach(o => o.remove());
-  const newOpt = sel.querySelector('option[value="__new__"]');
-  const meds = Object.values(_patientMeds);
-  if (meds.length === 0) {
-    // No existing meds — jump straight to new medication mode
-    if (newOpt) newOpt.selected = true;
-    _showNewMedInput(true);
-    return;
-  }
-  meds.forEach(m => {
-    const opt = document.createElement('option');
-    opt.value = m.id;
-    opt.setAttribute('data-existing', '1');
-    const doseStr = m.standard_dose ? ` ${m.standard_dose}${m.dose_unit || 'mg'}` : '';
-    const freqStr = m.frequency ? ` · ${_freqLabel(m.frequency)}` : '';
-    opt.textContent = (m.name || '') + doseStr + freqStr;
-    sel.insertBefore(opt, newOpt);
-  });
-}
-
-const _FREQ_LABELS = {
-  once_daily:        'Once daily',
-  twice_daily:       'Twice daily',
-  three_times_daily: 'Three times daily',
-  every_morning:     'Every morning',
-  at_bedtime:        'At bedtime',
-  as_needed:         'As needed (PRN)',
-  every_other_day:   'Every other day',
-  weekly:            'Weekly',
-};
-function _freqLabel(v) { return _FREQ_LABELS[v] || v.replace(/_/g, ' '); }
-
-function _showNewMedInput(show) {
-  const wrap = document.getElementById('med-new-wrap');
-  if (wrap) wrap.style.display = show ? 'block' : 'none';
-}
-
-function onMedSelect(sel) {
-  const val = sel.value;
-  const med = _patientMeds && _patientMeds[val];
-
-  if (val === '__new__') {
-    _showNewMedInput(true);
-    // Clear fields so provider fills them in
-    document.getElementById('med-name').value = '';
-    document.getElementById('med-dose').value = '';
-    document.getElementById('med-date-started').value = '';
-    document.getElementById('med-frequency').value = '';
-  } else if (med) {
-    _showNewMedInput(false);
-    // Auto-fill from existing record
-    const catEl = document.getElementById('med-category');
-    const doseEl = document.getElementById('med-dose');
-    const unitEl = document.getElementById('med-dose-unit');
-    const freqEl = document.getElementById('med-frequency');
-    if (catEl && med.category) catEl.value = med.category;
-    if (doseEl) doseEl.value = med.standard_dose || '';
-    if (unitEl && med.dose_unit) unitEl.value = med.dose_unit;
-    if (freqEl && med.frequency) freqEl.value = med.frequency;
-  } else {
-    _showNewMedInput(false);
-  }
-}
-
-// Wire autocomplete for the new-medication text input
-document.addEventListener('DOMContentLoaded', function() {
-  const nameInput = document.getElementById('med-name');
-  if (!nameInput) return;
-  nameInput.addEventListener('input', async function() {
-    const q = this.value.trim();
-    if (q.length < 2) return;
-    try {
-      const res = await fetch('/api/medications/search?q=' + encodeURIComponent(q),
-                              { credentials: 'same-origin' });
-      if (!res.ok) return;
-      const data = await res.json();
-      const dl = document.getElementById('med-name-list');
-      if (!dl) return;
-      dl.innerHTML = '';
-      (Array.isArray(data) ? data : []).forEach(m => {
-        const opt = document.createElement('option');
-        opt.value = m.name || m;
-        dl.appendChild(opt);
+        badge.textContent = notes.length;
+        badge.style.display = '';
+        var html = '';
+        notes.forEach(function(n) {
+          var chips = '';
+          if (n.speech_features) {
+            var sf = n.speech_features;
+            ['speech_rate','prosody','arousal','vocal_affect','speech_coherence'].forEach(function(k) {
+              var v = sf[k];
+              if (!v || v === 'normal' || v === 'intact' || v === 'null') return;
+              var concern = (v === 'pressured' || v === 'flat' || v === 'agitated' || v === 'strained' || v === 'disorganized' || v === 'elevated');
+              chips += '<span class="hub-voice-feature-chip' + (concern ? ' hub-voice-feature-chip--concern' : '') + '">'
+                + _esc(k.replace('_',' ')) + ': ' + _esc(v) + '</span>';
+            });
+          }
+          html += '<div class="hub-voice-note">'
+            + '<div class="hub-voice-meta">'
+            + '<span class="hub-voice-date">' + _esc(n.created_at || '') + '</span>'
+            + (n.duration ? '<span class="hub-voice-duration">' + _esc(n.duration) + '</span>' : '')
+            + '</div>'
+            + (n.transcript ? '<div class="hub-voice-transcript">' + _esc(n.transcript.slice(0, 220)) + (n.transcript.length > 220 ? '…' : '') + '</div>' : '')
+            + (chips ? '<div class="hub-voice-features">' + chips + '</div>' : '')
+            + '</div>';
+        });
+        body.innerHTML = html;
+      })
+      .catch(function() {
+        body.innerHTML = '<div class="hub-loading" style="color:#999;">Could not load voice notes.</div>';
       });
-    } catch(_) {}
-  });
-});
-
-function toggleMedForm() {
-  const wrap = document.getElementById('med-form-wrap');
-  if (!wrap) return;
-  const opening = wrap.style.display === 'none';
-  wrap.style.display = opening ? 'block' : 'none';
-  if (opening) _populateMedSelect();
-}
-
-async function submitAddMedication() {
-  const selectEl  = document.getElementById('med-select');
-  const categoryEl = document.getElementById('med-category');
-  const doseEl    = document.getElementById('med-dose');
-  const doseUnitEl = document.getElementById('med-dose-unit');
-  const freqEl    = document.getElementById('med-frequency');
-  const dateEl    = document.getElementById('med-date-started');
-  const submitBtn = document.getElementById('med-submit-btn');
-  const errEl     = document.getElementById('med-err');
-  errEl.textContent = '';
-
-  const val = selectEl.value;
-  const existingMed = _patientMeds && _patientMeds[val];
-
-  let name, category, dose, doseUnit;
-
-  if (val === '__new__') {
-    name = (document.getElementById('med-name').value || '').trim();
-    category = categoryEl.value;
-    dose = parseFloat(doseEl.value);
-    doseUnit = doseUnitEl.value;
-    if (!name) { errEl.textContent = 'Medication name is required.'; return; }
-  } else if (existingMed) {
-    name     = existingMed.name;
-    category = categoryEl.value || existingMed.category || 'other';
-    dose     = parseFloat(doseEl.value) || existingMed.standard_dose;
-    doseUnit = doseUnitEl.value || existingMed.dose_unit || 'mg';
-  } else {
-    errEl.textContent = 'Select a medication.'; return;
   }
 
-  if (isNaN(dose) || dose <= 0) { errEl.textContent = 'Enter a valid dose.'; return; }
+  loadVoiceNotes();
 
-  const frequency = freqEl.value || null;
-  const dateStr   = (dateEl.value || '').trim() || null;
+  /* ─── Two-click SMS flow ────────────────────────────────── */
+  var _confirmTimers = {};
 
-  submitBtn.disabled = true; submitBtn.textContent = 'Adding…';
-  try {
-    const res = await fetch('/api/provider/patient/' + _PATIENT_ID + '/medications', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, category, dose, dose_unit: doseUnit,
-                             frequency, date_started: dateStr }),
-      credentials: 'same-origin',
+  function confirmFlow(flowType, btn) {
+    // Cancel any existing confirm on another button
+    Object.keys(_confirmTimers).forEach(function(k) {
+      if (k !== flowType) cancelConfirm(k);
     });
-    const data = await res.json();
-    if (res.ok && data.ok) {
-      const med = data.medication;
-      const doseStr = med.standard_dose ? ` ${med.standard_dose}${med.dose_unit || 'mg'}` : '';
-      const freqStr = med.frequency ? ` · ${_freqLabel(med.frequency)}` : '';
-      // Add to existing-medications display
-      let chipWrap = document.querySelector('#med-add-section .pd-med-chip-wrap');
-      if (!chipWrap) {
-        // Create chip container if it didn't exist (no prior meds)
-        const noMedDiv = document.querySelector('#med-add-section .no-med-msg');
-        if (noMedDiv) noMedDiv.remove();
-        chipWrap = document.createElement('div');
-        chipWrap.className = 'pd-med-chip-wrap';
-        chipWrap.style.cssText = 'display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;';
-        document.getElementById('med-form-wrap').insertAdjacentElement('beforebegin', chipWrap);
-      }
-      const chip = document.createElement('span');
-      chip.className = 'pd-med-chip';
-      chip.textContent = (med.name || name) + doseStr + freqStr;
-      chipWrap.appendChild(chip);
-      // Refresh dropdown so the newly added med appears
-      _patientMeds = null;
-      selectEl.value = '';
-      _showNewMedInput(false);
-      doseEl.value = ''; freqEl.value = ''; dateEl.value = '';
-      document.getElementById('med-form-wrap').style.display = 'none';
-    } else {
-      errEl.textContent = data.error || 'Failed to add — try again.';
-      submitBtn.disabled = false; submitBtn.textContent = 'Add Medication';
+
+    var overlay = btn.querySelector('.hub-flow-confirm');
+    if (overlay) {
+      // Already showing confirm — ignore (user clicks Yes/No buttons directly)
+      return;
     }
-  } catch(_) {
-    errEl.textContent = 'Network error.';
-    submitBtn.disabled = false; submitBtn.textContent = 'Add Medication';
+
+    var el = document.createElement('div');
+    el.className = 'hub-flow-confirm';
+    el.id = 'flow-confirm-' + flowType;
+    el.innerHTML = '<span>Send SMS to patient?</span>'
+      + '<div class="hub-flow-confirm-btns">'
+      + '<button class="hub-confirm-yes" onclick="sendFlowSMS(\'' + flowType + '\',event)">Send</button>'
+      + '<button class="hub-confirm-no"  onclick="cancelConfirm(\'' + flowType + '\',event)">Cancel</button>'
+      + '</div>';
+    btn.appendChild(el);
+
+    _confirmTimers[flowType] = setTimeout(function() {
+      cancelConfirm(flowType);
+    }, 8000);
   }
-}
-{% endif %}
 
-// Load flags on page ready
-loadFlags();
-
-// ── SMS modal ────────────────────────────────────────────────────────────────
-const PATIENT_ID = {{ patient.patient_id | tojson }};
-
-function openSmsModal() {
-  const modal = document.getElementById('sms-modal');
-  modal.style.display = 'flex';
-  document.getElementById('sms-status').textContent = '';
-  document.getElementById('sms-send-btn').disabled = {{ 'true' if not patient.phone_number else 'false' }};
-}
-
-function closeSmsModal() {
-  document.getElementById('sms-modal').style.display = 'none';
-  document.getElementById('sms-voice-prompt').value = '';
-  document.getElementById('sms-status').textContent = '';
-}
-
-async function sendCheckinSms() {
-  const btn    = document.getElementById('sms-send-btn');
-  const status = document.getElementById('sms-status');
-  const prompt = document.getElementById('sms-voice-prompt').value.trim();
-
-  btn.disabled = true;
-  status.style.color = 'var(--text-muted)';
-  status.textContent = 'Sending…';
-
-  try {
-    const data = await apiPost(
-      '/api/provider/patient/' + PATIENT_ID + '/send-checkin-sms',
-      prompt ? { voice_prompt: prompt } : {}
-    );
-    status.style.color = 'var(--green)';
-    status.textContent = 'Sent to …' + (data.phone_last4 || '')
-      + (data.sid ? ' (SID: ' + data.sid.slice(-8) + ')' : '');
-    setTimeout(closeSmsModal, 2000);
-  } catch (err) {
-    status.style.color = 'var(--red)';
-    status.textContent = err.message || 'Failed to send — try again.';
-    btn.disabled = false;
+  function cancelConfirm(flowType, evt) {
+    if (evt) evt.stopPropagation();
+    clearTimeout(_confirmTimers[flowType]);
+    delete _confirmTimers[flowType];
+    var el = document.getElementById('flow-confirm-' + flowType);
+    if (el) el.remove();
   }
-}
 
-// Close modal on backdrop click
-document.getElementById('sms-modal').addEventListener('click', function(e) {
-  if (e.target === this) closeSmsModal();
-});
+  function sendFlowSMS(flowType, evt) {
+    if (evt) evt.stopPropagation();
+    cancelConfirm(flowType);
+
+    var btn    = document.getElementById('flow-btn-' + flowType);
+    var status = document.getElementById('flow-status-' + flowType);
+    btn.disabled = true;
+    status.textContent = 'Sending…';
+
+    fetch('/api/provider/patient/' + PATIENT_ID + '/send-flow-sms', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({flow_type: flowType})
+    })
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      if (d.ok) {
+        btn.classList.add('hub-flow-btn--sent');
+        status.textContent = '✓ Sent to …' + (d.phone_last4 || '');
+      } else {
+        btn.classList.add('hub-flow-btn--error');
+        status.textContent = d.error || 'Send failed';
+        btn.disabled = false;
+      }
+    })
+    .catch(function() {
+      btn.classList.add('hub-flow-btn--error');
+      status.textContent = 'Network error';
+      btn.disabled = false;
+    });
+  }
+
+  // Expose for onclick attributes
+  window.confirmFlow  = confirmFlow;
+  window.cancelConfirm = cancelConfirm;
+  window.sendFlowSMS  = sendFlowSMS;
+
+})();
 </script>
+
 {% endblock %}
