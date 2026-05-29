@@ -389,11 +389,106 @@
     line-height: 1.5;
   }
 
+  /* ── Risk strip ──────────────────────────────────────────────────────────── */
+  .risk-strip {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+    padding: 12px 16px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    align-items: center;
+  }
+  .risk-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .risk-chip-val {
+    font-size: 0.84rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .risk-chip-val--red   { color: #c0392b; }
+  .risk-chip-val--amber { color: #b45309; }
+  .risk-chip-val--green { color: #1a7f3c; }
+  .risk-strip-date {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-left: auto;
+  }
+
+  /* ── Care team ───────────────────────────────────────────────────────────── */
+  .care-member {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .care-member:last-child { border-bottom: none; }
+  .care-avatar-sm {
+    width: 30px; height: 30px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    font-size: 0.75rem; font-weight: 600; font-family: 'DM Serif Display', serif;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .care-name { font-size: 0.84rem; font-weight: 500; color: var(--text); }
+  .care-role-badge {
+    font-size: 0.65rem; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 2px 7px; border-radius: 4px;
+    background: var(--border); color: var(--text-muted);
+  }
+
+  /* ── Care team flag form ─────────────────────────────────────────────────── */
+  .flag-card {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .flag-card:last-child { border-bottom: none; }
+  .flag-card-hdr {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 5px;
+  }
+  .flag-type-badge {
+    font-size: 0.65rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; padding: 2px 7px; border-radius: 4px;
+  }
+  .flag-type-badge--concern    { background: #fdecea; color: #c0392b; }
+  .flag-type-badge--observation { background: #e8f0fe; color: #1a56a4; }
+  .flag-type-badge--progress   { background: #d4edda; color: #1a7f3c; }
+  .flag-type-badge--coordination { background: #fff3cd; color: #856404; }
+  .flag-body { font-size: 0.84rem; color: var(--text); line-height: 1.55; }
+  .flag-meta { font-size: 0.72rem; color: var(--text-muted); margin-top: 4px; }
+
+  /* ── Upload area ─────────────────────────────────────────────────────────── */
+  .upload-drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: 8px;
+    padding: 24px 18px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.15s, background 0.15s;
+    margin: 14px 18px;
+  }
+  .upload-drop-zone:hover, .upload-drop-zone.drag-over {
+    border-color: var(--accent);
+    background: var(--bg);
+  }
+  .upload-drop-zone-icon { font-size: 1.6rem; margin-bottom: 6px; opacity: 0.5; }
+  .upload-drop-zone-label { font-size: 0.84rem; color: var(--text-muted); }
+  .upload-drop-zone-sub { font-size: 0.75rem; color: var(--text-muted); margin-top: 3px; }
+
   @media (max-width: 768px) {
     .hub-header { flex-direction: column; }
     .hub-actions { width: 100%; }
     .hub-action-btn { flex: 1; justify-content: center; }
     .hub-table th, .hub-table td { padding: 8px 10px; }
+    .risk-strip-date { margin-left: 0; width: 100%; }
   }
 </style>
 {% endblock %}
@@ -409,7 +504,13 @@
       <div class="hub-avatar">{{ patient.full_name[0] | upper }}</div>
       <div>
         <h1 class="hub-patient-name">{{ patient.full_name }}</h1>
-        <div class="hub-patient-email">{{ patient.email }}</div>
+        <div class="hub-patient-email">{{ patient.email }}
+          {% if next_appt %}
+          <span style="margin-left:12px;color:var(--accent);font-size:0.75rem;">
+            Next apt: {{ next_appt.appointment_date[:10] if next_appt.appointment_date else '—' }}
+          </span>
+          {% endif %}
+        </div>
       </div>
     </div>
 
@@ -463,11 +564,79 @@
     </div>
   </div>
 
+  <!-- Upload voice note modal -->
+  <div id="upload-voice-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;align-items:center;justify-content:center;padding:16px;"
+       onclick="if(event.target===this)closeUploadModal()">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:460px;padding:24px;font-family:'DM Sans',sans-serif;position:relative;">
+      <button onclick="closeUploadModal()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:17px;cursor:pointer;color:var(--text-muted);">✕</button>
+      <h3 style="font-family:'DM Serif Display',serif;font-size:1.05rem;font-weight:400;margin:0 0 5px;">Upload Voice Recording</h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 14px;line-height:1.5;">Upload an audio file recorded outside the app. It will be transcribed automatically.</p>
+      <div id="upload-drop" class="upload-drop-zone" onclick="document.getElementById('upload-file-input').click()"
+           ondragover="event.preventDefault();this.classList.add('drag-over')"
+           ondragleave="this.classList.remove('drag-over')"
+           ondrop="handleDrop(event)">
+        <div class="upload-drop-zone-icon">🎙</div>
+        <div class="upload-drop-zone-label" id="upload-file-label">Click to select or drag a file here</div>
+        <div class="upload-drop-zone-sub">MP3, M4A, WAV, WebM — max 50 MB</div>
+      </div>
+      <input type="file" id="upload-file-input" accept="audio/*" style="display:none" onchange="handleFileSelect(this.files[0])">
+      <div style="margin:10px 0;">
+        <label style="font-size:0.75rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:4px;">Label (optional)</label>
+        <input id="upload-label-input" type="text" placeholder="e.g. In-session note" maxlength="120"
+               style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+      </div>
+      <div id="upload-err" style="font-size:0.78rem;color:#c0392b;margin-top:4px;display:none;"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
+        <button class="hub-action-btn" onclick="closeUploadModal()">Cancel</button>
+        <button class="hub-action-btn hub-action-btn--primary" id="upload-submit-btn" onclick="submitVoiceUpload()">Upload</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="hub-toast"></div>
 
+  <!-- Risk strip -->
+  {% if risk_snap %}
+  <div class="risk-strip">
+    {% if risk_snap.mood is not none %}
+    <div class="risk-chip">
+      <span>Mood</span>
+      <span class="risk-chip-val {% if risk_snap.mood < 5 %}risk-chip-val--red{% elif risk_snap.mood >= 7 %}risk-chip-val--green{% endif %}">
+        {{ risk_snap.mood }}/10
+      </span>
+    </div>
+    {% endif %}
+    {% if risk_snap.stability is not none %}
+    <div class="risk-chip">
+      <span>Stability</span>
+      <span class="risk-chip-val {% if risk_snap.stability < 4 %}risk-chip-val--red{% elif risk_snap.stability < 6 %}risk-chip-val--amber{% elif risk_snap.stability >= 7 %}risk-chip-val--green{% endif %}">
+        {{ '%.1f'|format(risk_snap.stability) }}
+      </span>
+    </div>
+    {% endif %}
+    {% if risk_snap.crash_risk is not none %}
+    <div class="risk-chip">
+      <span>Crash Risk</span>
+      <span class="risk-chip-val {% if risk_snap.crash_risk >= 7 %}risk-chip-val--red{% elif risk_snap.crash_risk >= 5 %}risk-chip-val--amber{% else %}risk-chip-val--green{% endif %}">
+        {{ '%.1f'|format(risk_snap.crash_risk) }}
+      </span>
+    </div>
+    {% endif %}
+    {% if risk_snap.stim_load is not none %}
+    <div class="risk-chip">
+      <span>Stim Load</span>
+      <span class="risk-chip-val {% if risk_snap.stim_load >= 7 %}risk-chip-val--red{% elif risk_snap.stim_load >= 5 %}risk-chip-val--amber{% endif %}">
+        {{ risk_snap.stim_load }}/10
+      </span>
+    </div>
+    {% endif %}
+    <div class="risk-strip-date">Last check-in: {{ risk_snap.date }}</div>
+  </div>
+  {% endif %}
+
   <!-- ── Check-in Data ──────────────────────────────────────────────────────── -->
-  <div class="hub-section" id="section-checkins">
+  <div class="hub-section collapsed" id="section-checkins">
     <div class="hub-section-hdr" onclick="toggleSection('checkins')">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
@@ -524,14 +693,18 @@
   </div>
 
   <!-- ── Voice Recording Data ───────────────────────────────────────────────── -->
-  <div class="hub-section" id="section-voice">
+  <div class="hub-section collapsed" id="section-voice">
     <div class="hub-section-hdr" onclick="toggleSection('voice')">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
         <span class="hub-section-title">Voice Recording Data</span>
         <span class="hub-section-meta">{{ voice_notes|length }} recording{{ 's' if voice_notes|length != 1 }}</span>
       </div>
-      <span class="hub-section-chevron">›</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;"
+                onclick="event.stopPropagation();openUploadModal()">⬆ Upload</button>
+        <span class="hub-section-chevron">›</span>
+      </div>
     </div>
     <div class="hub-section-body">
       {% if voice_notes %}
@@ -560,7 +733,7 @@
   </div>
 
   <!-- ── Session Recording Data ────────────────────────────────────────────── -->
-  <div class="hub-section" id="section-sessions">
+  <div class="hub-section collapsed" id="section-sessions">
     <div class="hub-section-hdr" onclick="toggleSection('sessions')">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
@@ -599,7 +772,7 @@
   </div>
 
   <!-- ── Medication Adherence Data ─────────────────────────────────────────── -->
-  <div class="hub-section" id="section-meds">
+  <div class="hub-section collapsed" id="section-meds">
     <div class="hub-section-hdr" onclick="toggleSection('meds')">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
@@ -647,6 +820,133 @@
       {% else %}
       <div class="hub-empty">No medications on file.</div>
       {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Journal Entries ──────────────────────────────────────────────────── -->
+  <div class="hub-section collapsed" id="section-journals">
+    <div class="hub-section-hdr" onclick="toggleSection('journals')">
+      <div class="hub-section-hdr-left">
+        <div class="hub-section-dot"></div>
+        <span class="hub-section-title">Journal Entries</span>
+        <span class="hub-section-meta">{{ journals|length }} recent</span>
+      </div>
+      <span class="hub-section-chevron">›</span>
+    </div>
+    <div class="hub-section-body">
+      {% if journals %}
+        {% for j in journals %}
+        <div style="padding:12px 18px;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+            <span style="font-size:0.75rem;color:var(--text-muted);">
+              {{ j.entry_date[:10] if j.entry_date else (j.created_at[:10] if j.created_at else '—') }}
+            </span>
+            {% if j.share_with_provider %}
+            <span style="font-size:0.65rem;font-weight:500;text-transform:uppercase;letter-spacing:.05em;
+                         padding:2px 7px;border-radius:4px;background:#d4edda;color:#1a7f3c;">Shared</span>
+            {% else %}
+            <span style="font-size:0.65rem;color:var(--text-muted);">Private</span>
+            {% endif %}
+          </div>
+          <p style="font-size:0.84rem;color:var(--text);line-height:1.55;margin:0;">
+            {{ j.content[:300] if j.content else '—' }}{% if j.content and j.content|length > 300 %}…{% endif %}
+          </p>
+          {% if j.ai_insight %}
+          <div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-left:3px solid var(--accent);
+                      font-size:0.78rem;color:var(--text-muted);line-height:1.55;">
+            <em>{{ j.ai_insight[:200] if j.ai_insight else '' }}{% if j.ai_insight and j.ai_insight|length > 200 %}…{% endif %}</em>
+          </div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+      <div class="hub-empty">No journal entries on file.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Care Team & Flags ──────────────────────────────────────────────────── -->
+  <div class="hub-section collapsed" id="section-care-team">
+    <div class="hub-section-hdr" onclick="toggleSection('care-team')">
+      <div class="hub-section-hdr-left">
+        <div class="hub-section-dot"></div>
+        <span class="hub-section-title">Care Team & Flags</span>
+        <span class="hub-section-meta">
+          {{ care_team.active|length }} provider{{ 's' if care_team.active|length != 1 }}
+        </span>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;"
+                onclick="event.stopPropagation();openFlagForm()">+ Post Flag</button>
+        <span class="hub-section-chevron">›</span>
+      </div>
+    </div>
+    <div class="hub-section-body">
+
+      <!-- Care team members -->
+      {% if care_team.active %}
+      <div style="padding:10px 18px 6px;font-size:0.7rem;font-weight:500;text-transform:uppercase;
+                  letter-spacing:.07em;color:var(--text-muted);">Active Providers</div>
+      {% for member in care_team.active %}
+      <div class="care-member">
+        <div class="care-avatar-sm">{{ member.provider_name[0]|upper }}</div>
+        <div style="flex:1;">
+          <div class="care-name">{{ member.provider_name }}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">{{ member.provider_email }}</div>
+        </div>
+        <span class="care-role-badge">{{ member.role_label }}</span>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      <!-- Pending invites -->
+      {% if care_team.pending %}
+      <div style="padding:10px 18px 6px;font-size:0.7rem;font-weight:500;text-transform:uppercase;
+                  letter-spacing:.07em;color:var(--text-muted);">Pending</div>
+      {% for member in care_team.pending %}
+      <div class="care-member" style="opacity:0.7;">
+        <div class="care-avatar-sm" style="background:var(--text-muted);">{{ member.provider_name[0]|upper }}</div>
+        <div style="flex:1;">
+          <div class="care-name">{{ member.provider_name }}</div>
+          <div style="font-size:0.75rem;color:var(--text-muted);">Invite pending</div>
+        </div>
+        <span class="care-role-badge">{{ member.role_label }}</span>
+      </div>
+      {% endfor %}
+      {% endif %}
+
+      {% if not care_team.active and not care_team.pending %}
+      <div class="hub-empty">No other providers on this patient's care team.</div>
+      {% endif %}
+
+      <!-- Flag form (hidden) -->
+      <div id="hub-flag-form" style="display:none;padding:14px 18px;border-top:1px solid var(--border);background:var(--bg);">
+        <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;
+                    color:var(--text-muted);margin-bottom:10px;">Post a Flag</div>
+        <div style="display:grid;gap:10px;">
+          <select id="hub-flag-type"
+                  style="font-size:0.84rem;padding:7px 9px;border:1px solid var(--border);
+                         background:var(--surface);color:var(--text);border-radius:6px;">
+            <option value="observation">Observation</option>
+            <option value="concern">Concern</option>
+            <option value="progress">Progress</option>
+            <option value="coordination_needed">Needs Coordination</option>
+          </select>
+          <textarea id="hub-flag-body" rows="3" placeholder="What do you want to share with the care team?"
+                    style="font-family:'DM Sans',sans-serif;font-size:0.84rem;padding:8px 10px;
+                           border:1px solid var(--border);background:var(--surface);color:var(--text);
+                           border-radius:6px;resize:vertical;box-sizing:border-box;width:100%;"></textarea>
+        </div>
+        <div id="hub-flag-err" style="font-size:0.75rem;color:#c0392b;margin-top:5px;display:none;"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;">
+          <button class="hub-action-btn hub-action-btn--primary" id="hub-flag-submit" onclick="submitHubFlag()">Post Flag</button>
+          <button class="hub-action-btn" onclick="closeFlagForm()">Cancel</button>
+        </div>
+      </div>
+
+      <!-- Existing flags -->
+      <div id="hub-flags-list"></div>
+
     </div>
   </div>
 
@@ -830,5 +1130,145 @@ async function sendReminder() {
 function _esc(s) {
   return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
+
+// ── Upload voice note ─────────────────────────────────────────────────────────
+let _uploadFile = null;
+
+function openUploadModal() {
+  _uploadFile = null;
+  document.getElementById('upload-file-label').textContent = 'Click to select or drag a file here';
+  document.getElementById('upload-label-input').value = '';
+  document.getElementById('upload-err').style.display = 'none';
+  document.getElementById('upload-submit-btn').disabled = false;
+  document.getElementById('upload-submit-btn').textContent = 'Upload';
+  document.getElementById('upload-voice-modal').style.display = 'flex';
+}
+
+function closeUploadModal() {
+  document.getElementById('upload-voice-modal').style.display = 'none';
+}
+
+function handleFileSelect(file) {
+  if (!file) return;
+  _uploadFile = file;
+  document.getElementById('upload-file-label').textContent = file.name + ' (' + (file.size / 1024 / 1024).toFixed(1) + ' MB)';
+}
+
+function handleDrop(e) {
+  e.preventDefault();
+  document.getElementById('upload-drop').classList.remove('drag-over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleFileSelect(file);
+}
+
+async function submitVoiceUpload() {
+  const errEl = document.getElementById('upload-err');
+  const btn   = document.getElementById('upload-submit-btn');
+  errEl.style.display = 'none';
+  if (!_uploadFile) { errEl.textContent = 'Please select a file first.'; errEl.style.display = ''; return; }
+  if (_uploadFile.size > 50 * 1024 * 1024) { errEl.textContent = 'File too large — max 50 MB.'; errEl.style.display = ''; return; }
+
+  btn.disabled = true; btn.textContent = 'Uploading…';
+  const fd = new FormData();
+  fd.append('audio', _uploadFile, _uploadFile.name);
+  const label = document.getElementById('upload-label-input').value.trim();
+  if (label) fd.append('label', label);
+
+  try {
+    const res  = await fetch('/api/provider/patient/' + PATIENT_ID + '/upload-voice-note', {
+      method: 'POST', body: fd, credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      closeUploadModal();
+      showToast('Recording uploaded — transcription in progress');
+      setTimeout(() => location.reload(), 1800);
+    } else {
+      throw new Error(data.error || 'Upload failed');
+    }
+  } catch (e) {
+    errEl.textContent = e.message || 'Upload failed — try again.';
+    errEl.style.display = '';
+    btn.disabled = false; btn.textContent = 'Upload';
+  }
+}
+
+// ── Care team flags ───────────────────────────────────────────────────────────
+const _FLAG_TYPE_LABELS = {
+  observation: 'Observation', concern: 'Concern',
+  progress: 'Progress', coordination_needed: 'Needs Coordination',
+};
+
+function openFlagForm() {
+  document.getElementById('hub-flag-form').style.display = 'block';
+  document.getElementById('hub-flag-body').focus();
+  // Also expand the section
+  const sec = document.getElementById('section-care-team');
+  if (sec) sec.classList.remove('collapsed');
+}
+
+function closeFlagForm() {
+  document.getElementById('hub-flag-form').style.display = 'none';
+}
+
+async function submitHubFlag() {
+  const typeEl   = document.getElementById('hub-flag-type');
+  const bodyEl   = document.getElementById('hub-flag-body');
+  const errEl    = document.getElementById('hub-flag-err');
+  const submitBtn = document.getElementById('hub-flag-submit');
+  errEl.style.display = 'none';
+  const body = (bodyEl.value || '').trim();
+  if (body.length < 10) { errEl.textContent = 'At least 10 characters required.'; errEl.style.display = ''; return; }
+  submitBtn.disabled = true; submitBtn.textContent = 'Posting…';
+  try {
+    const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/flags', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ flag_type: typeEl.value, body }),
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      bodyEl.value = '';
+      closeFlagForm();
+      showToast('Flag posted');
+      loadHubFlags();
+    } else {
+      throw new Error(data.error || 'Post failed');
+    }
+  } catch (e) {
+    errEl.textContent = e.message || 'Failed — try again.';
+    errEl.style.display = '';
+    submitBtn.disabled = false; submitBtn.textContent = 'Post Flag';
+  }
+}
+
+async function loadHubFlags() {
+  const listEl = document.getElementById('hub-flags-list');
+  if (!listEl) return;
+  try {
+    const res  = await fetch('/api/provider/patient/' + PATIENT_ID + '/flags', { credentials: 'same-origin' });
+    const data = res.ok ? await res.json() : {};
+    const flags = data.flags || [];
+    if (!flags.length) { listEl.innerHTML = ''; return; }
+    listEl.innerHTML = flags.map(f => {
+      const typeClass = {
+        observation: 'observation', concern: 'concern',
+        progress: 'progress', coordination_needed: 'coordination',
+      }[f.flag_type] || 'observation';
+      return `<div class="flag-card">
+        <div class="flag-card-hdr">
+          <span class="flag-type-badge flag-type-badge--${typeClass}">${_esc(_FLAG_TYPE_LABELS[f.flag_type] || f.flag_type)}</span>
+          <span class="flag-meta" style="margin:0;">${_esc(f.provider_name || 'You')}</span>
+        </div>
+        <div class="flag-body">${_esc(f.body || '')}</div>
+        <div class="flag-meta">${_esc((f.created_at || '').substring(0, 10))}</div>
+      </div>`;
+    }).join('');
+  } catch(_) {}
+}
+
+// Load flags on page ready (section is collapsed but data loads silently)
+loadHubFlags();
 </script>
 {% endblock %}

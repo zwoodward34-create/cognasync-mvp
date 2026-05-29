@@ -954,6 +954,22 @@ def provider_patient_hub(patient_id):
     med_events   = db.get_medication_events(patient_id, days=30)
     appointments = db.get_patient_appointments(user['id'], patient_id)
     sessions     = db.get_session_list(patient_id) if hasattr(db, 'get_session_list') else []
+    journals     = db.get_journals(patient_id, limit=10, shared_only=False)
+    care_team    = db.get_patient_care_team(patient_id)
+    next_appt    = db.get_patient_next_scheduled_appointment(patient_id)
+
+    # Quick risk snapshot from most recent checkin scores
+    recent_ci = checkins[0] if checkins else None
+    risk_snap = None
+    if recent_ci:
+        ext = recent_ci.get('extended_data') or {}
+        risk_snap = {
+            'mood':       recent_ci.get('mood_score'),
+            'stability':  recent_ci.get('stability_score'),
+            'crash_risk': recent_ci.get('crash_risk'),
+            'stim_load':  recent_ci.get('stim_load'),
+            'date':       (recent_ci.get('checkin_date') or '')[:10],
+        }
 
     return render_template(
         'provider/patient_hub.html',
@@ -965,6 +981,10 @@ def provider_patient_hub(patient_id):
         medication_events=med_events or [],
         appointments=appointments or [],
         sessions=sessions or [],
+        journals=journals or [],
+        care_team=care_team or {'active': [], 'pending': []},
+        next_appt=next_appt,
+        risk_snap=risk_snap,
     )
 
 
@@ -3788,6 +3808,78 @@ def api_send_patient_checkin_sms(patient_id):
         'phone_last4': phone[-4:] if len(phone) >= 4 else '****',
         'sid': result.get('sid', ''),
     })
+
+@app.route('/api/provider/patient/<patient_id>/upload-voice-note', methods=['POST'])
+def api_provider_upload_voice_note(patient_id):
+    """Provider uploads a voice recording on behalf of a patient (e.g. in-session note)."""
+    import uuid as _uuid
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    audio_file = request.files.get('audio')
+    if not audio_file:
+        return jsonify({'error': 'No audio file provided'}), 400
+
+    note_label = request.form.get('label', '').strip()
+    audio_bytes = audio_file.read()
+    if not audio_bytes:
+        return jsonify({'error': 'Empty audio file'}), 400
+
+    file_ext = 'webm'
+    if audio_file.filename and '.' in audio_file.filename:
+        file_ext = audio_file.filename.rsplit('.', 1)[-1].lower()
+    file_name = f'provider_upload_{patient_id}_{_uuid.uuid4().hex[:8]}.{file_ext}'
+
+    audio_url = None
+    try:
+        db.supabase_admin.storage.from_('voice-notes').upload(
+            path=file_name,
+            file=audio_bytes,
+            file_options={'content-type': audio_file.mimetype or 'audio/webm'},
+        )
+        audio_url = db.supabase_admin.storage.from_('voice-notes').get_public_url(file_name)
+    except Exception as e:
+        app.logger.error(f'[voice-upload] Storage upload failed: {e}')
+        return jsonify({'error': 'Storage upload failed'}), 500
+
+    vn_row = {
+        'patient_id':        patient_id,
+        'provider_id':       provider['id'],
+        'audio_url':         audio_url,
+        'source':            'provider_upload',
+        'processing_status': 'pending',
+    }
+    if note_label:
+        vn_row['prompt'] = note_label
+
+    res = db.supabase_admin.table('voice_notes').insert(vn_row).execute()
+    voice_note_id = res.data[0]['id'] if res.data else None
+
+    if voice_note_id:
+        import threading
+        def _transcribe():
+            try:
+                result = audio_engine.transcribe_audio_file(
+                    audio_url=audio_url,
+                    session_id=str(_uuid.uuid4()),
+                )
+                if result.get('status') == 'completed' and result.get('text'):
+                    db.supabase_admin.table('voice_notes').update({
+                        'transcript':        result['text'],
+                        'processing_status': 'complete',
+                    }).eq('id', voice_note_id).execute()
+                else:
+                    db.supabase_admin.table('voice_notes').update({
+                        'processing_status': 'error',
+                        'processing_error':  result.get('error', 'Transcription failed'),
+                    }).eq('id', voice_note_id).execute()
+            except Exception as ex:
+                app.logger.error(f'[voice-upload] Transcription failed: {ex}')
+        threading.Thread(target=_transcribe, daemon=True).start()
+
+    return jsonify({'ok': True, 'voice_note_id': voice_note_id})
+
 
 @app.route('/api/provider/patient/<patient_id>/voice-notes', methods=['GET'])
 def api_get_patient_voice_notes(patient_id):
