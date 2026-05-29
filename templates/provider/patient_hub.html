@@ -1225,12 +1225,10 @@ function toggleSection(id) {
   if (el) el.classList.toggle('collapsed');
 }
 
-// Wire all section headers via addEventListener (more reliable than inline onclick)
-document.addEventListener('DOMContentLoaded', function () {
+// Wire all section headers — script is at bottom of body so DOM is already ready
+(function () {
   document.querySelectorAll('.hub-section-hdr[data-toggle]').forEach(function (hdr) {
-    hdr.style.cursor = 'pointer';
     hdr.addEventListener('click', function (e) {
-      // Don't toggle when clicking a button inside the header
       if (e.target.closest('.hub-action-btn')) return;
       var sectionId = hdr.getAttribute('data-toggle');
       toggleSection(sectionId);
@@ -1268,7 +1266,7 @@ document.addEventListener('DOMContentLoaded', function () {
   if (submitBtn) {
     submitBtn.addEventListener('click', uploadTranscript);
   }
-});
+}());
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function showToast(msg, isError) {
