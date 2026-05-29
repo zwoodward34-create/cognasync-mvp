@@ -953,7 +953,7 @@ def provider_patient_hub(patient_id):
     meds         = db.get_user_medications(patient_id)
     med_events   = db.get_medication_events(patient_id, days=30)
     appointments = db.get_patient_appointments(user['id'], patient_id)
-    sessions     = db.get_session_list(patient_id) if hasattr(db, 'get_session_list') else []
+    sessions     = db.get_clinical_sessions_for_period(patient_id, limit=20)
     journals     = db.get_journals(patient_id, limit=10, shared_only=False)
     care_team    = db.get_patient_care_team(patient_id)
     next_appt    = db.get_patient_next_scheduled_appointment(patient_id)
@@ -1038,6 +1038,8 @@ def provider_summary_print(patient_id):
         symptom_patterns = db.find_symptom_correlations(patient_id, days=days)
         flags = db.get_patient_flags(patient_id, days=days)
         what_worked = db.get_what_worked_patterns(patient_id, days=max(days, 60))
+        lexical_data = db.compute_lexical_diversity(patient_id, days=days)
+        readability_data = db.compute_readability(patient_id, days=days)
         try:
             result = claude_api.generate_appointment_summary(
                 checkins, journals,
@@ -1049,6 +1051,8 @@ def provider_summary_print(patient_id):
                 substance_flags=flags.get('substance'),
                 safety_flags=flags.get('safety'),
                 what_worked=what_worked,
+                lexical_data=lexical_data,
+                readability_data=readability_data,
             )
             summary_text = result['text']
         except RuntimeError as e:
@@ -1778,6 +1782,8 @@ def api_create_summary():
     # Substance flags surfaced to patient only at concern level (see claude_api.py)
     flags = db.get_patient_flags(user['id'], days=days)
     what_worked = db.get_what_worked_patterns(user['id'], days=max(days, 60))
+    lexical_data = db.compute_lexical_diversity(user['id'], days=days)
+    readability_data = db.compute_readability(user['id'], days=days)
 
     try:
         result = claude_api.generate_appointment_summary(
@@ -1785,7 +1791,9 @@ def api_create_summary():
             symptom_patterns=symptom_patterns,
             substance_flags=flags.get('substance'),
             safety_flags=None,   # safety flags are provider-only — never passed to patient route
-            what_worked=what_worked)
+            what_worked=what_worked,
+            lexical_data=lexical_data,
+            readability_data=readability_data)
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
 
@@ -2629,6 +2637,8 @@ def api_provider_generate_summary(patient_id):
             )
         else:
             # psychiatrist, unknown, or None — default to Mode C provider brief
+            lexical_data = db.compute_lexical_diversity(patient_id, days=summary_days)
+            readability_data = db.compute_readability(patient_id, days=summary_days)
             result = claude_api.generate_appointment_summary(
                 checkins, journals,
                 days=summary_days,
@@ -2640,6 +2650,8 @@ def api_provider_generate_summary(patient_id):
                 substance_flags=flags.get('substance'),
                 safety_flags=flags.get('safety'),
                 what_worked=what_worked,
+                lexical_data=lexical_data,
+                readability_data=readability_data,
             )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503

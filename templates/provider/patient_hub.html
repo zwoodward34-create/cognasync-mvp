@@ -241,7 +241,7 @@
   /* Collapsed = chevron points right (▶). Expanded = chevron points down (▼). */
   .hub-section.collapsed .hub-section-chevron { transform: rotate(0deg); }
   .hub-section:not(.collapsed) .hub-section-chevron { transform: rotate(90deg); }
-  .hub-section-body { padding: 0; }
+  .hub-section-body { padding: 0; display: block; }
   .hub-section.collapsed .hub-section-body { display: none; }
 
   /* ── Empty state ─────────────────────────────────────────────────────────── */
@@ -631,6 +631,26 @@
   }
   .flag-post-form.open { display: block; }
 
+  /* ── Transcript upload form ─────────────────────────────────────────────── */
+  #transcript-upload-form input[type="date"],
+  #transcript-upload-form input[type="number"],
+  #transcript-upload-form select,
+  #transcript-upload-form textarea {
+    font-size: 0.82rem;
+    color: var(--text);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: 'DM Sans', sans-serif;
+  }
+  #transcript-upload-form input[type="date"]:focus,
+  #transcript-upload-form input[type="number"]:focus,
+  #transcript-upload-form select:focus,
+  #transcript-upload-form textarea:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
   /* ── Upload area ─────────────────────────────────────────────────────────── */
   .upload-drop-zone {
     border: 2px dashed var(--border);
@@ -807,7 +827,7 @@
 
   <!-- ── Check-in Data ──────────────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-checkins">
-    <div class="hub-section-hdr" onclick="toggleSection('checkins')">
+    <div class="hub-section-hdr" data-toggle="checkins">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
         <span class="hub-section-title">Check-in Data</span>
@@ -864,7 +884,7 @@
 
   <!-- ── Voice Recording Data ───────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-voice">
-    <div class="hub-section-hdr" onclick="toggleSection('voice')">
+    <div class="hub-section-hdr" data-toggle="voice">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
         <span class="hub-section-title">Voice Recording Data</span>
@@ -904,15 +924,54 @@
 
   <!-- ── Session Recording Data ────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-sessions">
-    <div class="hub-section-hdr" onclick="toggleSection('sessions')">
+    <div class="hub-section-hdr" data-toggle="sessions">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
         <span class="hub-section-title">Session Recording Data</span>
         <span class="hub-section-meta">{{ sessions|length }} session{{ 's' if sessions|length != 1 }}</span>
       </div>
-      <span class="hub-section-chevron">›</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;"
+                id="btn-add-transcript">+ Transcript</button>
+        <span class="hub-section-chevron">›</span>
+      </div>
     </div>
     <div class="hub-section-body">
+
+      <!-- Inline transcript upload form (hidden by default) -->
+      <div id="transcript-upload-form" style="display:none;padding:16px 18px;border-bottom:1px solid var(--border);background:var(--bg);">
+        <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:10px;">Upload Session Transcript</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:10px;align-items:end;">
+          <div>
+            <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Session Date</label>
+            <input type="date" id="ts-date" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
+          </div>
+          <div>
+            <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Session Type</label>
+            <select id="ts-type" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
+              <option value="therapy">Therapy</option>
+              <option value="psychiatry">Psychiatry</option>
+              <option value="intake">Intake</option>
+              <option value="followup">Follow-up</option>
+              <option value="group">Group</option>
+              <option value="other">Other</option>
+            </select>
+          </div>
+          <div>
+            <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Duration (min)</label>
+            <input type="number" id="ts-duration" min="1" max="300" placeholder="—"
+                   style="width:70px;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
+          </div>
+        </div>
+        <textarea id="ts-text" rows="6" placeholder="Paste session transcript here…"
+                  style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:9px 11px;border:1px solid var(--border);border-radius:6px;resize:vertical;background:var(--surface);color:var(--text);"></textarea>
+        <div id="ts-err" style="font-size:0.75rem;color:#c0392b;margin-top:5px;display:none;"></div>
+        <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end;">
+          <button class="hub-action-btn" id="ts-cancel-btn">Cancel</button>
+          <button class="hub-action-btn hub-action-btn--primary" id="ts-submit-btn">Upload &amp; Analyze</button>
+        </div>
+      </div>
+
       {% if sessions %}
         {% for s in sessions %}
         <div class="session-card">
@@ -943,7 +1002,7 @@
 
   <!-- ── Medication Adherence Data ─────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-meds">
-    <div class="hub-section-hdr" onclick="toggleSection('meds')">
+    <div class="hub-section-hdr" data-toggle="meds">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
         <span class="hub-section-title">Medication Adherence</span>
@@ -995,7 +1054,7 @@
 
   <!-- ── Journal Entries ──────────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-journals">
-    <div class="hub-section-hdr" onclick="toggleSection('journals')">
+    <div class="hub-section-hdr" data-toggle="journals">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
         <span class="hub-section-title">Journal Entries</span>
@@ -1037,7 +1096,7 @@
 
   <!-- ── Care Team ─────────────────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-care-team">
-    <div class="hub-section-hdr" onclick="toggleSection('care-team')">
+    <div class="hub-section-hdr" data-toggle="care-team">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
         <span class="hub-section-title">Care Team</span>
@@ -1080,7 +1139,7 @@
 
   <!-- ── Wearables Data ─────────────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-wearables">
-    <div class="hub-section-hdr" onclick="toggleSection('wearables')">
+    <div class="hub-section-hdr" data-toggle="wearables">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot hub-section-dot--muted"></div>
         <span class="hub-section-title">Wearables Data</span>
@@ -1165,6 +1224,51 @@ function toggleSection(id) {
   const el = document.getElementById('section-' + id);
   if (el) el.classList.toggle('collapsed');
 }
+
+// Wire all section headers via addEventListener (more reliable than inline onclick)
+document.addEventListener('DOMContentLoaded', function () {
+  document.querySelectorAll('.hub-section-hdr[data-toggle]').forEach(function (hdr) {
+    hdr.style.cursor = 'pointer';
+    hdr.addEventListener('click', function (e) {
+      // Don't toggle when clicking a button inside the header
+      if (e.target.closest('.hub-action-btn')) return;
+      var sectionId = hdr.getAttribute('data-toggle');
+      toggleSection(sectionId);
+    });
+  });
+
+  // Transcript upload form toggle
+  var addBtn    = document.getElementById('btn-add-transcript');
+  var form      = document.getElementById('transcript-upload-form');
+  var cancelBtn = document.getElementById('ts-cancel-btn');
+  var submitBtn = document.getElementById('ts-submit-btn');
+  var tsDateEl  = document.getElementById('ts-date');
+  if (tsDateEl) tsDateEl.value = new Date().toISOString().split('T')[0];
+
+  if (addBtn && form) {
+    addBtn.addEventListener('click', function (e) {
+      e.stopPropagation();
+      var section = document.getElementById('section-sessions');
+      if (section && section.classList.contains('collapsed')) {
+        section.classList.remove('collapsed');
+      }
+      form.style.display = form.style.display === 'none' ? 'block' : 'none';
+      if (form.style.display !== 'none') {
+        setTimeout(function () { document.getElementById('ts-text').focus(); }, 50);
+      }
+    });
+  }
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', function () {
+      form.style.display = 'none';
+      document.getElementById('ts-text').value = '';
+      document.getElementById('ts-err').style.display = 'none';
+    });
+  }
+  if (submitBtn) {
+    submitBtn.addEventListener('click', uploadTranscript);
+  }
+});
 
 // ── Toast ─────────────────────────────────────────────────────────────────────
 function showToast(msg, isError) {
@@ -1372,6 +1476,55 @@ async function submitVoiceUpload() {
     errEl.textContent = e.message || 'Upload failed — try again.';
     errEl.style.display = '';
     btn.disabled = false; btn.textContent = 'Upload';
+  }
+}
+
+// ── Session transcript upload ─────────────────────────────────────────────────
+async function uploadTranscript() {
+  var errEl  = document.getElementById('ts-err');
+  var btn    = document.getElementById('ts-submit-btn');
+  var text   = (document.getElementById('ts-text').value || '').trim();
+  var sDate  = document.getElementById('ts-date').value;
+  var sType  = document.getElementById('ts-type').value;
+  var dur    = document.getElementById('ts-duration').value;
+
+  errEl.style.display = 'none';
+  if (text.length < 20) {
+    errEl.textContent = 'Transcript must be at least 20 characters.';
+    errEl.style.display = '';
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Uploading…';
+
+  try {
+    var body = { transcript: text, session_type: sType };
+    if (sDate) body.session_date = sDate;
+    if (dur)   body.duration_minutes = parseInt(dur, 10) || null;
+
+    var res  = await fetch('/api/intel/patient/' + PATIENT_ID + '/session', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      credentials: 'same-origin',
+    });
+    var data = await res.json();
+    if (res.ok && data.session_id) {
+      document.getElementById('transcript-upload-form').style.display = 'none';
+      document.getElementById('ts-text').value = '';
+      var msg = 'Transcript uploaded';
+      if (data.crisis_detected) msg += ' — crisis signal detected, review flags';
+      showToast(msg, data.crisis_detected);
+      setTimeout(function () { location.reload(); }, 1600);
+    } else {
+      throw new Error(data.error || 'Upload failed');
+    }
+  } catch (e) {
+    errEl.textContent = e.message || 'Upload failed — try again.';
+    errEl.style.display = '';
+    btn.disabled = false;
+    btn.textContent = 'Upload & Analyze';
   }
 }
 
