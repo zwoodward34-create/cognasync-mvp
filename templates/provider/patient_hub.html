@@ -1,0 +1,834 @@
+{% extends "layout.html" %}
+{% block title %}{{ patient.full_name }} — Patient Hub{% endblock %}
+
+{% block head %}
+<style>
+  /* ── Page shell ──────────────────────────────────────────────────────────── */
+  .hub-page {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+  }
+
+  /* ── Back nav ────────────────────────────────────────────────────────────── */
+  .hub-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    text-decoration: none;
+    margin-bottom: 18px;
+    transition: color 0.12s;
+  }
+  .hub-back:hover { color: var(--accent); }
+
+  /* ── Header ──────────────────────────────────────────────────────────────── */
+  .hub-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 28px;
+    flex-wrap: wrap;
+  }
+  .hub-header-left { display: flex; align-items: center; gap: 14px; }
+  .hub-avatar {
+    width: 48px;
+    height: 48px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    font-size: 1.2rem;
+    font-weight: 500;
+    font-family: 'DM Serif Display', serif;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+  .hub-patient-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.5rem;
+    font-weight: 400;
+    color: var(--text);
+    margin: 0 0 2px;
+  }
+  .hub-patient-email {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  /* ── Action bar ──────────────────────────────────────────────────────────── */
+  .hub-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .hub-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 13px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text);
+    text-decoration: none;
+    transition: border-color 0.12s, background 0.12s, color 0.12s;
+    white-space: nowrap;
+  }
+  .hub-action-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--bg); }
+  .hub-action-btn:disabled { opacity: 0.5; cursor: default; }
+  .hub-action-btn--primary {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+  .hub-action-btn--primary:hover { opacity: 0.88; color: #fff; border-color: var(--accent); background: var(--accent); }
+  .hub-action-btn--success { color: #1a7f3c; border-color: #90c8a8; background: #e6f4ea; }
+  .hub-action-btn--error   { color: #c0392b; border-color: #e0a0a0; background: #fdecea; }
+
+  /* ── Toast ───────────────────────────────────────────────────────────────── */
+  #hub-toast {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    background: var(--text);
+    color: var(--surface);
+    font-size: 0.82rem;
+    padding: 10px 16px;
+    border-radius: 7px;
+    z-index: 9000;
+    opacity: 0;
+    transform: translateY(8px);
+    transition: opacity 0.18s, transform 0.18s;
+    pointer-events: none;
+    max-width: 320px;
+  }
+  #hub-toast.show { opacity: 1; transform: translateY(0); }
+
+  /* ── Brief modal ─────────────────────────────────────────────────────────── */
+  #brief-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 2000;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  .brief-modal-inner {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    width: 100%;
+    max-width: 680px;
+    max-height: 80vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .brief-modal-hdr {
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+  }
+  .brief-modal-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+    font-weight: 400;
+  }
+  .brief-modal-close {
+    background: none;
+    border: none;
+    font-size: 18px;
+    cursor: pointer;
+    color: var(--text-muted);
+    padding: 0;
+  }
+  .brief-modal-body {
+    padding: 20px;
+    overflow-y: auto;
+    flex: 1;
+    line-height: 1.65;
+    font-size: 0.88rem;
+    color: var(--text);
+  }
+  .brief-modal-body p { margin: 0 0 12px; }
+  .brief-modal-body strong { font-weight: 500; }
+
+  /* ── Sections ────────────────────────────────────────────────────────────── */
+  .hub-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 18px;
+    overflow: hidden;
+  }
+  .hub-section-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    cursor: pointer;
+    user-select: none;
+  }
+  .hub-section-hdr-left {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+  }
+  .hub-section-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .hub-section-dot--muted { background: var(--text-muted); }
+  .hub-section-title {
+    font-size: 0.72rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text);
+  }
+  .hub-section-meta {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+  .hub-section-chevron {
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    transition: transform 0.15s;
+  }
+  .hub-section.collapsed .hub-section-chevron { transform: rotate(-90deg); }
+  .hub-section-body {
+    padding: 0;
+  }
+  .hub-section.collapsed .hub-section-body { display: none; }
+
+  /* ── Empty state ─────────────────────────────────────────────────────────── */
+  .hub-empty {
+    padding: 28px 18px;
+    text-align: center;
+    color: var(--text-muted);
+    font-size: 0.84rem;
+  }
+
+  /* ── Check-in table ──────────────────────────────────────────────────────── */
+  .hub-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+  }
+  .hub-table th {
+    font-size: 0.65rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    text-align: left;
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    white-space: nowrap;
+  }
+  .hub-table td {
+    padding: 9px 14px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    vertical-align: middle;
+  }
+  .hub-table tr:last-child td { border-bottom: none; }
+  .hub-table tr:hover td { background: var(--bg); }
+  .val-low  { color: #c0392b; font-weight: 500; }
+  .val-good { color: #1a7f3c; font-weight: 500; }
+
+  /* ── Medication adherence ────────────────────────────────────────────────── */
+  .med-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .med-row:last-child { border-bottom: none; }
+  .med-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text);
+    min-width: 140px;
+  }
+  .med-dose {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .med-calendar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    flex: 1;
+  }
+  .med-day {
+    width: 22px;
+    height: 22px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.6rem;
+    font-weight: 500;
+    cursor: default;
+  }
+  .med-day--taken  { background: #d4edda; color: #1a7f3c; }
+  .med-day--missed { background: #fdecea; color: #c0392b; }
+  .med-day--empty  { background: var(--border); color: var(--text-muted); }
+  .med-stat {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    min-width: 60px;
+    text-align: right;
+  }
+
+  /* ── Voice note card ─────────────────────────────────────────────────────── */
+  .voice-card {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+  }
+  .voice-card:last-child { border-bottom: none; }
+  .voice-card-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+  }
+  .voice-date {
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+  .voice-prompt {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-bottom: 6px;
+  }
+  .voice-transcript {
+    font-size: 0.84rem;
+    color: var(--text);
+    line-height: 1.55;
+  }
+  .voice-badge {
+    font-size: 0.65rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: var(--border);
+    color: var(--text-muted);
+  }
+  .voice-badge--done { background: #d4edda; color: #1a7f3c; }
+
+  /* ── Session card ────────────────────────────────────────────────────────── */
+  .session-card {
+    padding: 12px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .session-card:last-child { border-bottom: none; }
+  .session-date { font-size: 0.82rem; color: var(--text); min-width: 90px; }
+  .session-type { font-size: 0.75rem; color: var(--text-muted); flex: 1; }
+  .session-status {
+    font-size: 0.7rem;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .session-status--done      { background: #d4edda; color: #1a7f3c; }
+  .session-status--pending   { background: #fff3cd; color: #856404; }
+  .session-status--processing { background: #cfe2ff; color: #084298; }
+
+  /* ── Wearables placeholder ───────────────────────────────────────────────── */
+  .wearable-placeholder {
+    padding: 32px 18px;
+    text-align: center;
+  }
+  .wearable-placeholder-icon {
+    font-size: 2rem;
+    margin-bottom: 10px;
+    opacity: 0.35;
+  }
+  .wearable-placeholder-title {
+    font-size: 0.9rem;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 5px;
+  }
+  .wearable-placeholder-sub {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  @media (max-width: 768px) {
+    .hub-header { flex-direction: column; }
+    .hub-actions { width: 100%; }
+    .hub-action-btn { flex: 1; justify-content: center; }
+    .hub-table th, .hub-table td { padding: 8px 10px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="hub-page">
+
+  <a href="{{ url_for('provider_dashboard') }}" class="hub-back">← My Patients</a>
+
+  <!-- Header -->
+  <div class="hub-header">
+    <div class="hub-header-left">
+      <div class="hub-avatar">{{ patient.full_name[0] | upper }}</div>
+      <div>
+        <h1 class="hub-patient-name">{{ patient.full_name }}</h1>
+        <div class="hub-patient-email">{{ patient.email }}</div>
+      </div>
+    </div>
+
+    <!-- Action buttons -->
+    <div class="hub-actions">
+      <button class="hub-action-btn hub-action-btn--primary" id="btn-generate-brief" onclick="generateBrief()">
+        ✦ Generate Brief
+      </button>
+      <button class="hub-action-btn" id="btn-short-sms" onclick="sendSMS('short')">
+        Short Check-in SMS
+      </button>
+      <button class="hub-action-btn" id="btn-full-sms" onclick="sendSMS('full')">
+        Full Check-in SMS
+      </button>
+      <button class="hub-action-btn" id="btn-voice-sms" onclick="sendVoiceSMS()">
+        Voice Question SMS
+      </button>
+      <button class="hub-action-btn" id="btn-reminder" onclick="sendReminder()">
+        Push Reminder
+      </button>
+    </div>
+  </div>
+
+  <!-- Voice prompt modal for voice SMS -->
+  <div id="voice-prompt-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;align-items:center;justify-content:center;padding:16px;"
+       onclick="if(event.target===this)closeVoiceModal()">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:460px;padding:24px;font-family:'DM Sans',sans-serif;position:relative;">
+      <button onclick="closeVoiceModal()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:17px;cursor:pointer;color:var(--text-muted);">✕</button>
+      <h3 style="font-family:'DM Serif Display',serif;font-size:1.05rem;font-weight:400;margin:0 0 5px;">Voice Question</h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 14px;line-height:1.5;">The patient will receive this question and be prompted to record a short voice note.</p>
+      <textarea id="voice-prompt-input" rows="3" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:9px 11px;border:1px solid var(--border);border-radius:6px;resize:vertical;background:var(--bg);color:var(--text);"
+                placeholder="e.g. How have you been feeling since our last session?"></textarea>
+      <div id="voice-modal-err" style="font-size:0.78rem;color:#c0392b;margin-top:6px;display:none;"></div>
+      <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">
+        <button class="hub-action-btn" onclick="closeVoiceModal()">Cancel</button>
+        <button class="hub-action-btn hub-action-btn--primary" id="voice-modal-send-btn" onclick="confirmVoiceSMS()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Brief modal -->
+  <div id="brief-modal" onclick="if(event.target===this)closeBriefModal()">
+    <div class="brief-modal-inner">
+      <div class="brief-modal-hdr">
+        <span class="brief-modal-title">Between-Session Brief</span>
+        <button class="brief-modal-close" onclick="closeBriefModal()">✕</button>
+      </div>
+      <div class="brief-modal-body" id="brief-modal-body">
+        <p style="color:var(--text-muted);">Generating…</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast -->
+  <div id="hub-toast"></div>
+
+  <!-- ── Check-in Data ──────────────────────────────────────────────────────── -->
+  <div class="hub-section" id="section-checkins">
+    <div class="hub-section-hdr" onclick="toggleSection('checkins')">
+      <div class="hub-section-hdr-left">
+        <div class="hub-section-dot"></div>
+        <span class="hub-section-title">Check-in Data</span>
+        <span class="hub-section-meta">{{ checkins|length }} entries · last 30 days</span>
+      </div>
+      <span class="hub-section-chevron">›</span>
+    </div>
+    <div class="hub-section-body">
+      {% if checkins %}
+      <table class="hub-table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Mood</th>
+            <th>Sleep</th>
+            <th>Stress</th>
+            <th>Energy</th>
+            <th>Notes</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for c in checkins[:30] %}
+          <tr>
+            <td>{{ c.checkin_date[:10] if c.checkin_date else '—' }}</td>
+            <td class="{% if c.mood_score is not none and c.mood_score < 5 %}val-low{% elif c.mood_score is not none and c.mood_score >= 7 %}val-good{% endif %}">
+              {{ c.mood_score if c.mood_score is not none else '—' }}
+              {%- if c.mood_score is not none %}/10{% endif %}
+            </td>
+            <td class="{% if c.sleep_hours is not none and c.sleep_hours < 6 %}val-low{% elif c.sleep_hours is not none and c.sleep_hours >= 7 %}val-good{% endif %}">
+              {{ '%.1f'|format(c.sleep_hours) if c.sleep_hours is not none else '—' }}
+              {%- if c.sleep_hours is not none %}h{% endif %}
+            </td>
+            <td class="{% if c.stress_score is not none and c.stress_score > 7 %}val-low{% endif %}">
+              {{ c.stress_score if c.stress_score is not none else '—' }}
+              {%- if c.stress_score is not none %}/10{% endif %}
+            </td>
+            <td>
+              {% set ext = c.extended_data if c.extended_data else {} %}
+              {{ ext.energy if ext.energy is not none else '—' }}
+              {%- if ext.energy is not none %}/10{% endif %}
+            </td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);font-size:0.78rem;">
+              {{ c.notes[:80] if c.notes else '—' }}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div class="hub-empty">No check-ins in the last 30 days.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Voice Recording Data ───────────────────────────────────────────────── -->
+  <div class="hub-section" id="section-voice">
+    <div class="hub-section-hdr" onclick="toggleSection('voice')">
+      <div class="hub-section-hdr-left">
+        <div class="hub-section-dot"></div>
+        <span class="hub-section-title">Voice Recording Data</span>
+        <span class="hub-section-meta">{{ voice_notes|length }} recording{{ 's' if voice_notes|length != 1 }}</span>
+      </div>
+      <span class="hub-section-chevron">›</span>
+    </div>
+    <div class="hub-section-body">
+      {% if voice_notes %}
+        {% for note in voice_notes %}
+        <div class="voice-card">
+          <div class="voice-card-hdr">
+            <span class="voice-date">{{ note.created_at[:10] if note.created_at else '—' }}</span>
+            <span class="voice-badge {% if note.transcript %}voice-badge--done{% endif %}">
+              {{ 'Transcribed' if note.transcript else 'No transcript' }}
+            </span>
+          </div>
+          {% if note.prompt %}
+          <div class="voice-prompt">"{{ note.prompt }}"</div>
+          {% endif %}
+          {% if note.transcript %}
+          <div class="voice-transcript">{{ note.transcript }}</div>
+          {% else %}
+          <div style="font-size:0.8rem;color:var(--text-muted);">Recording received — transcript pending.</div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+      <div class="hub-empty">No voice recordings on file.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Session Recording Data ────────────────────────────────────────────── -->
+  <div class="hub-section" id="section-sessions">
+    <div class="hub-section-hdr" onclick="toggleSection('sessions')">
+      <div class="hub-section-hdr-left">
+        <div class="hub-section-dot"></div>
+        <span class="hub-section-title">Session Recording Data</span>
+        <span class="hub-section-meta">{{ sessions|length }} session{{ 's' if sessions|length != 1 }}</span>
+      </div>
+      <span class="hub-section-chevron">›</span>
+    </div>
+    <div class="hub-section-body">
+      {% if sessions %}
+        {% for s in sessions %}
+        <div class="session-card">
+          <span class="session-date">{{ s.session_date[:10] if s.session_date else (s.created_at[:10] if s.created_at else '—') }}</span>
+          <span class="session-type">
+            {{ s.session_type | title if s.session_type else 'Session' }}
+            {% if s.duration_minutes %}· {{ s.duration_minutes }} min{% endif %}
+          </span>
+          <span class="session-status session-status--{% if s.processing_status == 'complete' %}done{% elif s.processing_status == 'processing' %}processing{% else %}pending{% endif %}">
+            {{ s.processing_status | title if s.processing_status else 'Pending' }}
+          </span>
+          <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}"
+             style="font-size:0.78rem;color:var(--accent);text-decoration:none;white-space:nowrap;">
+            View →
+          </a>
+        </div>
+        {% endfor %}
+      {% else %}
+      <div class="hub-empty">No session recordings on file.
+        <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}"
+           style="color:var(--accent);text-decoration:none;display:block;margin-top:6px;font-size:0.8rem;">
+          Upload a transcript →
+        </a>
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Medication Adherence Data ─────────────────────────────────────────── -->
+  <div class="hub-section" id="section-meds">
+    <div class="hub-section-hdr" onclick="toggleSection('meds')">
+      <div class="hub-section-hdr-left">
+        <div class="hub-section-dot"></div>
+        <span class="hub-section-title">Medication Adherence</span>
+        <span class="hub-section-meta">{{ medications|length }} medication{{ 's' if medications|length != 1 }} · last 30 days</span>
+      </div>
+      <span class="hub-section-chevron">›</span>
+    </div>
+    <div class="hub-section-body">
+      {% if medications %}
+        {% for med in medications %}
+        {% set med_id = med.id %}
+        {% set events = medication_events | selectattr('medication_id', 'equalto', med_id) | list %}
+        {% set taken_count = events | selectattr('taken', 'equalto', true) | list | length %}
+        {% set total_count = events | length %}
+        <div class="med-row">
+          <div>
+            <div class="med-name">{{ med.name }}</div>
+            <div class="med-dose">{{ med.dose }}{{ med.dose_unit if med.dose_unit else '' }}</div>
+          </div>
+          <div class="med-calendar">
+            {% for event in events[-30:] %}
+            <div class="med-day {% if event.taken %}med-day--taken{% else %}med-day--missed{% endif %}"
+                 title="{{ event.event_date[:10] if event.event_date else '' }} — {{ 'Taken' if event.taken else 'Missed' }}">
+              {{ event.event_date[8:10] if event.event_date else '?' }}
+            </div>
+            {% endfor %}
+            {% if not events %}
+            <span style="font-size:0.78rem;color:var(--text-muted);">No events logged</span>
+            {% endif %}
+          </div>
+          <div class="med-stat">
+            {% if total_count > 0 %}
+            {{ taken_count }}/{{ total_count }}
+            <br>
+            <span style="font-size:0.68rem;">
+              {{ (taken_count / total_count * 100) | round | int }}%
+            </span>
+            {% else %}
+            —
+            {% endif %}
+          </div>
+        </div>
+        {% endfor %}
+      {% else %}
+      <div class="hub-empty">No medications on file.</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Wearables Data ─────────────────────────────────────────────────────── -->
+  <div class="hub-section collapsed" id="section-wearables">
+    <div class="hub-section-hdr" onclick="toggleSection('wearables')">
+      <div class="hub-section-hdr-left">
+        <div class="hub-section-dot hub-section-dot--muted"></div>
+        <span class="hub-section-title">Wearables Data</span>
+        <span class="hub-section-meta">Coming soon</span>
+      </div>
+      <span class="hub-section-chevron">›</span>
+    </div>
+    <div class="hub-section-body">
+      <div class="wearable-placeholder">
+        <div class="wearable-placeholder-icon">⌚</div>
+        <div class="wearable-placeholder-title">Wearable integration coming soon</div>
+        <div class="wearable-placeholder-sub">
+          Heart rate variability, sleep staging, and activity data from Apple Health,
+          Garmin, and Fitbit will appear here once connected.
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const PATIENT_ID = {{ patient.patient_id | tojson }};
+const PATIENT_NAME = {{ patient.full_name | tojson }};
+
+// ── Section toggle ────────────────────────────────────────────────────────────
+function toggleSection(id) {
+  const el = document.getElementById('section-' + id);
+  if (el) el.classList.toggle('collapsed');
+}
+
+// ── Toast ─────────────────────────────────────────────────────────────────────
+function showToast(msg, isError) {
+  const t = document.getElementById('hub-toast');
+  t.textContent = msg;
+  t.style.background = isError ? '#c0392b' : 'var(--text)';
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 3200);
+}
+
+// ── Generate Brief ────────────────────────────────────────────────────────────
+async function generateBrief() {
+  const btn = document.getElementById('btn-generate-brief');
+  const modal = document.getElementById('brief-modal');
+  const body  = document.getElementById('brief-modal-body');
+  btn.disabled = true;
+  btn.textContent = 'Generating…';
+  modal.style.display = 'flex';
+  body.innerHTML = '<p style="color:var(--text-muted);">Generating brief — this takes about 10 seconds…</p>';
+  try {
+    const res  = await fetch('/api/provider/patient/' + PATIENT_ID + '/brief', {
+      method: 'GET',
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (data && data.text) {
+      const html = data.text
+        .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+        .replace(/\*\*(.+?)\*\*/g,'<strong>$1</strong>')
+        .replace(/\n\n/g,'</p><p>')
+        .replace(/\n/g,'<br>');
+      body.innerHTML = '<p>' + html + '</p>';
+    } else {
+      body.innerHTML = '<p style="color:#c0392b;">' + (data && data.error ? _esc(data.error) : 'Generation failed — try again.') + '</p>';
+    }
+  } catch (e) {
+    body.innerHTML = '<p style="color:#c0392b;">Network error — try again.</p>';
+  }
+  btn.disabled = false;
+  btn.innerHTML = '✦ Generate Brief';
+}
+
+function closeBriefModal() {
+  document.getElementById('brief-modal').style.display = 'none';
+}
+
+// ── SMS helpers ───────────────────────────────────────────────────────────────
+async function sendSMS(type) {
+  const btnId = type === 'short' ? 'btn-short-sms' : 'btn-full-sms';
+  const btn = document.getElementById(btnId);
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = 'Sending…';
+  try {
+    const res  = await fetch('/api/provider/patient/' + PATIENT_ID + '/send-checkin-sms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type }),
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      btn.textContent = 'Sent ✓';
+      btn.classList.add('hub-action-btn--success');
+      showToast('SMS sent to …' + (data.phone_last4 || '????'));
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('hub-action-btn--success'); btn.disabled = false; }, 3000);
+    } else {
+      throw new Error(data.error || 'Send failed');
+    }
+  } catch (e) {
+    btn.textContent = orig;
+    btn.classList.add('hub-action-btn--error');
+    showToast(e.message || 'SMS failed', true);
+    setTimeout(() => { btn.classList.remove('hub-action-btn--error'); btn.disabled = false; }, 3000);
+  }
+}
+
+function sendVoiceSMS() {
+  document.getElementById('voice-prompt-input').value = '';
+  document.getElementById('voice-modal-err').style.display = 'none';
+  document.getElementById('voice-prompt-modal').style.display = 'flex';
+  setTimeout(() => document.getElementById('voice-prompt-input').focus(), 50);
+}
+
+function closeVoiceModal() {
+  document.getElementById('voice-prompt-modal').style.display = 'none';
+}
+
+async function confirmVoiceSMS() {
+  const prompt = document.getElementById('voice-prompt-input').value.trim();
+  const errEl  = document.getElementById('voice-modal-err');
+  const btn    = document.getElementById('voice-modal-send-btn');
+  if (!prompt) { errEl.textContent = 'Enter a question for the patient.'; errEl.style.display = ''; return; }
+  btn.disabled = true; btn.textContent = 'Sending…';
+  try {
+    const res  = await fetch('/api/provider/patient/' + PATIENT_ID + '/send-checkin-sms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ voice_prompt: prompt }),
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      closeVoiceModal();
+      showToast('Voice question sent to …' + (data.phone_last4 || '????'));
+    } else {
+      throw new Error(data.error || 'Send failed');
+    }
+  } catch (e) {
+    errEl.textContent = e.message || 'Failed — try again.';
+    errEl.style.display = '';
+  }
+  btn.disabled = false; btn.textContent = 'Send';
+}
+
+async function sendReminder() {
+  const btn = document.getElementById('btn-reminder');
+  btn.disabled = true;
+  const orig = btn.textContent;
+  btn.textContent = 'Sending…';
+  try {
+    const res  = await fetch('/api/provider/patient/' + PATIENT_ID + '/send-checkin-sms', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: 'reminder' }),
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      btn.textContent = 'Sent ✓';
+      btn.classList.add('hub-action-btn--success');
+      showToast('Reminder sent to …' + (data.phone_last4 || '????'));
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('hub-action-btn--success'); btn.disabled = false; }, 3000);
+    } else {
+      throw new Error(data.error || 'Send failed');
+    }
+  } catch (e) {
+    btn.textContent = orig;
+    btn.classList.add('hub-action-btn--error');
+    showToast(e.message || 'Reminder failed', true);
+    setTimeout(() => { btn.classList.remove('hub-action-btn--error'); btn.disabled = false; }, 3000);
+  }
+}
+
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

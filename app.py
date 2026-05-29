@@ -933,6 +933,41 @@ def provider_appointment_workspace(patient_id, appt_id):
                            perms=perms)
 
 
+@app.route('/provider/patient/<patient_id>/hub')
+def provider_patient_hub(patient_id):
+    """Comprehensive patient hub — check-ins, voice, sessions, meds, wearables."""
+    user, redir = _require_provider()
+    if redir:
+        return redir
+    if not _provider_owns_patient(user['id'], patient_id):
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+
+    patient  = db.get_patient_detail(patient_id, days=30)
+    if not patient:
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+
+    checkins     = db.get_checkins(patient_id, days=30)
+    voice_notes  = db.get_voice_notes_for_patient(patient_id, limit=20)
+    meds         = db.get_user_medications(patient_id)
+    med_events   = db.get_medication_events(patient_id, days=30)
+    appointments = db.get_patient_appointments(user['id'], patient_id)
+    sessions     = db.get_session_list(patient_id) if hasattr(db, 'get_session_list') else []
+
+    return render_template(
+        'provider/patient_hub.html',
+        user=user,
+        patient=patient,
+        checkins=checkins,
+        voice_notes=voice_notes or [],
+        medications=meds or [],
+        medication_events=med_events or [],
+        appointments=appointments or [],
+        sessions=sessions or [],
+    )
+
+
 @app.route('/provider/patient/<patient_id>/trends')
 def provider_patient_trends(patient_id):
     user, redir = _require_provider()

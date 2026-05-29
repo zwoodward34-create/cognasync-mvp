@@ -498,75 +498,24 @@
     line-height: 1.4;
   }
 
-  /* ── Outreach bar ────────────────────────────────────────────────────────── */
-  .pd-outreach-bar {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  /* ── Patient Hub CTA button ──────────────────────────────────────────────── */
+  .pd-hub-open-btn {
+    display: block;
+    margin: 18px 16px 0;
     padding: 11px 16px;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-    flex-shrink: 0;
-  }
-  .pd-outreach-label {
-    font-size: 0.65rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--text-muted);
-    flex: 1;
-  }
-  .pd-sms-btn {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--text-muted);
-    padding: 5px 13px;
-    cursor: pointer;
-    font-family: 'DM Sans', sans-serif;
-    transition: background 0.12s, color 0.12s, border-color 0.12s;
-    white-space: nowrap;
-  }
-  .pd-sms-btn:hover { background: var(--bg); border-color: var(--accent); color: var(--accent); }
-  .pd-sms-btn:disabled { opacity: 0.5; cursor: default; }
-  .pd-sms-btn--sent  { color: #1a7f3c; border-color: #90c8a8; background: #e6f4ea; }
-  .pd-sms-btn--error { color: #c0392b; border-color: #e0a0a0; background: #fdecea; }
-
-  /* ── Brief area ──────────────────────────────────────────────────────────── */
-  .pd-brief-area {
-    padding: 16px;
-  }
-  .pd-brief-hdr {
-    display: none; /* replaced by hub topbar */
-  }
-  /* Retain pd-brief-title and pd-brief-subtitle for JS compatibility */
-  #brief-drawer-title, #brief-drawer-subtitle {
-    display: none;
-  }
-
-  /* "Create Brief" button */
-  .pd-create-brief-btn {
-    width: 100%;
     background: var(--accent);
     color: #fff;
     border: none;
     border-radius: 7px;
-    font-size: 0.82rem;
-    font-weight: 600;
+    font-size: 0.84rem;
+    font-weight: 500;
     font-family: 'DM Sans', sans-serif;
-    padding: 10px 16px;
+    text-align: center;
+    text-decoration: none;
     cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
     transition: opacity 0.12s;
-    margin-bottom: 14px;
   }
-  .pd-create-brief-btn:hover { opacity: 0.9; }
-  .pd-create-brief-btn:disabled { opacity: 0.5; cursor: default; }
+  .pd-hub-open-btn:hover { opacity: 0.88; color: #fff; }
 
   /* Brief data summary preview (shown before full brief) */
   .pd-brief-preview {
@@ -1341,35 +1290,19 @@
       </div>
     </div>
 
-    <!-- Outreach bar -->
-    <div class="pd-outreach-bar">
-      <span class="pd-outreach-label">Outreach</span>
-      <button class="pd-sms-btn" id="hub-sms-btn" onclick="hubSendSMS()">
-        Send Check-in SMS ↗
-      </button>
-    </div>
-
     <!-- Hub scrollable body -->
     <div class="pd-hub-body">
 
-      <!-- Create Brief section header -->
-      <div class="pd-brief-section-hdr">Between-Session Brief</div>
-
-      <div class="pd-brief-area">
-        <!-- Data summary preview (populated before brief loads) -->
-        <div class="pd-brief-preview" id="hub-brief-preview" style="display:none;">
-          <div class="pd-brief-preview-hdr">Data Summary</div>
-          <table class="pd-brief-preview-table" id="hub-preview-table"></table>
-        </div>
-
-        <!-- Create Brief button -->
-        <button class="pd-create-brief-btn" id="hub-create-brief-btn" onclick="hubCreateBrief()">
-          <span>✦</span> Create Brief
-        </button>
-
-        <!-- Brief content rendered here -->
-        <div id="brief-drawer-body"></div>
+      <!-- Data summary preview (retained for JS compat) -->
+      <div id="hub-brief-preview" style="display:none;">
+        <table id="hub-preview-table"></table>
       </div>
+      <div id="brief-drawer-body"></div>
+
+      <!-- Patient Hub CTA -->
+      <a id="hub-open-btn" href="#" class="pd-hub-open-btn">
+        Open Patient Hub →
+      </a>
     </div>
   </div>
 
@@ -1385,6 +1318,7 @@ const _PATIENTS = {
     name:             {{ p.full_name | tojson }},
     email:            {{ p.email | tojson }},
     profileUrl:       "{{ url_for('provider_patient_detail', patient_id=p.patient_id) }}",
+    hubUrl:           "{{ url_for('provider_patient_hub', patient_id=p.patient_id) }}",
     moodRecent:       {{ p.mood_recent if p.mood_recent is not none else 'null' }},
     moodDir:          {{ (p.mood_dir or '') | tojson }},
     moodDelta:        {{ p.mood_delta if p.mood_delta is not none else 'null' }},
@@ -1431,6 +1365,7 @@ function openHub(pid) {
   document.getElementById('hub-patient-name').textContent  = pt.name;
   document.getElementById('hub-patient-email').textContent = pt.email;
   document.getElementById('hub-profile-link').href         = pt.profileUrl;
+  document.getElementById('hub-open-btn').href             = pt.hubUrl;
 
   // Populate stream tiles
   _populateStreamTiles(pid, pt);
