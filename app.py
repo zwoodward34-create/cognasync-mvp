@@ -788,13 +788,19 @@ def provider_patient_detail(patient_id):
         return redirect(url_for('provider_dashboard'))
 
     try:
+        app.logger.info(f"[patient_detail] step=perms patient={patient_id}")
         perms        = _get_provider_perms(user['id'], patient_id)
+        app.logger.info(f"[patient_detail] step=apply_perms")
         patient      = _apply_perms_to_patient_detail(patient, perms)
+        app.logger.info(f"[patient_detail] step=get_patients")
         patients     = db.get_provider_patients(user['id'])
+        app.logger.info(f"[patient_detail] step=trends")
         trends       = _apply_perms_to_trends(db.get_trends_data(patient_id, days=30) or {}, perms)
+        app.logger.info(f"[patient_detail] step=appointments")
         appointments = db.get_patient_appointments(user['id'], patient_id)
+        app.logger.info(f"[patient_detail] step=interactions")
         interactions = db.check_medication_interactions(patient_id) if perms.get('medication_data', True) else []
-
+        app.logger.info(f"[patient_detail] step=crisis")
         current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
         patient_has_crisis = current_p.get('suicide_risk', False)
         patient_crisis_context = current_p.get('suicide_risk_context', [])
@@ -808,7 +814,9 @@ def provider_patient_detail(patient_id):
             except Exception:
                 pass
 
+        app.logger.info(f"[patient_detail] step=care_role")
         provider_role = db.get_care_team_member_role(user['id'], patient_id) or 'psychiatrist'
+        app.logger.info(f"[patient_detail] step=render")
 
         return render_template('provider/patient_detail.html',
                                user=user, patient=patient,
