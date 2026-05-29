@@ -3,12 +3,12 @@
 
 {% block head %}
 <style>
-  /* Delta indicator chips */
+  /* ── Delta chips ─────────────────────────────────────────────────────────── */
   .pd-delta {
     display: inline-flex;
     align-items: center;
     gap: 2px;
-    font-size: 0.72rem;
+    font-size: 0.7rem;
     font-weight: 500;
     padding: 1px 5px;
     border-radius: 3px;
@@ -20,569 +20,48 @@
   .pd-delta-up-bad    { background: #fdecea; color: #c0392b; }
   .pd-delta-down-bad  { background: #fdecea; color: #c0392b; }
   .pd-delta-stable    { background: #f0f0f0; color: #888; }
-  .pd-card-stats { display: flex; gap: 0; flex-wrap: wrap; }
-  .pd-stat { flex: 1; min-width: 80px; }
 
-  /* Urgency tier badge */
+  /* ── Urgency tier badges ─────────────────────────────────────────────────── */
   .pd-urgency-badge {
     display: inline-flex;
     align-items: center;
-    font-size: 0.65rem;
-    font-weight: 500;
-    letter-spacing: 0.03em;
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
     padding: 2px 6px;
     border-radius: 3px;
-    margin-left: 6px;
+    margin-left: 5px;
     vertical-align: middle;
+    white-space: nowrap;
   }
   .pd-urgency-0 { background: #fdecea; color: #c0392b; }
   .pd-urgency-1 { background: #fff3cd; color: #7a5200; }
   .pd-urgency-2 { background: #e8f0fe; color: #1a56db; }
 
-  /* Brief button inside card footer */
-  .pd-brief-btn {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    font-size: 0.72rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    padding: 2px 9px;
-    cursor: pointer;
-    line-height: 1.6;
-  }
-  .pd-brief-btn:hover { background: var(--bg); }
-
-  /* SMS button inside card footer */
-  .pd-sms-btn {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    font-size: 0.72rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    padding: 2px 9px;
-    cursor: pointer;
-    line-height: 1.6;
-    white-space: nowrap;
-    transition: background 0.12s, color 0.12s;
-    flex-shrink: 0;
-  }
-  .pd-sms-btn:hover { background: var(--bg); }
-  .pd-sms-btn:disabled { opacity: 0.5; cursor: default; }
-  .pd-sms-btn--sent  { color: #1a7f3c; border-color: #90c8a8; background: #e6f4ea; }
-  .pd-sms-btn--error { color: #c0392b; border-color: #e0a0a0; background: #fdecea; }
-
-  .pd-card-footer {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .pd-card-footer .pd-card-appt { flex: 1; }
-
-  .pd-appt-active-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    font-size: 10px;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: .06em;
-    color: #2a7a2a;
-    background: #edfaed;
-    border: 1px solid #b6e8b6;
-    padding: 2px 7px;
-    border-radius: 3px;
-  }
-
-  .pd-brief-appt-bar {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 14px 0 2px;
-    border-top: 1px solid var(--border);
-    margin-top: 6px;
-    flex-wrap: wrap;
-  }
-  .pd-brief-appt-btn {
-    display: inline-block;
-    font-size: 12px;
-    font-weight: 500;
-    padding: 7px 14px;
-    background: var(--accent);
-    color: #fff;
-    text-decoration: none;
-    border-radius: 4px;
-    white-space: nowrap;
-  }
-  .pd-brief-appt-btn:hover { opacity: .85; }
-  .pd-brief-appt-btn-ghost {
-    display: inline-block;
-    font-size: 12px;
-    font-weight: 500;
-    padding: 7px 14px;
-    background: transparent;
-    color: var(--text);
-    border: 1px solid var(--border);
-    text-decoration: none;
-    border-radius: 4px;
-    white-space: nowrap;
-  }
-  .pd-brief-appt-btn-ghost:hover { background: var(--bg); }
-
-  /* ── Between-session brief drawer ───────────────────────────────────── */
-  .pd-brief-drawer {
-    display: none;
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: 22px 28px;
-    margin-top: 24px;
-  }
-  .pd-brief-drawer.open { display: block; }
-
-  .pd-brief-hdr {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 18px;
-  }
-  .pd-brief-title {
-    font-size: 1rem;
-    font-weight: 500;
-    color: var(--text);
-  }
-  .pd-brief-subtitle {
-    font-size: 0.78rem;
-    color: var(--text-muted);
-    margin-top: 3px;
-  }
-  .pd-brief-close {
-    background: none;
-    border: none;
-    font-size: 1.1rem;
-    cursor: pointer;
-    color: var(--text-muted);
-    padding: 0 4px;
-    flex-shrink: 0;
-  }
-  .pd-brief-stat-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-    gap: 10px;
-    margin-bottom: 16px;
-  }
-  .pd-brief-stat {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 7px;
-    padding: 10px 14px;
-  }
-  .pd-brief-stat-label {
-    font-size: 0.7rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-muted);
-    margin-bottom: 4px;
-  }
-  .pd-brief-stat-val {
-    font-size: 1.05rem;
-    font-weight: 500;
-    color: var(--text);
-  }
-  .pd-brief-stat-val small {
-    font-size: 0.72rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    margin-left: 3px;
-  }
-  .pd-brief-themes-row {
-    margin-bottom: 14px;
-  }
-  .pd-brief-themes-label {
-    font-size: 0.7rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: var(--text-muted);
-    margin-bottom: 6px;
-  }
-  .pd-brief-theme-chip {
-    display: inline-block;
-    background: #f0f0f0;
-    color: #555;
-    font-size: 0.75rem;
-    padding: 3px 10px;
-    border-radius: 20px;
-    margin-right: 5px;
-    margin-bottom: 4px;
-  }
-  .pd-brief-crisis-bar {
-    background: #fdecea;
-    color: #c0392b;
-    border-radius: 6px;
-    padding: 8px 14px;
-    font-size: 0.83rem;
-    font-weight: 500;
-    margin-bottom: 14px;
-  }
-  .pd-brief-footer-note {
-    font-size: 0.75rem;
-    color: var(--text-muted);
-    border-top: 1px solid var(--border);
-    padding-top: 10px;
-    margin-top: 4px;
-  }
-
-  /* ── Role badge (care team patients only) ──────────────────────────── */
   .pd-role-badge {
     display: inline-flex;
     align-items: center;
-    font-size: 0.62rem;
+    font-size: 0.6rem;
     font-weight: 500;
     letter-spacing: 0.04em;
     text-transform: uppercase;
-    padding: 1px 6px;
+    padding: 2px 6px;
     border-radius: 3px;
     margin-left: 5px;
     vertical-align: middle;
-  }
-  .pd-role-therapist  { background: #e6f4ea; color: #1a7f3c; }
-  .pd-role-counselor  { background: #e6f4ea; color: #1a7f3c; }
-  .pd-role-coach      { background: #fff4e0; color: #8a5a00; }
-  .pd-role-sleep_specialist { background: #e0f0ff; color: #0057a8; }
-
-  /* ── Behavioral signals block in brief drawer ──────────────────────── */
-  .pd-brief-beh-section {
-    background: #f0f9f4;
-    border: 1px solid #c8e6d5;
-    border-radius: 8px;
-    padding: 14px 16px;
-    margin-bottom: 16px;
-  }
-  .pd-brief-beh-title {
-    font-size: 0.68rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: #1a7f3c;
-    margin-bottom: 10px;
-  }
-  .pd-brief-beh-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-    gap: 8px;
-    margin-bottom: 10px;
-  }
-  .pd-brief-beh-stat {
-    background: #fff;
-    border: 1px solid #c8e6d5;
-    border-radius: 6px;
-    padding: 8px 12px;
-  }
-
-  /* ── Therapy AI summary section ─────────────────────────────────────── */
-  .pd-therapy-ai-section {
-    margin-top: 16px;
-    border-top: 1px solid var(--border);
-    padding-top: 14px;
-  }
-  .pd-therapy-ai-title {
-    font-size: 0.68rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
+    background: var(--bg);
     color: var(--text-muted);
-    margin-bottom: 10px;
-  }
-  .pd-therapy-ai-body {
-    font-size: 0.85rem;
-    color: var(--text);
-    line-height: 1.65;
-    white-space: pre-wrap;
-  }
-  .pd-therapy-ai-body strong { font-weight: 500; }
-  .pd-brief-gen-btn {
-    background: #1a7f3c;
-    color: #fff;
-    border: none;
-    border-radius: 5px;
-    font-size: 0.78rem;
-    font-weight: 500;
-    padding: 6px 14px;
-    cursor: pointer;
-    line-height: 1.5;
-  }
-  .pd-brief-gen-btn:hover { opacity: 0.88; }
-  .pd-brief-gen-btn:disabled { opacity: 0.55; cursor: default; }
-
-  /* ── Previous session notes section ─────────────────────────────────── */
-  .pd-session-notes-section {
-    margin-bottom: 16px;
-    border-top: 1px solid var(--border);
-    padding-top: 14px;
-  }
-  .pd-session-notes-title {
-    font-size: 0.68rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--text-muted);
-    margin-bottom: 10px;
-  }
-  .pd-session-notes-date {
-    font-weight: 500;
-    letter-spacing: 0;
-    text-transform: none;
-    margin-left: 6px;
-    color: #aaa;
-  }
-  .pd-session-notes-block {
-    background: #f8f8f8;
     border: 1px solid var(--border);
-    border-radius: 6px;
-    padding: 9px 12px;
-    margin-bottom: 8px;
   }
-  .pd-session-notes-label {
-    font-size: 0.65rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #aaa;
-    margin-bottom: 5px;
-  }
-  .pd-session-notes-body {
-    font-size: 0.82rem;
-    color: var(--text);
-    line-height: 1.55;
-  }
-  .pd-session-actions-list {
-    margin: 0;
-    padding-left: 18px;
-    font-size: 0.82rem;
-    color: var(--text);
-    line-height: 1.7;
-  }
+  .pd-role-therapist    { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
+  .pd-role-counselor    { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+  .pd-role-coach        { background: #f3e8ff; color: #6b21a8; border-color: #e9d5ff; }
 
-  /* ── Care flag indicator on patient card ────────────────────────────── */
-  .pd-flag-indicator {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 16px;
-    height: 16px;
-    background: #e53e3e;
-    color: #fff;
-    font-size: 0.6rem;
-    font-weight: 500;
-    border-radius: 8px;
-    padding: 0 4px;
-    margin-left: 5px;
-    vertical-align: middle;
-    line-height: 1;
-  }
-
-  /* ── Care flags section inside brief drawer ─────────────────────────── */
-  .pd-flags-section {
-    margin-bottom: 16px;
-    border-top: 1px solid var(--border);
-    padding-top: 14px;
-  }
-  .pd-flags-section-title {
-    font-size: 0.68rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--text-muted);
-    margin-bottom: 10px;
-  }
-  .pd-flag-card {
-    border-radius: 7px;
-    padding: 10px 13px;
-    margin-bottom: 8px;
-    border: 0.5px solid;
-    background: var(--surface);
-    border-color: var(--border);
-  }
-  .pd-flag-card-concern         { border-color: #f0b8b8; background: #fff8f8; }
-  .pd-flag-card-observation     { border-color: #c0d8f5; background: #f7fbff; }
-  .pd-flag-card-progress        { border-color: #9FE1CB; background: #f0faf4; }
-  .pd-flag-card-coordination_needed { border-color: #E8C97A; background: #fffbf0; }
-  .pd-flag-card-mine            { border-color: #D3D1C7; background: #f8f9fa; opacity: 0.85; }
-
-  .pd-flag-card-top {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 5px;
-  }
-  .pd-flag-type-badge {
-    display: inline-block;
-    font-size: 0.6rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 1px 6px;
-    border-radius: 3px;
-    background: rgba(0,0,0,0.07);
-    color: inherit;
-    flex-shrink: 0;
-  }
-  .pd-flag-author {
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    flex: 1;
-  }
-  .pd-flag-resolve-btn {
-    background: none;
-    border: 1px solid var(--border);
-    border-radius: 4px;
-    font-size: 0.66rem;
-    font-weight: 500;
-    color: var(--text-muted);
-    padding: 1px 7px;
-    cursor: pointer;
-    flex-shrink: 0;
-  }
-  .pd-flag-resolve-btn:hover { background: #f0f0f0; }
-  .pd-flag-body {
-    font-size: 0.82rem;
-    color: var(--text);
-    line-height: 1.5;
-  }
-  .pd-flag-time {
-    font-size: 0.68rem;
-    color: var(--text-muted);
-    margin-top: 4px;
-  }
-
-  /* ── Post a new flag form ───────────────────────────────────────────── */
-  .pd-flag-create {
-    margin-top: 10px;
-    background: var(--surface);
-    border: 1px dashed var(--border);
-    border-radius: 7px;
-    padding: 12px 14px;
-  }
-  .pd-flag-create-title {
-    font-size: 0.68rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--text-muted);
-    margin-bottom: 8px;
-  }
-  .pd-flag-create-row {
-    display: flex;
-    gap: 8px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-  }
-  .pd-flag-type-select {
-    font-size: 0.78rem;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 5px 8px;
-    background: var(--surface);
-    color: var(--text);
-    flex-shrink: 0;
-  }
-  .pd-flag-body-input {
-    flex: 1;
-    min-width: 180px;
-    font-size: 0.82rem;
-    border: 1px solid var(--border);
-    border-radius: 5px;
-    padding: 5px 9px;
-    resize: none;
-    font-family: inherit;
-    color: var(--text);
-    min-height: 38px;
-  }
-  .pd-flag-submit-btn {
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 5px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    padding: 6px 13px;
-    cursor: pointer;
-    flex-shrink: 0;
-    align-self: flex-end;
-  }
-  .pd-flag-submit-btn:hover { opacity: 0.9; }
-  .pd-flag-submit-btn:disabled { opacity: 0.5; cursor: default; }
-  .pd-flag-create-err {
-    font-size: 0.75rem;
-    color: #c0392b;
-    margin-top: 5px;
-  }
-
-  /* ── Proactive AI Insights (provider view) ──────────────────────────────── */
-  .pd-proactive-section {
-    margin-bottom: 16px;
-    border-top: 1px solid var(--border);
-    padding-top: 14px;
-  }
-  .pd-proactive-title {
-    font-size: 0.68rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: #2B5C3E;
-    margin-bottom: 10px;
-  }
-  .pd-proactive-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-    background: #f5f9f6;
-    border: 0.5px solid #9FE1CB;
-    border-radius: 7px;
-    padding: 10px 13px;
-    margin-bottom: 8px;
-  }
-  .pd-proactive-card--positive {
-    background: #fdf9ee;
-    border-color: #E8C97A;
-  }
-  .pd-proactive-label {
-    display: inline-block;
-    font-size: 0.6rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 1px 6px;
-    border-radius: 3px;
-    background: #d4eadb;
-    color: #2B5C3E;
-    margin-bottom: 5px;
-  }
-  .pd-proactive-card--positive .pd-proactive-label {
-    background: #f5e8c4;
-    color: #7a5c1e;
-  }
-  .pd-proactive-text {
-    font-size: 0.82rem;
-    color: var(--text);
-    line-height: 1.5;
-    margin: 0;
-  }
-  .pd-proactive-time {
-    font-size: 0.68rem;
-    color: var(--text-muted);
-    margin-top: 3px;
-  }
-
-  /* Provider type badge */
   .pd-provider-type-badge {
     display: inline-flex;
     align-items: center;
-    font-size: 0.68rem;
+    font-size: 0.65rem;
     font-weight: 500;
     letter-spacing: 0.04em;
     text-transform: uppercase;
@@ -597,6 +76,942 @@
   .pd-provider-type-badge.psychiatrist { background: #ede9fe; color: #5b21b6; border-color: #c4b5fd; }
   .pd-provider-type-badge.therapist    { background: #e0f2fe; color: #0369a1; border-color: #bae6fd; }
   .pd-provider-type-badge.counselor    { background: #dcfce7; color: #166534; border-color: #bbf7d0; }
+
+  /* ── Page shell ──────────────────────────────────────────────────────────── */
+  .pd-page { padding: 0; }
+
+  .pd-page-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 20px 24px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    position: sticky;
+    top: 0;
+    z-index: 10;
+  }
+  .pd-page-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.45rem;
+    font-weight: 400;
+    color: var(--text);
+    margin: 0;
+    line-height: 1.2;
+  }
+  .pd-page-sub {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    margin-top: 3px;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .pd-page-hdr-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .pd-search {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 0.82rem;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+    background: var(--bg);
+    width: 180px;
+    outline: none;
+  }
+  .pd-search:focus { border-color: var(--accent); }
+
+  /* ── Layout: roster + hub ────────────────────────────────────────────────── */
+  .pd-layout {
+    display: flex;
+    align-items: flex-start;
+    min-height: calc(100vh - 60px);
+  }
+  .pd-roster-col {
+    flex: 1;
+    min-width: 0;
+    padding: 20px 24px 40px;
+    transition: margin-right 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .pd-roster-col.hub-open {
+    margin-right: 440px;
+  }
+
+  /* ── Section dividers ────────────────────────────────────────────────────── */
+  .pd-section-hdr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    color: var(--text-muted);
+    margin: 0 0 10px;
+    padding-bottom: 7px;
+    border-bottom: 1px solid var(--border);
+  }
+  .pd-section-hdr--alert {
+    color: #c0392b;
+    border-bottom-color: #f5c6cb;
+  }
+  .pd-section-hdr-count {
+    background: var(--border);
+    color: var(--text-muted);
+    border-radius: 10px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    padding: 1px 6px;
+  }
+  .pd-section-hdr--alert .pd-section-hdr-count {
+    background: #fdecea;
+    color: #c0392b;
+  }
+  .pd-section-gap { margin-top: 24px; }
+
+  /* ── Patient rows ────────────────────────────────────────────────────────── */
+  .pd-row {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 11px 14px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 6px;
+    cursor: pointer;
+    text-decoration: none;
+    color: var(--text);
+    transition: border-color 0.12s, box-shadow 0.12s, background 0.12s;
+    position: relative;
+  }
+  .pd-row:hover {
+    border-color: var(--accent);
+    box-shadow: 0 2px 10px rgba(15,110,86,0.07);
+  }
+  .pd-row.active {
+    border-color: var(--accent);
+    background: #f5faf7;
+    box-shadow: 0 2px 10px rgba(15,110,86,0.1);
+  }
+  .pd-row-crisis {
+    border-left: 3px solid #c0392b;
+  }
+  .pd-row-alert {
+    border-left: 3px solid #e8a000;
+  }
+
+  .pd-row-avatar {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Serif Display', serif;
+    font-size: 1rem;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+  .pd-row-crisis .pd-row-avatar { background: #c0392b; }
+  .pd-row-alert  .pd-row-avatar { background: #e8a000; }
+
+  .pd-row-identity {
+    flex: 1;
+    min-width: 0;
+  }
+  .pd-row-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .pd-row-email {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 1px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .pd-row-stats {
+    display: flex;
+    gap: 18px;
+    align-items: center;
+    flex-shrink: 0;
+  }
+  .pd-row-stat {
+    text-align: right;
+  }
+  .pd-row-stat-label {
+    font-size: 0.6rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+  .pd-row-stat-val {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-top: 1px;
+  }
+  .pd-row-stat-val.low  { color: #c0392b; }
+  .pd-row-stat-val.good { color: #1a7f3c; }
+
+  .pd-row-appt {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    flex-shrink: 0;
+    min-width: 80px;
+    text-align: right;
+  }
+  .pd-appt-active-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.65rem;
+    font-weight: 600;
+    color: #1a7f3c;
+    background: #e6f4ea;
+    border-radius: 10px;
+    padding: 2px 8px;
+  }
+
+  .pd-row-chevron {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    flex-shrink: 0;
+    transition: transform 0.15s;
+  }
+  .pd-row.active .pd-row-chevron {
+    transform: rotate(90deg);
+    color: var(--accent);
+  }
+
+  .pd-flag-indicator {
+    font-size: 0.65rem;
+    margin-left: 5px;
+    vertical-align: middle;
+    cursor: default;
+  }
+
+  /* Med chips inside row */
+  .pd-row-meds {
+    display: flex;
+    gap: 4px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+    max-width: 140px;
+  }
+  .pd-med-chip {
+    font-size: 0.6rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 1px 5px;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .pd-med-chip-more {
+    background: transparent;
+    border-color: transparent;
+    color: var(--text-muted);
+    font-style: italic;
+  }
+
+  /* ── Empty / no results ──────────────────────────────────────────────────── */
+  .pd-empty {
+    text-align: center;
+    padding: 60px 24px;
+    color: var(--text-muted);
+  }
+  .pd-empty-icon { font-size: 2.5rem; margin-bottom: 12px; }
+  .pd-empty-title { font-family: 'DM Serif Display', serif; font-size: 1.2rem; color: var(--text); margin-bottom: 6px; }
+  .pd-empty-sub { font-size: 0.85rem; color: var(--text-muted); max-width: 340px; margin: 0 auto; line-height: 1.6; }
+  .pd-no-results { font-size: 0.85rem; color: var(--text-muted); padding: 24px 0; text-align: center; }
+
+  /* ── Search / filter bar ─────────────────────────────────────────────────── */
+  .pd-filter-bar {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+  }
+  .pd-filter-btn {
+    font-size: 0.75rem;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    padding: 5px 12px;
+    border-radius: 6px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background 0.1s, border-color 0.1s, color 0.1s;
+  }
+  .pd-filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .pd-filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* ── Hub panel (right side) ──────────────────────────────────────────────── */
+  /* NOTE: pd-brief-drawer ID is kept for JS compatibility */
+  .pd-brief-drawer {
+    position: fixed;
+    top: 0;
+    right: -460px;
+    width: 440px;
+    height: 100vh;
+    background: var(--surface);
+    border-left: 1px solid var(--border);
+    box-shadow: -6px 0 32px rgba(0, 0, 0, 0.08);
+    display: flex;
+    flex-direction: column;
+    z-index: 200;
+    transition: right 0.26s cubic-bezier(0.4, 0, 0.2, 1);
+    font-family: 'DM Sans', sans-serif;
+    overflow: hidden;
+  }
+  .pd-brief-drawer.open { right: 0; }
+
+  /* Hub top bar */
+  .pd-hub-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .pd-hub-patient-name {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+    color: var(--text);
+    margin: 0;
+    line-height: 1.2;
+  }
+  .pd-hub-patient-email {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .pd-hub-topbar-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+  }
+  .pd-hub-profile-link {
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--accent);
+    text-decoration: none;
+    padding: 4px 10px;
+    border: 1px solid var(--accent);
+    border-radius: 5px;
+    white-space: nowrap;
+    transition: background 0.1s;
+  }
+  .pd-hub-profile-link:hover { background: #f0f9f5; }
+  .pd-brief-close {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 1rem;
+    color: var(--text-muted);
+    padding: 4px 6px;
+    border-radius: 4px;
+    transition: background 0.1s;
+  }
+  .pd-brief-close:hover { background: var(--bg); }
+
+  /* Hub scrollable body */
+  .pd-hub-body {
+    flex: 1;
+    overflow-y: auto;
+    padding-bottom: 40px;
+  }
+
+  /* ── Data stream tiles ───────────────────────────────────────────────────── */
+  .pd-stream-tiles {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+  .pd-stream-tile {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px;
+    transition: border-color 0.12s;
+  }
+  .pd-stream-tile:hover { border-color: #b0d4c3; }
+  .pd-stream-tile--placeholder {
+    opacity: 0.45;
+    cursor: default;
+  }
+  .pd-stream-tile-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .pd-stream-tile-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+  }
+  .pd-stream-tile--placeholder .pd-stream-tile-dot { background: var(--border); }
+  .pd-stream-tile-val {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: var(--text);
+    font-family: 'DM Serif Display', serif;
+    line-height: 1.1;
+  }
+  .pd-stream-tile-val.low  { color: #c0392b; }
+  .pd-stream-tile-val.good { color: #1a7f3c; }
+  .pd-stream-tile-sub {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 3px;
+    line-height: 1.4;
+  }
+
+  /* ── Outreach bar ────────────────────────────────────────────────────────── */
+  .pd-outreach-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 16px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+  }
+  .pd-outreach-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    flex: 1;
+  }
+  .pd-sms-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    padding: 5px 13px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+    white-space: nowrap;
+  }
+  .pd-sms-btn:hover { background: var(--bg); border-color: var(--accent); color: var(--accent); }
+  .pd-sms-btn:disabled { opacity: 0.5; cursor: default; }
+  .pd-sms-btn--sent  { color: #1a7f3c; border-color: #90c8a8; background: #e6f4ea; }
+  .pd-sms-btn--error { color: #c0392b; border-color: #e0a0a0; background: #fdecea; }
+
+  /* ── Brief area ──────────────────────────────────────────────────────────── */
+  .pd-brief-area {
+    padding: 16px;
+  }
+  .pd-brief-hdr {
+    display: none; /* replaced by hub topbar */
+  }
+  /* Retain pd-brief-title and pd-brief-subtitle for JS compatibility */
+  #brief-drawer-title, #brief-drawer-subtitle {
+    display: none;
+  }
+
+  /* "Create Brief" button */
+  .pd-create-brief-btn {
+    width: 100%;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 7px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    padding: 10px 16px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    transition: opacity 0.12s;
+    margin-bottom: 14px;
+  }
+  .pd-create-brief-btn:hover { opacity: 0.9; }
+  .pd-create-brief-btn:disabled { opacity: 0.5; cursor: default; }
+
+  /* Brief data summary preview (shown before full brief) */
+  .pd-brief-preview {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+  .pd-brief-preview-hdr {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    padding: 8px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+  }
+  .pd-brief-preview-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .pd-brief-preview-table td {
+    font-size: 0.78rem;
+    padding: 5px 12px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+  }
+  .pd-brief-preview-table td:first-child {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    font-weight: 500;
+    width: 40%;
+  }
+  .pd-brief-preview-table tr:last-child td { border-bottom: none; }
+
+  /* Existing brief content styles (kept for renderBriefBody compatibility) */
+  .pd-brief-crisis-bar {
+    background: #fdecea;
+    border: 1px solid #f5c6cb;
+    border-radius: 6px;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: #c0392b;
+    margin-bottom: 14px;
+  }
+  .pd-brief-stat-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .pd-brief-stat {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 9px 11px;
+  }
+  .pd-brief-stat-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 3px;
+  }
+  .pd-brief-stat-val {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: var(--text);
+  }
+  .pd-brief-stat-val small { font-size: 0.7rem; font-weight: 400; color: var(--text-muted); margin-left: 4px; }
+  .pd-brief-themes-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    align-items: center;
+    margin-bottom: 14px;
+  }
+  .pd-brief-themes-label {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-right: 3px;
+  }
+  .pd-brief-theme-chip {
+    font-size: 0.72rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 2px 8px;
+    color: var(--text-muted);
+  }
+  .pd-brief-footer-note {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    font-style: italic;
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+    line-height: 1.5;
+  }
+  .pd-brief-appt-bar {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 11px 14px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    margin-top: 14px;
+    flex-wrap: wrap;
+  }
+  .pd-brief-appt-btn {
+    font-size: 0.78rem;
+    font-weight: 600;
+    background: var(--accent);
+    color: #fff;
+    padding: 6px 14px;
+    border-radius: 5px;
+    text-decoration: none;
+    white-space: nowrap;
+    transition: opacity 0.12s;
+  }
+  .pd-brief-appt-btn:hover { opacity: 0.88; }
+  .pd-brief-appt-btn-ghost {
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--accent);
+    padding: 5px 12px;
+    border-radius: 5px;
+    border: 1px solid var(--accent);
+    text-decoration: none;
+    white-space: nowrap;
+    transition: background 0.1s;
+  }
+  .pd-brief-appt-btn-ghost:hover { background: #f0f9f5; }
+  .pd-brief-gen-btn {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    padding: 7px 14px;
+    cursor: pointer;
+    color: var(--text);
+    transition: border-color 0.12s, background 0.12s;
+    margin-top: 8px;
+  }
+  .pd-brief-gen-btn:hover { border-color: var(--accent); background: #f5faf7; }
+  .pd-brief-gen-btn:disabled { opacity: 0.5; cursor: default; }
+
+  /* Therapy AI section */
+  .pd-therapy-ai-section {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+  }
+  .pd-therapy-ai-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .pd-therapy-ai-body {
+    font-size: 0.82rem;
+    line-height: 1.65;
+    color: var(--text);
+  }
+
+  /* Session notes section */
+  .pd-session-notes-section {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+  }
+  .pd-session-notes-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .pd-session-notes-date {
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    margin-left: 6px;
+    font-style: italic;
+  }
+  .pd-session-notes-block { margin-bottom: 10px; }
+  .pd-session-notes-label {
+    font-size: 0.62rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 4px;
+  }
+  .pd-session-notes-body {
+    font-size: 0.8rem;
+    color: var(--text);
+    line-height: 1.6;
+    white-space: pre-wrap;
+  }
+  .pd-session-actions-list {
+    margin: 4px 0 0 16px;
+    padding: 0;
+    font-size: 0.8rem;
+    color: var(--text);
+    line-height: 1.8;
+  }
+
+  /* Behavioral section */
+  .pd-brief-beh-section {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 14px;
+  }
+  .pd-brief-beh-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .pd-brief-beh-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .pd-brief-beh-stat {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 7px 10px;
+  }
+
+  /* Proactive insights */
+  .pd-proactive-section {
+    margin-bottom: 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .pd-proactive-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: #1a7f3c;
+    margin-bottom: 8px;
+  }
+  .pd-proactive-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    background: #f5f9f6;
+    border: 0.5px solid #9FE1CB;
+    border-radius: 6px;
+    padding: 9px 12px;
+    margin-bottom: 7px;
+  }
+  .pd-proactive-card--positive {
+    background: #fdf9ee;
+    border-color: #E8C97A;
+  }
+  .pd-proactive-label {
+    display: inline-block;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: #d4eadb;
+    color: #2B5C3E;
+    margin-bottom: 4px;
+  }
+  .pd-proactive-card--positive .pd-proactive-label { background: #f5e8c4; color: #7a5c1e; }
+  .pd-proactive-text { font-size: 0.8rem; color: var(--text); line-height: 1.5; margin: 0; }
+  .pd-proactive-time { font-size: 0.65rem; color: var(--text-muted); margin-top: 3px; }
+
+  /* Care flags section */
+  .pd-flags-section {
+    margin-bottom: 14px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .pd-flags-section-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .pd-flag-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 9px 12px;
+    margin-bottom: 7px;
+  }
+  .pd-flag-card-mine        { border-color: #9FE1CB; }
+  .pd-flag-card-concern     { border-color: #f5c6cb; background: #fef9f9; }
+  .pd-flag-card-progress    { border-color: #9FE1CB; background: #f5faf7; }
+  .pd-flag-card-coordination_needed { border-color: #bae6fd; background: #f0f9ff; }
+  .pd-flag-card-top {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 5px;
+  }
+  .pd-flag-type-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--border);
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+  .pd-flag-author {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    flex: 1;
+  }
+  .pd-flag-resolve-btn {
+    font-size: 0.68rem;
+    font-weight: 600;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: none;
+    color: var(--text-muted);
+    padding: 2px 8px;
+    cursor: pointer;
+    flex-shrink: 0;
+    font-family: 'DM Sans', sans-serif;
+    transition: border-color 0.1s, color 0.1s;
+  }
+  .pd-flag-resolve-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .pd-flag-body {
+    font-size: 0.8rem;
+    color: var(--text);
+    line-height: 1.55;
+    margin-bottom: 4px;
+  }
+  .pd-flag-time {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+  }
+  .pd-flag-create {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 10px 12px;
+    margin-top: 10px;
+  }
+  .pd-flag-create-title {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .pd-flag-create-row {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+  }
+  .pd-flag-type-select {
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 5px 9px;
+    font-size: 0.78rem;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+    background: var(--surface);
+    outline: none;
+  }
+  .pd-flag-body-input {
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 6px 9px;
+    font-size: 0.78rem;
+    resize: none;
+    font-family: inherit;
+    color: var(--text);
+    min-height: 52px;
+    background: var(--surface);
+    outline: none;
+  }
+  .pd-flag-body-input:focus { border-color: var(--accent); }
+  .pd-flag-submit-btn {
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    padding: 6px 14px;
+    cursor: pointer;
+    font-family: 'DM Sans', sans-serif;
+    align-self: flex-end;
+  }
+  .pd-flag-submit-btn:hover { opacity: 0.9; }
+  .pd-flag-submit-btn:disabled { opacity: 0.5; cursor: default; }
+  .pd-flag-create-err {
+    font-size: 0.72rem;
+    color: #c0392b;
+    margin-top: 5px;
+  }
+
+  /* Brief section heading */
+  .pd-brief-section-hdr {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    padding: 12px 16px 10px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+  }
+
+  /* ── Add Patient modal ───────────────────────────────────────────────────── */
+  /* (styles handled inline) */
 </style>
 {% endblock %}
 
@@ -604,12 +1019,11 @@
 <div class="pd-page">
 
   <!-- Inbound patient request banner -->
-  <div id="inbound-banner" style="display:none;background:var(--green-light);border:0.5px solid #9FE1CB;
-       border-radius:var(--radius);
-       padding:12px 16px;margin-bottom:16px;align-items:center;
-       justify-content:space-between;gap:12px;">
-    <div style="font-size:0.85rem;">
-      <span id="inbound-banner-text" style="font-weight:500;"></span>
+  <div id="inbound-banner" style="display:none;background:#f0f9f5;border:0.5px solid #9FE1CB;
+       border-radius:0;padding:11px 24px;align-items:center;
+       justify-content:space-between;gap:12px;border-left:none;border-right:none;">
+    <div style="font-size:0.83rem;">
+      <span id="inbound-banner-text" style="font-weight:600;"></span>
       <span style="color:var(--text-muted);margin-left:6px;">— patient-initiated connection request(s) waiting for your response.</span>
     </div>
     <button class="btn btn-primary btn-sm" onclick="openAddPatient()" style="white-space:nowrap;flex-shrink:0;">
@@ -629,19 +1043,19 @@
     </div>
     <div class="pd-page-hdr-actions">
       <input type="text" class="pd-search" id="pd-search"
-             placeholder="Search by name…" oninput="filterCards(this.value)">
+             placeholder="Search by name…" oninput="filterRows(this.value)">
       <button class="btn btn-primary btn-sm" onclick="openAddPatient()" style="white-space:nowrap;position:relative;" id="add-patient-btn">
         + Add Patient
         <span id="inbound-badge" style="display:none;position:absolute;top:-6px;right:-6px;
               background:#e53e3e;color:#fff;border-radius:999px;font-size:0.65rem;
-              font-weight:500;min-width:16px;height:16px;line-height:16px;
+              font-weight:700;min-width:16px;height:16px;line-height:16px;
               text-align:center;padding:0 4px;"></span>
       </button>
     </div>
   </div>
 
   {% if not patients %}
-  <div class="pd-empty">
+  <div class="pd-empty" style="padding:60px 24px;">
     <div class="pd-empty-icon">👤</div>
     <div class="pd-empty-title">No patients yet</div>
     <div class="pd-empty-sub">
@@ -651,221 +1065,567 @@
   </div>
 
   {% else %}
-  <!-- Filters -->
-  <div class="pd-filter-bar">
-    <button class="pd-filter-btn active" data-filter="all" onclick="setFilter(this,'all')">All</button>
-    <button class="pd-filter-btn" data-filter="alert" onclick="setFilter(this,'alert')">⚠ Needs Attention</button>
-    <button class="pd-filter-btn" data-filter="recent" onclick="setFilter(this,'recent')">Checked in Recently</button>
-    <button class="pd-filter-btn" data-filter="inactive" onclick="setFilter(this,'inactive')">No Recent Check-ins</button>
-  </div>
 
-  <!-- Patient grid -->
-  <div class="pd-grid" id="pd-grid">
-    {% for p in patients %}
-    {% set has_crisis = p.suicide_risk %}
-    {% set inactive   = p.days_since_checkin is not none and p.days_since_checkin > 7 %}
-    {% set mood_low   = p.mood_avg_30d is not none and p.mood_avg_30d < 5 %}
-    {% set has_alert  = has_crisis or mood_low %}
-    <a href="{{ url_for('provider_patient_detail', patient_id=p.patient_id) }}"
-       class="pd-card {% if has_crisis %}pd-card-crisis{% elif has_alert %}pd-card-alert{% endif %}"
-       data-name="{{ p.full_name | lower }}"
-       data-state="{% if has_alert %}alert{% elif inactive %}inactive{% else %}recent{% endif %}">
+  <div class="pd-layout">
+    <div class="pd-roster-col" id="pd-roster-col">
 
-      <!-- Card header -->
-      <div class="pd-card-hdr">
-        <div class="pd-card-avatar">{{ p.full_name[0] | upper }}</div>
-        <div class="pd-card-id">
-          <div class="pd-card-name">
+      <!-- Filter bar -->
+      <div class="pd-filter-bar" style="margin-top:4px;">
+        <button class="pd-filter-btn active" data-filter="all" onclick="setFilter(this,'all')">All</button>
+        <button class="pd-filter-btn" data-filter="alert" onclick="setFilter(this,'alert')">⚠ Needs Attention</button>
+        <button class="pd-filter-btn" data-filter="recent" onclick="setFilter(this,'recent')">Checked in Recently</button>
+        <button class="pd-filter-btn" data-filter="inactive" onclick="setFilter(this,'inactive')">No Recent Check-ins</button>
+      </div>
+
+      <!-- ── Section A: Alert patients ─────────────────────────────────────── -->
+      {% set alert_patients = [] %}
+      {% set normal_patients = [] %}
+      {% for p in patients %}
+        {% set has_crisis = p.suicide_risk %}
+        {% set mood_low   = p.mood_avg_30d is not none and p.mood_avg_30d < 5 %}
+        {% set has_alert  = has_crisis or mood_low or (p.urgency_tier is not none and p.urgency_tier <= 1) or (p.flags and ((p.flags.safety and p.flags.safety.signals_found) or (p.flags.substance and p.flags.substance.alert_level == 'concern'))) %}
+        {% if has_alert %}
+          {% set _ = alert_patients.append(p) %}
+        {% else %}
+          {% set _ = normal_patients.append(p) %}
+        {% endif %}
+      {% endfor %}
+
+      {% if alert_patients %}
+      <div class="pd-section-hdr pd-section-hdr--alert" id="section-hdr-alerts">
+        Needs Attention
+        <span class="pd-section-hdr-count">{{ alert_patients|length }}</span>
+      </div>
+
+      {% for p in alert_patients %}
+      {% set has_crisis = p.suicide_risk %}
+      {% set inactive   = p.days_since_checkin is not none and p.days_since_checkin > 7 %}
+      {% set mood_low   = p.mood_recent is not none and p.mood_recent < 5 %}
+      <div class="pd-row {% if has_crisis %}pd-row-crisis{% else %}pd-row-alert{% endif %}"
+           id="pd-row-{{ p.patient_id }}"
+           data-patient-id="{{ p.patient_id }}"
+           data-name="{{ p.full_name | lower }}"
+           data-state="alert"
+           onclick="openHub('{{ p.patient_id }}')">
+
+        <div class="pd-row-avatar">{{ p.full_name[0] | upper }}</div>
+
+        <div class="pd-row-identity">
+          <div class="pd-row-name">
             {{ p.full_name }}
-            {% if has_crisis %}
-            <span class="pd-badge pd-badge-crisis" title="Crisis flag active">&#9888;</span>
-            {% endif %}
-            {# Urgency badge #}
-            {% if p.urgency_tier == 0 %}
-            <span class="pd-urgency-badge pd-urgency-0">Crisis</span>
-            {% elif p.urgency_tier == 1 %}
-            <span class="pd-urgency-badge pd-urgency-1">Needs Attention</span>
-            {% elif p.urgency_tier == 2 %}
-            <span class="pd-urgency-badge pd-urgency-2">Watch</span>
-            {% endif %}
-            {# Role badge — show for non-psychiatrist care team patients #}
+            {% if has_crisis %}<span class="pd-urgency-badge pd-urgency-0">🚨 Crisis</span>{% endif %}
+            {% if p.urgency_tier == 0 and not has_crisis %}<span class="pd-urgency-badge pd-urgency-0">Crisis</span>{% endif %}
+            {% if p.urgency_tier == 1 %}<span class="pd-urgency-badge pd-urgency-1">Needs Attention</span>{% endif %}
+            {% if p.urgency_tier == 2 %}<span class="pd-urgency-badge pd-urgency-2">Watch</span>{% endif %}
             {% if p.is_care_team and p.provider_role and p.provider_role != 'psychiatrist' %}
             <span class="pd-role-badge pd-role-{{ p.provider_role }}">{{ p.provider_role | replace('_', ' ') | title }}</span>
             {% endif %}
-            {# Care flag indicator — unresolved flags from other providers #}
             {% if p.flag_count and p.flag_count > 0 %}
-            <span class="pd-flag-indicator" title="{{ p.flag_count }} care flag{{ 's' if p.flag_count != 1 }} from team">{{ p.flag_count }}🚩</span>
+            <span class="pd-flag-indicator" title="{{ p.flag_count }} care flag{{ 's' if p.flag_count != 1 }}">{{ p.flag_count }}🚩</span>
             {% endif %}
-            {# Substance use pattern flag (Mode D) #}
             {% if p.flags and p.flags.substance and p.flags.substance.alert_level %}
-            <span class="pd-urgency-badge {{ 'pd-urgency-0' if p.flags.substance.alert_level == 'concern' else 'pd-urgency-2' }}"
-                  title="Substance pattern: alcohol logged {{ p.flags.substance.drinking_days }} of {{ p.flags.substance.total_days }} days&#10;Avg {{ p.flags.substance.avg_units_per_drinking_day }} units/drinking day&#10;{{ p.flags.substance.journal_flags | length }} journal language flag(s)">
+            <span class="pd-urgency-badge {{ 'pd-urgency-0' if p.flags.substance.alert_level == 'concern' else 'pd-urgency-2' }}">
               {{ '🔴' if p.flags.substance.alert_level == 'concern' else '🟡' }} Substance
             </span>
             {% endif %}
-            {# Interpersonal safety signal flag (Mode D) — provider-only, never patient-facing #}
             {% if p.flags and p.flags.safety and p.flags.safety.signals_found %}
-            <span class="pd-urgency-badge pd-urgency-0"
-                  title="Safety signal: {{ p.flags.safety.signal_count }} entr{{ 'y' if p.flags.safety.signal_count == 1 else 'ies' }} with concerning language&#10;Most recent: {{ p.flags.safety.most_recent_date }}&#10;Clinical assessment recommended">
-              🔴 Safety
-            </span>
+            <span class="pd-urgency-badge pd-urgency-0" title="Safety signal detected — see brief">🔴 Safety</span>
             {% endif %}
           </div>
-          <div class="pd-card-email">{{ p.email }}</div>
+          <div class="pd-row-email">{{ p.email }}</div>
         </div>
-      </div>
 
-      <!-- Stats row -->
-      <div class="pd-card-stats">
-
-        {# ── Mood ─────────────────────────────────────────────────── #}
-        <div class="pd-stat">
-          <div class="pd-stat-label">Mood (14d)</div>
-          <div class="pd-stat-val {% if p.mood_recent is not none and p.mood_recent < 5 %}pd-stat-low{% elif p.mood_recent is not none and p.mood_recent >= 7 %}pd-stat-good{% endif %}">
-            {% if p.mood_recent is not none %}{{ p.mood_recent }}/10{% else %}—{% endif %}
-            {% if p.mood_delta is not none %}
-              {% if p.mood_dir == 'stable' %}
-                <span class="pd-delta pd-delta-stable">→</span>
-              {% elif p.mood_dir == 'up' %}
-                <span class="pd-delta pd-delta-up-good" title="vs. prior baseline">↑ +{{ p.mood_delta }}</span>
-              {% else %}
-                <span class="pd-delta pd-delta-down-bad" title="vs. prior baseline">↓ {{ p.mood_delta }}</span>
-              {% endif %}
-            {% endif %}
+        <div class="pd-row-stats">
+          <div class="pd-row-stat">
+            <div class="pd-row-stat-label">Mood 14d</div>
+            <div class="pd-row-stat-val {% if p.mood_recent is not none and p.mood_recent < 5 %}low{% elif p.mood_recent is not none and p.mood_recent >= 7 %}good{% endif %}">
+              {% if p.mood_recent is not none %}{{ p.mood_recent }}/10{% else %}—{% endif %}
+            </div>
+          </div>
+          <div class="pd-row-stat">
+            <div class="pd-row-stat-label">Sleep 14d</div>
+            <div class="pd-row-stat-val {% if p.sleep_recent is not none and p.sleep_recent < 6 %}low{% elif p.sleep_recent is not none and p.sleep_recent >= 7 %}good{% endif %}">
+              {% if p.sleep_recent is not none %}{{ p.sleep_recent }}h{% else %}—{% endif %}
+            </div>
+          </div>
+          <div class="pd-row-stat">
+            <div class="pd-row-stat-label">Last Check-in</div>
+            <div class="pd-row-stat-val {% if inactive %}low{% endif %}">
+              {% if p.last_checkin %}
+                {% if p.days_since_checkin == 0 %}Today
+                {% elif p.days_since_checkin == 1 %}Yesterday
+                {% elif p.days_since_checkin is not none %}{{ p.days_since_checkin }}d ago
+                {% else %}{{ p.last_checkin }}{% endif %}
+              {% else %}Never{% endif %}
+            </div>
           </div>
         </div>
 
-        {# ── Stress ───────────────────────────────────────────────── #}
-        <div class="pd-stat">
-          <div class="pd-stat-label">Stress (14d)</div>
-          <div class="pd-stat-val {% if p.stress_recent is not none and p.stress_recent > 6 %}pd-stat-low{% elif p.stress_recent is not none and p.stress_recent <= 4 %}pd-stat-good{% endif %}">
-            {% if p.stress_recent is not none %}{{ p.stress_recent }}/10{% else %}—{% endif %}
-            {% if p.stress_delta is not none %}
-              {% if p.stress_dir == 'stable' %}
-                <span class="pd-delta pd-delta-stable">→</span>
-              {% elif p.stress_dir == 'up' %}
-                <span class="pd-delta pd-delta-up-bad" title="vs. prior baseline">↑ +{{ p.stress_delta }}</span>
-              {% else %}
-                <span class="pd-delta pd-delta-down-good" title="vs. prior baseline">↓ {{ p.stress_delta }}</span>
-              {% endif %}
-            {% endif %}
-          </div>
-        </div>
-
-        {# ── Sleep ────────────────────────────────────────────────── #}
-        <div class="pd-stat">
-          <div class="pd-stat-label">Sleep (14d)</div>
-          <div class="pd-stat-val {% if p.sleep_recent is not none and p.sleep_recent < 6 %}pd-stat-low{% elif p.sleep_recent is not none and p.sleep_recent >= 7 %}pd-stat-good{% endif %}">
-            {% if p.sleep_recent is not none %}{{ p.sleep_recent }}h{% else %}—{% endif %}
-            {% if p.sleep_delta is not none %}
-              {% if p.sleep_dir == 'stable' %}
-                <span class="pd-delta pd-delta-stable">→</span>
-              {% elif p.sleep_dir == 'up' %}
-                <span class="pd-delta pd-delta-up-good" title="vs. prior baseline">↑ +{{ p.sleep_delta }}h</span>
-              {% else %}
-                <span class="pd-delta pd-delta-down-bad" title="vs. prior baseline">↓ {{ p.sleep_delta }}h</span>
-              {% endif %}
-            {% endif %}
-          </div>
-        </div>
-
-        {# ── Last Check-in ─────────────────────────────────────────── #}
-        <div class="pd-stat">
-          <div class="pd-stat-label">Last Check-in</div>
-          <div class="pd-stat-val {% if inactive %}pd-stat-low{% endif %}">
-            {% if p.last_checkin %}
-              {% if p.days_since_checkin == 0 %}Today
-              {% elif p.days_since_checkin == 1 %}Yesterday
-              {% elif p.days_since_checkin is not none %}{{ p.days_since_checkin }}d ago
-              {% else %}{{ p.last_checkin }}{% endif %}
-            {% else %}Never{% endif %}
-          </div>
-        </div>
-
-      </div>
-
-      <!-- Meds row -->
-      {% if p.current_medications %}
-      <div class="pd-card-meds">
-        {% for med in p.current_medications[:3] %}
-        <span class="pd-med-chip">{{ med.name | title }}</span>
-        {% endfor %}
-        {% if p.current_medications|length > 3 %}
-        <span class="pd-med-chip pd-med-chip-more">+{{ p.current_medications|length - 3 }}</span>
-        {% endif %}
-      </div>
-      {% endif %}
-
-      <!-- Footer -->
-      <div class="pd-card-footer">
-        <span class="pd-card-appt">
-          {% if p.last_appointment_status == 'active' %}
-            <span class="pd-appt-active-pill">● Active Session</span>
-          {% elif p.last_appointment %}
-            Last appt: {{ p.last_appointment }}
-          {% else %}
-            No appointments yet
+        {% if p.current_medications %}
+        <div class="pd-row-meds">
+          {% for med in p.current_medications[:2] %}
+          <span class="pd-med-chip">{{ med.name | title }}</span>
+          {% endfor %}
+          {% if p.current_medications|length > 2 %}
+          <span class="pd-med-chip pd-med-chip-more">+{{ p.current_medications|length - 2 }}</span>
           {% endif %}
-        </span>
-        <button class="pd-brief-btn"
-                data-patient-id="{{ p.patient_id }}"
-                data-patient-name="{{ p.full_name }}"
-                data-provider-role="{{ p.provider_role or 'psychiatrist' }}"
-                data-last-appt-status="{{ p.last_appointment_status or '' }}"
-                data-last-appt-id="{{ p.last_appointment_id or '' }}"
-                data-mode-d-flags="{{ (p.flags or {}) | tojson | e }}"
-                onclick="event.preventDefault(); event.stopPropagation(); openBrief(this)">
-          Brief
-        </button>
-        <button class="pd-sms-btn"
-                data-patient-id="{{ p.patient_id }}"
-                data-patient-name="{{ p.full_name }}"
-                onclick="event.preventDefault(); event.stopPropagation(); sendCheckinSMS(this)">
-          SMS ↗
-        </button>
-        <span class="pd-card-arrow">→</span>
+        </div>
+        {% endif %}
+
+        <div class="pd-row-appt">
+          {% if p.last_appointment_status == 'active' %}
+            <span class="pd-appt-active-pill">● Active</span>
+          {% elif p.last_appointment %}
+            <span style="font-size:0.68rem;">{{ p.last_appointment }}</span>
+          {% else %}
+            <span style="font-size:0.68rem;color:var(--text-muted);">No appts</span>
+          {% endif %}
+        </div>
+
+        <div class="pd-row-chevron">›</div>
+
+        <!-- Hidden data attrs for JS -->
+        <span style="display:none"
+              data-brief-patient-id="{{ p.patient_id }}"
+              data-brief-patient-name="{{ p.full_name }}"
+              data-brief-provider-role="{{ p.provider_role or 'psychiatrist' }}"
+              data-brief-last-appt-status="{{ p.last_appointment_status or '' }}"
+              data-brief-last-appt-id="{{ p.last_appointment_id or '' }}"
+              data-brief-mode-d-flags="{{ (p.flags or {}) | tojson | e }}"></span>
+      </div>
+      {% endfor %}
+      {% endif %}{# /alert_patients #}
+
+      <!-- ── Section B: All other patients ─────────────────────────────────── -->
+      {% if normal_patients %}
+      <div class="pd-section-hdr {% if alert_patients %}pd-section-gap{% endif %}" id="section-hdr-roster">
+        Roster
+        <span class="pd-section-hdr-count">{{ normal_patients|length }}</span>
       </div>
 
-    </a>
-    {% endfor %}
-  </div><!-- /pd-grid -->
+      {% for p in normal_patients %}
+      {% set inactive = p.days_since_checkin is not none and p.days_since_checkin > 7 %}
+      <div class="pd-row"
+           id="pd-row-{{ p.patient_id }}"
+           data-patient-id="{{ p.patient_id }}"
+           data-name="{{ p.full_name | lower }}"
+           data-state="{% if inactive %}inactive{% else %}recent{% endif %}"
+           onclick="openHub('{{ p.patient_id }}')">
 
-  <div class="pd-no-results" id="pd-no-results" style="display:none;">
-    No patients match your search.
-  </div>
+        <div class="pd-row-avatar">{{ p.full_name[0] | upper }}</div>
 
-  <!-- Shared between-session brief drawer (appears below grid) -->
+        <div class="pd-row-identity">
+          <div class="pd-row-name">
+            {{ p.full_name }}
+            {% if p.urgency_tier == 2 %}<span class="pd-urgency-badge pd-urgency-2">Watch</span>{% endif %}
+            {% if p.is_care_team and p.provider_role and p.provider_role != 'psychiatrist' %}
+            <span class="pd-role-badge pd-role-{{ p.provider_role }}">{{ p.provider_role | replace('_', ' ') | title }}</span>
+            {% endif %}
+            {% if p.flag_count and p.flag_count > 0 %}
+            <span class="pd-flag-indicator" title="{{ p.flag_count }} care flag{{ 's' if p.flag_count != 1 }}">{{ p.flag_count }}🚩</span>
+            {% endif %}
+          </div>
+          <div class="pd-row-email">{{ p.email }}</div>
+        </div>
+
+        <div class="pd-row-stats">
+          <div class="pd-row-stat">
+            <div class="pd-row-stat-label">Mood 14d</div>
+            <div class="pd-row-stat-val {% if p.mood_recent is not none and p.mood_recent < 5 %}low{% elif p.mood_recent is not none and p.mood_recent >= 7 %}good{% endif %}">
+              {% if p.mood_recent is not none %}{{ p.mood_recent }}/10{% else %}—{% endif %}
+            </div>
+          </div>
+          <div class="pd-row-stat">
+            <div class="pd-row-stat-label">Sleep 14d</div>
+            <div class="pd-row-stat-val {% if p.sleep_recent is not none and p.sleep_recent < 6 %}low{% elif p.sleep_recent is not none and p.sleep_recent >= 7 %}good{% endif %}">
+              {% if p.sleep_recent is not none %}{{ p.sleep_recent }}h{% else %}—{% endif %}
+            </div>
+          </div>
+          <div class="pd-row-stat">
+            <div class="pd-row-stat-label">Last Check-in</div>
+            <div class="pd-row-stat-val {% if inactive %}low{% endif %}">
+              {% if p.last_checkin %}
+                {% if p.days_since_checkin == 0 %}Today
+                {% elif p.days_since_checkin == 1 %}Yesterday
+                {% elif p.days_since_checkin is not none %}{{ p.days_since_checkin }}d ago
+                {% else %}{{ p.last_checkin }}{% endif %}
+              {% else %}Never{% endif %}
+            </div>
+          </div>
+        </div>
+
+        {% if p.current_medications %}
+        <div class="pd-row-meds">
+          {% for med in p.current_medications[:2] %}
+          <span class="pd-med-chip">{{ med.name | title }}</span>
+          {% endfor %}
+          {% if p.current_medications|length > 2 %}
+          <span class="pd-med-chip pd-med-chip-more">+{{ p.current_medications|length - 2 }}</span>
+          {% endif %}
+        </div>
+        {% endif %}
+
+        <div class="pd-row-appt">
+          {% if p.last_appointment_status == 'active' %}
+            <span class="pd-appt-active-pill">● Active</span>
+          {% elif p.last_appointment %}
+            <span style="font-size:0.68rem;">{{ p.last_appointment }}</span>
+          {% else %}
+            <span style="font-size:0.68rem;color:var(--text-muted);">No appts</span>
+          {% endif %}
+        </div>
+
+        <div class="pd-row-chevron">›</div>
+
+        <span style="display:none"
+              data-brief-patient-id="{{ p.patient_id }}"
+              data-brief-patient-name="{{ p.full_name }}"
+              data-brief-provider-role="{{ p.provider_role or 'psychiatrist' }}"
+              data-brief-last-appt-status="{{ p.last_appointment_status or '' }}"
+              data-brief-last-appt-id="{{ p.last_appointment_id or '' }}"
+              data-brief-mode-d-flags="{{ (p.flags or {}) | tojson | e }}"></span>
+      </div>
+      {% endfor %}
+      {% endif %}{# /normal_patients #}
+
+      <div class="pd-no-results" id="pd-no-results" style="display:none;">
+        No patients match your search.
+      </div>
+
+    </div>{# /pd-roster-col #}
+  </div>{# /pd-layout #}
+
+  <!-- ── Patient hub (right-side panel) ────────────────────────────────────── -->
+  <!-- NOTE: id="pd-brief-drawer" kept for JS compatibility -->
   <div class="pd-brief-drawer" id="pd-brief-drawer">
-    <div class="pd-brief-hdr">
+
+    <!-- Hidden elements retained for JS (renderBriefBody writes to these IDs) -->
+    <span id="brief-drawer-title" style="display:none;"></span>
+    <span id="brief-drawer-subtitle" style="display:none;"></span>
+
+    <!-- Hub top bar -->
+    <div class="pd-hub-topbar" id="hub-topbar">
       <div>
-        <div class="pd-brief-title" id="brief-drawer-title">Between-Session Brief</div>
-        <div class="pd-brief-subtitle" id="brief-drawer-subtitle">Loading…</div>
+        <div class="pd-hub-patient-name" id="hub-patient-name">—</div>
+        <div class="pd-hub-patient-email" id="hub-patient-email"></div>
       </div>
-      <button class="pd-brief-close" onclick="closeBrief()">✕</button>
+      <div class="pd-hub-topbar-right">
+        <a id="hub-profile-link" href="#" class="pd-hub-profile-link">View Profile →</a>
+        <button class="pd-brief-close" onclick="closeBrief()" title="Close">✕</button>
+      </div>
     </div>
-    <div id="brief-drawer-body">
-      <!-- populated by JS -->
+
+    <!-- Data stream tiles -->
+    <div class="pd-stream-tiles" id="hub-stream-tiles">
+      <div class="pd-stream-tile" id="hub-tile-checkin">
+        <div class="pd-stream-tile-label"><span class="pd-stream-tile-dot"></span>Check-in</div>
+        <div class="pd-stream-tile-val" id="hub-tile-checkin-val">—</div>
+        <div class="pd-stream-tile-sub" id="hub-tile-checkin-sub"></div>
+      </div>
+      <div class="pd-stream-tile" id="hub-tile-mood">
+        <div class="pd-stream-tile-label"><span class="pd-stream-tile-dot"></span>Mood · 14d avg</div>
+        <div class="pd-stream-tile-val" id="hub-tile-mood-val">—</div>
+        <div class="pd-stream-tile-sub" id="hub-tile-mood-sub"></div>
+      </div>
+      <div class="pd-stream-tile pd-stream-tile--placeholder">
+        <div class="pd-stream-tile-label"><span class="pd-stream-tile-dot"></span>Voice</div>
+        <div class="pd-stream-tile-val">—</div>
+        <div class="pd-stream-tile-sub">Coming soon</div>
+      </div>
+      <div class="pd-stream-tile pd-stream-tile--placeholder">
+        <div class="pd-stream-tile-label"><span class="pd-stream-tile-dot"></span>Wearable</div>
+        <div class="pd-stream-tile-val">—</div>
+        <div class="pd-stream-tile-sub">Coming soon</div>
+      </div>
+    </div>
+
+    <!-- Outreach bar -->
+    <div class="pd-outreach-bar">
+      <span class="pd-outreach-label">Outreach</span>
+      <button class="pd-sms-btn" id="hub-sms-btn" onclick="hubSendSMS()">
+        Send Check-in SMS ↗
+      </button>
+    </div>
+
+    <!-- Hub scrollable body -->
+    <div class="pd-hub-body">
+
+      <!-- Create Brief section header -->
+      <div class="pd-brief-section-hdr">Between-Session Brief</div>
+
+      <div class="pd-brief-area">
+        <!-- Data summary preview (populated before brief loads) -->
+        <div class="pd-brief-preview" id="hub-brief-preview" style="display:none;">
+          <div class="pd-brief-preview-hdr">Data Summary</div>
+          <table class="pd-brief-preview-table" id="hub-preview-table"></table>
+        </div>
+
+        <!-- Create Brief button -->
+        <button class="pd-create-brief-btn" id="hub-create-brief-btn" onclick="hubCreateBrief()">
+          <span>✦</span> Create Brief
+        </button>
+
+        <!-- Brief content rendered here -->
+        <div id="brief-drawer-body"></div>
+      </div>
     </div>
   </div>
 
-  {% endif %}
+  {% endif %}{# /patients #}
 
-</div>
+</div>{# /pd-page #}
 
 <script>
-// ── Send Check-in SMS ────────────────────────────────────────────────────────
+// ── Patient data store (embedded at render time) ─────────────────────────────
+const _PATIENTS = {
+  {% for p in patients %}
+  "{{ p.patient_id }}": {
+    name:             {{ p.full_name | tojson }},
+    email:            {{ p.email | tojson }},
+    profileUrl:       "{{ url_for('provider_patient_detail', patient_id=p.patient_id) }}",
+    moodRecent:       {{ p.mood_recent if p.mood_recent is not none else 'null' }},
+    moodDir:          {{ (p.mood_dir or '') | tojson }},
+    moodDelta:        {{ p.mood_delta if p.mood_delta is not none else 'null' }},
+    stressRecent:     {{ p.stress_recent if p.stress_recent is not none else 'null' }},
+    sleepRecent:      {{ p.sleep_recent if p.sleep_recent is not none else 'null' }},
+    daysSinceCheckin: {{ p.days_since_checkin if p.days_since_checkin is not none else 'null' }},
+    lastCheckin:      {{ (p.last_checkin or '') | tojson }},
+    meds:             {{ p.current_medications | tojson if p.current_medications else '[]' }},
+    lastApptStatus:   {{ (p.last_appointment_status or '') | tojson }},
+    lastApptId:       {{ (p.last_appointment_id or '') | tojson }},
+    modeDFlags:       {{ (p.flags or {}) | tojson }},
+    providerRole:     {{ (p.provider_role or 'psychiatrist') | tojson }},
+  }{% if not loop.last %},{% endif %}
+  {% endfor %}
+};
 
-async function sendCheckinSMS(btn) {
-  const patientId   = btn.dataset.patientId;
-  const patientName = btn.dataset.patientName;
+// ── State ────────────────────────────────────────────────────────────────────
+let _activeHubPid  = null;
+let _activePid     = null;      // kept for renderBriefBody compat
+const _briefCache  = {};
+const _apptMeta    = {};
+const _modeDFlags  = {};
 
-  // Two-click confirmation: first click sets confirm state
+// ── Open hub for a patient ───────────────────────────────────────────────────
+function openHub(pid) {
+  const pt = _PATIENTS[pid];
+  if (!pt) return;
+
+  // If same patient — toggle
+  if (_activeHubPid === pid) {
+    closeBrief();
+    return;
+  }
+
+  // Deactivate previous row, activate this one
+  document.querySelectorAll('.pd-row.active').forEach(r => r.classList.remove('active'));
+  const row = document.getElementById('pd-row-' + pid);
+  if (row) row.classList.add('active');
+
+  _activeHubPid = pid;
+  _activePid    = pid;
+
+  // Populate hub header
+  document.getElementById('hub-patient-name').textContent  = pt.name;
+  document.getElementById('hub-patient-email').textContent = pt.email;
+  document.getElementById('hub-profile-link').href         = pt.profileUrl;
+
+  // Populate stream tiles
+  _populateStreamTiles(pid, pt);
+
+  // Wire outreach button
+  const smsBtn = document.getElementById('hub-sms-btn');
+  smsBtn.dataset.pid  = pid;
+  smsBtn.dataset.name = pt.name;
+  smsBtn.textContent = 'Send Check-in SMS ↗';
+  smsBtn.disabled    = false;
+  smsBtn.className   = 'pd-sms-btn';
+  delete smsBtn.dataset.confirming;
+
+  // Reset brief area
+  document.getElementById('brief-drawer-body').innerHTML  = '';
+  document.getElementById('hub-brief-preview').style.display = 'none';
+  const briefBtn = document.getElementById('hub-create-brief-btn');
+  briefBtn.textContent = '✦  Create Brief';
+  briefBtn.disabled    = false;
+
+  // Pre-populate data summary preview table
+  _buildPreviewTable(pid, pt);
+  document.getElementById('hub-brief-preview').style.display = '';
+
+  // Copy metadata for renderBriefBody
+  _apptMeta[pid] = {
+    status: pt.lastApptStatus,
+    id:     pt.lastApptId,
+  };
+  _modeDFlags[pid] = pt.modeDFlags || {};
+
+  // Sync legacy title spans (renderBriefBody reads brief-drawer-subtitle)
+  document.getElementById('brief-drawer-title').textContent    = 'Between-Session Brief — ' + pt.name;
+  document.getElementById('brief-drawer-subtitle').textContent = '';
+
+  // Open panel
+  const drawer = document.getElementById('pd-brief-drawer');
+  drawer.classList.add('open');
+  document.getElementById('pd-roster-col').classList.add('hub-open');
+}
+
+function _checkinLabel(pt) {
+  if (pt.daysSinceCheckin === null) return 'Never';
+  if (pt.daysSinceCheckin === 0) return 'Today';
+  if (pt.daysSinceCheckin === 1) return 'Yesterday';
+  return pt.daysSinceCheckin + 'd ago';
+}
+
+function _populateStreamTiles(pid, pt) {
+  // Check-in tile
+  const ciVal = document.getElementById('hub-tile-checkin-val');
+  const ciSub = document.getElementById('hub-tile-checkin-sub');
+  ciVal.textContent = _checkinLabel(pt);
+  ciVal.className   = 'pd-stream-tile-val' + (pt.daysSinceCheckin !== null && pt.daysSinceCheckin > 7 ? ' low' : '');
+  ciSub.textContent = pt.lastCheckin ? 'Last: ' + pt.lastCheckin : '';
+
+  // Mood tile
+  const moodVal = document.getElementById('hub-tile-mood-val');
+  const moodSub = document.getElementById('hub-tile-mood-sub');
+  if (pt.moodRecent !== null) {
+    moodVal.textContent = pt.moodRecent + '/10';
+    moodVal.className   = 'pd-stream-tile-val' +
+      (pt.moodRecent < 5 ? ' low' : pt.moodRecent >= 7 ? ' good' : '');
+    const arrow = pt.moodDir === 'up' ? ' ↑' : pt.moodDir === 'down' ? ' ↓' : ' →';
+    const delta = pt.moodDelta !== null ? arrow + ' ' + (pt.moodDelta > 0 ? '+' : '') + pt.moodDelta : '';
+    moodSub.textContent = '14-day avg' + delta;
+  } else {
+    moodVal.textContent = '—';
+    moodVal.className   = 'pd-stream-tile-val';
+    moodSub.textContent = 'No check-in data';
+  }
+}
+
+function _buildPreviewTable(pid, pt) {
+  const table = document.getElementById('hub-preview-table');
+  const rows = [
+    ['Last check-in',  _checkinLabel(pt)],
+    ['Mood (14d avg)', pt.moodRecent !== null ? pt.moodRecent + '/10' : '—'],
+    ['Stress (14d)',   pt.stressRecent !== null ? pt.stressRecent + '/10' : '—'],
+    ['Sleep (14d)',    pt.sleepRecent !== null ? pt.sleepRecent + 'h avg' : '—'],
+    ['Medications',    pt.meds && pt.meds.length ? pt.meds.slice(0,3).map(m => m.name).join(', ') + (pt.meds.length > 3 ? ' +' + (pt.meds.length-3) + ' more' : '') : 'None logged'],
+  ];
+  table.innerHTML = rows.map(([label, val]) =>
+    '<tr><td>' + _esc(label) + '</td><td style="font-weight:600;">' + _esc(String(val)) + '</td></tr>'
+  ).join('');
+}
+
+function _esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Create Brief (hub button) ────────────────────────────────────────────────
+function hubCreateBrief() {
+  const pid = _activeHubPid;
+  if (!pid) return;
+  const pt = _PATIENTS[pid];
+
+  // Build a synthetic btn object that openBrief() expects
+  const syntheticBtn = {
+    dataset: {
+      patientId:        pid,
+      patientName:      pt.name,
+      providerRole:     pt.providerRole,
+      lastApptStatus:   pt.lastApptStatus,
+      lastApptId:       pt.lastApptId,
+      modeDFlags:       JSON.stringify(pt.modeDFlags || {}),
+    },
+  };
+
+  // Disable preview, show loading
+  document.getElementById('hub-brief-preview').style.display = 'none';
+  const briefBtn = document.getElementById('hub-create-brief-btn');
+  briefBtn.disabled    = true;
+  briefBtn.textContent = 'Generating…';
+
+  openBrief(syntheticBtn).then(() => {
+    briefBtn.style.display = 'none';
+  }).catch(() => {
+    briefBtn.disabled    = false;
+    briefBtn.textContent = '✦  Retry Brief';
+    document.getElementById('hub-brief-preview').style.display = '';
+  });
+}
+
+// ── Outreach: Send SMS from hub ──────────────────────────────────────────────
+function hubSendSMS() {
+  const btn = document.getElementById('hub-sms-btn');
+  const pid  = btn.dataset.pid;
+  if (!pid) return;
+
+  // Delegate to sendCheckinSMS with a compatible btn-like object
+  const fakeBtnEl = {
+    dataset:   { patientId: pid, patientName: btn.dataset.name, confirming: btn.dataset.confirming },
+    textContent: btn.textContent,
+    disabled:    btn.disabled,
+    style:       btn.style,
+    classList:   btn.classList,
+  };
+
+  // Two-click confirmation pattern
   if (!btn.dataset.confirming) {
     btn.dataset.confirming = '1';
     btn.textContent = 'Confirm?';
-    btn.style.borderColor = 'var(--border)';
-    btn.style.color = 'var(--text)';
-    // Auto-reset after 3s if not confirmed
+    setTimeout(() => {
+      if (btn.dataset.confirming) {
+        delete btn.dataset.confirming;
+        btn.textContent = 'Send Check-in SMS ↗';
+      }
+    }, 3000);
+    return;
+  }
+
+  delete btn.dataset.confirming;
+  btn.disabled    = true;
+  btn.textContent = '…';
+
+  fetch('/api/provider/patient/' + pid + '/send-checkin-sms', {
+    method:      'POST',
+    credentials: 'same-origin',
+    headers:     { 'Content-Type': 'application/json' },
+    body:        JSON.stringify({}),
+  }).then(res => res.ok ? res.json() : null).then(data => {
+    if (data && data.ok) {
+      btn.textContent = 'Sent ✓';
+      btn.classList.add('pd-sms-btn--sent');
+      btn.disabled    = false;
+      setTimeout(() => {
+        btn.textContent = 'Send Check-in SMS ↗';
+        btn.classList.remove('pd-sms-btn--sent');
+      }, 4000);
+    } else {
+      const msg = (data && data.error) || 'Send failed';
+      btn.textContent = msg.includes('phone') ? 'No phone on file' : 'Error — retry';
+      btn.classList.add('pd-sms-btn--error');
+      btn.disabled = false;
+      setTimeout(() => {
+        btn.textContent = 'Send Check-in SMS ↗';
+        btn.classList.remove('pd-sms-btn--error');
+      }, 4000);
+    }
+  }).catch(() => {
+    btn.textContent = 'Error — retry';
+    btn.classList.add('pd-sms-btn--error');
+    btn.disabled    = false;
+    setTimeout(() => {
+      btn.textContent = 'Send Check-in SMS ↗';
+      btn.classList.remove('pd-sms-btn--error');
+    }, 4000);
+  });
+}
+
+// ── sendCheckinSMS (kept for backward compatibility — not called directly now) ─
+async function sendCheckinSMS(btn) {
+  const patientId   = btn.dataset.patientId;
+  if (!btn.dataset.confirming) {
+    btn.dataset.confirming = '1';
+    btn.textContent = 'Confirm?';
     setTimeout(function () {
       if (btn.dataset.confirming) {
         delete btn.dataset.confirming;
@@ -876,58 +1636,51 @@ async function sendCheckinSMS(btn) {
     }, 3000);
     return;
   }
-
-  // Second click — fire
   delete btn.dataset.confirming;
   btn.disabled = true;
   btn.textContent = '…';
-
   try {
-    const res = await fetch('/api/provider/patient/' + patientId + '/send-checkin-sms', {
-      method: 'POST',
-      credentials: 'same-origin',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}),
+    const res  = await fetch('/api/provider/patient/' + patientId + '/send-checkin-sms', {
+      method: 'POST', credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}),
     });
     const data = res.ok ? await res.json() : null;
     if (data && data.ok) {
       btn.textContent = 'Sent ✓';
       btn.classList.add('pd-sms-btn--sent');
       btn.disabled = false;
-      // Fade back to default after 4s
-      setTimeout(function () {
-        btn.textContent = 'SMS ↗';
-        btn.classList.remove('pd-sms-btn--sent');
-      }, 4000);
+      setTimeout(() => { btn.textContent = 'SMS ↗'; btn.classList.remove('pd-sms-btn--sent'); }, 4000);
     } else {
       const msg = (data && data.error) || 'Send failed';
       btn.textContent = msg.includes('phone') ? 'No phone' : 'Error';
       btn.classList.add('pd-sms-btn--error');
       btn.disabled = false;
-      setTimeout(function () {
-        btn.textContent = 'SMS ↗';
-        btn.classList.remove('pd-sms-btn--error');
-      }, 4000);
+      setTimeout(() => { btn.textContent = 'SMS ↗'; btn.classList.remove('pd-sms-btn--error'); }, 4000);
     }
   } catch (_) {
     btn.textContent = 'Error';
     btn.classList.add('pd-sms-btn--error');
     btn.disabled = false;
-    setTimeout(function () {
-      btn.textContent = 'SMS ↗';
-      btn.classList.remove('pd-sms-btn--error');
-    }, 4000);
+    setTimeout(() => { btn.textContent = 'SMS ↗'; btn.classList.remove('pd-sms-btn--error'); }, 4000);
   }
 }
 
-function filterCards(q) {
+// ── Search / filter ──────────────────────────────────────────────────────────
+function filterRows(q) {
   q = q.toLowerCase().trim();
   let visible = 0;
-  document.querySelectorAll('.pd-card').forEach(function(c) {
-    const match = c.dataset.name.includes(q);
-    c.style.display = match ? '' : 'none';
+  document.querySelectorAll('.pd-row').forEach(function(r) {
+    const match = r.dataset.name.includes(q);
+    r.style.display = match ? '' : 'none';
     if (match) visible++;
   });
+  // Section headers visibility
+  const alertRows   = document.querySelectorAll('#section-hdr-alerts ~ .pd-row[data-state="alert"]');
+  const rosterRows  = document.querySelectorAll('#section-hdr-roster ~ .pd-row:not([data-state="alert"])');
+  const alertHdr    = document.getElementById('section-hdr-alerts');
+  const rosterHdr   = document.getElementById('section-hdr-roster');
+  if (alertHdr)  alertHdr.style.display  = [...document.querySelectorAll('.pd-row[data-state="alert"]')].some(r => r.style.display !== 'none') ? '' : 'none';
+  if (rosterHdr) rosterHdr.style.display = [...document.querySelectorAll('.pd-row:not([data-state="alert"])')].some(r => r.style.display !== 'none') ? '' : 'none';
   const noRes = document.getElementById('pd-no-results');
   if (noRes) noRes.style.display = visible === 0 ? '' : 'none';
 }
@@ -937,20 +1690,14 @@ function setFilter(btn, filter) {
   activeFilter = filter;
   document.querySelectorAll('.pd-filter-btn').forEach(b => b.classList.remove('active'));
   btn.classList.add('active');
-  document.querySelectorAll('.pd-card').forEach(function(c) {
-    if (filter === 'all') {
-      c.style.display = '';
-    } else {
-      c.style.display = c.dataset.state === filter ? '' : 'none';
-    }
+  document.querySelectorAll('.pd-row').forEach(function(r) {
+    if (filter === 'all') { r.style.display = ''; return; }
+    if (filter === 'alert') { r.style.display = r.dataset.state === 'alert' ? '' : 'none'; return; }
+    r.style.display = r.dataset.state === filter ? '' : 'none';
   });
 }
 
 // ── Between-session brief ────────────────────────────────────────────────────
-
-const _briefCache = {};
-let _activePid = null;
-
 function fmtDelta(delta, dir, unit, goodDir) {
   if (delta === null || delta === undefined || dir === null || dir === undefined) return '';
   const sign  = delta > 0 ? '+' : '';
@@ -958,10 +1705,8 @@ function fmtDelta(delta, dir, unit, goodDir) {
   const isGood = (dir === goodDir) || dir === 'stable';
   const cls = dir === 'stable'
     ? 'pd-delta pd-delta-stable'
-    : isGood ? 'pd-delta pd-delta-up-good'
-             : 'pd-delta pd-delta-up-bad';
-  const label = dir === 'stable' ? '→ stable'
-    : arrow + ' ' + sign + delta + (unit || '');
+    : isGood ? 'pd-delta pd-delta-up-good' : 'pd-delta pd-delta-up-bad';
+  const label = dir === 'stable' ? '→ stable' : arrow + ' ' + sign + delta + (unit || '');
   return `<span class="${cls}" style="display:inline-flex;">${label}</span>`;
 }
 
@@ -976,222 +1721,141 @@ function renderBriefBody(d, patientId) {
   const period = d.has_appointment
     ? `Since last appointment (${d.appointment_date}) · ${d.days_in_period} days · ${d.checkin_count} check-in${d.checkin_count !== 1 ? 's' : ''}`
     : `Last 90 days (no prior appointment) · ${d.checkin_count} check-in${d.checkin_count !== 1 ? 's' : ''}`;
-  subtitle.textContent = period;
+  if (subtitle) subtitle.textContent = period;
 
-  let html = '';
+  let html = `<div style="font-size:0.72rem;color:var(--text-muted);margin-bottom:14px;font-style:italic;">${period}</div>`;
 
   if (d.crisis_active) {
     html += `<div class="pd-brief-crisis-bar">⚠ Active crisis flag — review before appointment</div>`;
   }
 
-  // ── Mode D: AI-detected substance and safety signals ─────────────────────
+  // Mode D: AI-detected substance and safety signals
   const mdf = _modeDFlags[patientId] || {};
   const substanceFlag = mdf.substance || null;
   const safetyFlag    = mdf.safety    || null;
 
   if ((substanceFlag && substanceFlag.alert_level) || (safetyFlag && safetyFlag.signals_found)) {
-    html += `<div style="margin-bottom:16px;">`;
-
+    html += `<div style="margin-bottom:14px;">`;
     if (safetyFlag && safetyFlag.signals_found) {
-      const sigCount  = safetyFlag.signal_count || 0;
-      const lastSeen  = safetyFlag.most_recent_date || '—';
-      const recency   = safetyFlag.recency_days != null ? safetyFlag.recency_days + 'd ago' : '';
-      html += `<div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:12px 16px;margin-bottom:8px;">
-        <div style="font-size:0.68rem;font-weight:500;text-transform:uppercase;letter-spacing:0.07em;color:#c0392b;margin-bottom:6px;">
-          🔴 Interpersonal Safety Signal
-        </div>
-        <div style="font-size:0.82rem;color:#721c24;line-height:1.5;">
-          Language patterns suggesting possible interpersonal harm detected in
-          <strong>${sigCount}</strong> journal/note entr${sigCount === 1 ? 'y' : 'ies'}.
+      const sigCount = safetyFlag.signal_count || 0;
+      const lastSeen = safetyFlag.most_recent_date || '—';
+      const recency  = safetyFlag.recency_days != null ? safetyFlag.recency_days + 'd ago' : '';
+      html += `<div style="background:#fdecea;border:1px solid #f5c6cb;border-radius:8px;padding:12px 14px;margin-bottom:8px;">
+        <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:#c0392b;margin-bottom:5px;">🔴 Interpersonal Safety Signal</div>
+        <div style="font-size:0.8rem;color:#721c24;line-height:1.55;">
+          Language patterns suggesting possible interpersonal harm detected in <strong>${sigCount}</strong> journal/note entr${sigCount === 1 ? 'y' : 'ies'}.
           Most recent: <strong>${lastSeen}</strong>${recency ? ' (' + recency + ')' : ''}.
         </div>
-        <div style="font-size:0.75rem;color:#a52834;margin-top:5px;font-style:italic;">
-          Clinical safety assessment recommended. This signal is not shown to the patient.
-        </div>
+        <div style="font-size:0.72rem;color:#a52834;margin-top:5px;font-style:italic;">Clinical safety assessment recommended. Not shown to patient.</div>
       </div>`;
     }
-
     if (substanceFlag && substanceFlag.alert_level) {
-      const isRed   = substanceFlag.alert_level === 'concern';
-      const bg      = isRed ? '#fdecea' : '#fff8e1';
-      const border  = isRed ? '#f5c6cb' : '#ffe082';
-      const txtClr  = isRed ? '#721c24' : '#5d4037';
-      const lblClr  = isRed ? '#c0392b' : '#e65100';
-      const icon    = isRed ? '🔴' : '🟡';
-      const label   = isRed ? 'Substance Use — Concern' : 'Substance Use — Watch';
-      const ddays   = substanceFlag.drinking_days   || 0;
-      const tdays   = substanceFlag.total_days      || '?';
-      const avgU    = substanceFlag.avg_units_per_drinking_day != null
-                        ? substanceFlag.avg_units_per_drinking_day.toFixed(1) : '—';
-      const jFlags  = (substanceFlag.journal_flags || []).length;
-      html += `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 16px;">
-        <div style="font-size:0.68rem;font-weight:500;text-transform:uppercase;letter-spacing:0.07em;color:${lblClr};margin-bottom:6px;">
-          ${icon} ${label}
-        </div>
-        <div style="font-size:0.82rem;color:${txtClr};line-height:1.5;">
-          Alcohol logged on <strong>${ddays}</strong> of ${tdays} tracked days
-          (avg <strong>${avgU} units</strong>/drinking day).
+      const isRed  = substanceFlag.alert_level === 'concern';
+      const bg     = isRed ? '#fdecea' : '#fff8e1';
+      const border = isRed ? '#f5c6cb' : '#ffe082';
+      const txtClr = isRed ? '#721c24' : '#5d4037';
+      const lblClr = isRed ? '#c0392b' : '#e65100';
+      const icon   = isRed ? '🔴' : '🟡';
+      const label  = isRed ? 'Substance Use — Concern' : 'Substance Use — Watch';
+      const ddays  = substanceFlag.drinking_days || 0;
+      const tdays  = substanceFlag.total_days || '?';
+      const avgU   = substanceFlag.avg_units_per_drinking_day != null ? substanceFlag.avg_units_per_drinking_day.toFixed(1) : '—';
+      const jFlags = (substanceFlag.journal_flags || []).length;
+      html += `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 14px;">
+        <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:${lblClr};margin-bottom:5px;">${icon} ${label}</div>
+        <div style="font-size:0.8rem;color:${txtClr};line-height:1.55;">
+          Alcohol logged on <strong>${ddays}</strong> of ${tdays} tracked days (avg <strong>${avgU} units</strong>/drinking day).
           ${jFlags > 0 ? `<strong>${jFlags}</strong> journal entr${jFlags === 1 ? 'y' : 'ies'} flagged language patterns.` : ''}
         </div>
       </div>`;
     }
-
     html += `</div>`;
   }
 
   if (d.checkin_count === 0) {
-    html += `<p style="color:var(--color-text-muted,#888);font-size:0.88rem;margin:0 0 16px;">No check-ins recorded in this period.</p>`;
+    html += `<p style="color:var(--text-muted);font-size:0.85rem;margin:0 0 14px;">No check-ins recorded in this period.</p>`;
   } else {
 
-    // ── Therapy lens: behavioral signals FIRST ────────────────────────────
+    // Therapy lens: behavioral signals first
     if (isTherapy && d.behavioral) {
       const beh = d.behavioral;
       html += `<div class="pd-brief-beh-section">
         <div class="pd-brief-beh-title">Behavioral Signals</div>
         <div class="pd-brief-beh-grid">`;
-
-      const socialVal    = beh.social_avg    !== null ? beh.social_avg    + '/10' : '—';
-      const workloadVal  = beh.workload_avg  !== null ? beh.workload_avg  + '/10' : '—';
-      const exerciseVal  = beh.exercise_avg  !== null ? beh.exercise_avg  + ' min/d' : '—';
-
-      html += `<div class="pd-brief-beh-stat">
-        <div class="pd-brief-stat-label">Social Quality</div>
-        <div class="pd-brief-stat-val">${socialVal}</div>
-      </div>
-      <div class="pd-brief-beh-stat">
-        <div class="pd-brief-stat-label">Workload Friction</div>
-        <div class="pd-brief-stat-val">${workloadVal}</div>
-      </div>
-      <div class="pd-brief-beh-stat">
-        <div class="pd-brief-stat-label">Exercise avg</div>
-        <div class="pd-brief-stat-val">${exerciseVal}</div>
-      </div>`;
-
+      const socialVal   = beh.social_avg   !== null ? beh.social_avg   + '/10' : '—';
+      const workloadVal = beh.workload_avg !== null ? beh.workload_avg + '/10' : '—';
+      const exerciseVal = beh.exercise_avg !== null ? beh.exercise_avg + ' min/d' : '—';
+      html += `<div class="pd-brief-beh-stat"><div class="pd-brief-stat-label">Social Quality</div><div class="pd-brief-stat-val">${socialVal}</div></div>
+      <div class="pd-brief-beh-stat"><div class="pd-brief-stat-label">Workload Friction</div><div class="pd-brief-stat-val">${workloadVal}</div></div>
+      <div class="pd-brief-beh-stat"><div class="pd-brief-stat-label">Exercise avg</div><div class="pd-brief-stat-val">${exerciseVal}</div></div>`;
       const anyDays = beh.coping_any_days || 0;
-      html += `<div class="pd-brief-beh-stat">
-        <div class="pd-brief-stat-label">Coping Activity</div>
-        <div class="pd-brief-stat-val">${anyDays} <small>days</small></div>
-      </div>`;
-
-      html += `</div>`; // /pd-brief-beh-grid
-
-      // Coping breakdown
+      html += `<div class="pd-brief-beh-stat"><div class="pd-brief-stat-label">Coping Activity</div><div class="pd-brief-stat-val">${anyDays} <small>days</small></div></div>`;
+      html += `</div>`;
       const cp = beh.coping_days || {};
-      const cpParts = Object.entries(cp).filter(([,v]) => v > 0).map(([k,v]) =>
-        `<span class="pd-brief-theme-chip">${k}: ${v}d</span>`);
-      if (cpParts.length) {
-        html += `<div style="margin-top:6px;">${cpParts.join('')}</div>`;
-      } else if (beh.advanced_days === 0) {
-        html += `<div style="font-size:0.78rem;color:var(--color-text-muted,#aaa);margin-top:4px;">No advanced check-in data logged in this period.</div>`;
-      }
-
-      html += `</div>`; // /pd-brief-beh-section
-    }
-
-    // ── Standard clinical stats (mood / stress / sleep) ───────────────────
-    html += `<div class="pd-brief-stat-grid">`;
-
-    const moodVal  = d.mood_avg  !== null ? d.mood_avg  + '/10' : '—';
-    const moodBase = d.mood_baseline !== null ? `<small>baseline ${d.mood_baseline}</small>` : '';
-    html += `<div class="pd-brief-stat">
-      <div class="pd-brief-stat-label">Mood avg</div>
-      <div class="pd-brief-stat-val">${moodVal} ${moodBase} ${fmtDelta(d.mood_delta, d.mood_dir, '', 'up')}</div>
-    </div>`;
-
-    const stressVal  = d.stress_avg  !== null ? d.stress_avg  + '/10' : '—';
-    const stressBase = d.stress_baseline !== null ? `<small>baseline ${d.stress_baseline}</small>` : '';
-    html += `<div class="pd-brief-stat">
-      <div class="pd-brief-stat-label">Stress avg</div>
-      <div class="pd-brief-stat-val">${stressVal} ${stressBase} ${fmtDelta(d.stress_delta, d.stress_dir, '', 'down')}</div>
-    </div>`;
-
-    const sleepVal  = d.sleep_avg  !== null ? d.sleep_avg  + 'h' : '—';
-    const sleepBase = d.sleep_baseline !== null ? `<small>baseline ${d.sleep_baseline}h</small>` : '';
-    html += `<div class="pd-brief-stat">
-      <div class="pd-brief-stat-label">Sleep avg</div>
-      <div class="pd-brief-stat-val">${sleepVal} ${sleepBase} ${fmtDelta(d.sleep_delta, d.sleep_dir, 'h', 'up')}</div>
-    </div>`;
-
-    const lastCI = d.last_checkin
-      ? (d.days_since_checkin === 0 ? 'Today'
-         : d.days_since_checkin === 1 ? 'Yesterday'
-         : d.days_since_checkin + 'd ago')
-      : 'None';
-    html += `<div class="pd-brief-stat">
-      <div class="pd-brief-stat-label">Last Check-in</div>
-      <div class="pd-brief-stat-val">${lastCI}</div>
-    </div>`;
-
-    if (!isTherapy && d.med_doses_logged > 0) {
-      html += `<div class="pd-brief-stat">
-        <div class="pd-brief-stat-label">Doses Logged</div>
-        <div class="pd-brief-stat-val">${d.med_doses_logged} <small>on ${d.med_days_logged} day${d.med_days_logged !== 1 ? 's' : ''}</small></div>
-      </div>`;
-    }
-
-    if (d.journal_count > 0) {
-      html += `<div class="pd-brief-stat">
-        <div class="pd-brief-stat-label">Journal Entries</div>
-        <div class="pd-brief-stat-val">${d.journal_count}</div>
-      </div>`;
-    }
-
-    html += `</div>`; // /pd-brief-stat-grid
-
-    if (d.journal_themes && d.journal_themes.length > 0) {
-      html += `<div class="pd-brief-themes-row">
-        <div class="pd-brief-themes-label">Journal themes</div>`;
-      d.journal_themes.forEach(t => {
-        html += `<span class="pd-brief-theme-chip">${t}</span>`;
-      });
+      const cpParts = Object.entries(cp).filter(([,v]) => v > 0).map(([k,v]) => `<span class="pd-brief-theme-chip">${k}: ${v}d</span>`);
+      if (cpParts.length) html += `<div style="margin-top:6px;">${cpParts.join('')}</div>`;
       html += `</div>`;
     }
 
-    // ── Therapy AI summary section ────────────────────────────────────────
+    // Standard stats
+    html += `<div class="pd-brief-stat-grid">`;
+    const moodVal  = d.mood_avg  !== null ? d.mood_avg  + '/10' : '—';
+    const moodBase = d.mood_baseline !== null ? `<small>baseline ${d.mood_baseline}</small>` : '';
+    html += `<div class="pd-brief-stat"><div class="pd-brief-stat-label">Mood avg</div><div class="pd-brief-stat-val">${moodVal} ${moodBase} ${fmtDelta(d.mood_delta, d.mood_dir, '', 'up')}</div></div>`;
+    const stressVal  = d.stress_avg  !== null ? d.stress_avg  + '/10' : '—';
+    const stressBase = d.stress_baseline !== null ? `<small>baseline ${d.stress_baseline}</small>` : '';
+    html += `<div class="pd-brief-stat"><div class="pd-brief-stat-label">Stress avg</div><div class="pd-brief-stat-val">${stressVal} ${stressBase} ${fmtDelta(d.stress_delta, d.stress_dir, '', 'down')}</div></div>`;
+    const sleepVal  = d.sleep_avg !== null ? d.sleep_avg + 'h' : '—';
+    const sleepBase = d.sleep_baseline !== null ? `<small>baseline ${d.sleep_baseline}h</small>` : '';
+    html += `<div class="pd-brief-stat"><div class="pd-brief-stat-label">Sleep avg</div><div class="pd-brief-stat-val">${sleepVal} ${sleepBase} ${fmtDelta(d.sleep_delta, d.sleep_dir, 'h', 'up')}</div></div>`;
+    const lastCI = d.last_checkin ? (d.days_since_checkin === 0 ? 'Today' : d.days_since_checkin === 1 ? 'Yesterday' : d.days_since_checkin + 'd ago') : 'None';
+    html += `<div class="pd-brief-stat"><div class="pd-brief-stat-label">Last Check-in</div><div class="pd-brief-stat-val">${lastCI}</div></div>`;
+    if (!isTherapy && d.med_doses_logged > 0) {
+      html += `<div class="pd-brief-stat"><div class="pd-brief-stat-label">Doses Logged</div><div class="pd-brief-stat-val">${d.med_doses_logged} <small>on ${d.med_days_logged} day${d.med_days_logged !== 1 ? 's' : ''}</small></div></div>`;
+    }
+    if (d.journal_count > 0) {
+      html += `<div class="pd-brief-stat"><div class="pd-brief-stat-label">Journal Entries</div><div class="pd-brief-stat-val">${d.journal_count}</div></div>`;
+    }
+    html += `</div>`;
+
+    if (d.journal_themes && d.journal_themes.length > 0) {
+      html += `<div class="pd-brief-themes-row"><div class="pd-brief-themes-label">Journal themes</div>`;
+      d.journal_themes.forEach(t => { html += `<span class="pd-brief-theme-chip">${t}</span>`; });
+      html += `</div>`;
+    }
+
+    // Therapy AI summary
     if (isTherapy) {
       html += `<div class="pd-therapy-ai-section" id="therapy-ai-${patientId}">
         <div class="pd-therapy-ai-title">AI Therapy Summary</div>
-        <div id="therapy-ai-body-${patientId}" style="margin-bottom:10px;">
-          <button class="pd-brief-gen-btn"
-                  id="therapy-gen-btn-${patientId}"
-                  onclick="generateTherapySummary('${patientId}')">
-            Generate Therapy Summary
-          </button>
+        <div id="therapy-ai-body-${patientId}" style="margin-bottom:6px;">
+          <button class="pd-brief-gen-btn" id="therapy-gen-btn-${patientId}"
+                  onclick="generateTherapySummary('${patientId}')">Generate Therapy Summary</button>
         </div>
       </div>`;
     }
   }
 
-  // ── Previous session notes ───────────────────────────────────────────────
+  // Previous session notes
   const hasNotes   = d.session_notes && d.session_notes.trim();
   const hasPlan    = d.care_plan_changes && d.care_plan_changes.trim();
   const hasActions = d.session_actions && d.session_actions.length > 0;
-
   if (hasNotes || hasPlan || hasActions) {
     const _apptDateFmt = d.appointment_date
       ? new Date(d.appointment_date + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
       : '';
     html += `<div class="pd-session-notes-section">
       <div class="pd-session-notes-title">Last Session Notes <span class="pd-session-notes-date">${_apptDateFmt}</span></div>`;
-
     if (hasNotes) {
       const notesEsc = d.session_notes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-      html += `<div class="pd-session-notes-block">
-        <div class="pd-session-notes-label">Notes</div>
-        <div class="pd-session-notes-body">${notesEsc}</div>
-      </div>`;
+      html += `<div class="pd-session-notes-block"><div class="pd-session-notes-label">Notes</div><div class="pd-session-notes-body">${notesEsc}</div></div>`;
     }
     if (hasPlan) {
       const planEsc = d.care_plan_changes.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/\n/g,'<br>');
-      html += `<div class="pd-session-notes-block">
-        <div class="pd-session-notes-label">Care Plan Changes</div>
-        <div class="pd-session-notes-body">${planEsc}</div>
-      </div>`;
+      html += `<div class="pd-session-notes-block"><div class="pd-session-notes-label">Care Plan Changes</div><div class="pd-session-notes-body">${planEsc}</div></div>`;
     }
     if (hasActions) {
-      html += `<div class="pd-session-notes-block">
-        <div class="pd-session-notes-label">Action Items</div>
-        <ul class="pd-session-actions-list">`;
+      html += `<div class="pd-session-notes-block"><div class="pd-session-notes-label">Action Items</div><ul class="pd-session-actions-list">`;
       d.session_actions.forEach(a => {
         const txt = (a.text || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
         const sty = a.done ? ' style="text-decoration:line-through;opacity:0.5;"' : '';
@@ -1202,80 +1866,66 @@ function renderBriefBody(d, patientId) {
     html += `</div>`;
   }
 
-  // ── Proactive AI insights (loaded async after render) ───────────────────
+  // Proactive AI insights
   html += `<div class="pd-proactive-section" id="proactive-section-${patientId}" style="display:none;">
     <div class="pd-proactive-title">⚡ Proactive Pattern Alerts</div>
     <div id="proactive-body-${patientId}"></div>
   </div>`;
 
-  // ── Care flags section (loaded async after render) ──────────────────────
+  // Care flags
   html += `<div class="pd-flags-section" id="flags-section-${patientId}">
     <div class="pd-flags-section-title">Care Team Flags</div>
-    <div id="flags-body-${patientId}">
-      <p style="font-size:0.78rem;color:var(--color-text-muted,#aaa);">Loading flags…</p>
-    </div>
+    <div id="flags-body-${patientId}"><p style="font-size:0.78rem;color:var(--text-muted);">Loading flags…</p></div>
   </div>`;
 
   html += `<div class="pd-brief-footer-note">Data covers ${d.since_date} through today. Figures from patient check-ins and shared journals. Baseline = 90-day window prior to last appointment.</div>`;
 
-  // ── Appointment CTA bar ───────────────────────────────────────────────
+  // Appointment CTA bar
   const meta = _apptMeta[patientId] || {};
   if (meta.status === 'active' && meta.id) {
     html += `<div class="pd-brief-appt-bar">
-      <span style="font-size:12px;color:var(--color-text-muted,#888);flex:1;">Active session in progress</span>
-      <a href="/provider/patient/${patientId}/appointment/${meta.id}"
-         class="pd-brief-appt-btn">Continue Active Session →</a>
-      <a href="/provider/patient/${patientId}"
-         class="pd-brief-appt-btn-ghost">Patient Profile</a>
+      <span style="font-size:11px;color:var(--text-muted);flex:1;">Active session in progress</span>
+      <a href="/provider/patient/${patientId}/appointment/${meta.id}" class="pd-brief-appt-btn">Continue Active Session →</a>
+      <a href="/provider/patient/${patientId}" class="pd-brief-appt-btn-ghost">Patient Profile</a>
     </div>`;
   } else {
     html += `<div class="pd-brief-appt-bar">
-      <span style="font-size:12px;color:var(--color-text-muted,#888);flex:1;">Ready to document a session?</span>
-      <a href="/provider/patient/${patientId}"
-         class="pd-brief-appt-btn">Start New Appointment →</a>
+      <span style="font-size:11px;color:var(--text-muted);flex:1;">Ready to document a session?</span>
+      <a href="/provider/patient/${patientId}" class="pd-brief-appt-btn">Start New Appointment →</a>
     </div>`;
   }
 
   body.innerHTML = html;
-  // Async: load secondary data after DOM is updated
   loadCareFlags(patientId);
   loadProactiveInsights(patientId);
 }
 
-// ── Care flag helpers ──────────────────────────────────────────────────────
-
+// ── Care flag helpers ────────────────────────────────────────────────────────
 const _FLAG_TYPE_LABELS = {
-  observation:          'Observation',
-  concern:              'Concern',
-  progress:             'Progress',
-  coordination_needed:  'Needs Coordination',
+  observation:         'Observation',
+  concern:             'Concern',
+  progress:            'Progress',
+  coordination_needed: 'Needs Coordination',
 };
 
 function _relativeTime(isoStr) {
   if (!isoStr) return '';
   const diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
-  if (diff < 60)   return 'just now';
-  if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+  if (diff < 60)    return 'just now';
+  if (diff < 3600)  return Math.floor(diff / 60) + 'm ago';
   if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
   return Math.floor(diff / 86400) + 'd ago';
 }
 
 function _renderFlagCard(f, isMine) {
   const typeLabel = _FLAG_TYPE_LABELS[f.flag_type] || f.flag_type;
-  const cardCls   = isMine ? 'pd-flag-card pd-flag-card-mine'
-                            : `pd-flag-card pd-flag-card-${f.flag_type}`;
+  const cardCls   = isMine ? 'pd-flag-card pd-flag-card-mine' : `pd-flag-card pd-flag-card-${f.flag_type}`;
   const authorLine = isMine
     ? `<span class="pd-flag-author">Posted by you</span>`
     : `<span class="pd-flag-author">${f.author_name || 'Provider'} · ${f.author_role || ''}</span>`;
-  const resolveBtn = isMine
-    ? `<button class="pd-flag-resolve-btn" onclick="resolveCareFlag('${f.id}','__PID__')">Resolve</button>`
-    : `<button class="pd-flag-resolve-btn" onclick="resolveCareFlag('${f.id}','__PID__')">Mark Resolved</button>`;
+  const resolveBtn = `<button class="pd-flag-resolve-btn" onclick="resolveCareFlag('${f.id}','__PID__')">${isMine ? 'Resolve' : 'Mark Resolved'}</button>`;
   return `<div class="${cardCls}" id="flag-card-${f.id}">
-    <div class="pd-flag-card-top">
-      <span class="pd-flag-type-badge">${typeLabel}</span>
-      ${authorLine}
-      ${resolveBtn}
-    </div>
+    <div class="pd-flag-card-top"><span class="pd-flag-type-badge">${typeLabel}</span>${authorLine}${resolveBtn}</div>
     <div class="pd-flag-body">${f.body.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
     <div class="pd-flag-time">${_relativeTime(f.created_at)}</div>
   </div>`;
@@ -1295,36 +1945,31 @@ async function loadProactiveInsights(patientId) {
   const body    = document.getElementById('proactive-body-'    + patientId);
   if (!section || !body) return;
   try {
-    const res  = await fetch('/api/provider/patient/' + patientId + '/proactive-insights', { credentials: 'same-origin' });
-    const data = res.ok ? await res.json() : null;
+    const res     = await fetch('/api/provider/patient/' + patientId + '/proactive-insights', { credentials: 'same-origin' });
+    const data    = res.ok ? await res.json() : null;
     const insights = (data && data.insights) ? data.insights : [];
-    if (insights.length === 0) return;   // section stays hidden
-
+    if (insights.length === 0) return;
     let html = '';
     insights.forEach(function(ins) {
-      const label    = _PROACTIVE_LABELS[ins.pattern_type] || ins.pattern_type;
-      const isPos    = _PROACTIVE_POSITIVE.has(ins.pattern_type);
-      const cardCls  = isPos ? 'pd-proactive-card pd-proactive-card--positive' : 'pd-proactive-card';
-      const ageMs    = Date.now() - new Date(ins.created_at).getTime();
-      const ageHr    = Math.floor(ageMs / 3600000);
-      const ageLabel = ageHr < 1 ? 'just now' : ageHr < 24 ? ageHr + 'h ago' : Math.floor(ageHr / 24) + 'd ago';
-      const seenDot  = ins.seen_at
-        ? `<span style="font-size:0.65rem;color:#1a7f3c;margin-left:5px;">✓ seen by patient</span>`
-        : `<span style="font-size:0.65rem;color:#aaa;margin-left:5px;">unseen</span>`;
-      const textEsc  = ins.insight_text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-      html += `<div class="${cardCls}">
-        <div>
-          <span class="pd-proactive-label">${label}</span>
-          ${seenDot}
-          <p class="pd-proactive-text">${textEsc}</p>
-          <div class="pd-proactive-time">Detected ${ageLabel}</div>
-        </div>
-      </div>`;
+      const label   = _PROACTIVE_LABELS[ins.pattern_type] || ins.pattern_type;
+      const isPos   = _PROACTIVE_POSITIVE.has(ins.pattern_type);
+      const cardCls = isPos ? 'pd-proactive-card pd-proactive-card--positive' : 'pd-proactive-card';
+      const ageMs   = Date.now() - new Date(ins.created_at).getTime();
+      const ageHr   = Math.floor(ageMs / 3600000);
+      const ageLbl  = ageHr < 1 ? 'just now' : ageHr < 24 ? ageHr + 'h ago' : Math.floor(ageHr / 24) + 'd ago';
+      const seenDot = ins.seen_at
+        ? `<span style="font-size:0.62rem;color:#1a7f3c;margin-left:5px;">✓ seen</span>`
+        : `<span style="font-size:0.62rem;color:#aaa;margin-left:5px;">unseen</span>`;
+      const textEsc = ins.insight_text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      html += `<div class="${cardCls}"><div>
+        <span class="pd-proactive-label">${label}</span>${seenDot}
+        <p class="pd-proactive-text">${textEsc}</p>
+        <div class="pd-proactive-time">Detected ${ageLbl}</div>
+      </div></div>`;
     });
-
     body.innerHTML = html;
-    section.style.display = '';   // reveal section
-  } catch (_) { /* silent — proactive insights are supplementary */ }
+    section.style.display = '';
+  } catch (_) {}
 }
 
 async function loadCareFlags(patientId) {
@@ -1334,25 +1979,21 @@ async function loadCareFlags(patientId) {
     const res  = await fetch('/api/provider/patient/' + patientId + '/flags', { credentials: 'same-origin' });
     const data = res.ok ? await res.json() : null;
     if (!data) { el.innerHTML = '<p style="font-size:0.78rem;color:#c0392b;">Failed to load flags.</p>'; return; }
-
     let html = '';
     const others = data.from_others || [];
     const mine   = data.my_flags   || [];
-
     if (others.length === 0 && mine.length === 0) {
-      html += `<p style="font-size:0.78rem;color:var(--color-text-muted,#aaa);margin-bottom:8px;">No active flags from care team members.</p>`;
+      html += `<p style="font-size:0.78rem;color:var(--text-muted);margin-bottom:8px;">No active flags from care team members.</p>`;
     } else {
       if (others.length > 0) {
-        html += `<div style="margin-bottom:4px;font-size:0.72rem;font-weight:500;color:var(--color-text-muted,#888);">From care team (${others.length})</div>`;
+        html += `<div style="margin-bottom:4px;font-size:0.7rem;font-weight:600;color:var(--text-muted);">From care team (${others.length})</div>`;
         others.forEach(f => { html += _renderFlagCard(f, false).replace(/__PID__/g, patientId); });
       }
       if (mine.length > 0) {
-        html += `<div style="margin:10px 0 4px;font-size:0.72rem;font-weight:500;color:var(--color-text-muted,#888);">Posted by you (${mine.length})</div>`;
+        html += `<div style="margin:10px 0 4px;font-size:0.7rem;font-weight:600;color:var(--text-muted);">Posted by you (${mine.length})</div>`;
         mine.forEach(f => { html += _renderFlagCard(f, true).replace(/__PID__/g, patientId); });
       }
     }
-
-    // Post-a-flag form
     html += `<div class="pd-flag-create">
       <div class="pd-flag-create-title">Post a Flag</div>
       <div class="pd-flag-create-row">
@@ -1363,14 +2004,12 @@ async function loadCareFlags(patientId) {
           <option value="coordination_needed">Needs Coordination</option>
         </select>
         <textarea class="pd-flag-body-input" id="flag-body-${patientId}"
-                  placeholder="What do you want to share with the care team? (10–1000 chars)"
-                  rows="2"></textarea>
+                  placeholder="What do you want to share with the care team? (10–1000 chars)" rows="2"></textarea>
         <button class="pd-flag-submit-btn" id="flag-submit-${patientId}"
                 onclick="submitCareFlag('${patientId}')">Post</button>
       </div>
       <div class="pd-flag-create-err" id="flag-err-${patientId}"></div>
     </div>`;
-
     el.innerHTML = html;
   } catch (e) {
     el.innerHTML = '<p style="font-size:0.78rem;color:#c0392b;">Network error loading flags.</p>';
@@ -1381,19 +2020,10 @@ async function resolveCareFlag(flagId, patientId) {
   const card = document.getElementById('flag-card-' + flagId);
   if (card) { card.style.opacity = '0.4'; card.style.pointerEvents = 'none'; }
   try {
-    const res = await fetch(
-      '/api/provider/patient/' + patientId + '/flags/' + flagId + '/resolve',
-      { method: 'PATCH', credentials: 'same-origin' }
-    );
-    if (res.ok) {
-      // Reload flags panel to reflect resolved state
-      loadCareFlags(patientId);
-    } else {
-      if (card) { card.style.opacity = ''; card.style.pointerEvents = ''; }
-    }
-  } catch (_) {
-    if (card) { card.style.opacity = ''; card.style.pointerEvents = ''; }
-  }
+    const res = await fetch('/api/provider/patient/' + patientId + '/flags/' + flagId + '/resolve', { method: 'PATCH', credentials: 'same-origin' });
+    if (res.ok) { loadCareFlags(patientId); }
+    else { if (card) { card.style.opacity = ''; card.style.pointerEvents = ''; } }
+  } catch (_) { if (card) { card.style.opacity = ''; card.style.pointerEvents = ''; } }
 }
 
 async function submitCareFlag(patientId) {
@@ -1402,76 +2032,46 @@ async function submitCareFlag(patientId) {
   const btnEl  = document.getElementById('flag-submit-' + patientId);
   const errEl  = document.getElementById('flag-err-' + patientId);
   if (!typeEl || !bodyEl) return;
-
   const flagType = typeEl.value;
   const body     = bodyEl.value.trim();
   errEl.textContent = '';
-
-  if (body.length < 10) { errEl.textContent = 'Please write at least 10 characters.'; return; }
+  if (body.length < 10)   { errEl.textContent = 'Please write at least 10 characters.'; return; }
   if (body.length > 1000) { errEl.textContent = 'Limit 1000 characters.'; return; }
-
   btnEl.disabled = true;
   btnEl.textContent = 'Posting…';
-
   try {
-    const res = await fetch('/api/provider/patient/' + patientId + '/flags', {
+    const res  = await fetch('/api/provider/patient/' + patientId + '/flags', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ flag_type: flagType, body }),
       credentials: 'same-origin',
     });
     const data = await res.json();
-    if (res.ok && data.ok) {
-      bodyEl.value = '';
-      loadCareFlags(patientId);  // refresh flags panel
-    } else {
+    if (res.ok && data.ok) { bodyEl.value = ''; loadCareFlags(patientId); }
+    else {
       errEl.textContent = data.error || 'Failed to post flag — try again.';
-      btnEl.disabled = false;
-      btnEl.textContent = 'Post';
+      btnEl.disabled = false; btnEl.textContent = 'Post';
     }
   } catch (_) {
     errEl.textContent = 'Network error — try again.';
-    btnEl.disabled = false;
-    btnEl.textContent = 'Post';
+    btnEl.disabled = false; btnEl.textContent = 'Post';
   }
 }
 
-// Stores appointment meta per patient so renderBriefBody can build CTAs
-const _apptMeta = {};
-
-// Stores Mode D (AI-detected) substance/safety flags per patient
-const _modeDFlags = {};
-
+// ── openBrief (called by hubCreateBrief) ────────────────────────────────────
 async function openBrief(btn) {
   const pid  = btn.dataset.patientId;
   const name = btn.dataset.patientName;
-  const drawer = document.getElementById('pd-brief-drawer');
 
-  // Capture appointment meta from the card button
   _apptMeta[pid] = {
     status: btn.dataset.lastApptStatus || '',
     id:     btn.dataset.lastApptId     || '',
   };
-
-  // Capture Mode D AI-detected flags embedded at render time
   try {
     _modeDFlags[pid] = btn.dataset.modeDFlags ? JSON.parse(btn.dataset.modeDFlags) : {};
-  } catch (_) {
-    _modeDFlags[pid] = {};
-  }
-
-  // If same patient is open, close
-  if (_activePid === pid && drawer.classList.contains('open')) {
-    closeBrief();
-    return;
-  }
+  } catch (_) { _modeDFlags[pid] = {}; }
 
   _activePid = pid;
-  document.getElementById('brief-drawer-title').textContent = 'Between-Session Brief — ' + name;
-  document.getElementById('brief-drawer-subtitle').textContent = 'Loading…';
-  document.getElementById('brief-drawer-body').innerHTML = '';
-  drawer.classList.add('open');
-  drawer.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   if (_briefCache[pid]) {
     renderBriefBody(_briefCache[pid], pid);
@@ -1486,11 +2086,13 @@ async function openBrief(btn) {
       if (_activePid === pid) renderBriefBody(data, pid);
     } else {
       document.getElementById('brief-drawer-body').innerHTML =
-        '<p style="color:#c0392b;font-size:0.88rem;">Failed to load brief — try again.</p>';
+        '<p style="color:#c0392b;font-size:0.85rem;">Failed to load brief — try again.</p>';
+      throw new Error('fetch failed');
     }
   } catch (e) {
     document.getElementById('brief-drawer-body').innerHTML =
-      '<p style="color:#c0392b;font-size:0.88rem;">Failed to load brief — try again.</p>';
+      '<p style="color:#c0392b;font-size:0.85rem;">Failed to load brief — try again.</p>';
+    throw e;
   }
 }
 
@@ -1498,10 +2100,8 @@ async function generateTherapySummary(patientId) {
   const btn  = document.getElementById('therapy-gen-btn-' + patientId);
   const body = document.getElementById('therapy-ai-body-' + patientId);
   if (!btn || !body) return;
-
   btn.disabled = true;
   btn.textContent = 'Generating…';
-
   try {
     const res = await fetch('/api/provider/patient/' + patientId + '/therapy-summary', {
       method: 'POST',
@@ -1511,42 +2111,40 @@ async function generateTherapySummary(patientId) {
     });
     const data = res.ok ? await res.json() : null;
     if (data && data.text) {
-      // Format **bold** markdown
       const formatted = data.text.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
       body.innerHTML = `<div class="pd-therapy-ai-body">${formatted}</div>`;
     } else {
       const errMsg = (data && data.error) ? data.error : 'Generation failed — try again.';
       body.innerHTML = `<p style="color:#c0392b;font-size:0.82rem;">${errMsg}</p>
-        <button class="pd-brief-gen-btn" id="therapy-gen-btn-${patientId}"
-                onclick="generateTherapySummary('${patientId}')">Retry</button>`;
+        <button class="pd-brief-gen-btn" id="therapy-gen-btn-${patientId}" onclick="generateTherapySummary('${patientId}')">Retry</button>`;
     }
   } catch (e) {
     body.innerHTML = `<p style="color:#c0392b;font-size:0.82rem;">Network error — try again.</p>
-      <button class="pd-brief-gen-btn" id="therapy-gen-btn-${patientId}"
-              onclick="generateTherapySummary('${patientId}')">Retry</button>`;
+      <button class="pd-brief-gen-btn" id="therapy-gen-btn-${patientId}" onclick="generateTherapySummary('${patientId}')">Retry</button>`;
   }
 }
 
 function closeBrief() {
   document.getElementById('pd-brief-drawer').classList.remove('open');
-  _activePid = null;
+  document.getElementById('pd-roster-col') && document.getElementById('pd-roster-col').classList.remove('hub-open');
+  document.querySelectorAll('.pd-row.active').forEach(r => r.classList.remove('active'));
+  _activeHubPid = null;
+  _activePid    = null;
 }
 
-// ── Add Patient modal ─────────────────────────────────────────────────────────
+// ── Add Patient modal ────────────────────────────────────────────────────────
 function openAddPatient() {
   document.getElementById('add-patient-modal').style.display = 'flex';
   document.getElementById('ap-email').focus();
   loadInboundRequests();
   loadOutboundRequests();
 }
-
 function closeAddPatient() {
   document.getElementById('add-patient-modal').style.display = 'none';
   document.getElementById('ap-form').reset();
-  document.getElementById('ap-error').textContent = '';
+  document.getElementById('ap-error').textContent   = '';
   document.getElementById('ap-success').textContent = '';
 }
-
 async function submitAddPatient(e) {
   e.preventDefault();
   const email   = document.getElementById('ap-email').value.trim();
@@ -1555,91 +2153,70 @@ async function submitAddPatient(e) {
   const errEl   = document.getElementById('ap-error');
   const sucEl   = document.getElementById('ap-success');
   const btn     = document.getElementById('ap-submit');
-  errEl.textContent = '';
-  sucEl.textContent = '';
+  errEl.textContent = ''; sucEl.textContent = '';
   if (!email) { errEl.textContent = 'Email is required.'; return; }
-  btn.disabled = true;
-  btn.textContent = 'Sending…';
+  btn.disabled = true; btn.textContent = 'Sending…';
   try {
-    const res = await fetch('/api/provider/care-team/request', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+    const res  = await fetch('/api/provider/care-team/request', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ patient_email: email, role, message: message || null }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Request failed');
-    if (data.method === 'invitation') {
-      sucEl.textContent = `Invitation sent to ${email}. They don't have a CognaSync account yet — they'll receive an email with a link to sign up and will be automatically connected to you.`;
-    } else {
-      sucEl.textContent = `Connection request sent to ${email}. They'll see it in their Care Team page.`;
-    }
+    sucEl.textContent = data.method === 'invitation'
+      ? `Invitation sent to ${email}. They'll receive an email to sign up and will be automatically connected.`
+      : `Connection request sent to ${email}. They'll see it in their Care Team page.`;
     document.getElementById('ap-form').reset();
     loadOutboundRequests();
-  } catch (err) {
-    errEl.textContent = err.message;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = 'Send Request';
-  }
+  } catch (err) { errEl.textContent = err.message; }
+  finally { btn.disabled = false; btn.textContent = 'Send Request'; }
 }
-
 async function loadInboundRequests() {
   const el = document.getElementById('ap-inbound-list');
   if (!el) return;
   try {
     const res  = await fetch('/api/provider/care-team/inbound');
     const data = await res.json();
-    if (!data.length) {
-      el.innerHTML = '<p style="font-size:0.8rem;color:var(--text-muted);">No pending requests from patients.</p>';
-      return;
-    }
+    if (!data.length) { el.innerHTML = '<p style="font-size:0.8rem;color:var(--text-muted);">No pending requests from patients.</p>'; return; }
     el.innerHTML = data.map(r => `
-      <div id="inbound-row-${r.id}" style="padding:8px 0;border-bottom:1px solid var(--border-light);">
+      <div id="inbound-row-${r.id}" style="padding:8px 0;border-bottom:1px solid var(--border);">
         <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;">
           <div>
-            <span style="font-size:0.85rem;font-weight:500;">${r.patient_name}</span>
+            <span style="font-size:0.85rem;font-weight:600;">${r.patient_name}</span>
             <span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px;">${r.patient_email}</span>
-            <span style="font-size:0.7rem;color:var(--text-muted);margin-left:6px;">· ${r.role_label}</span>
+            <span style="font-size:0.68rem;color:var(--text-muted);margin-left:6px;">· ${r.role_label}</span>
           </div>
           <div style="display:flex;gap:6px;flex-shrink:0;">
             <button onclick="respondInbound('${r.id}','accept')"
-                    style="font-size:0.75rem;padding:4px 10px;border-radius:6px;border:none;
-                           background:#1a7f3c;color:#fff;cursor:pointer;font-weight:500;">Accept</button>
+                    style="font-size:0.75rem;padding:4px 10px;border-radius:6px;border:none;background:var(--accent);color:#fff;cursor:pointer;font-weight:600;">Accept</button>
             <button onclick="respondInbound('${r.id}','decline')"
-                    style="font-size:0.75rem;padding:4px 10px;border-radius:6px;border:1px solid var(--border);
-                           background:transparent;color:var(--text-muted);cursor:pointer;">Decline</button>
+                    style="font-size:0.75rem;padding:4px 10px;border-radius:6px;border:1px solid var(--border);background:transparent;color:var(--text-muted);cursor:pointer;">Decline</button>
           </div>
         </div>
         ${r.request_message ? `<p style="font-size:0.78rem;color:var(--text-muted);margin:4px 0 0;font-style:italic;">"${r.request_message}"</p>` : ''}
       </div>`).join('');
   } catch (_) {}
 }
-
 async function respondInbound(memberId, action) {
   try {
     const res = await fetch(`/api/provider/care-team/${memberId}/${action}`, { method: 'POST' });
     if (!res.ok) { const d = await res.json(); alert(d.error || 'Action failed.'); return; }
     const row = document.getElementById('inbound-row-' + memberId);
-    if (row) {
-      const label = action === 'accept' ? 'Accepted' : 'Declined';
-      row.innerHTML = `<p style="font-size:0.8rem;color:var(--text-muted);padding:6px 0;">${label}</p>`;
-    }
+    if (row) row.innerHTML = `<p style="font-size:0.8rem;color:var(--text-muted);padding:6px 0;">${action === 'accept' ? 'Accepted' : 'Declined'}</p>`;
     updateInboundBadge();
     if (action === 'accept') setTimeout(() => location.reload(), 800);
   } catch (_) { alert('Action failed.'); }
 }
-
 async function updateInboundBadge() {
   try {
-    const res  = await fetch('/api/provider/care-team/inbound');
-    const data = await res.json();
+    const res   = await fetch('/api/provider/care-team/inbound');
+    const data  = await res.json();
     const badge  = document.getElementById('inbound-badge');
     const banner = document.getElementById('inbound-banner');
     if (data.length) {
       if (badge)  { badge.textContent = data.length; badge.style.display = 'inline-block'; }
       if (banner) {
-        document.getElementById('inbound-banner-text').textContent =
-          `${data.length} patient request${data.length > 1 ? 's' : ''}`;
+        document.getElementById('inbound-banner-text').textContent = `${data.length} patient request${data.length > 1 ? 's' : ''}`;
         banner.style.display = 'flex';
       }
     } else {
@@ -1648,27 +2225,25 @@ async function updateInboundBadge() {
     }
   } catch (_) {}
 }
-
 async function loadOutboundRequests() {
   const el = document.getElementById('ap-pending-list');
   if (!el) return;
   try {
-    const res = await fetch('/api/provider/care-team/outbound');
+    const res  = await fetch('/api/provider/care-team/outbound');
     const data = await res.json();
     if (!data.length) { el.innerHTML = '<p style="font-size:0.8rem;color:var(--text-muted);">No pending requests.</p>'; return; }
     el.innerHTML = data.map(r =>
-      `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border-light);">
+      `<div style="display:flex;align-items:center;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--border);">
         <div>
-          <span style="font-size:0.85rem;font-weight:500;">${r.patient_name}</span>
+          <span style="font-size:0.85rem;font-weight:600;">${r.patient_name}</span>
           <span style="font-size:0.75rem;color:var(--text-muted);margin-left:6px;">${r.patient_email}</span>
         </div>
         <span style="font-size:0.7rem;color:var(--text-muted);">${r.role_label} · Pending</span>
-      </div>`
-    ).join('');
+      </div>`).join('');
   } catch (_) {}
 }
 
-// Check for inbound requests on every page load
+// Run on load
 updateInboundBadge();
 </script>
 
@@ -1682,10 +2257,9 @@ updateInboundBadge();
             style="position:absolute;top:14px;right:16px;background:none;border:none;
                    font-size:18px;cursor:pointer;color:var(--text-muted);">✕</button>
     <h2 style="font-family:'DM Serif Display',serif;font-size:20px;margin:0 0 4px;">Add Patient</h2>
-    <p style="font-size:0.82rem;color:var(--text-muted);margin:0 0 20px;">
-      Enter the patient's email address. If they have a CognaSync account, they'll receive a connection request. If not, they'll get an invitation to sign up — and will be automatically connected to you once their account is approved.
+    <p style="font-size:0.82rem;color:var(--text-muted);margin:0 0 20px;line-height:1.6;">
+      Enter the patient's email address. If they have a CognaSync account, they'll receive a connection request. If not, they'll get an invitation to sign up — and will be automatically connected once approved.
     </p>
-
     <form id="ap-form" onsubmit="submitAddPatient(event)">
       <div class="form-group" style="margin-bottom:14px;">
         <label class="form-label">Patient Email</label>
@@ -1707,22 +2281,17 @@ updateInboundBadge();
         <textarea id="ap-message" class="form-control" rows="2"
                   placeholder="e.g. Hi — I'm sending a connection request so I can view your CognaSync data before our sessions."></textarea>
       </div>
-      <div id="ap-error" style="font-size:0.82rem;color:#c0392b;margin-bottom:10px;"></div>
+      <div id="ap-error"   style="font-size:0.82rem;color:#c0392b;margin-bottom:10px;"></div>
       <div id="ap-success" style="font-size:0.82rem;color:#1a7f3c;margin-bottom:10px;"></div>
       <button id="ap-submit" type="submit" class="btn btn-primary" style="width:100%;">Send Request</button>
     </form>
-
     <div style="margin-top:22px;">
-      <div style="font-size:0.7rem;font-weight:500;text-transform:uppercase;letter-spacing:.08em;
-                  color:var(--text-muted);margin-bottom:8px;">Requests From Patients</div>
+      <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px;">Requests From Patients</div>
       <div id="ap-inbound-list"><p style="font-size:0.8rem;color:var(--text-muted);">Loading…</p></div>
     </div>
-
     <div style="margin-top:18px;">
-      <div style="font-size:0.7rem;font-weight:500;text-transform:uppercase;letter-spacing:.08em;
-                  color:var(--text-muted);margin-bottom:8px;">Your Pending Outbound Requests</div>
+      <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--text-muted);margin-bottom:8px;">Your Pending Outbound Requests</div>
       <div id="ap-pending-list"><p style="font-size:0.8rem;color:var(--text-muted);">Loading…</p></div>
     </div>
   </div>
 </div>
-{% endblock %}
