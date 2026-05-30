@@ -5396,8 +5396,8 @@ def get_clinical_sessions_for_period(
 
         out = []
         for row in rows:
-            feat_rows = row.get('session_features') or []
-            feat_row  = feat_rows[0] if feat_rows else {}
+            sf = row.get('session_features') or {}
+            feat_row = sf if isinstance(sf, dict) else (sf[0] if sf else {})
             out.append({
                 'session_id':        str(row['id']),
                 'session_date':      row.get('session_date'),
