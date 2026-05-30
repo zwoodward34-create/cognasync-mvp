@@ -1101,8 +1101,8 @@
             <button class="delete-btn" title="Delete recording"
                     onclick="deleteVoiceNote('{{ note.id }}')">✕</button>
           </div>
-          {% if note.prompt %}
-          <div class="voice-prompt">"{{ note.prompt }}"</div>
+          {% if note.guiding_question or note.prompt %}
+          <div class="voice-prompt">"{{ note.guiding_question or note.prompt }}"</div>
           {% endif %}
           {% if note.transcript %}
           <div class="voice-transcript">{{ note.transcript }}</div>

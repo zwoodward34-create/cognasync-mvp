@@ -4040,15 +4040,15 @@ def api_provider_upload_voice_note(patient_id):
     file_name = f'provider_upload_{patient_id}_{_uuid.uuid4().hex[:8]}.{file_ext}'
     mime_type = audio_file.content_type or 'audio/webm'
 
-    # Insert record immediately so the UI can show "pending" status
+    # Insert record immediately so the UI can show "pending" status.
+    # Only include columns confirmed to exist in voice_notes (match patient-flow insert).
     vn_row = {
         'patient_id':        patient_id,
         'provider_id':       provider['id'],
-        'source':            'provider_upload',
         'processing_status': 'pending',
     }
     if note_label:
-        vn_row['prompt'] = note_label
+        vn_row['guiding_question'] = note_label
 
     try:
         res = db.supabase_admin.table('voice_notes').insert(vn_row).execute()
