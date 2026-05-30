@@ -90,7 +90,19 @@
       "Bash(curl -s -c /tmp/test_cookies.txt -b /tmp/test_cookies.txt -X POST http://localhost:5002/login -d 'email=zchwoodward@gmail.com&password=REPLACE_PASSWORD' -w '\\\\n\\\\nHTTP_STATUS: %{http_code}\\\\nREDIRECT: %{redirect_url}' -L --max-redirs 0)",
       "Bash(curl -s -c /tmp/test_cookies.txt -b /tmp/test_cookies.txt http://localhost:5002/provider/dashboard -w '\\\\nHTTP_STATUS: %{http_code}' -L --max-redirs 2)",
       "Bash(curl -s -c /tmp/test_cookies.txt -b /tmp/test_cookies.txt http://localhost:5002/provider -w '\\\\nHTTP_STATUS: %{http_code}' -L --max-redirs 2)",
-      "Bash(FLASK_ENV=development .venv/bin/python3 *)"
+      "Bash(FLASK_ENV=development .venv/bin/python3 *)",
+      "Bash(npx --no-install agent-browser --version)",
+      "Bash(npx --no-install agent-browser open http://localhost:5002/login)",
+      "Bash(npx --no-install agent-browser snapshot -i)",
+      "Bash(npx --no-install agent-browser fill e4 \"testprovider@cognasync-test.local\")",
+      "Bash(npx --no-install agent-browser fill e5 \"TestPass123!\")",
+      "Bash(npx --no-install agent-browser click e6)",
+      "Bash(npx --no-install agent-browser wait --load networkidle)",
+      "Bash(npx --no-install agent-browser get url)",
+      "Bash(npx --no-install agent-browser screenshot /tmp/hub_before.png)",
+      "Bash(npx *)",
+      "Bash(grep -v \"^$\")",
+      "Bash(pkill -f \"python app.py\")"
     ]
   }
 }
