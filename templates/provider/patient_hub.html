@@ -366,15 +366,17 @@
     flex: 1;
   }
   .med-day {
-    width: 22px;
+    min-width: 34px;
     height: 22px;
+    padding: 0 3px;
     border-radius: 4px;
     display: flex;
     align-items: center;
     justify-content: center;
-    font-size: 0.6rem;
+    font-size: 0.62rem;
     font-weight: 500;
     cursor: default;
+    white-space: nowrap;
   }
   .med-day--taken  { background: #d4edda; color: #1a7f3c; }
   .med-day--missed { background: #fdecea; color: #c0392b; }
@@ -858,6 +860,118 @@
     </div>
   </div>
 
+  <!-- Add Medication modal -->
+  <div id="add-med-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;align-items:center;justify-content:center;padding:16px;"
+       onclick="if(event.target===this)closeAddMedModal()">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:460px;padding:24px;font-family:'DM Sans',sans-serif;position:relative;">
+      <button onclick="closeAddMedModal()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:17px;cursor:pointer;color:var(--text-muted);">✕</button>
+      <h3 style="font-family:'DM Serif Display',serif;font-size:1.05rem;font-weight:400;margin:0 0 14px;">Add Medication</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        <div style="grid-column:1/-1;">
+          <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Name *</label>
+          <input id="add-med-name" type="text" placeholder="e.g. Sertraline" maxlength="100"
+                 style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+        </div>
+        <div>
+          <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Dose *</label>
+          <input id="add-med-dose" type="number" placeholder="e.g. 50" min="0.01" step="any"
+                 style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+        </div>
+        <div>
+          <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Unit</label>
+          <select id="add-med-unit" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
+            <option value="mg">mg</option>
+            <option value="mcg">mcg</option>
+            <option value="g">g</option>
+            <option value="ml">ml</option>
+            <option value="units">units</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Category *</label>
+          <select id="add-med-category" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
+            <option value="antidepressant">Antidepressant</option>
+            <option value="antipsychotic">Antipsychotic</option>
+            <option value="mood_stabilizer">Mood Stabilizer</option>
+            <option value="stimulant">Stimulant</option>
+            <option value="anxiolytic">Anxiolytic</option>
+            <option value="sleep">Sleep Aid</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Frequency</label>
+          <select id="add-med-freq" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
+            <option value="">—</option>
+            <option value="daily">Daily</option>
+            <option value="twice_daily">Twice daily</option>
+            <option value="three_times_daily">Three times daily</option>
+            <option value="as_needed">As needed</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Start date</label>
+          <input id="add-med-start" type="date"
+                 style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+        </div>
+      </div>
+      <div id="add-med-err" style="font-size:0.75rem;color:#c0392b;margin-top:4px;display:none;"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
+        <button class="hub-action-btn" onclick="closeAddMedModal()">Cancel</button>
+        <button class="hub-action-btn hub-action-btn--primary" id="add-med-submit" onclick="submitAddMed()">Add Medication</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Medication modal -->
+  <div id="edit-med-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;align-items:center;justify-content:center;padding:16px;"
+       onclick="if(event.target===this)closeEditMedModal()">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:400px;padding:24px;font-family:'DM Sans',sans-serif;position:relative;">
+      <button onclick="closeEditMedModal()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:17px;cursor:pointer;color:var(--text-muted);">✕</button>
+      <h3 style="font-family:'DM Serif Display',serif;font-size:1.05rem;font-weight:400;margin:0 0 14px;">Edit Medication</h3>
+      <input type="hidden" id="edit-med-id">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px;">
+        <div style="grid-column:1/-1;">
+          <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Name</label>
+          <input id="edit-med-name" type="text" maxlength="100"
+                 style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+        </div>
+        <div>
+          <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Dose</label>
+          <input id="edit-med-dose" type="number" min="0.01" step="any"
+                 style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+        </div>
+        <div>
+          <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Unit</label>
+          <select id="edit-med-unit" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
+            <option value="mg">mg</option>
+            <option value="mcg">mcg</option>
+            <option value="g">g</option>
+            <option value="ml">ml</option>
+            <option value="units">units</option>
+          </select>
+        </div>
+        <div style="grid-column:1/-1;">
+          <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Frequency</label>
+          <select id="edit-med-freq" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:7px 10px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
+            <option value="">—</option>
+            <option value="daily">Daily</option>
+            <option value="twice_daily">Twice daily</option>
+            <option value="three_times_daily">Three times daily</option>
+            <option value="as_needed">As needed</option>
+            <option value="weekly">Weekly</option>
+          </select>
+        </div>
+      </div>
+      <div id="edit-med-err" style="font-size:0.75rem;color:#c0392b;margin-top:4px;display:none;"></div>
+      <div style="display:flex;gap:8px;margin-top:14px;justify-content:flex-end;">
+        <button class="hub-action-btn" onclick="closeEditMedModal()">Cancel</button>
+        <button class="hub-action-btn hub-action-btn--primary" id="edit-med-submit" onclick="submitEditMed()">Save Changes</button>
+      </div>
+    </div>
+  </div>
+
   <!-- Toast -->
   <div id="hub-toast"></div>
 
@@ -1091,7 +1205,11 @@
         <span class="hub-section-title">Medication Adherence</span>
         <span class="hub-section-meta">{{ medications|length }} medication{{ 's' if medications|length != 1 }} · last 30 days</span>
       </div>
-      <span class="hub-section-chevron">›</span>
+      <div style="display:flex;align-items:center;gap:10px;">
+        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;"
+                onclick="event.stopPropagation();openAddMedModal()">⊕ Add</button>
+        <span class="hub-section-chevron">›</span>
+      </div>
     </div>
     <div class="hub-section-body">
       {% if medications %}
@@ -1100,16 +1218,16 @@
         {% set events = medication_events | selectattr('medication_id', 'equalto', med_id) | list %}
         {% set taken_count = events | selectattr('taken', 'equalto', true) | list | length %}
         {% set total_count = events | length %}
-        <div class="med-row">
-          <div>
+        <div class="med-row" id="med-row-{{ med_id }}">
+          <div style="min-width:140px;">
             <div class="med-name">{{ med.name }}</div>
-            <div class="med-dose">{{ med.dose }}{{ med.dose_unit if med.dose_unit else '' }}</div>
+            <div class="med-dose">{{ med.standard_dose }}{{ med.dose_unit if med.dose_unit else '' }}{% if med.frequency %} · {{ med.frequency }}{% endif %}</div>
           </div>
           <div class="med-calendar">
             {% for event in events[-30:] %}
             <div class="med-day {% if event.taken %}med-day--taken{% else %}med-day--missed{% endif %}"
                  title="{{ event.event_date[:10] if event.event_date else '' }} — {{ 'Taken' if event.taken else 'Missed' }}">
-              {{ event.event_date[8:10] if event.event_date else '?' }}
+              {% if event.event_date %}{{ event.event_date[5:7].lstrip('0') or '0' }}/{{ event.event_date[8:10].lstrip('0') or '0' }}{% else %}?{% endif %}
             </div>
             {% endfor %}
             {% if not events %}
@@ -1127,10 +1245,16 @@
             —
             {% endif %}
           </div>
+          <div style="display:flex;gap:4px;flex-shrink:0;">
+            <button class="hub-action-btn" style="font-size:0.68rem;padding:3px 8px;"
+                    onclick="openEditMedModal('{{ med_id }}','{{ med.name }}','{{ med.standard_dose }}','{{ med.dose_unit or 'mg' }}','{{ med.frequency or '' }}','{{ med.category or '' }}')">Edit</button>
+            <button class="delete-btn" title="Remove medication"
+                    onclick="deleteMed('{{ med_id }}')">✕</button>
+          </div>
         </div>
         {% endfor %}
       {% else %}
-      <div class="hub-empty">No medications on file.</div>
+      <div class="hub-empty" id="meds-empty-msg">No medications on file.</div>
       {% endif %}
     </div>
   </div>
@@ -1579,6 +1703,105 @@ async function deleteBrief(briefId, el) {
       showToast('Delete failed', true);
     }
   } catch (_) { showToast('Delete failed', true); }
+}
+
+// ── Medication CRUD ───────────────────────────────────────────────────────────
+function openAddMedModal() {
+  ['add-med-name','add-med-dose','add-med-start'].forEach(id => { const el = document.getElementById(id); if(el) el.value=''; });
+  document.getElementById('add-med-unit').value = 'mg';
+  document.getElementById('add-med-freq').value = '';
+  document.getElementById('add-med-category').value = 'antidepressant';
+  document.getElementById('add-med-err').style.display = 'none';
+  document.getElementById('add-med-modal').style.display = 'flex';
+}
+function closeAddMedModal() { document.getElementById('add-med-modal').style.display = 'none'; }
+
+function openEditMedModal(id, name, dose, unit, freq, category) {
+  document.getElementById('edit-med-id').value   = id;
+  document.getElementById('edit-med-name').value  = name;
+  document.getElementById('edit-med-dose').value  = dose;
+  document.getElementById('edit-med-unit').value  = unit || 'mg';
+  document.getElementById('edit-med-freq').value  = freq || '';
+  document.getElementById('edit-med-err').style.display = 'none';
+  document.getElementById('edit-med-modal').style.display = 'flex';
+}
+function closeEditMedModal() { document.getElementById('edit-med-modal').style.display = 'none'; }
+
+async function submitAddMed() {
+  const name     = document.getElementById('add-med-name').value.trim();
+  const dose     = parseFloat(document.getElementById('add-med-dose').value);
+  const unit     = document.getElementById('add-med-unit').value;
+  const category = document.getElementById('add-med-category').value;
+  const freq     = document.getElementById('add-med-freq').value || null;
+  const start    = document.getElementById('add-med-start').value || null;
+  const errEl    = document.getElementById('add-med-err');
+  if (!name) { errEl.textContent='Name is required.'; errEl.style.display=''; return; }
+  if (!dose || dose <= 0) { errEl.textContent='Valid dose is required.'; errEl.style.display=''; return; }
+  errEl.style.display = 'none';
+  const btn = document.getElementById('add-med-submit');
+  btn.disabled = true; btn.textContent = 'Adding…';
+  try {
+    const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/medications', {
+      method: 'POST', credentials: 'same-origin',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, dose, dose_unit: unit, category, frequency: freq, date_started: start }),
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      closeAddMedModal();
+      showToast('Medication added — reload to see it in the list');
+    } else {
+      errEl.textContent = data.error || 'Failed to add medication.';
+      errEl.style.display = '';
+    }
+  } catch(_) { errEl.textContent='Network error.'; errEl.style.display=''; }
+  finally { btn.disabled=false; btn.textContent='Add Medication'; }
+}
+
+async function submitEditMed() {
+  const id   = document.getElementById('edit-med-id').value;
+  const name = document.getElementById('edit-med-name').value.trim();
+  const dose = parseFloat(document.getElementById('edit-med-dose').value);
+  const unit = document.getElementById('edit-med-unit').value;
+  const freq = document.getElementById('edit-med-freq').value || null;
+  const errEl = document.getElementById('edit-med-err');
+  if (!name) { errEl.textContent='Name is required.'; errEl.style.display=''; return; }
+  if (!dose || dose <= 0) { errEl.textContent='Valid dose is required.'; errEl.style.display=''; return; }
+  errEl.style.display = 'none';
+  const btn = document.getElementById('edit-med-submit');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/medications/' + id, {
+      method: 'PUT', credentials: 'same-origin',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ name, standard_dose: dose, dose_unit: unit, frequency: freq }),
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      closeEditMedModal();
+      showToast('Medication updated — reload to see changes');
+    } else {
+      errEl.textContent = data.error || 'Update failed.';
+      errEl.style.display = '';
+    }
+  } catch(_) { errEl.textContent='Network error.'; errEl.style.display=''; }
+  finally { btn.disabled=false; btn.textContent='Save Changes'; }
+}
+
+async function deleteMed(medId) {
+  if (!confirm('Remove this medication from the patient\'s record? This cannot be undone.')) return;
+  try {
+    const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/medications/' + medId, {
+      method: 'DELETE', credentials: 'same-origin',
+    });
+    if (res.ok) {
+      const row = document.getElementById('med-row-' + medId);
+      if (row) row.remove();
+      showToast('Medication removed');
+    } else {
+      showToast('Remove failed', true);
+    }
+  } catch(_) { showToast('Remove failed', true); }
 }
 
 // ── SMS helpers ───────────────────────────────────────────────────────────────

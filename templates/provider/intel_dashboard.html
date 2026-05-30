@@ -429,6 +429,94 @@
   }
   @keyframes spin { to { transform: rotate(360deg); } }
 
+  /* ── Brief options modal ─────────────────────────────────── */
+  #brief-options-modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 3000;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+  }
+  #brief-options-modal.open { display: flex; }
+  .brief-opts-inner {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    width: 100%;
+    max-width: 420px;
+    padding: 24px;
+    font-family: var(--font-sans, 'DM Sans', sans-serif);
+    position: relative;
+  }
+  .brief-opts-title {
+    font-family: var(--font-serif, 'DM Serif Display', serif);
+    font-size: 1.05rem;
+    font-weight: 400;
+    margin: 0 0 4px;
+    color: var(--text-primary);
+  }
+  .brief-opts-sub {
+    font-size: 0.78rem;
+    color: var(--text-secondary);
+    margin: 0 0 18px;
+  }
+  .brief-opts-label {
+    font-size: 0.68rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    margin-bottom: 8px;
+  }
+  .period-chips {
+    display: flex;
+    gap: 6px;
+    margin-bottom: 18px;
+  }
+  .period-chip {
+    flex: 1;
+    padding: 7px 0;
+    text-align: center;
+    font-size: 0.82rem;
+    font-weight: 500;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    cursor: pointer;
+    background: var(--surface);
+    color: var(--text-secondary);
+    transition: background 0.1s, color 0.1s, border-color 0.1s;
+    user-select: none;
+  }
+  .period-chip.active {
+    background: var(--primary, #4f7cff);
+    color: #fff;
+    border-color: var(--primary, #4f7cff);
+  }
+  .brief-opts-filters { margin-bottom: 20px; }
+  .filter-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    padding: 7px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 0.84rem;
+    color: var(--text-primary);
+    cursor: pointer;
+    user-select: none;
+  }
+  .filter-row:last-child { border-bottom: none; }
+  .filter-row input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--primary); }
+  .filter-row-desc { font-size: 0.72rem; color: var(--text-secondary); margin-top: 1px; }
+  .brief-opts-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+
   /* ── Print ───────────────────────────────────────────────── */
   @media print {
     .intel-sidebar, .brief-controls, .brief-tabs, .back-link, .input-tabs { display: none !important; }
@@ -561,7 +649,7 @@
   <!-- ── Main: brief controls + viewer ───────────────────────────── -->
   <div class="intel-main">
     <div class="brief-controls">
-      <button class="btn-brief" id="btn-generate" onclick="generateBrief()">
+      <button class="btn-brief" id="btn-generate" onclick="openBriefModal()">
         Generate Pre-Visit Brief
       </button>
       <button class="btn-outline" onclick="window.print()">Print</button>
@@ -602,6 +690,45 @@
   </div>
 
 </div><!-- /.intel-wrap -->
+
+<!-- ── Brief options modal ──────────────────────────────────────────────────── -->
+<div id="brief-options-modal" onclick="if(event.target===this)closeBriefModal()">
+  <div class="brief-opts-inner">
+    <h3 class="brief-opts-title">Generate Pre-Visit Brief</h3>
+    <p class="brief-opts-sub">Choose the time window and data to include.</p>
+
+    <div class="brief-opts-label">Time period</div>
+    <div class="period-chips">
+      <div class="period-chip" data-days="10" onclick="selectPeriod(this)">10 days</div>
+      <div class="period-chip active" data-days="30" onclick="selectPeriod(this)">30 days</div>
+      <div class="period-chip" data-days="60" onclick="selectPeriod(this)">60 days</div>
+      <div class="period-chip" data-days="90" onclick="selectPeriod(this)">90 days</div>
+    </div>
+
+    <div class="brief-opts-label">Include in brief</div>
+    <div class="brief-opts-filters">
+      <label class="filter-row">
+        <input type="checkbox" id="filter-meds" checked>
+        <div>
+          <div>Medication context</div>
+          <div class="filter-row-desc">Active prescriptions included in summary</div>
+        </div>
+      </label>
+      <label class="filter-row">
+        <input type="checkbox" id="filter-sessions" checked disabled>
+        <div>
+          <div>Session transcripts</div>
+          <div class="filter-row-desc">Always included — required for brief generation</div>
+        </div>
+      </label>
+    </div>
+
+    <div class="brief-opts-actions">
+      <button class="btn-outline" onclick="closeBriefModal()">Cancel</button>
+      <button class="btn-brief" id="btn-modal-generate" onclick="submitBriefGeneration()">Generate</button>
+    </div>
+  </div>
+</div>
 
 <script>
 const PATIENT_ID = {{ patient.id | tojson }};
@@ -828,14 +955,41 @@ function statusLabel(status) {
   }[status] || status;
 }
 
+// ── Brief options modal ──────────────────────────────────────────────────────
+function openBriefModal() {
+  document.getElementById('brief-options-modal').classList.add('open');
+}
+function closeBriefModal() {
+  document.getElementById('brief-options-modal').classList.remove('open');
+}
+function selectPeriod(el) {
+  document.querySelectorAll('.period-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+}
+async function submitBriefGeneration() {
+  const activeChip = document.querySelector('.period-chip.active');
+  const periodDays = activeChip ? parseInt(activeChip.dataset.days, 10) : 30;
+  const includeMeds = document.getElementById('filter-meds').checked;
+  closeBriefModal();
+  await generateBrief({ periodDays, includeMeds });
+}
+
 // ── Generate brief ───────────────────────────────────────────────────
-async function generateBrief() {
+async function generateBrief(opts) {
+  opts = opts || {};
   const btn = document.getElementById('btn-generate');
   const placeholder = document.getElementById('brief-placeholder');
   const generating  = document.getElementById('brief-generating');
   const output      = document.getElementById('brief-output');
   const selectedIds = getSelectedIds();
-  const body        = selectedIds.length ? { session_ids: selectedIds } : {};
+
+  const body = {};
+  if (selectedIds.length) {
+    body.session_ids = selectedIds;
+  } else if (opts.periodDays) {
+    body.period_days = opts.periodDays;
+  }
+  if (opts.includeMeds) body.include_medications = true;
 
   btn.disabled = true;
   if (placeholder) placeholder.style.display = 'none';

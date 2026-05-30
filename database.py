@@ -5716,6 +5716,42 @@ def update_voice_note_transcript(
         print(f'[db] update_voice_note_transcript error: {e}')
 
 
+def update_medication_by_provider(provider_id: str, patient_id: str, med_id: str, updates: dict) -> dict:
+    """
+    Provider updates a patient's medication (dose, frequency, scheduled_times).
+    Enforces provider–patient relationship; does NOT require psychiatrist role so
+    any care-team member can edit.  Returns {'ok': True} or {'ok': False, 'error': '...'}.
+    """
+    allowed = {'standard_dose', 'dose_unit', 'frequency', 'scheduled_times', 'date_started', 'name', 'category'}
+    payload = {k: v for k, v in updates.items() if k in allowed}
+    if not payload:
+        return {'ok': False, 'error': 'No valid fields to update.'}
+    # Validate dose if present
+    if 'standard_dose' in payload:
+        try:
+            payload['standard_dose'] = float(payload['standard_dose'])
+            if payload['standard_dose'] <= 0:
+                raise ValueError
+        except (TypeError, ValueError):
+            return {'ok': False, 'error': 'Dose must be a positive number.'}
+    try:
+        supabase_admin.table('medications').update(payload).eq('id', med_id).eq('user_id', patient_id).execute()
+        return {'ok': True}
+    except Exception as e:
+        print(f'[db] update_medication_by_provider error: {e}')
+        return {'ok': False, 'error': 'Update failed.'}
+
+
+def deactivate_medication_by_provider(provider_id: str, patient_id: str, med_id: str) -> bool:
+    """Soft-delete a medication by setting is_active=False, enforcing patient ownership."""
+    try:
+        supabase_admin.table('medications').update({'is_active': False}).eq('id', med_id).eq('user_id', patient_id).execute()
+        return True
+    except Exception as e:
+        print(f'[db] deactivate_medication_by_provider error: {e}')
+        return False
+
+
 def delete_voice_note(patient_id: str, note_id: str) -> bool:
     """Delete a voice note, enforcing ownership via patient_id."""
     try:

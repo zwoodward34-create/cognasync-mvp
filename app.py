@@ -2328,6 +2328,35 @@ def api_get_patient_medications(patient_id):
     return jsonify({'medications': meds}), 200
 
 
+@app.route('/api/provider/patient/<patient_id>/medications/<med_id>', methods=['PUT'])
+def api_provider_update_medication(patient_id, med_id):
+    """Provider updates a patient's medication fields."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+    data = request.get_json(silent=True) or {}
+    result = db.update_medication_by_provider(user['id'], patient_id, med_id, data)
+    if result.get('ok'):
+        return jsonify(result), 200
+    return jsonify({'error': result.get('error', 'Update failed.')}), 400
+
+
+@app.route('/api/provider/patient/<patient_id>/medications/<med_id>', methods=['DELETE'])
+def api_provider_deactivate_medication(patient_id, med_id):
+    """Provider deactivates (soft-deletes) a patient's medication."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+    ok = db.deactivate_medication_by_provider(user['id'], patient_id, med_id)
+    if ok:
+        return jsonify({'ok': True}), 200
+    return jsonify({'error': 'Failed to deactivate medication.'}), 500
+
+
 @app.route('/api/provider/patient/<patient_id>/medications', methods=['POST'])
 def api_provider_add_medication(patient_id):
     """Psychiatrist adds a medication to a patient's record."""
@@ -3489,10 +3518,22 @@ def api_intel_generate_brief(patient_id):
     if err:
         return err
 
+    from datetime import date as _date, timedelta as _timedelta
     data         = request.get_json(silent=True) or {}
     period_start = data.get('period_start')
     period_end   = data.get('period_end')
     session_ids  = data.get('session_ids')
+    include_medications = data.get('include_medications', False)
+
+    # Derive period from period_days if explicit dates not given
+    period_days = data.get('period_days')
+    if period_days and not period_start:
+        try:
+            n = int(period_days)
+            period_end   = _date.today().isoformat()
+            period_start = (_date.today() - _timedelta(days=n)).isoformat()
+        except (TypeError, ValueError):
+            pass
 
     # Fetch session feature data
     if session_ids:
@@ -3524,12 +3565,27 @@ def api_intel_generate_brief(patient_id):
     from transcript_engine import score_transcript_batch
     aggregated = score_transcript_batch(session_results)
 
+    # Optionally enrich with medication records
+    med_records = None
+    if include_medications:
+        raw_meds = db.get_user_medications(patient_id, active_only=True)
+        med_records = [
+            {
+                'medication_name': m.get('name', ''),
+                'dose_amount':     m.get('standard_dose', ''),
+                'dose_unit':       m.get('dose_unit', 'mg'),
+                'frequency':       m.get('frequency', ''),
+            }
+            for m in raw_meds
+        ] if raw_meds else None
+
     # Generate brief
     brief_result = claude_api.generate_brief_from_sessions(
         aggregated_scores=aggregated,
         session_features=session_results,
         period_start=period_start,
         period_end=period_end,
+        medication_records=med_records,
         audience='provider',
     )
 
