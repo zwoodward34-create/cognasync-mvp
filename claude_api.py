@@ -878,75 +878,199 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             "Do not use clinical or judgmental language.\n"
         )
 
-    # ── Session transcript context (CLAUDE.md §22-24) ────────────────────────
-    # Transcript and audio sessions extracted via the intel pipeline. Available
-    # for both Mode B and Mode C but framed differently.
+    # ── Session transcript context (CLAUDE.md §22-25) ───────────────────────
+    # Transcript and audio sessions extracted via the intel pipeline.
+    # Builds a rich per-session block from ALL extracted fields so the model
+    # has genuine content to analyse — not just a one-line summary.
     session_section = ''
     if session_context:
         complete_sessions = [s for s in session_context if s.get('processing_status') == 'complete']
         if complete_sessions:
-            lines = []
-            has_speech = False
-            for s in complete_sessions[:5]:  # cap at 5 most recent
-                sdate    = s.get('session_date', 'unknown date')
-                stype    = s.get('session_type', 'session')
-                feats    = s.get('features') or {}
-                scores   = s.get('scores') or {}
-                crisis   = s.get('crisis_detected', False)
-                speech   = feats.get('speech_features') or {}
-                patterns = feats.get('themes') or []
-                topics   = feats.get('main_topics') or []
-                overall  = scores.get('overall_concern') or scores.get('overall')
+            blocks = []
+            has_acoustic = False
 
-                parts = [f"Session ({stype}) on {sdate}"]
-                if overall is not None:
-                    parts.append(f"concern level {overall}/10")
+            for s in complete_sessions[:8]:   # up to 8 most recent sessions
+                sdate  = s.get('session_date', 'unknown date')
+                stype  = s.get('session_type', 'session')
+                feats  = s.get('features') or {}   # transcript_engine extracted fields
+                scores = s.get('scores')  or {}    # deterministic scores + speech features
+                crisis = s.get('crisis_detected', False)
+
+                # ── Transcript semantic content (what the patient said) ─────────
+                mood_desc     = feats.get('patient_mood_description')
+                mood_num      = feats.get('mood_estimate')
+                energy_desc   = feats.get('energy_description')
+                energy_num    = feats.get('energy_estimate')
+                sleep_hrs     = feats.get('sleep_hours_mentioned')
+                sleep_desc    = feats.get('sleep_quality_description')
+                stress_desc   = feats.get('stress_description')
+                themes        = feats.get('themes') or []
+                stressors     = feats.get('stressors') or []
+                symptoms      = feats.get('symptoms_mentioned') or []
+                positive      = feats.get('positive_signals') or []
+                concerning    = feats.get('concerning_language') or []
+                meds          = feats.get('medications_mentioned') or []
+                functional    = feats.get('functional_status')
+                session_notes = feats.get('session_notes')
+
+                # ── Speech features (scores dict is the correct location) ──────
+                # speech_features may come from transcript inference OR acoustic
+                # engine (flagged by source='acoustic'). Both are valid.
+                sf = scores.get('speech_features') or {}
+                sf_source = sf.get('source', 'transcript')
+
+                # ── Acoustic biomarker measurements ───────────────────────────
+                acf   = scores.get('acoustic_features') or {}
+                vocab = acf.get('vocabulary') or {}
+                meas  = acf.get('raw') or {}   # raw measured values
+
+                # ── VAD affect dimensions ─────────────────────────────────────
+                afd   = scores.get('affect_dimensions') or {}
+
+                # ── Build the session block ───────────────────────────────────
+                b = f"SESSION: {stype} | {sdate}"
                 if crisis:
-                    parts.append("⚠️ crisis signal detected")
-                if speech:
-                    rate     = speech.get('speech_rate')
-                    prosody  = speech.get('prosody')
-                    coherence = speech.get('speech_coherence')
-                    sp_parts = []
-                    if rate and rate != 'normal':
-                        sp_parts.append(f"speech rate: {rate}")
-                    if prosody and prosody != 'normal':
-                        sp_parts.append(f"prosody: {prosody}")
-                    if coherence and coherence != 'intact':
-                        sp_parts.append(f"coherence: {coherence}")
-                    if sp_parts:
-                        parts.append("speech features: " + ", ".join(sp_parts))
-                        has_speech = True
-                if topics:
-                    parts.append("topics: " + ", ".join(str(t) for t in topics[:4]))
-                if patterns:
-                    parts.append("patterns: " + ", ".join(str(p) for p in patterns[:3]))
+                    b += " | 🔴 CRISIS SIGNAL DETECTED"
+                b += "\n"
 
-                lines.append("- " + " | ".join(parts))
+                # What the patient said
+                if session_notes:
+                    b += f"  Session focus: {session_notes}\n"
+                if mood_desc or mood_num is not None:
+                    mood_str = mood_desc or ''
+                    if mood_num is not None:
+                        mood_str += f" (self-reported {mood_num}/10)"
+                    b += f"  Mood: {mood_str.strip()}\n"
+                if energy_desc or energy_num is not None:
+                    e_str = energy_desc or ''
+                    if energy_num is not None:
+                        e_str += f" (self-reported {energy_num}/10)"
+                    b += f"  Energy: {e_str.strip()}\n"
+                if sleep_hrs is not None or sleep_desc:
+                    sl = f"{sleep_hrs} hrs" if sleep_hrs is not None else ''
+                    if sleep_desc:
+                        sl += f" — {sleep_desc}"
+                    b += f"  Sleep mentioned: {sl.strip()}\n"
+                if stress_desc:
+                    b += f"  Stress: {stress_desc}\n"
+                if functional:
+                    b += f"  Functional status: {functional}\n"
+                if themes:
+                    b += f"  Themes raised: {', '.join(themes)}\n"
+                if stressors:
+                    b += f"  Stressors: {', '.join(stressors)}\n"
+                if symptoms:
+                    b += f"  Symptoms mentioned: {', '.join(symptoms)}\n"
+                if positive:
+                    b += f"  Positive signals: {', '.join(positive)}\n"
+                if concerning:
+                    b += f"  Concerning language: {'; '.join(concerning)}\n"
+                if meds:
+                    med_strs = []
+                    for m in meds:
+                        ms = m.get('name', 'unknown')
+                        if m.get('dose_mentioned'):
+                            ms += f" {m['dose_mentioned']}"
+                        ms += f" [{m.get('adherence_signal', 'unknown')}]"
+                        if m.get('context'):
+                            ms += f" — {m['context']}"
+                        med_strs.append(ms)
+                    b += f"  Medications discussed: {'; '.join(med_strs)}\n"
+
+                # How they said it — speech features
+                sf_labels = []
+                for key, label in [
+                    ('speech_rate', 'speech rate'),
+                    ('prosody', 'prosody'),
+                    ('pauses', 'pauses'),
+                    ('speech_coherence', 'coherence'),
+                    ('arousal', 'arousal'),
+                    ('vocal_affect', 'vocal affect'),
+                ]:
+                    val = sf.get(key)
+                    if val and val not in ('normal', 'intact'):
+                        sf_labels.append(f"{label}: {val}")
+                if sf_labels:
+                    b += (f"  Speech features [{sf_source}]"
+                          f" (confidence: {sf.get('confidence', 'unknown')}): "
+                          + ", ".join(sf_labels) + "\n")
+                    if sf.get('severity_note'):
+                        b += f"  Speech note: {sf['severity_note']}\n"
+                    if sf.get('clinical_pattern_type') and sf['clinical_pattern_type'] != 'none_detected':
+                        b += f"  Acoustic pattern type: {sf['clinical_pattern_type']}\n"
+
+                # Measured acoustic values (when audio was processed)
+                if vocab:
+                    has_acoustic = True
+                    measured_parts = []
+                    m = acf.get('raw') or {}
+                    if m.get('articulation_rate_sps') is not None:
+                        measured_parts.append(f"artic rate {m['articulation_rate_sps']:.2f} sps")
+                    if m.get('pause_ratio') is not None:
+                        measured_parts.append(f"pause ratio {m['pause_ratio']:.0%}")
+                    if m.get('f0_cv') is not None:
+                        measured_parts.append(f"F0 CV {m['f0_cv']:.3f}")
+                    if m.get('hnr_db') is not None:
+                        measured_parts.append(f"HNR {m['hnr_db']:.1f} dB")
+                    if measured_parts:
+                        b += f"  Acoustic measurements: {', '.join(measured_parts)}\n"
+                    if vocab.get('clinical_pattern_type') and vocab['clinical_pattern_type'] != 'none_detected':
+                        b += f"  Waveform pattern: {vocab['clinical_pattern_type']}\n"
+
+                # VAD affect dimensions (pre-trained model output)
+                if afd.get('model_available') and afd.get('valence') is not None:
+                    b += (
+                        f"  Affect model (research signal): "
+                        f"valence {afd['valence']:.2f} ({afd.get('valence_label','?')}), "
+                        f"arousal {afd['arousal']:.2f} ({afd.get('arousal_label','?')}), "
+                        f"dominance {afd['dominance']:.2f} ({afd.get('dominance_label','?')}) "
+                        f"— pattern: {afd.get('pattern', 'N/A')}\n"
+                    )
+
+                if sf.get('baseline_deviation'):
+                    b += f"  Baseline deviation noted: {sf['baseline_deviation']}\n"
+
+                blocks.append(b)
 
             pending_count = len([s for s in session_context if s.get('processing_status') != 'complete'])
 
             session_section = (
-                f"\n\nSESSION TRANSCRIPT/RECORDING DATA ({len(complete_sessions)} processed"
+                f"\n\nSESSION TRANSCRIPT & RECORDING DATA "
+                f"({len(complete_sessions)} sessions fully processed"
                 + (f", {pending_count} still processing" if pending_count else "")
-                + " — from uploaded transcripts and audio recordings):\n"
-                + "\n".join(lines)
+                + "):\n\n"
+                + "\n".join(blocks)
             )
-            if has_speech and audience == 'provider':
+            if has_acoustic and audience == 'provider':
                 session_section += (
-                    "\nNote: speech features are extracted from transcript text, not audio. "
-                    "Confidence varies by transcript quality. See CLAUDE.md §24 for feature vocabulary.\n"
+                    "\nNote: sessions marked with acoustic measurements were processed "
+                    "from audio recordings. Speech features on other sessions are "
+                    "inferred from transcript text patterns. §24 vocabulary applies throughout.\n"
                 )
 
     if session_section:
         if audience == 'provider':
             summary_system += (
-                "\n\nFor SESSION TRANSCRIPT/RECORDING DATA: add a **Session Intelligence** section "
-                "after Qualitative Themes. List sessions by date with concern level, speech feature "
-                "observations (using CLAUDE.md §24 vocabulary exactly), and topic/pattern notes. "
-                "For any session with crisis_detected=True, list it first under 🔴. "
-                "Speech features describe the transcript, not a diagnosis — frame as 'session speech features showed' "
-                "not 'patient exhibited.' If sessions are still processing, note that additional data is pending.\n"
+                "\n\nFor SESSION TRANSCRIPT & RECORDING DATA: add a **Session Intelligence** "
+                "section after Qualitative Themes. For EACH session block provided:\n"
+                "- Lead with the date and session type.\n"
+                "- Summarise what the patient raised (themes, stressors, symptoms, "
+                "concerning language) in 2-3 sentences of plain clinical prose.\n"
+                "- Report mood, energy, and sleep exactly as the patient stated them — "
+                "never infer numbers that aren't in the data.\n"
+                "- Report medication adherence signals for each medication mentioned.\n"
+                "- Report speech/acoustic features using §24 vocabulary: frame as "
+                "'session speech features showed [X]' not 'patient exhibited [X]'.\n"
+                "- When acoustic measurements (articulation rate, HNR, F0 CV, pause ratio) "
+                "are present, cite the numbers. Never interpret — describe.\n"
+                "- When affect model output is present, report valence/arousal/dominance "
+                "values and note the research-signal disclaimer applies.\n"
+                "- When signals converge across sources (transcript themes + speech features "
+                "+ acoustic measurements + affect model all pointing the same direction), "
+                "name the convergence explicitly.\n"
+                "- Flag any crisis_detected session first under 🔴.\n"
+                "- If sessions are still processing, note additional data is pending.\n"
+                "Never diagnose. Never advise medication changes.\n"
             )
         else:
             # Patient-facing: sessions are not surfaced in clinical terms. Only mention
@@ -1343,41 +1467,130 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         )
 
     # ── Session transcript context (therapy variant) ─────────────────────────
+    # Identical extraction logic to the psychiatry path — full semantic + acoustic
+    # content per session. Therapy framing emphasises interpersonal/behavioural
+    # themes over quantitative scores, but all fields are passed to the model.
     therapy_session_section = ''
     if session_context:
         complete = [s for s in session_context if s.get('processing_status') == 'complete']
         if complete:
-            lines = []
-            for s in complete[:5]:
-                sdate   = s.get('session_date', 'unknown date')
-                stype   = s.get('session_type', 'session')
-                feats   = s.get('features') or {}
-                scores  = s.get('scores') or {}
-                crisis  = s.get('crisis_detected', False)
-                topics  = feats.get('main_topics') or []
-                patterns = feats.get('themes') or []
-                overall  = scores.get('overall_concern') or scores.get('overall')
-                parts = [f"Session ({stype}) on {sdate}"]
-                if overall is not None:
-                    parts.append(f"concern {overall}/10")
+            blocks = []
+            for s in complete[:8]:
+                sdate  = s.get('session_date', 'unknown date')
+                stype  = s.get('session_type', 'session')
+                feats  = s.get('features') or {}
+                scores = s.get('scores')  or {}
+                crisis = s.get('crisis_detected', False)
+
+                mood_desc   = feats.get('patient_mood_description')
+                mood_num    = feats.get('mood_estimate')
+                energy_desc = feats.get('energy_description')
+                themes      = feats.get('themes') or []
+                stressors   = feats.get('stressors') or []
+                symptoms    = feats.get('symptoms_mentioned') or []
+                positive    = feats.get('positive_signals') or []
+                concerning  = feats.get('concerning_language') or []
+                meds        = feats.get('medications_mentioned') or []
+                functional  = feats.get('functional_status')
+                session_notes = feats.get('session_notes')
+                sf          = scores.get('speech_features') or {}
+                afd         = scores.get('affect_dimensions') or {}
+
+                b = f"SESSION: {stype} | {sdate}"
                 if crisis:
-                    parts.append("⚠️ crisis signal")
-                if topics:
-                    parts.append("topics: " + ", ".join(str(t) for t in topics[:4]))
-                if patterns:
-                    parts.append("patterns: " + ", ".join(str(p) for p in patterns[:3]))
-                lines.append("- " + " | ".join(parts))
+                    b += " | 🔴 CRISIS SIGNAL"
+                b += "\n"
+                if session_notes:
+                    b += f"  Session focus: {session_notes}\n"
+                if mood_desc or mood_num is not None:
+                    m_str = mood_desc or ''
+                    if mood_num is not None:
+                        m_str += f" ({mood_num}/10)"
+                    b += f"  Mood: {m_str.strip()}\n"
+                if energy_desc:
+                    b += f"  Energy: {energy_desc}\n"
+                if themes:
+                    b += f"  Themes: {', '.join(themes)}\n"
+                if stressors:
+                    b += f"  Stressors: {', '.join(stressors)}\n"
+                if symptoms:
+                    b += f"  Symptoms mentioned: {', '.join(symptoms)}\n"
+                if positive:
+                    b += f"  Positive signals: {', '.join(positive)}\n"
+                if concerning:
+                    b += f"  Concerning language: {'; '.join(concerning)}\n"
+                if functional:
+                    b += f"  Functional status: {functional}\n"
+                if meds:
+                    med_strs = [
+                        f"{m.get('name','?')} [{m.get('adherence_signal','unknown')}]"
+                        + (f" — {m['context']}" if m.get('context') else '')
+                        for m in meds
+                    ]
+                    b += f"  Medications discussed: {'; '.join(med_strs)}\n"
+
+                # Speech features — scores is the correct location
+                sf_labels = []
+                for key, label in [
+                    ('speech_rate', 'speech rate'), ('prosody', 'prosody'),
+                    ('pauses', 'pauses'), ('speech_coherence', 'coherence'),
+                    ('arousal', 'arousal'), ('vocal_affect', 'vocal affect'),
+                ]:
+                    val = sf.get(key)
+                    if val and val not in ('normal', 'intact'):
+                        sf_labels.append(f"{label}: {val}")
+                if sf_labels:
+                    b += (f"  Speech features (confidence: {sf.get('confidence','?')}): "
+                          + ", ".join(sf_labels) + "\n")
+                    if sf.get('severity_note'):
+                        b += f"  Speech note: {sf['severity_note']}\n"
+
+                # Acoustic measurements (audio sessions)
+                acf   = scores.get('acoustic_features') or {}
+                vocab = acf.get('vocabulary') or {}
+                raw_m = acf.get('raw') or {}
+                measured_parts = []
+                if raw_m.get('articulation_rate_sps') is not None:
+                    measured_parts.append(f"artic {raw_m['articulation_rate_sps']:.2f} sps")
+                if raw_m.get('pause_ratio') is not None:
+                    measured_parts.append(f"pause ratio {raw_m['pause_ratio']:.0%}")
+                if raw_m.get('hnr_db') is not None:
+                    measured_parts.append(f"HNR {raw_m['hnr_db']:.1f} dB")
+                if measured_parts:
+                    b += f"  Acoustic measurements: {', '.join(measured_parts)}\n"
+
+                # VAD affect model
+                if afd.get('model_available') and afd.get('valence') is not None:
+                    b += (
+                        f"  Affect model (research signal): "
+                        f"valence {afd['valence']:.2f} ({afd.get('valence_label','?')}), "
+                        f"arousal {afd['arousal']:.2f} ({afd.get('arousal_label','?')}) "
+                        f"— pattern: {afd.get('pattern','N/A')}\n"
+                    )
+
+                blocks.append(b)
+
             pending_count = len([s for s in session_context if s.get('processing_status') != 'complete'])
             therapy_session_section = (
-                f"\n\nSESSION TRANSCRIPT/RECORDING DATA ({len(complete)} processed"
+                f"\n\nSESSION TRANSCRIPT & RECORDING DATA "
+                f"({len(complete)} sessions fully processed"
                 + (f", {pending_count} still processing" if pending_count else "")
-                + "):\n" + "\n".join(lines)
+                + "):\n\n" + "\n".join(blocks)
             )
             summary_system += (
-                "\n\nFor SESSION TRANSCRIPT/RECORDING DATA: include a **Session Notes** section. "
-                "Focus on topics and themes — this is a therapy summary so interpersonal and behavioral "
-                "context from sessions is primary. Flag any crisis-detected sessions first. "
-                "Do not reproduce speech feature scores or clinical labels.\n"
+                "\n\nFor SESSION TRANSCRIPT & RECORDING DATA: include a **Session Notes** "
+                "section. For each session block:\n"
+                "- Describe in prose what the patient raised — themes, stressors, "
+                "functional status, concerning language — with specific detail.\n"
+                "- Note mood and energy exactly as stated; never infer numbers not in data.\n"
+                "- Report medication adherence signals.\n"
+                "- For speech/acoustic features, use §24 vocabulary: 'session speech "
+                "features showed [X]' not 'patient exhibited [X]'.\n"
+                "- Include affect model output as a research signal with appropriate "
+                "uncertainty framing when present.\n"
+                "- Flag crisis-detected sessions first under 🔴.\n"
+                "Interpersonal and behavioural themes are primary — lead with what the "
+                "patient talked about before acoustic data.\n"
             )
 
     user_content = (
