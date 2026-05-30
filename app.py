@@ -3565,7 +3565,47 @@ def api_intel_generate_brief(patient_id):
     from transcript_engine import score_transcript_batch
     aggregated = score_transcript_batch(session_results)
 
-    # Optionally enrich with medication records
+    # ── Pull acoustic and affect data from stored session scores ──────────────
+    # Each session's background pipeline stored acoustic_features and
+    # affect_dimensions in scores. Extract, add session_date, then aggregate.
+    acoustic_vocab_list: list[dict] = []
+    affect_list:         list[dict] = []
+
+    for s in sessions_data:
+        scores      = s.get('scores') or {}
+        session_date = s.get('session_date')
+
+        acf = scores.get('acoustic_features')
+        if acf and isinstance(acf, dict):
+            vocab = acf.get('vocabulary')
+            if vocab and isinstance(vocab, dict):
+                vocab = dict(vocab)
+                vocab['session_date'] = session_date
+                acoustic_vocab_list.append(vocab)
+
+        afd = scores.get('affect_dimensions')
+        if afd and isinstance(afd, dict) and afd.get('model_available'):
+            afd = dict(afd)
+            afd['session_date'] = session_date
+            affect_list.append(afd)
+
+    voice_memo_summary = None
+    if acoustic_vocab_list:
+        try:
+            from acoustic_engine import aggregate_acoustic_sessions
+            voice_memo_summary = aggregate_acoustic_sessions(acoustic_vocab_list)
+        except Exception as e:
+            app.logger.warning("acoustic aggregation failed: %s", e)
+
+    affect_summary = None
+    if affect_list:
+        try:
+            from affect_model import aggregate_affect_sessions
+            affect_summary = aggregate_affect_sessions(affect_list)
+        except Exception as e:
+            app.logger.warning("affect aggregation failed: %s", e)
+
+    # ── Optionally enrich with medication records ──────────────────────────────
     med_records = None
     if include_medications:
         raw_meds = db.get_user_medications(patient_id, active_only=True)
@@ -3585,6 +3625,8 @@ def api_intel_generate_brief(patient_id):
         session_features=session_results,
         period_start=period_start,
         period_end=period_end,
+        voice_memo_summary=voice_memo_summary,
+        affect_summary=affect_summary,
         medication_records=med_records,
         audience='provider',
     )

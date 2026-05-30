@@ -329,6 +329,97 @@ def transcribe_audio_file(
 
 # ── Background processing ────────────────────────────────────────────────────
 
+def _run_acoustic_extraction(file_bytes: bytes, filename: str,
+                              session_id: str, session_date: str) -> dict | None:
+    """
+    Write audio bytes to a temp file, run the acoustic biomarker extractor,
+    and map the raw measurements to the §24 controlled vocabulary.
+
+    Returns the vocabulary-mapped dict (with 'session_date' added) on success,
+    or None if extraction fails for any reason.  Failures are non-fatal — the
+    transcript pipeline continues regardless.
+
+    The temp file is deleted whether or not extraction succeeds.
+    """
+    import tempfile
+    try:
+        from acoustic_engine import extract_acoustic_features, map_features_to_vocabulary
+    except ImportError as e:
+        logger.warning("acoustic_engine unavailable — skipping acoustic extraction: %s", e)
+        return None
+
+    ext      = os.path.splitext(filename)[1].lower() or '.audio'
+    tmp_path = None
+    try:
+        with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tmp:
+            tmp.write(file_bytes)
+            tmp_path = tmp.name
+
+        raw     = extract_acoustic_features(tmp_path)
+        vocab   = map_features_to_vocabulary(raw)
+        vocab['session_date'] = session_date
+
+        logger.info(
+            "Acoustic extraction complete: session=%s quality=%s speech_rate=%s "
+            "prosody=%s pauses=%s arousal=%s pattern=%s",
+            session_id,
+            raw.get('quality'),
+            vocab.get('speech_rate'),
+            vocab.get('prosody'),
+            vocab.get('pauses'),
+            vocab.get('arousal'),
+            vocab.get('clinical_pattern_type'),
+        )
+
+        # ── Acoustic affect (VAD) inference ───────────────────────────────────
+        # Runs the pre-trained wav2vec2 regression model on the decoded waveform.
+        # Produces continuous valence/arousal/dominance scores — provider-only,
+        # never surfaced to patients, framed as acoustic correlates not diagnoses.
+        affect_result = None
+        try:
+            from affect_model import run_affect_inference
+            # Re-use the already-decoded waveform from acoustic_engine internals.
+            # We decode again here to keep affect_model independent — the decode
+            # is fast and deterministic.
+            import subprocess
+            proc = subprocess.run(
+                ['ffmpeg', '-v', 'quiet', '-nostdin', '-i', tmp_path,
+                 '-ac', '1', '-ar', '16000', '-f', 'f32le', '-'],
+                capture_output=True,
+            )
+            if proc.returncode == 0 and proc.stdout:
+                import numpy as np
+                y = np.frombuffer(proc.stdout, dtype=np.float32).copy()
+                y = np.nan_to_num(y, nan=0.0, posinf=0.0, neginf=0.0)
+                affect_result = run_affect_inference(y)
+                affect_result['session_date'] = session_date
+                logger.info(
+                    "Affect inference complete: session=%s valence=%.3f arousal=%.3f "
+                    "dominance=%.3f pattern=%s model_available=%s",
+                    session_id,
+                    affect_result.get('valence') or 0,
+                    affect_result.get('arousal') or 0,
+                    affect_result.get('dominance') or 0,
+                    affect_result.get('pattern'),
+                    affect_result.get('model_available'),
+                )
+        except Exception as ae:
+            logger.warning("Affect inference failed for session %s: %s", session_id, ae)
+            affect_result = None
+
+        return {'vocabulary': vocab, 'raw': raw, 'affect': affect_result}
+
+    except Exception as e:
+        logger.warning("Acoustic extraction failed for session %s: %s", session_id, e)
+        return None
+    finally:
+        if tmp_path:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
+
 def _background_process_audio(
     session_id: str,
     patient_id: str,
@@ -339,15 +430,25 @@ def _background_process_audio(
 ) -> None:
     """
     Background thread target. Full pipeline:
-      transcribe → extract features → store features → update session status
+      acoustic extraction (waveform) + transcribe → extract features →
+      merge acoustic data → store features → update session status
 
-    This runs after the upload route has returned 201 to the client.
+    Acoustic extraction runs on the raw bytes before transcription begins —
+    the two analyses are independent and measuring different things.
+    Transcription failure aborts the pipeline; acoustic failure is non-fatal.
+
     Session status progresses: 'transcribing' → 'extracting' → 'complete' | 'error'
     """
     import database as db
     from transcript_engine import extract_features
 
     logger.info("Background audio processing started: session=%s", session_id)
+
+    # ── Acoustic biomarker extraction (waveform, §24) ──────────────────────
+    # Runs on raw bytes before transcription — independent of transcript content.
+    # Result merged into extraction dict so store_session_features persists it.
+    acoustic_result = _run_acoustic_extraction(file_bytes, filename,
+                                               session_id, session_date)
 
     # ── Transcription ─────────────────────────────────────────────
     db.update_clinical_session_status(session_id, 'transcribing')
@@ -376,6 +477,36 @@ def _background_process_audio(
         session_type=session_type,
         population_flags=population_flags or None,
     )
+
+    # ── Merge acoustic features into extraction result ────────────────────────
+    # Both acoustic_features and affect_dimensions stored in scores so
+    # store_session_features persists them alongside transcript-derived scores.
+    if acoustic_result:
+        if extraction.get('scores') is None:
+            extraction['scores'] = {}
+        extraction['scores']['acoustic_features'] = acoustic_result
+        # Store affect dimensions separately for clean retrieval
+        if acoustic_result.get('affect'):
+            extraction['scores']['affect_dimensions'] = acoustic_result['affect']
+
+        # If transcript speech_features are low-confidence or null, promote the
+        # acoustic vocabulary labels so the brief has something to work with.
+        transcript_sf = (extraction.get('scores') or {}).get('speech_features')
+        if not transcript_sf or transcript_sf.get('confidence') == 'low':
+            acoustic_vocab = acoustic_result.get('vocabulary', {})
+            if extraction.get('scores') is not None:
+                extraction['scores']['speech_features'] = {
+                    k: acoustic_vocab.get(k)
+                    for k in ('speech_rate', 'prosody', 'pauses', 'speech_coherence',
+                              'arousal', 'vocal_affect', 'severity_note', 'confidence')
+                }
+                extraction['scores']['speech_features']['source'] = 'acoustic'
+            logger.info(
+                "Using acoustic-derived speech features for session %s "
+                "(transcript speech_features were %s)",
+                session_id,
+                'absent' if not transcript_sf else 'low-confidence',
+            )
 
     # ── Persist features ──────────────────────────────────────────
     db.store_session_features(

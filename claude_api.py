@@ -1783,7 +1783,7 @@ def generate_patient_synthesis(synthesis: dict) -> dict:
 
 _BRIEF_FROM_SESSIONS_SYSTEM_PROVIDER = """You are a clinical data assistant preparing a pre-appointment brief for a psychiatrist or mental health provider.
 
-Your inputs are structured features extracted from this patient's recent session transcripts, along with any available wearable biometric data and voice memo analysis.
+Your inputs are structured features extracted from this patient's recent session transcripts, along with any available wearable biometric data and acoustic biomarker analysis from actual audio recordings.
 
 Write in structured, clinically neutral language. Be specific — cite numbers and session counts. Describe patterns; never interpret clinical meaning.
 
@@ -1797,18 +1797,48 @@ STRUCTURE (use these exact section headers):
 - Stress/Stressors: (count and categories of stressors raised across sessions)
 - Wearable data: (include HRV, resting HR, sleep avg from wearables if present; omit section if no wearable data)
 
+**Acoustic Biomarkers:** Include this section whenever acoustic data is provided. Report each of the following if measured:
+- Speech rate: state the label (slowed / normal / pressured) and the numeric articulation rate in syllables per second (sps). If trend data covers multiple sessions, note the distribution (e.g., 'slowed in 3 of 4 sessions').
+- Vocal prosody: state the label (flat / normal / elevated) and F0 coefficient of variation if available.
+- Pause patterns: state the label and mean pause ratio as a percentage. Note if pause ratio trended in a particular direction across sessions.
+- Voice quality: if HNR, jitter, or shimmer values are present, report them as measured numbers. HNR below 15 dB indicates reduced harmonic quality; report what was measured without inferring cause.
+- Arousal: state the observed label (low / normal / elevated / agitated) with the RMS amplitude value if available.
+- Session pattern type: name the acoustic pattern label (depressive / anxiety_stress / mania_hypomania / mixed / none_detected) and in how many sessions it appeared. Do not use pattern type as a diagnosis.
+- If recording quality was poor for any session, note this and that confidence is reduced for those features.
+- If no acoustic data was collected: 'No audio recordings processed this period.'
+
 **Medication Signal:** What medications were discussed, adherence signals from session language, any side-effect mentions. If none discussed: 'No medication discussions recorded this period.'
 
 **Session Themes:** 2-3 dominant topics the patient raised across sessions. Language-level observations only — not clinical characterization of what those topics represent.
 
-**Flags:** Any crisis language (blocked generation if detected — note accordingly), concerning language patterns, recurring symptoms mentioned, medication adherence concerns. If none: 'None for this period.'
+**Flags:** Any crisis language (blocked generation if detected — note accordingly), concerning language patterns, recurring symptoms mentioned, medication adherence concerns, acoustic signals warranting follow-up (e.g., sustained flat prosody across multiple sessions). If none: 'None for this period.'
 
-**Suggested Discussion Topics:** 2-3 specific, data-anchored items the provider may wish to raise.
+**Suggested Discussion Topics:** 2-3 specific, data-anchored items the provider may wish to raise. When acoustic patterns are notable, include at least one topic grounded in those findings.
 
-RULES:
+ACOUSTIC AFFECT DIMENSIONS (VAD) — when the ACOUSTIC AFFECT DIMENSIONS block is present:
+Include a sub-section under Acoustic Biomarkers titled "Affect Model (Research Signal)".
+- Report valence, arousal, and dominance averages and trends as measured numbers.
+- Always include the ⚠ disclaimer verbatim — it is mandatory.
+- Correct framing: 'Acoustic valence averaged 0.29 across N sessions (low range; model scale 0–1).'
+- Correct framing: 'Arousal was in the neutral range (avg 0.48) with a declining trend across the period.'
+- Never write 'the model detected depression,' 'the patient is depressed,' or any diagnostic label.
+- When valence is consistently low AND arousal is consistently low across multiple sessions, note the convergent signal: 'Both valence and arousal dimensions remained in the low range across N sessions — a pattern worth discussing with the patient directly.'
+- When VAD patterns converge with acoustic biomarker labels (e.g., low valence + slowed speech + flat prosody), name the convergence explicitly without inferring a diagnosis.
+- The affect model accuracy ceiling (~70–75%) must always be cited when VAD findings are notable.
+
+ACOUSTIC BIOMARKER LANGUAGE RULES:
+- The acoustic labels (slowed, flat, pressured, etc.) describe waveform measurements — not clinical diagnoses.
+- Never write 'this suggests depression,' 'this indicates anxiety,' 'the patient appears manic,' or similar.
+- Correct framing: 'Speech rate was measured at [X] sps, below the normal adult range, in [N] of [T] sessions.'
+- Correct framing: 'Pitch variation (F0 CV) averaged [X] — in the flat-prosody range — across [N] sessions.'
+- Correct framing: 'HNR averaged [X] dB, which is below the 15 dB threshold for normal harmonic quality.'
+- The clinical_pattern_type label is an acoustic pattern classification, not a psychiatric assessment. Name it as: 'Acoustic pattern consistent with [label] profile observed in [N] sessions.'
+- Converging signals (e.g., slowed speech + flat prosody + increased pauses across multiple sessions) are worth naming explicitly as a cluster — still without inferring clinical meaning.
+
+GENERAL RULES:
 - Never diagnose. Never advise medication changes.
 - Do not say 'you have,' 'you suffer from,' 'this indicates [disorder],' 'this explains your [symptom],' 'this is consistent with [condition].'
-- Describe co-occurrence only — never causation. 'Stressor count was elevated in sessions where sleep hours were also lower' not 'stress caused sleep disruption.'
+- Describe co-occurrence only — never causation.
 - Every numeric claim must come from the data provided. If a value is null or not_recorded, say so — never substitute a plausible estimate.
 - The methodology footer at the end of every brief is mandatory."""
 
@@ -1837,6 +1867,9 @@ _METHODOLOGY_FOOTER = (
     "\n\n---\n*Methodology: Session themes extracted via structured AI analysis of transcript text. "
     "Numeric scores computed deterministically in Python prior to AI generation — "
     "the model describes patterns; it does not compute scores. "
+    "Acoustic biomarker labels (speech rate, prosody, pauses, arousal, vocal affect) derived from "
+    "waveform analysis using librosa and Praat/parselmouth; measurements map to §24 controlled vocabulary "
+    "and represent signal-level observations, not clinical assessments. "
     "This brief does not constitute a diagnosis, clinical assessment, or medication recommendation. "
     "Clinical interpretation is the provider's responsibility.*"
 )
@@ -1849,6 +1882,7 @@ def generate_brief_from_sessions(
     period_end: str | None = None,
     wearable_summary: dict | None = None,
     voice_memo_summary: dict | None = None,
+    affect_summary: dict | None = None,
     medication_records: list | None = None,
     audience: str = 'provider',
 ) -> dict:
@@ -1873,6 +1907,9 @@ def generate_brief_from_sessions(
                             Shape: {sleep_avg, hrv_avg, resting_hr_avg, active_min_avg, days}
         voice_memo_summary: Aggregated acoustic features or None.
                             Shape: {speech_rate_trend, vocal_energy_avg, pause_rate_avg, weeks}
+        affect_summary:     Aggregated VAD affect dimensions or None.
+                            Output of affect_model.aggregate_affect_sessions().
+                            Provider-only — never passed on patient audience path.
         medication_records: List of active medication records from the DB or None.
         audience:           'provider' (Mode C) or 'patient' (plain-language summary).
 
@@ -1970,15 +2007,116 @@ def generate_brief_from_sessions(
             + (f"- Active minutes avg: {w['active_min_avg']}/day\n" if w.get('active_min_avg') else '')
         )
 
-    # ── Voice memo section ─────────────────────────────────────────────────
+    # ── Acoustic biomarker section ─────────────────────────────────────────
+    # voice_memo_summary is the output of acoustic_engine.aggregate_acoustic_sessions().
+    # Build a rich, structured block that the system prompt knows how to cite.
     voice_block = ''
     if voice_memo_summary:
         v = voice_memo_summary
+        n_acoustic = v.get('session_count', 0)
+
+        def _dist_str(d: dict) -> str:
+            """Format a label-distribution dict as 'label: N, ...' string."""
+            if not d:
+                return 'no data'
+            return ', '.join(f"{lbl}: {cnt}" for lbl, cnt in sorted(d.items()))
+
+        measured_series = v.get('measured_series') or []
+        series_lines = ''
+        for ms in measured_series:
+            date  = ms.get('session_date', 'unknown date')
+            artic = ms.get('articulation_rate_sps')
+            pr    = ms.get('pause_ratio')
+            f0cv  = ms.get('f0_cv')
+            hnr   = ms.get('hnr_db')
+            sr    = ms.get('speech_rate', 'N/A')
+            pros  = ms.get('prosody', 'N/A')
+            arou  = ms.get('arousal', 'N/A')
+            vaf   = ms.get('vocal_affect', 'N/A')
+            series_lines += (
+                f"  {date}: speech_rate={sr}, prosody={pros}, arousal={arou}, "
+                f"vocal_affect={vaf}"
+                + (f", artic={artic:.2f} sps" if artic is not None else '')
+                + (f", pause_ratio={pr:.2f}" if pr is not None else '')
+                + (f", F0_CV={f0cv:.3f}" if f0cv is not None else '')
+                + (f", HNR={hnr:.1f} dB" if hnr is not None else '')
+                + "\n"
+            )
+
         voice_block = (
-            f"\n\nVOICE MEMO ACOUSTIC DATA ({v.get('weeks', '?')} weeks):\n"
-            + (f"- Speech rate: {v['speech_rate_trend']}\n" if v.get('speech_rate_trend') else '')
-            + (f"- Vocal energy avg: {v['vocal_energy_avg']}\n" if v.get('vocal_energy_avg') else '')
-            + (f"- Pause rate avg: {v['pause_rate_avg']}\n" if v.get('pause_rate_avg') else '')
+            f"\n\nACOUSTIC BIOMARKER DATA ({n_acoustic} session{'s' if n_acoustic != 1 else ''} "
+            f"with audio recordings processed):\n"
+            + f"- Speech rate trend: {v.get('speech_rate_trend', 'insufficient data')}\n"
+            + f"  Distribution across sessions: {_dist_str(v.get('speech_rate_distribution'))}\n"
+            + (f"  Articulation rate avg: {v['articulation_rate_avg']:.2f} sps\n"
+               if v.get('articulation_rate_avg') is not None else '')
+            + f"- Prosody distribution: {_dist_str(v.get('prosody_distribution'))}\n"
+            + (f"  F0 mean avg across sessions: {v['f0_mean_avg']:.1f} Hz\n"
+               if v.get('f0_mean_avg') is not None else '')
+            + f"- Pause patterns: {_dist_str(v.get('pause_distribution'))}\n"
+            + (f"  Mean pause ratio: {v['pause_rate_avg']:.2f} ({v['pause_rate_avg']*100:.0f}% of recording)\n"
+               if v.get('pause_rate_avg') is not None else '')
+            + f"- Arousal distribution: {_dist_str(v.get('arousal_distribution'))}\n"
+            + f"- Vocal affect distribution: {_dist_str(v.get('vocal_affect_distribution'))}\n"
+            + (f"- Voice quality (HNR) avg: {v['hnr_avg']:.1f} dB "
+               f"({'within normal range' if v['hnr_avg'] >= 15 else 'below 15 dB threshold'})\n"
+               if v.get('hnr_avg') is not None else '')
+            + (f"- Dominant acoustic pattern: {v['dominant_pattern']}\n"
+               if v.get('dominant_pattern') else '')
+            + (f"- Sessions with ≥1 abnormal acoustic label: {v['speech_concern_sessions']} of {n_acoustic}\n"
+               if v.get('speech_concern_sessions') is not None else '')
+            + (f"- RMS vocal energy avg: {v['vocal_energy_avg']:.4f}\n"
+               if v.get('vocal_energy_avg') is not None else '')
+            + (f"\nPer-session acoustic measurements:\n{series_lines}" if series_lines else '')
+        )
+
+    # ── Acoustic affect dimensions section (VAD, provider-only) ──────────────
+    # affect_summary is the output of affect_model.aggregate_affect_sessions().
+    # Never included on the patient audience path — guarded below at generation time.
+    affect_block = ''
+    if affect_summary and affect_summary.get('model_available') and audience == 'provider':
+        a = affect_summary
+        n_af   = a.get('valid_count', 0)
+        n_tot  = a.get('session_count', 0)
+
+        def _vad_label(avg: float | None) -> str:
+            if avg is None:
+                return 'not measured'
+            if avg < 0.35:
+                return f"{avg:.3f} (low)"
+            if avg > 0.65:
+                return f"{avg:.3f} (high)"
+            return f"{avg:.3f} (neutral range)"
+
+        series_lines_af = ''
+        for row in (a.get('series') or []):
+            date = row.get('session_date', 'unknown')
+            series_lines_af += (
+                f"  {date}: valence={row.get('valence')}, "
+                f"arousal={row.get('arousal')}, "
+                f"dominance={row.get('dominance')}, "
+                f"pattern={row.get('pattern')}\n"
+            )
+
+        pat_dist = a.get('pattern_distribution') or {}
+        pat_str  = ', '.join(f"{k}: {v}" for k, v in pat_dist.items()) or 'none detected'
+
+        affect_block = (
+            f"\n\nACOUSTIC AFFECT DIMENSIONS — RESEARCH SIGNAL "
+            f"({n_af} of {n_tot} sessions with model output):\n"
+            f"Model: {a.get('model_id', 'unknown')} | "
+            f"Training: {a.get('training_source', 'unknown')}\n"
+            f"- Valence avg  : {_vad_label(a.get('valence_avg'))} "
+            f"| trend: {a.get('valence_trend', 'N/A')} "
+            f"| range: {a.get('valence_min')}–{a.get('valence_max')}\n"
+            f"- Arousal avg  : {_vad_label(a.get('arousal_avg'))} "
+            f"| trend: {a.get('arousal_trend', 'N/A')} "
+            f"| range: {a.get('arousal_min')}–{a.get('arousal_max')}\n"
+            f"- Dominance avg: {_vad_label(a.get('dominance_avg'))}\n"
+            f"- Pattern distribution: {pat_str}\n"
+            f"- Dominant pattern: {a.get('dominant_pattern', 'none')}\n"
+            + (f"\nPer-session VAD:\n{series_lines_af}" if series_lines_af else '')
+            + f"\n⚠ {a.get('disclaimer', '')}\n"
         )
 
     # ── Medication records section ─────────────────────────────────────────
@@ -2016,6 +2154,7 @@ def generate_brief_from_sessions(
         f"{json.dumps(session_rows, indent=2, default=str)}"
         + wearable_block
         + voice_block
+        + affect_block
         + med_block
     )
 
