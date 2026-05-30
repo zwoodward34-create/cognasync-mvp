@@ -154,21 +154,17 @@ def _assemblyai_headers() -> dict:
     return {'authorization': ASSEMBLYAI_API_KEY, 'content-type': 'application/json'}
 
 
-def _submit_transcription_job(audio_url: str, speaker_labels: bool = True) -> str | None:
+def _submit_transcription_job(audio_url: str) -> tuple:
     """
     Submit a transcription job to AssemblyAI.
-    Returns the job ID on success, None on failure.
-
-    speaker_labels=True enables speaker diarization, which allows the
-    extraction engine to distinguish patient speech from provider speech.
+    Returns (job_id, error_message). job_id is None on failure.
     """
     if not ASSEMBLYAI_API_KEY:
-        logger.error("ASSEMBLYAI_API_KEY not set — transcription unavailable.")
-        return None
+        return None, 'ASSEMBLYAI_API_KEY is not configured.'
 
+    # speaker_labels is a paid feature — omit it so free-tier keys work.
     payload = {
-        'audio_url':     audio_url,
-        'speaker_labels': speaker_labels,
+        'audio_url':    audio_url,
         'language_code': 'en',
     }
 
@@ -179,13 +175,18 @@ def _submit_transcription_job(audio_url: str, speaker_labels: bool = True) -> st
             headers=_assemblyai_headers(),
             timeout=30,
         )
-        resp.raise_for_status()
+        if not resp.ok:
+            body = resp.text[:300]
+            logger.error("AssemblyAI submission HTTP %s: %s", resp.status_code, body)
+            return None, f'AssemblyAI returned {resp.status_code}: {body}'
         job_id = resp.json().get('id')
+        if not job_id:
+            return None, f'AssemblyAI response missing job id: {resp.text[:200]}'
         logger.info("AssemblyAI job submitted: %s", job_id)
-        return job_id
+        return job_id, None
     except Exception as e:
         logger.error("AssemblyAI submission failed: %s", e)
-        return None
+        return None, str(e)
 
 
 def _poll_transcription_job(job_id: str) -> dict:
@@ -318,13 +319,13 @@ def transcribe_audio_file(
         }
 
     # Submit transcription job
-    job_id = _submit_transcription_job(audio_url)
+    job_id, submit_err = _submit_transcription_job(audio_url)
     if not job_id:
         return {
             'status':       'error',
             'text':         None,
             'storage_path': None,
-            'error':        'Failed to submit transcription job to AssemblyAI.',
+            'error':        submit_err or 'Failed to submit transcription job to AssemblyAI.',
         }
 
     # Poll until complete
