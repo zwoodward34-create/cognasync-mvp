@@ -1106,6 +1106,10 @@
           {% endif %}
           {% if note.transcript %}
           <div class="voice-transcript">{{ note.transcript }}</div>
+          {% elif note.processing_status == 'error' %}
+          <div style="font-size:0.8rem;color:#c0392b;">
+            Transcription failed{% if note.processing_error %}: {{ note.processing_error }}{% endif %}
+          </div>
           {% else %}
           <div style="font-size:0.8rem;color:var(--text-muted);">Recording received — transcript pending.</div>
           {% endif %}

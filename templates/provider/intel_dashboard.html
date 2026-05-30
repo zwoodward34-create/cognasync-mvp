@@ -629,7 +629,7 @@
                 <div class="session-themes">{{ s.features.themes | join(' · ') }}</div>
               {% endif %}
             {% elif s.processing_status == 'error' %}
-              <div class="session-crisis">⚠ Processing error</div>
+              <div class="session-crisis" title="{{ s.processing_error or '' }}">⚠ {{ s.processing_error or 'Processing error' }}</div>
             {% else %}
               <div class="session-processing" id="proc-{{ s.session_id }}">
                 <span class="mini-spinner"></span>

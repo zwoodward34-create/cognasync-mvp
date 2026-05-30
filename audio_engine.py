@@ -259,6 +259,28 @@ def _format_utterances(utterances: list) -> str:
     return '\n'.join(lines)
 
 
+def _upload_bytes_to_assemblyai(file_bytes: bytes) -> str | None:
+    """
+    Upload raw audio bytes directly to AssemblyAI's upload endpoint.
+    Returns the temporary CDN URL AssemblyAI provides, or None on failure.
+    This avoids the Supabase Storage dependency entirely.
+    """
+    try:
+        resp = requests.post(
+            f'{ASSEMBLYAI_BASE_URL}/upload',
+            headers={'authorization': ASSEMBLYAI_API_KEY},
+            data=file_bytes,
+            timeout=120,
+        )
+        resp.raise_for_status()
+        url = resp.json().get('upload_url')
+        logger.info("Audio uploaded to AssemblyAI CDN (%d bytes)", len(file_bytes))
+        return url
+    except Exception as e:
+        logger.error("AssemblyAI binary upload failed: %s", e)
+        return None
+
+
 def transcribe_audio_file(
     file_bytes: bytes,
     filename: str,
@@ -266,20 +288,14 @@ def transcribe_audio_file(
     session_id: str,
 ) -> dict:
     """
-    Full synchronous transcription pipeline:
-      1. Upload audio to Supabase Storage
-      2. Get a signed URL for AssemblyAI
-      3. Submit transcription job
-      4. Poll until complete
-
-    This is the blocking version — suitable for short recordings or
-    background threads. The public-facing route always calls the async wrapper.
+    Full synchronous transcription pipeline using direct binary upload to AssemblyAI.
+    No Supabase Storage bucket required.
 
     Returns:
         {
             'status':       'completed' | 'error' | 'timeout',
             'text':         str | None,
-            'storage_path': str | None,
+            'storage_path': None,          # reserved for future storage
             'error':        str | None,
         }
     """
@@ -288,42 +304,32 @@ def transcribe_audio_file(
             'status':       'error',
             'text':         None,
             'storage_path': None,
-            'error':        'ASSEMBLYAI_API_KEY is not configured. Set this environment variable to enable audio transcription.',
+            'error':        'ASSEMBLYAI_API_KEY is not configured. Add it to your Render environment variables.',
         }
 
-    # Step 1: Store audio
-    storage_path = upload_audio_to_storage(file_bytes, filename, patient_id, session_id)
-    if not storage_path:
+    # Upload bytes directly to AssemblyAI (no Supabase Storage needed)
+    audio_url = _upload_bytes_to_assemblyai(file_bytes)
+    if not audio_url:
         return {
             'status':       'error',
             'text':         None,
             'storage_path': None,
-            'error':        'Failed to upload audio file to storage.',
+            'error':        'Failed to upload audio to AssemblyAI.',
         }
 
-    # Step 2: Get signed URL for AssemblyAI
-    signed_url = get_audio_signed_url(storage_path, expires_in=3600)
-    if not signed_url:
-        return {
-            'status':       'error',
-            'text':         None,
-            'storage_path': storage_path,
-            'error':        'Failed to generate a signed URL for the audio file.',
-        }
-
-    # Step 3: Submit transcription job
-    job_id = _submit_transcription_job(signed_url)
+    # Submit transcription job
+    job_id = _submit_transcription_job(audio_url)
     if not job_id:
         return {
             'status':       'error',
             'text':         None,
-            'storage_path': storage_path,
+            'storage_path': None,
             'error':        'Failed to submit transcription job to AssemblyAI.',
         }
 
-    # Step 4: Poll until complete
+    # Poll until complete
     result = _poll_transcription_job(job_id)
-    result['storage_path'] = storage_path
+    result['storage_path'] = None
     return result
 
 
@@ -443,6 +449,22 @@ def _background_process_audio(
     from transcript_engine import extract_features
 
     logger.info("Background audio processing started: session=%s", session_id)
+    try:
+        _run_audio_pipeline(db, extract_features, session_id, patient_id,
+                            file_bytes, filename, session_date, session_type)
+    except Exception as exc:
+        logger.exception("Unhandled exception in audio pipeline for session %s", session_id)
+        try:
+            db.update_clinical_session_status(session_id, 'error',
+                                              error_message=f'Internal error: {exc}')
+        except Exception:
+            pass
+
+
+def _run_audio_pipeline(db, extract_features, session_id, patient_id,
+                         file_bytes, filename, session_date, session_type):
+    """Inner pipeline extracted so the outer function can wrap it with a safety net."""
+    logger.info("Pipeline started: session=%s", session_id)
 
     # ── Acoustic biomarker extraction (waveform, §24) ──────────────────────
     # Runs on raw bytes before transcription — independent of transcript content.
