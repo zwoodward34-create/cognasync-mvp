@@ -3854,33 +3854,97 @@ def api_voice_submit(token_str):
         {'used_at': 'now()'}
     ).eq('token', token_str).execute()
 
-    # Background transcription — reuses audio_engine transcription pipeline
+    # Background transcription + full intelligence pipeline
     if voice_note_id and audio_bytes:
         import threading as _threading
         _audio_bytes_snapshot = audio_bytes
-        _mime_snapshot = audio_file.mimetype or 'audio/webm'
+        _session_date_snapshot = datetime.utcnow().date().isoformat()
         def _transcribe():
             try:
                 import uuid as _uuid
-                from audio_engine import transcribe_audio_file
+                from audio_engine import transcribe_audio_file, _run_acoustic_extraction
+                from transcript_engine import extract_features
+
+                # 1. Transcribe
                 result = transcribe_audio_file(
                     file_bytes=_audio_bytes_snapshot,
                     filename='voice_note.webm',
                     patient_id=patient_id,
                     session_id=str(_uuid.uuid4()),
                 )
-                if result.get('status') == 'completed' and result.get('text'):
-                    db.supabase_admin.table('voice_notes').update({
-                        'transcript':        result['text'],
-                        'processing_status': 'complete',
-                    }).eq('id', voice_note_id).execute()
-                else:
+                if not (result.get('status') == 'completed' and result.get('text')):
                     db.supabase_admin.table('voice_notes').update({
                         'processing_status': 'error',
                         'processing_error':  result.get('error', 'Transcription failed'),
                     }).eq('id', voice_note_id).execute()
+                    return
+
+                transcript_text = result['text']
+
+                # Update voice_notes with transcript
+                db.supabase_admin.table('voice_notes').update({
+                    'transcript':        transcript_text,
+                    'processing_status': 'processing',
+                }).eq('id', voice_note_id).execute()
+
+                # 2. Semantic extraction via Claude
+                population_flags = db.get_patient_population_flags(patient_id) or {}
+                extraction = extract_features(
+                    transcript_text=transcript_text,
+                    session_date=_session_date_snapshot,
+                    session_type='voice_note',
+                    population_flags=population_flags,
+                )
+
+                # 3. Acoustic extraction (non-fatal)
+                try:
+                    acoustic_result = _run_acoustic_extraction(
+                        file_bytes=_audio_bytes_snapshot,
+                        filename='voice_note.webm',
+                        session_id=str(voice_note_id),
+                        session_date=_session_date_snapshot,
+                    )
+                    if acoustic_result:
+                        scores = extraction.setdefault('scores', {})
+                        scores['acoustic_features'] = acoustic_result.get('vocabulary', {})
+                        scores['affect_dimensions'] = acoustic_result.get('affect', {})
+                except Exception as ae:
+                    app.logger.warning(f'[voice] Acoustic extraction skipped: {ae}')
+
+                # 4. Create clinical_sessions row so brief generation can find it
+                provider_id_for_session = tok.get('provider_id')
+                session_id = db.store_clinical_session(
+                    provider_id=provider_id_for_session,
+                    patient_id=patient_id,
+                    session_date=_session_date_snapshot,
+                    session_type='voice_note',
+                    transcript_raw=transcript_text,
+                    transcript_source='voice_note',
+                )
+
+                if session_id:
+                    db.store_session_features(
+                        session_id=session_id,
+                        patient_id=patient_id,
+                        extraction_result=extraction,
+                    )
+
+                # Mark voice_note complete (link to session if column exists)
+                vn_update = {'processing_status': 'complete'}
+                if session_id:
+                    try:
+                        db.supabase_admin.table('voice_notes').update({
+                            **vn_update, 'clinical_session_id': session_id,
+                        }).eq('id', voice_note_id).execute()
+                    except Exception:
+                        db.supabase_admin.table('voice_notes').update(
+                            vn_update).eq('id', voice_note_id).execute()
+                else:
+                    db.supabase_admin.table('voice_notes').update(
+                        vn_update).eq('id', voice_note_id).execute()
+
             except Exception as ex:
-                app.logger.error(f'[voice] Transcription failed: {ex}')
+                app.logger.error(f'[voice] Pipeline failed: {ex}')
                 db.supabase_admin.table('voice_notes').update({
                     'processing_status': 'error',
                     'processing_error':  str(ex),
