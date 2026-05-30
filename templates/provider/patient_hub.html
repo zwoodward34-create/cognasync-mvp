@@ -425,6 +425,19 @@
     color: var(--text-muted);
   }
   .voice-badge--done { background: #d4edda; color: #1a7f3c; }
+  .delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    padding: 2px 6px;
+    border-radius: 4px;
+    line-height: 1;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .delete-btn:hover { color: #c0392b; background: #fdecea; }
 
   /* ── Session card ────────────────────────────────────────────────────────── */
   .session-card {
@@ -965,12 +978,14 @@
     <div class="hub-section-body">
       {% if voice_notes %}
         {% for note in voice_notes %}
-        <div class="voice-card">
+        <div class="voice-card" id="voice-card-{{ note.id }}">
           <div class="voice-card-hdr">
             <span class="voice-date">{{ note.created_at[:10] if note.created_at else '—' }}</span>
             <span class="voice-badge {% if note.transcript %}voice-badge--done{% endif %}">
               {{ 'Transcribed' if note.transcript else 'No transcript' }}
             </span>
+            <button class="delete-btn" title="Delete recording"
+                    onclick="deleteVoiceNote('{{ note.id }}')">✕</button>
           </div>
           {% if note.prompt %}
           <div class="voice-prompt">"{{ note.prompt }}"</div>
@@ -1040,7 +1055,7 @@
 
       {% if sessions %}
         {% for s in sessions %}
-        <div class="session-card">
+        <div class="session-card" id="session-card-{{ s.session_id }}">
           <span class="session-date">{{ s.session_date[:10] if s.session_date else (s.created_at[:10] if s.created_at else '—') }}</span>
           <span class="session-type">
             {{ s.session_type | title if s.session_type else 'Session' }}
@@ -1053,6 +1068,8 @@
              style="font-size:0.78rem;color:var(--accent);text-decoration:none;white-space:nowrap;">
             View →
           </a>
+          <button class="delete-btn" title="Delete session"
+                  onclick="deleteSession('{{ s.session_id }}')">✕</button>
         </div>
         {% endfor %}
       {% else %}
@@ -1472,6 +1489,7 @@ async function loadBriefBank() {
     summaries.forEach(function (s) {
       const item = document.createElement('div');
       item.className = 'brief-bank-item';
+      item.dataset.summaryId = s.id || '';
 
       const dateStr  = (s.summary_date || s.date_range_end || '').slice(0, 10);
       const start    = (s.date_range_start || '').slice(0, 10);
@@ -1483,7 +1501,14 @@ async function loadBriefBank() {
         '<span class="brief-bank-date">' + _esc(dateStr) + '</span>' +
         '<span class="brief-bank-range">' + _esc(rangeStr) + '</span>' +
         '<span class="brief-bank-preview">' + _esc(preview) + '…</span>' +
-        '<span class="brief-bank-arrow">›</span>';
+        '<span class="brief-bank-arrow">›</span>' +
+        '<button class="delete-btn" title="Delete brief" style="margin-left:8px;">✕</button>';
+
+      const delBtn = item.querySelector('.delete-btn');
+      delBtn.addEventListener('click', function (e) {
+        e.stopPropagation();
+        deleteBrief(s.id, item);
+      });
 
       item.addEventListener('click', function () {
         _showBriefModal(s.summary_text || '', rangeStr);
@@ -1498,6 +1523,63 @@ async function loadBriefBank() {
 
 // Load brief bank on page ready
 loadBriefBank();
+
+// ── Delete helpers ────────────────────────────────────────────────────────────
+async function deleteVoiceNote(noteId) {
+  if (!confirm('Delete this voice recording? This cannot be undone.')) return;
+  try {
+    const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/voice-note/' + noteId, {
+      method: 'DELETE', credentials: 'same-origin',
+    });
+    if (res.ok) {
+      const card = document.getElementById('voice-card-' + noteId);
+      if (card) card.remove();
+      showToast('Recording deleted');
+    } else {
+      showToast('Delete failed', true);
+    }
+  } catch (_) { showToast('Delete failed', true); }
+}
+
+async function deleteSession(sessionId) {
+  if (!confirm('Delete this session transcript and all extracted data? This cannot be undone.')) return;
+  try {
+    const res = await fetch('/api/intel/patient/' + PATIENT_ID + '/session/' + sessionId, {
+      method: 'DELETE', credentials: 'same-origin',
+    });
+    if (res.ok) {
+      const card = document.getElementById('session-card-' + sessionId);
+      if (card) card.remove();
+      showToast('Session deleted');
+    } else {
+      showToast('Delete failed', true);
+    }
+  } catch (_) { showToast('Delete failed', true); }
+}
+
+async function deleteBrief(briefId, el) {
+  if (!briefId) return;
+  if (!confirm('Delete this brief? This cannot be undone.')) return;
+  try {
+    const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/summary/' + briefId, {
+      method: 'DELETE', credentials: 'same-origin',
+    });
+    if (res.ok) {
+      if (el) el.remove();
+      showToast('Brief deleted');
+      // Refresh count
+      const remaining = document.querySelectorAll('.brief-bank-item').length;
+      const countMeta = document.getElementById('briefs-count-meta');
+      if (countMeta) countMeta.textContent = remaining + ' saved';
+      if (remaining === 0) {
+        const emptyMsg = document.getElementById('brief-bank-empty');
+        if (emptyMsg) emptyMsg.style.display = '';
+      }
+    } else {
+      showToast('Delete failed', true);
+    }
+  } catch (_) { showToast('Delete failed', true); }
+}
 
 // ── SMS helpers ───────────────────────────────────────────────────────────────
 async function sendSMS(type) {

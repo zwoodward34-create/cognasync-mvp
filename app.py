@@ -3584,6 +3584,64 @@ def api_intel_get_brief(brief_id):
     return jsonify(brief)
 
 
+@app.route('/api/intel/brief/<brief_id>', methods=['DELETE'])
+def api_intel_delete_brief(brief_id):
+    """Delete a provider brief owned by the requesting provider."""
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    ok = db.delete_provider_brief(provider['id'], brief_id)
+    if not ok:
+        return jsonify({'error': 'Delete failed'}), 500
+    return jsonify({'ok': True})
+
+
+@app.route('/api/intel/patient/<patient_id>/session/<session_id>', methods=['DELETE'])
+def api_intel_delete_session(patient_id, session_id):
+    """Delete a clinical session and its extracted features."""
+    provider, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(provider['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+
+    ok = db.delete_clinical_session(patient_id, session_id)
+    if not ok:
+        return jsonify({'error': 'Delete failed'}), 500
+    return jsonify({'ok': True})
+
+
+@app.route('/api/provider/patient/<patient_id>/voice-note/<note_id>', methods=['DELETE'])
+def api_provider_delete_voice_note(patient_id, note_id):
+    """Delete a voice recording for a patient."""
+    provider, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(provider['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+
+    ok = db.delete_voice_note(patient_id, note_id)
+    if not ok:
+        return jsonify({'error': 'Delete failed'}), 500
+    return jsonify({'ok': True})
+
+
+@app.route('/api/provider/patient/<patient_id>/summary/<summary_id>', methods=['DELETE'])
+def api_provider_delete_summary(patient_id, summary_id):
+    """Delete a patient summary/brief from the provider hub."""
+    provider, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(provider['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+
+    ok = db.delete_summary(patient_id, summary_id)
+    if not ok:
+        return jsonify({'error': 'Delete failed'}), 500
+    return jsonify({'ok': True})
+
+
 # ── end intelligence layer routes ────────────────────────────────────────────
 
 

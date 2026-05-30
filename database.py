@@ -5716,6 +5716,36 @@ def update_voice_note_transcript(
         print(f'[db] update_voice_note_transcript error: {e}')
 
 
+def delete_voice_note(patient_id: str, note_id: str) -> bool:
+    """Delete a voice note, enforcing ownership via patient_id."""
+    try:
+        supabase_admin.table('voice_notes').delete().eq('id', note_id).eq('patient_id', patient_id).execute()
+        return True
+    except Exception as e:
+        print(f'[db] delete_voice_note error: {e}')
+        return False
+
+
+def delete_clinical_session(patient_id: str, session_id: str) -> bool:
+    """Delete a clinical session row (cascades to session_features), enforcing ownership."""
+    try:
+        supabase_admin.table('clinical_sessions').delete().eq('id', session_id).eq('patient_id', patient_id).execute()
+        return True
+    except Exception as e:
+        print(f'[db] delete_clinical_session error: {e}')
+        return False
+
+
+def delete_provider_brief(provider_id: str, brief_id: str) -> bool:
+    """Delete a provider brief, enforcing ownership via provider_id."""
+    try:
+        supabase_admin.table('provider_briefs').delete().eq('id', brief_id).eq('provider_id', provider_id).execute()
+        return True
+    except Exception as e:
+        print(f'[db] delete_provider_brief error: {e}')
+        return False
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # TWILIO SMS — TOKEN LIFECYCLE
 # Pre-authenticated single-use tokens that identify a patient in Twilio flows.
