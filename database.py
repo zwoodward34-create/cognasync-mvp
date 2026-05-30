@@ -6258,4 +6258,170 @@ def mark_appointment_checkin_triggered(appt_id: str) -> bool:
     except Exception as e:
         print(f'[db] mark_appointment_checkin_triggered error: {e}')
         return False
-        return False
+
+
+# ── Linguistic Biomarker Analysis ─────────────────────────────────────────────
+
+def compute_lexical_diversity(patient_id: str, days: int = 30) -> dict:
+    """
+    Compute Type-Token Ratio (TTR) across journal entries to measure vocabulary
+    richness over time. Returns trend direction and delta for use in appointment
+    summaries (CLAUDE.md §25).
+
+    Returns dict with keys:
+      type_token_ratio   — TTR across all words in the window (float)
+      trend              — "improving" | "declining" | "stable" | "insufficient_data"
+      entries_analyzed   — count of entries used
+      earliest_ttr       — TTR in the first half of entries
+      latest_ttr         — TTR in the second half of entries
+      delta              — latest_ttr - earliest_ttr (negative = declining)
+
+    Minimum 10 entries required; otherwise trend = "insufficient_data".
+    """
+    try:
+        since = (datetime.utcnow() - timedelta(days=days)).date().isoformat()
+        res = supabase_admin.table('journal_entries').select(
+            'content, entry_date'
+        ).eq('user_id', str(patient_id)).gte('entry_date', since).order(
+            'entry_date', desc=False
+        ).execute()
+        entries = [e for e in (res.data or []) if e.get('content')]
+
+        if len(entries) < 10:
+            return {
+                'type_token_ratio': None,
+                'trend': 'insufficient_data',
+                'entries_analyzed': len(entries),
+                'earliest_ttr': None,
+                'latest_ttr': None,
+                'delta': None,
+            }
+
+        def _ttr(texts: list) -> float:
+            words = []
+            for t in texts:
+                words.extend(re.findall(r"[a-z']+", t.lower()))
+            if not words:
+                return 0.0
+            return round(len(set(words)) / len(words), 4)
+
+        all_contents = [e['content'] for e in entries]
+        mid = len(entries) // 2
+        early_ttr = _ttr(all_contents[:mid])
+        late_ttr  = _ttr(all_contents[mid:])
+        overall   = _ttr(all_contents)
+        delta     = round(late_ttr - early_ttr, 4)
+
+        if abs(delta) < 0.10:
+            trend = 'stable'
+        elif delta > 0:
+            trend = 'improving'
+        else:
+            trend = 'declining'
+
+        return {
+            'type_token_ratio': overall,
+            'trend': trend,
+            'entries_analyzed': len(entries),
+            'earliest_ttr': early_ttr,
+            'latest_ttr': late_ttr,
+            'delta': delta,
+        }
+    except Exception as e:
+        print(f'compute_lexical_diversity error: {e}')
+        return {
+            'type_token_ratio': None,
+            'trend': 'insufficient_data',
+            'entries_analyzed': 0,
+            'earliest_ttr': None,
+            'latest_ttr': None,
+            'delta': None,
+        }
+
+
+def compute_readability(patient_id: str, days: int = 30) -> dict:
+    """
+    Estimate Flesch-Kincaid Grade Level trends across journal entries to detect
+    shifts in writing complexity as a cognitive load proxy (CLAUDE.md §25).
+
+    Uses a simplified FK formula: 0.39*(words/sentences) + 11.8*(syllables/words) - 15.59
+    Syllables estimated by counting vowel groups.
+
+    Returns dict with keys:
+      avg_grade_level    — mean FK grade across all entries in window (float)
+      trend              — "increasing" | "decreasing" | "stable" | "insufficient_data"
+      earliest_grade     — mean grade in first half of entries
+      latest_grade       — mean grade in second half
+      delta              — latest_grade - earliest_grade (positive = more complex)
+      entries_analyzed   — count of entries used
+
+    Minimum 10 entries required; otherwise trend = "insufficient_data".
+    Grade level shift of ≥2 points sustained across the window is clinically surfaceable.
+    """
+    try:
+        since = (datetime.utcnow() - timedelta(days=days)).date().isoformat()
+        res = supabase_admin.table('journal_entries').select(
+            'content, entry_date'
+        ).eq('user_id', str(patient_id)).gte('entry_date', since).order(
+            'entry_date', desc=False
+        ).execute()
+        entries = [e for e in (res.data or []) if e.get('content')]
+
+        if len(entries) < 10:
+            return {
+                'avg_grade_level': None,
+                'trend': 'insufficient_data',
+                'earliest_grade': None,
+                'latest_grade': None,
+                'delta': None,
+                'entries_analyzed': len(entries),
+            }
+
+        def _syllables(word: str) -> int:
+            word = word.lower()
+            count = len(re.findall(r'[aeiouy]+', word))
+            if word.endswith('e') and count > 1:
+                count -= 1
+            return max(1, count)
+
+        def _fk_grade(text: str) -> float:
+            sentences = max(1, len(re.findall(r'[.!?]+', text)))
+            words_list = re.findall(r"[a-z']+", text.lower())
+            if not words_list:
+                return 8.0  # neutral default
+            total_syllables = sum(_syllables(w) for w in words_list)
+            word_count = len(words_list)
+            return 0.39 * (word_count / sentences) + 11.8 * (total_syllables / word_count) - 15.59
+
+        grades = [_fk_grade(e['content']) for e in entries]
+        mid = len(grades) // 2
+        early_avg = round(sum(grades[:mid]) / mid, 2)
+        late_avg  = round(sum(grades[mid:]) / len(grades[mid:]), 2)
+        overall   = round(sum(grades) / len(grades), 2)
+        delta     = round(late_avg - early_avg, 2)
+
+        if abs(delta) < 2.0:
+            trend = 'stable'
+        elif delta > 0:
+            trend = 'increasing'
+        else:
+            trend = 'decreasing'
+
+        return {
+            'avg_grade_level': overall,
+            'trend': trend,
+            'earliest_grade': early_avg,
+            'latest_grade': late_avg,
+            'delta': delta,
+            'entries_analyzed': len(entries),
+        }
+    except Exception as e:
+        print(f'compute_readability error: {e}')
+        return {
+            'avg_grade_level': None,
+            'trend': 'insufficient_data',
+            'earliest_grade': None,
+            'latest_grade': None,
+            'delta': None,
+            'entries_analyzed': 0,
+        }

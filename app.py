@@ -3361,45 +3361,51 @@ def api_intel_upload_session(patient_id):
     if session_type not in valid_types:
         session_type = 'other'
 
-    # 1. Persist raw session
-    session_id = db.store_clinical_session(
-        provider_id=provider['id'],
-        patient_id=patient_id,
-        session_date=session_date,
-        session_type=session_type,
-        transcript_raw=transcript,
-        duration_minutes=duration_mins,
-    )
-    if not session_id:
-        return jsonify({'error': 'Failed to store session'}), 500
+    try:
+        # 1. Persist raw session
+        session_id = db.store_clinical_session(
+            provider_id=provider['id'],
+            patient_id=patient_id,
+            session_date=session_date,
+            session_type=session_type,
+            transcript_raw=transcript,
+            duration_minutes=duration_mins,
+        )
+        if not session_id:
+            return jsonify({'error': 'Failed to store session — check server logs'}), 500
 
-    # 2. Extract features (crisis detection runs inside extract_features)
-    from transcript_engine import extract_features
-    population_flags = db.get_patient_population_flags(patient_id)
-    extraction = extract_features(
-        transcript_text=transcript,
-        session_date=session_date,
-        session_type=session_type,
-        population_flags=population_flags or None,
-    )
+        # 2. Extract features (crisis detection runs inside extract_features)
+        from transcript_engine import extract_features
+        population_flags = db.get_patient_population_flags(patient_id)
+        extraction = extract_features(
+            transcript_text=transcript,
+            session_date=session_date,
+            session_type=session_type,
+            population_flags=population_flags or None,
+        )
 
-    # 3. Persist features
-    db.store_session_features(
-        session_id=session_id,
-        patient_id=patient_id,
-        extraction_result=extraction,
-        extraction_model=os.environ.get('CLAUDE_MODEL', 'claude-haiku-4-5-20251001'),
-    )
+        # 3. Persist features
+        db.store_session_features(
+            session_id=session_id,
+            patient_id=patient_id,
+            extraction_result=extraction,
+            extraction_model=os.environ.get('CLAUDE_MODEL', 'claude-haiku-4-5-20251001'),
+        )
 
-    richness = (extraction.get('scores') or {}).get('extraction_richness', 0)
-    return jsonify({
-        'session_id':          session_id,
-        'crisis_detected':     extraction.get('crisis_detected', False),
-        'safety_note':         extraction.get('safety_note'),
-        'extraction_richness': richness,
-        'status':              'error' if extraction.get('error') else 'complete',
-        'error':               extraction.get('error'),
-    }), 201
+        richness = (extraction.get('scores') or {}).get('extraction_richness', 0)
+        return jsonify({
+            'session_id':          session_id,
+            'crisis_detected':     extraction.get('crisis_detected', False),
+            'safety_note':         extraction.get('safety_note'),
+            'extraction_richness': richness,
+            'status':              'error' if extraction.get('error') else 'complete',
+            'error':               extraction.get('error'),
+        }), 201
+
+    except Exception as _exc:
+        import traceback
+        print(f"api_intel_upload_session unhandled error: {_exc}\n{traceback.format_exc()}")
+        return jsonify({'error': f'Server error: {str(_exc)}'}), 500
 
 
 @app.route('/api/intel/patient/<patient_id>/sessions', methods=['GET'])

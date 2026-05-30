@@ -507,7 +507,10 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                                   symptom_patterns=None,
                                   substance_flags=None,
                                   safety_flags=None,
-                                  what_worked=None):
+                                  what_worked=None,
+                                  lexical_data=None,
+                                  readability_data=None,
+                                  session_context=None):
     """Synthesize check-in and journal data into a pre-appointment summary.
 
     audience='patient'  → humanized, conversational (Mode B)
@@ -875,6 +878,153 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             "Do not use clinical or judgmental language.\n"
         )
 
+    # ── Session transcript context (CLAUDE.md §22-24) ────────────────────────
+    # Transcript and audio sessions extracted via the intel pipeline. Available
+    # for both Mode B and Mode C but framed differently.
+    session_section = ''
+    if session_context:
+        complete_sessions = [s for s in session_context if s.get('processing_status') == 'complete']
+        if complete_sessions:
+            lines = []
+            has_speech = False
+            for s in complete_sessions[:5]:  # cap at 5 most recent
+                sdate    = s.get('session_date', 'unknown date')
+                stype    = s.get('session_type', 'session')
+                feats    = s.get('features') or {}
+                scores   = s.get('scores') or {}
+                crisis   = s.get('crisis_detected', False)
+                speech   = feats.get('speech_features') or {}
+                patterns = feats.get('themes') or []
+                topics   = feats.get('main_topics') or []
+                overall  = scores.get('overall_concern') or scores.get('overall')
+
+                parts = [f"Session ({stype}) on {sdate}"]
+                if overall is not None:
+                    parts.append(f"concern level {overall}/10")
+                if crisis:
+                    parts.append("⚠️ crisis signal detected")
+                if speech:
+                    rate     = speech.get('speech_rate')
+                    prosody  = speech.get('prosody')
+                    coherence = speech.get('speech_coherence')
+                    sp_parts = []
+                    if rate and rate != 'normal':
+                        sp_parts.append(f"speech rate: {rate}")
+                    if prosody and prosody != 'normal':
+                        sp_parts.append(f"prosody: {prosody}")
+                    if coherence and coherence != 'intact':
+                        sp_parts.append(f"coherence: {coherence}")
+                    if sp_parts:
+                        parts.append("speech features: " + ", ".join(sp_parts))
+                        has_speech = True
+                if topics:
+                    parts.append("topics: " + ", ".join(str(t) for t in topics[:4]))
+                if patterns:
+                    parts.append("patterns: " + ", ".join(str(p) for p in patterns[:3]))
+
+                lines.append("- " + " | ".join(parts))
+
+            pending_count = len([s for s in session_context if s.get('processing_status') != 'complete'])
+
+            session_section = (
+                f"\n\nSESSION TRANSCRIPT/RECORDING DATA ({len(complete_sessions)} processed"
+                + (f", {pending_count} still processing" if pending_count else "")
+                + " — from uploaded transcripts and audio recordings):\n"
+                + "\n".join(lines)
+            )
+            if has_speech and audience == 'provider':
+                session_section += (
+                    "\nNote: speech features are extracted from transcript text, not audio. "
+                    "Confidence varies by transcript quality. See CLAUDE.md §24 for feature vocabulary.\n"
+                )
+
+    if session_section:
+        if audience == 'provider':
+            summary_system += (
+                "\n\nFor SESSION TRANSCRIPT/RECORDING DATA: add a **Session Intelligence** section "
+                "after Qualitative Themes. List sessions by date with concern level, speech feature "
+                "observations (using CLAUDE.md §24 vocabulary exactly), and topic/pattern notes. "
+                "For any session with crisis_detected=True, list it first under 🔴. "
+                "Speech features describe the transcript, not a diagnosis — frame as 'session speech features showed' "
+                "not 'patient exhibited.' If sessions are still processing, note that additional data is pending.\n"
+            )
+        else:
+            # Patient-facing: sessions are not surfaced in clinical terms. Only mention
+            # if crisis was detected (already handled by _check_crisis) or if there
+            # are > 0 sessions to acknowledge the provider has broader context.
+            summary_system += (
+                "\n\nFor SESSION TRANSCRIPT/RECORDING DATA: do NOT reproduce speech features or "
+                "clinical pattern types in patient-facing output. You may acknowledge that the provider "
+                "has additional context from recent sessions if ≥1 complete session exists, but keep it "
+                "to one phrase only ('your provider also has notes from a recent session'). "
+                "Do not surface session scores, concern levels, or speech observations to the patient.\n"
+            )
+
+    # ── Linguistic biomarker section (CLAUDE.md §25) ─────────────────────────
+    lexical_section = ''
+    if lexical_data and lexical_data.get('trend') not in (None, 'insufficient_data'):
+        ld = lexical_data
+        ttr        = ld.get('type_token_ratio')
+        trend      = ld.get('trend', 'stable')
+        entries_n  = ld.get('entries_analyzed', 0)
+        early_ttr  = ld.get('earliest_ttr')
+        late_ttr   = ld.get('latest_ttr')
+        delta      = ld.get('delta')
+
+        ttr_str = f"{ttr:.2f}" if ttr is not None else 'not computed'
+        delta_str = (
+            f" (early-period TTR {early_ttr:.2f} → recent TTR {late_ttr:.2f}, Δ={delta:+.2f})"
+            if (early_ttr is not None and late_ttr is not None and delta is not None)
+            else ""
+        )
+        lexical_section += (
+            f"\n\nLINGUISTIC BIOMARKERS (from {entries_n} journal entries, CLAUDE.md §25):\n"
+            f"- Lexical diversity (TTR): {ttr_str} — trend: {trend}{delta_str}\n"
+        )
+
+    if readability_data and readability_data.get('trend') not in (None, 'insufficient_data'):
+        rd = readability_data
+        avg_grade  = rd.get('avg_grade_level')
+        r_trend    = rd.get('trend', 'stable')
+        early_grd  = rd.get('earliest_grade')
+        late_grd   = rd.get('latest_grade')
+        r_delta    = rd.get('delta')
+        r_entries  = rd.get('entries_analyzed', 0)
+
+        grade_str = f"{avg_grade:.1f}" if avg_grade is not None else 'not computed'
+        r_delta_str = (
+            f" (early {early_grd:.1f} → recent {late_grd:.1f}, Δ={r_delta:+.1f})"
+            if (early_grd is not None and late_grd is not None and r_delta is not None)
+            else ""
+        )
+        if not lexical_section:
+            lexical_section = f"\n\nLINGUISTIC BIOMARKERS (from {r_entries} journal entries, CLAUDE.md §25):\n"
+        lexical_section += f"- Readability (Flesch-Kincaid grade level): {grade_str} — trend: {r_trend}{r_delta_str}\n"
+
+    # Only inject linguistic guidance into system prompts when data is present
+    if lexical_section:
+        if audience == 'provider':
+            summary_system += (
+                "\n\nFor LINGUISTIC BIOMARKERS: add a **Linguistic Patterns** subsection under Qualitative Themes. "
+                "Lexical diversity (TTR) and readability (FK grade level) are content-agnostic cognitive load signals — "
+                "paralinguistic state vs. lexical trait distinction applies (CLAUDE.md §25). "
+                "Format: 'Lexical diversity: [TTR value], [trend] over period. "
+                "Readability: grade level [value], [trend].' "
+                "If trend is declining for TTR or increasing for FK grade, note it as worth tracking. "
+                "NEVER say these patterns indicate a diagnosis or explain symptoms. "
+                "Use 'observed in journal entries' framing only.\n"
+            )
+        else:
+            summary_system += (
+                "\n\nFor LINGUISTIC BIOMARKERS: if data is present and trend is not 'stable', "
+                "add one sentence woven naturally into the 'What stood out' section. "
+                "Examples: 'Your writing style shifted a bit over this period — your vocabulary range "
+                "narrowed slightly toward the end.' or 'The complexity of your journal entries changed during this period.' "
+                "Keep it observational and brief — one sentence only. "
+                "NEVER frame this clinically. NEVER say it indicates anything about mental state. "
+                "If trend is 'stable', omit entirely.\n"
+            )
+
     # ── What Worked section ───────────────────────────────────────────────────
     what_worked_section = ''
     if what_worked and what_worked.get('patterns'):
@@ -930,6 +1080,8 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         f"{symptom_section}"
         f"{substance_section if audience == 'provider' else substance_patient_note}"
         f"{safety_section}"
+        f"{session_section}"
+        f"{lexical_section}"
         f"{what_worked_section}"
     )
 
@@ -946,7 +1098,8 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
 def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
                               days=14, period_start=None, period_end=None,
                               appointment_date=None,
-                              safety_flags=None, substance_flags=None):
+                              safety_flags=None, substance_flags=None,
+                              session_context=None):
     """Therapy-weighted Mode C summary for therapists and counselors.
 
     Leads with journal themes and behavioral patterns (social quality, coping,
@@ -1189,6 +1342,44 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
             "NEVER quote journal language. NEVER say 'patient is being abused' or assign any label.\n"
         )
 
+    # ── Session transcript context (therapy variant) ─────────────────────────
+    therapy_session_section = ''
+    if session_context:
+        complete = [s for s in session_context if s.get('processing_status') == 'complete']
+        if complete:
+            lines = []
+            for s in complete[:5]:
+                sdate   = s.get('session_date', 'unknown date')
+                stype   = s.get('session_type', 'session')
+                feats   = s.get('features') or {}
+                scores  = s.get('scores') or {}
+                crisis  = s.get('crisis_detected', False)
+                topics  = feats.get('main_topics') or []
+                patterns = feats.get('themes') or []
+                overall  = scores.get('overall_concern') or scores.get('overall')
+                parts = [f"Session ({stype}) on {sdate}"]
+                if overall is not None:
+                    parts.append(f"concern {overall}/10")
+                if crisis:
+                    parts.append("⚠️ crisis signal")
+                if topics:
+                    parts.append("topics: " + ", ".join(str(t) for t in topics[:4]))
+                if patterns:
+                    parts.append("patterns: " + ", ".join(str(p) for p in patterns[:3]))
+                lines.append("- " + " | ".join(parts))
+            pending_count = len([s for s in session_context if s.get('processing_status') != 'complete'])
+            therapy_session_section = (
+                f"\n\nSESSION TRANSCRIPT/RECORDING DATA ({len(complete)} processed"
+                + (f", {pending_count} still processing" if pending_count else "")
+                + "):\n" + "\n".join(lines)
+            )
+            summary_system += (
+                "\n\nFor SESSION TRANSCRIPT/RECORDING DATA: include a **Session Notes** section. "
+                "Focus on topics and themes — this is a therapy summary so interpersonal and behavioral "
+                "context from sessions is primary. Flag any crisis-detected sessions first. "
+                "Do not reproduce speech feature scores or clinical labels.\n"
+            )
+
     user_content = (
         f"REVIEW PERIOD: {period_label}\n\n"
         f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}"
@@ -1199,6 +1390,7 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         f"{json.dumps(journal_rows, indent=2, default=str)}"
         f"{therapy_substance_section}"
         f"{therapy_safety_section}"
+        f"{therapy_session_section}"
     )
 
     raw = _call_claude(summary_system, user_content, max_tokens=900)   # spec §15: 900 for Mode B/C

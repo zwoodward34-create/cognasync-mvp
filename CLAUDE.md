@@ -240,6 +240,19 @@ Alert levels: 🔴 Urgent, 🟡 Watch, 🔵 Informational.
 
 These formulas are computed in Python before AI generation and passed as structured data. The AI must never recompute them — only reference the values provided. Citing a score the AI computed itself rather than reading from the provided data is a hallucination.
 
+### Why Deterministic Scoring Exists
+
+Traditional behavioral assessment relies on subjective clinical interpretation of observable symptoms — a model with known limitations: gender bias in presentation recognition, inter-clinician variability, and environmental inconsistency in symptom expression. CognaSync's scoring engine exists specifically to reduce dependence on self-report alone by computing objective, formula-derived scores that are independent of how the patient describes their state.
+
+**The Convergent Signal Principle:** When multiple independent data streams — self-reported scores, derived scores, linguistic patterns from journals, and speech features from transcripts — point in the same direction, confidence in the observation increases and the pattern is worth surfacing. When they diverge, that divergence is itself clinically meaningful and should be named explicitly rather than suppressed.
+
+Examples:
+- Patient reports mood 8/10, but Stability Score = 4.2, Crash Risk = 7.8, and journal lexical diversity is low → divergence is the signal; surface via Mood Distortion rule (§9)
+- Patient reports mood 4/10 and Stability Score = 4.1 → convergent signals strengthen the observation; it is appropriate to note the consistency
+- Energy self-report is high but sleep was <5 hours and Nervous System Load = 8.1 → convergent physiological signals outweigh self-report; name the discrepancy
+
+Convergent signals require ≥2 independent data streams pointing in the same direction before being surfaced as a pattern. A single anomalous score is noise; aligned anomalies across independent measurements are signal.
+
 ### Core Scores
 
 **Stim Load** = MIN(caffeine_tier + stimulant_meds + booster_used, 10)
@@ -1237,6 +1250,30 @@ Never expose the modifier calculation to patients. It is provider-channel only.
 
 Transcripts contain more than semantic content — they contain paralinguistic signals. The structured extraction schema in `transcript_engine._EXTRACTION_SYSTEM` includes a `speech_features` block that captures auditory observations from the transcript text itself (not audio). This documents the vocabulary that extraction and all downstream display must use consistently.
 
+### Neurological Region Mapping
+
+Auditory and linguistic features are not random — they correlate with localized brain function. This mapping grounds the feature vocabulary in neurological context without requiring the AI to make diagnostic claims. Use it to understand which feature clusters are clinically co-occurring, not to infer which brain region is impaired.
+
+| Neurological Region | Auditory/Behavioral Marker | Clinical Correlation |
+|---|---|---|
+| **Frontopolar Lobe** | Lexical diversity and complexity | Decision-making load; ability to sustain focus on multiple topics simultaneously |
+| **Parietal Lobe** | Vocal prosody and temporal coherence | Environmental awareness, narrative flow, and spatial reasoning in verbal expression |
+| **Occipital Lobe** | Increased response latency; word-finding pauses | Information retrieval effort; stimuli processing load |
+
+**How to use this table:** When speech features cluster (e.g., flat prosody + disorganized coherence + increased pauses), this table provides context for why those features co-occur — not evidence of which structure is affected. The AI describes the cluster; the clinician interprets the neurological relevance.
+
+### Paralinguistic vs. Lexical Distinction
+
+This is the most important interpretive distinction in auditory and linguistic analysis. The two feature types capture different dimensions of a patient's experience:
+
+**Paralinguistic features** (speech rate, prosody, pauses, arousal, vocal affect) reflect immediate emotional **state** — how the patient is presenting in this session, right now. They are sensitive to acute fluctuations: a bad day, a stressful week, a recent event.
+
+**Lexical features** (vocabulary richness, sentence complexity, readability, coherence of narrative structure) reflect cognitive **trait** and longer-term function. They are more stable, less reactive to daily mood swings, and more indicative of sustained neurological load or cumulative psychological burden.
+
+**Clinical implication:** Research on digital language in mental health communities shows that patients with depression or bipolar disorder show measurably lower lexical diversity — but this metric can *improve* over time with successful intervention. Lexical diversity tracked longitudinally across journals and transcripts is therefore a meaningful trajectory signal: declining lexical diversity alongside declining mood is a convergent signal; recovering lexical diversity alongside stabilizing mood is a positive trajectory indicator.
+
+**When these two dimensions diverge, name the divergence:** A patient whose paralinguistic features (speech rate, affect) appear relatively normal but whose lexical complexity has declined notably over 8+ weeks may be masking a more sustained cognitive burden that doesn't show up in acute behavioral observation. That divergence is worth surfacing to the provider — not as a diagnosis, but as a pattern to examine.
+
 ### Feature Labels and Severity Scale
 
 All speech features use a constrained value set. Deviations from these strings must not be introduced.
@@ -1278,3 +1315,145 @@ The `clinical_pattern_type` field maps observed feature clusters to a clinical c
 ### Baseline Comparison
 
 All speech feature observations are most meaningful when compared against prior sessions. `score_transcript_batch()` aggregates `speech_features_by_session` and `speech_concern_sessions` to support trend comparison. A single-session `speech_concern_flag = True` is a prompt for monitoring; a trend of concern flags across sessions warrants explicit provider surfacing.
+
+---
+
+## 25. Linguistic Biomarker Analysis — Journals and Transcripts
+
+### Purpose
+
+Language is a behavioral proxy signal. The words a patient chooses, how they structure their thoughts, and how that language shifts over time constitute a non-invasive window into cognitive and emotional state. CognaSync analyzes linguistic patterns across journals and transcripts to surface observable signals that complement self-reported scores. This section governs how the AI interprets and outputs linguistic observations.
+
+This is not sentiment analysis and not psychological profiling. The AI observes and names language patterns — it does not draw conclusions about what those patterns mean clinically.
+
+---
+
+### The Two Dimensions: State vs. Trait
+
+Every linguistic observation should be classified along two axes before being surfaced:
+
+**Emotional State** (acute, session-level):
+- Reflects how the patient is presenting *right now*
+- Captured primarily through: tone, affect, urgency, agitation, distress markers in recent journal entries
+- Relevant to Mode A (check-in insight) and Mode C immediate presentation summary
+- Volatile — can shift day to day and does not indicate long-term trajectory without repetition
+
+**Cognitive Trait** (sustained, longitudinal):
+- Reflects the patient's cognitive capacity and neurological load over weeks
+- Captured primarily through: lexical diversity, sentence complexity, readability, narrative coherence across a series of entries
+- Relevant to Mode B and Mode C longitudinal summaries
+- More stable than state — meaningful changes require ≥10 journal entries or ≥3 session transcripts before being surfaced
+
+**Rule:** Never treat a single journal entry as evidence of a trait. A single entry showing low lexical diversity may reflect a rushed entry, fatigue, or a mobile keyboard. A sustained decline across 10+ entries is a signal worth naming.
+
+---
+
+### Lexical Diversity as a Longitudinal Signal
+
+**What it is:** Lexical diversity measures vocabulary richness — the proportion of unique words to total words used across journal entries. High lexical diversity indicates fluent, varied expression. Low lexical diversity indicates repetitive, constrained, or effortful expression.
+
+**What the research shows:** Patients experiencing depression, sustained anxiety, or elevated cognitive load show measurably lower lexical diversity in digital writing. Critically, this metric *improves* when intervention is effective — making it a useful trajectory indicator, not just a risk marker.
+
+**How CognaSync should use it:**
+
+`compute_lexical_diversity(patient_id, days=30)` computes this across journal entries in the window. Results are passed as `lexical_data` in the context dict for Mode B and Mode C generation.
+
+The field returns:
+```python
+{
+  "type_token_ratio": 0.58,          # unique words / total words; higher = more diverse
+  "trend": "declining",              # "improving" | "stable" | "declining" | "insufficient_data"
+  "entries_analyzed": 14,
+  "earliest_ttr": 0.67,              # TTR in oldest entries of window
+  "latest_ttr": 0.49,                # TTR in most recent entries of window
+  "delta": -0.18                     # latest_ttr - earliest_ttr; negative = decline
+}
+```
+
+**Minimum observations before surfacing:** 10 journal entries. Below this threshold, mark `trend` as `"insufficient_data"` and do not surface in any output.
+
+**Thresholds for surfacing:**
+
+| Condition | Action |
+|---|---|
+| `trend = "declining"` AND `|delta| ≥ 0.10` AND mood trend also declining | Convergent signal — surface in Mode B and Mode C |
+| `trend = "declining"` AND `|delta| ≥ 0.10` AND mood trend stable or improving | Divergent signal — surface in Mode C only as a discrepancy to examine |
+| `trend = "improving"` AND `|delta| ≥ 0.10` AND mood trend also improving | Positive convergent signal — surface as trajectory indicator in Mode B and Mode C |
+| `trend = "stable"` OR `|delta| < 0.10` | Do not surface; insufficient change to be meaningful |
+
+**Language rules — lexical diversity:**
+- "The vocabulary in your journals has become more restricted over the past [N] entries" — not "you're having trouble finding words"
+- "Vocabulary range appears to be expanding across this period" — not "you're getting better"
+- "The range of language in your recent entries has narrowed compared to earlier in this period" — not "cognitive decline observed"
+- Never use: "word-finding difficulty," "aphasia," "cognitive impairment," "brain fog" (the last is fine if the patient used the term; do not introduce it)
+
+---
+
+### Readability as a Cognitive Load Indicator
+
+**What it is:** Readability metrics (Flesch-Kincaid Grade Level or similar) capture sentence structure complexity. When patients are operating at high cognitive load, writing tends toward shorter sentences, simpler syntax, and reduced subordinate clause usage.
+
+**How to interpret it:**
+- Sustained *decrease* in readability score = writing has simplified = possible increase in cognitive load
+- Sustained *increase* in readability score = writing has become more complex = possible cognitive lightening or re-engagement
+- Neither direction is inherently good or bad — the *change* is the signal, not the absolute level
+
+**Threshold for surfacing:** Readability shift of ≥2 grade levels sustained across ≥10 entries. Below this threshold, do not surface.
+
+**Language rules:**
+- "Journal entries in this period trend toward shorter, simpler sentences compared to earlier entries" — not "your writing has declined"
+- "Writing complexity has increased over this period" — not "cognition is improving"
+
+---
+
+### Narrative Coherence as a Session-Level Observation
+
+**What it is:** Narrative coherence captures whether the patient's writing or speech follows a logical, connected thread — or whether it jumps between topics, loses its thread, or trails into fragmented observations.
+
+This is the linguistic parallel of `speech_coherence` in transcript analysis. In journal context, it is a qualitative observation, not a scored metric.
+
+**When to note it in Mode C:**
+- If a journal entry or series of entries shows notably fragmented, tangential, or disconnected structure, note it once as a qualitative observation: "Recent journal entries show a more fragmented narrative structure compared to earlier entries."
+- Do not diagnose. Do not use "disorganized thinking," "loosening of associations," or any clinical term.
+- Frame as: "The narrative structure of recent entries appears more fragmented — worth discussing directly with the patient."
+
+**Minimum threshold:** The pattern must appear across ≥3 consecutive entries before it is worth naming. A single fragmented entry is noise.
+
+---
+
+### Content-Agnostic Analysis
+
+The specific topics a patient writes about are generally less analytically significant than *how* they write about them. CognaSync's linguistic analysis is content-agnostic by design — the analysis is grounded in structural and pattern features of the language, not the subject matter.
+
+**What this means in practice:**
+- A patient who writes exclusively about work stress in every journal entry is not necessarily "work-stressed" — they may simply be a person who journals about external events rather than internal states. Do not over-read the topics.
+- A patient whose entries rarely name emotions explicitly is not emotionally avoidant — some people narrate events rather than feelings. Do not pathologize a journaling style.
+- What matters is: does the language itself show structural shifts over time? That's the signal.
+
+**Apply this rule:** When analyzing journal content, distinguish between:
+1. **What the patient is writing about** (topics, subjects, events) — low clinical weight; use only for quoting themes back to the patient in plain language
+2. **How the patient is writing** (vocabulary richness, coherence, complexity, tone shifts) — higher clinical weight; this is where longitudinal signals live
+
+---
+
+### Screening Positioning — Accuracy and Appropriate Use
+
+Linguistic biomarker analysis operates at the accuracy level of a high-volume screening tool, not a clinical diagnostic instrument. Current voice-based mental state detection achieves approximately 71% sensitivity and specificity in production environments — sufficient for identifying individuals at elevated risk and directing clinical attention, but not sufficient as a standalone diagnostic basis.
+
+**What this means for CognaSync's outputs:**
+- Linguistic signals should always be framed as "worth examining" or "worth discussing," never as findings
+- A declining lexical diversity trend does not confirm a diagnosis — it identifies a pattern that the provider should explore
+- The AI's role is to reduce the "subjectivity gap" between what a patient reports and what the objective data shows — closing the gap enough that the provider can ask better questions
+
+**Never claim that a linguistic pattern confirms or diagnoses anything.** It surfaces. The clinician evaluates.
+
+---
+
+### Integration Points
+
+- `compute_lexical_diversity(patient_id, days=30)` — called in `generate_appointment_summary()` for both Mode B and Mode C
+- Results passed as `lexical_data` in context dict
+- If `entries_analyzed < 10` or `trend = "insufficient_data"`: omit entirely from all output
+- Narrative coherence observations come from the AI's own analysis of journal content passed in the prompt — not a separate function; the AI applies the rules above when analyzing raw journal text
+- Readability analysis is handled by `compute_readability(entries)` in `database.py` — returns grade level per entry and trend direction
+- None of these signals appear in Mode A (check-in insight) — they are longitudinal and require multi-entry analysis

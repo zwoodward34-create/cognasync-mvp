@@ -74,7 +74,13 @@
       "Bash(echo \"PID: $!\")",
       "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5003/)",
       "Bash(head -60 PRODUCT.md)",
-      "Bash(head -60 docs/PRODUCT.md)"
+      "Bash(head -60 docs/PRODUCT.md)",
+      "Bash(curl -s -X POST http://localhost:5002/api/intel/patient/test-patient/session -H 'Content-Type: application/json' -d '{\"transcript\":\"test\"}')",
+      "Bash(.venv/bin/python3 *)",
+      "Bash(awk '{print $2}')",
+      "Bash(kill 8464)",
+      "Bash(curl -s http://localhost:5002/login)",
+      "Bash(curl -s -c /tmp/test-cookies.txt -X POST http://localhost:5002/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"zchwoodward@gmail.com\",\"password\":\"test123\"}')"
     ]
   }
 }
