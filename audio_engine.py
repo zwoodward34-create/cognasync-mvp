@@ -163,8 +163,10 @@ def _submit_transcription_job(audio_url: str) -> tuple:
         return None, 'ASSEMBLYAI_API_KEY is not configured.'
 
     # speaker_labels is a paid feature — omit it so free-tier keys work.
+    # speech_models is now required by AssemblyAI; universal-2 works on all tiers.
     payload = {
         'audio_url':    audio_url,
+        'speech_model': 'universal-2',
         'language_code': 'en',
     }
 
