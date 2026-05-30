@@ -80,7 +80,17 @@
       "Bash(awk '{print $2}')",
       "Bash(kill 8464)",
       "Bash(curl -s http://localhost:5002/login)",
-      "Bash(curl -s -c /tmp/test-cookies.txt -X POST http://localhost:5002/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"zchwoodward@gmail.com\",\"password\":\"test123\"}')"
+      "Bash(curl -s -c /tmp/test-cookies.txt -X POST http://localhost:5002/api/auth/login -H 'Content-Type: application/json' -d '{\"email\":\"zchwoodward@gmail.com\",\"password\":\"test123\"}')",
+      "Bash(ps -p 19345 -o lstart,pid,command)",
+      "Bash(kill 19345)",
+      "Bash(FLASK_ENV=development .venv/bin/python app.py)",
+      "Bash(echo \"Started PID $!\")",
+      "Bash(curl -s http://localhost:5002/ -o /dev/null -w \"%{http_code}\")",
+      "Bash(agent-browser open *)",
+      "Bash(curl -s -c /tmp/test_cookies.txt -b /tmp/test_cookies.txt -X POST http://localhost:5002/login -d 'email=zchwoodward@gmail.com&password=REPLACE_PASSWORD' -w '\\\\n\\\\nHTTP_STATUS: %{http_code}\\\\nREDIRECT: %{redirect_url}' -L --max-redirs 0)",
+      "Bash(curl -s -c /tmp/test_cookies.txt -b /tmp/test_cookies.txt http://localhost:5002/provider/dashboard -w '\\\\nHTTP_STATUS: %{http_code}' -L --max-redirs 2)",
+      "Bash(curl -s -c /tmp/test_cookies.txt -b /tmp/test_cookies.txt http://localhost:5002/provider -w '\\\\nHTTP_STATUS: %{http_code}' -L --max-redirs 2)",
+      "Bash(FLASK_ENV=development .venv/bin/python3 *)"
     ]
   }
 }
