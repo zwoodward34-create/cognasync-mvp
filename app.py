@@ -4022,7 +4022,7 @@ def api_send_patient_checkin_sms(patient_id):
 @app.route('/api/provider/patient/<patient_id>/upload-voice-note', methods=['POST'])
 def api_provider_upload_voice_note(patient_id):
     """Provider uploads a voice recording on behalf of a patient (e.g. in-session note)."""
-    import uuid as _uuid
+    import uuid as _uuid, threading as _threading
     provider, err = _api_user('provider')
     if err:
         return err
@@ -4031,63 +4031,73 @@ def api_provider_upload_voice_note(patient_id):
     if not audio_file:
         return jsonify({'error': 'No audio file provided'}), 400
 
-    note_label = request.form.get('label', '').strip()
+    note_label  = request.form.get('label', '').strip()
     audio_bytes = audio_file.read()
     if not audio_bytes:
         return jsonify({'error': 'Empty audio file'}), 400
 
-    file_ext = 'webm'
-    if audio_file.filename and '.' in audio_file.filename:
-        file_ext = audio_file.filename.rsplit('.', 1)[-1].lower()
+    file_ext  = audio_file.filename.rsplit('.', 1)[-1].lower() if (audio_file.filename and '.' in audio_file.filename) else 'webm'
     file_name = f'provider_upload_{patient_id}_{_uuid.uuid4().hex[:8]}.{file_ext}'
+    mime_type = audio_file.content_type or 'audio/webm'
 
-    audio_url = None
-    try:
-        db.supabase_admin.storage.from_('voice-notes').upload(
-            path=file_name,
-            file=audio_bytes,
-            file_options={'content-type': audio_file.mimetype or 'audio/webm'},
-        )
-        audio_url = db.supabase_admin.storage.from_('voice-notes').get_public_url(file_name)
-    except Exception as e:
-        app.logger.error(f'[voice-upload] Storage upload failed: {e}')
-        return jsonify({'error': 'Storage upload failed'}), 500
-
+    # Insert record immediately so the UI can show "pending" status
     vn_row = {
         'patient_id':        patient_id,
         'provider_id':       provider['id'],
-        'audio_url':         audio_url,
         'source':            'provider_upload',
         'processing_status': 'pending',
     }
     if note_label:
         vn_row['prompt'] = note_label
 
-    res = db.supabase_admin.table('voice_notes').insert(vn_row).execute()
-    voice_note_id = res.data[0]['id'] if res.data else None
+    try:
+        res = db.supabase_admin.table('voice_notes').insert(vn_row).execute()
+        voice_note_id = res.data[0]['id'] if res.data else None
+    except Exception as e:
+        app.logger.error(f'[voice-upload] DB insert failed: {e}')
+        return jsonify({'error': 'Failed to create voice note record'}), 500
 
-    if voice_note_id:
-        import threading
-        def _transcribe():
+    if not voice_note_id:
+        return jsonify({'error': 'Failed to create voice note record'}), 500
+
+    # Fire-and-forget: transcription runs in background
+    _bytes_snap = audio_bytes
+    _id_snap    = voice_note_id
+    _name_snap  = file_name
+
+    def _transcribe():
+        try:
+            from audio_engine import transcribe_audio_file
+            result = transcribe_audio_file(
+                file_bytes=_bytes_snap,
+                filename=_name_snap,
+                patient_id=patient_id,
+                session_id=str(_uuid.uuid4()),
+            )
+            if result.get('status') == 'completed' and result.get('text'):
+                update = {
+                    'transcript':        result['text'],
+                    'processing_status': 'complete',
+                }
+                if result.get('storage_path'):
+                    update['audio_url'] = result['storage_path']
+                db.supabase_admin.table('voice_notes').update(update).eq('id', _id_snap).execute()
+            else:
+                db.supabase_admin.table('voice_notes').update({
+                    'processing_status': 'error',
+                    'processing_error':  result.get('error', 'Transcription failed'),
+                }).eq('id', _id_snap).execute()
+        except Exception as ex:
+            app.logger.error(f'[voice-upload] Transcription failed: {ex}')
             try:
-                result = audio_engine.transcribe_audio_file(
-                    audio_url=audio_url,
-                    session_id=str(_uuid.uuid4()),
-                )
-                if result.get('status') == 'completed' and result.get('text'):
-                    db.supabase_admin.table('voice_notes').update({
-                        'transcript':        result['text'],
-                        'processing_status': 'complete',
-                    }).eq('id', voice_note_id).execute()
-                else:
-                    db.supabase_admin.table('voice_notes').update({
-                        'processing_status': 'error',
-                        'processing_error':  result.get('error', 'Transcription failed'),
-                    }).eq('id', voice_note_id).execute()
-            except Exception as ex:
-                app.logger.error(f'[voice-upload] Transcription failed: {ex}')
-        threading.Thread(target=_transcribe, daemon=True).start()
+                db.supabase_admin.table('voice_notes').update({
+                    'processing_status': 'error',
+                    'processing_error':  str(ex),
+                }).eq('id', _id_snap).execute()
+            except Exception:
+                pass
 
+    _threading.Thread(target=_transcribe, daemon=True).start()
     return jsonify({'ok': True, 'voice_note_id': voice_note_id})
 
 
