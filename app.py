@@ -2246,6 +2246,18 @@ def api_get_all_care_flags(patient_id):
     return jsonify({'flags': flags}), 200
 
 
+@app.route('/api/provider/patient/<patient_id>/summaries', methods=['GET'])
+def api_provider_get_patient_summaries(patient_id):
+    """Return all saved briefs/summaries for this patient (provider-authenticated)."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Access denied.'}), 403
+    summaries = db.get_summaries(patient_id)
+    return jsonify({'summaries': summaries}), 200
+
+
 @app.route('/api/provider/patient/<patient_id>/care-team-members', methods=['GET'])
 def api_get_care_team_for_flag(patient_id):
     """Returns active care team members (excluding the requesting provider) for
@@ -2622,6 +2634,13 @@ def api_provider_generate_summary(patient_id):
     symptom_patterns = db.find_symptom_correlations(patient_id, days=summary_days)
     flags = db.get_patient_flags(patient_id, days=summary_days)
     what_worked = db.get_what_worked_patterns(patient_id, days=max(summary_days, 60))
+    # Pull any uploaded transcripts / recordings processed in the same period
+    session_context = db.get_clinical_sessions_for_period(
+        patient_id=patient_id,
+        period_start=period_start,
+        period_end=period_end,
+        limit=10,
+    )
 
     provider_type = user.get('provider_type')
     try:
@@ -2634,6 +2653,7 @@ def api_provider_generate_summary(patient_id):
                 appointment_date=appointment_date,
                 safety_flags=flags.get('safety'),
                 substance_flags=flags.get('substance'),
+                session_context=session_context or [],
             )
         else:
             # psychiatrist, unknown, or None — default to Mode C provider brief
@@ -2652,6 +2672,7 @@ def api_provider_generate_summary(patient_id):
                 what_worked=what_worked,
                 lexical_data=lexical_data,
                 readability_data=readability_data,
+                session_context=session_context or [],
             )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
