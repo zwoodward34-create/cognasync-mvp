@@ -433,14 +433,13 @@
   #brief-options-modal {
     display: none;
     position: fixed;
-    inset: 0;
+    top: 0; right: 0; bottom: 0; left: 0;
     background: rgba(0,0,0,0.45);
     z-index: 3000;
     align-items: center;
     justify-content: center;
     padding: 16px;
   }
-  #brief-options-modal.open { display: flex; }
   .brief-opts-inner {
     background: var(--surface);
     border: 1px solid var(--border);
@@ -957,10 +956,10 @@ function statusLabel(status) {
 
 // ── Brief options modal ──────────────────────────────────────────────────────
 function openBriefModal() {
-  document.getElementById('brief-options-modal').classList.add('open');
+  document.getElementById('brief-options-modal').style.display = 'flex';
 }
 function closeBriefModal() {
-  document.getElementById('brief-options-modal').classList.remove('open');
+  document.getElementById('brief-options-modal').style.display = 'none';
 }
 function selectPeriod(el) {
   document.querySelectorAll('.period-chip').forEach(c => c.classList.remove('active'));

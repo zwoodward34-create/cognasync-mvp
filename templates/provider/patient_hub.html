@@ -1246,10 +1246,15 @@
             {% endif %}
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0;">
-            <button class="hub-action-btn" style="font-size:0.68rem;padding:3px 8px;"
-                    onclick="openEditMedModal('{{ med_id }}','{{ med.name }}','{{ med.standard_dose }}','{{ med.dose_unit or 'mg' }}','{{ med.frequency or '' }}','{{ med.category or '' }}')">Edit</button>
-            <button class="delete-btn" title="Remove medication"
-                    onclick="deleteMed('{{ med_id }}')">✕</button>
+            <button class="hub-action-btn edit-med-btn" style="font-size:0.68rem;padding:3px 8px;"
+                    data-med-id="{{ med_id }}"
+                    data-med-name="{{ med.name | e }}"
+                    data-med-dose="{{ med.standard_dose }}"
+                    data-med-unit="{{ med.dose_unit or 'mg' }}"
+                    data-med-freq="{{ med.frequency or '' }}"
+                    data-med-category="{{ med.category or '' }}">Edit</button>
+            <button class="delete-btn del-med-btn" title="Remove medication"
+                    data-med-id="{{ med_id }}">✕</button>
           </div>
         </div>
         {% endfor %}
@@ -1704,6 +1709,20 @@ async function deleteBrief(briefId, el) {
     }
   } catch (_) { showToast('Delete failed', true); }
 }
+
+// ── Medication button delegation ──────────────────────────────────────────────
+document.addEventListener('click', function(e) {
+  const editBtn = e.target.closest('.edit-med-btn');
+  if (editBtn) {
+    const d = editBtn.dataset;
+    openEditMedModal(d.medId, d.medName, d.medDose, d.medUnit, d.medFreq, d.medCategory);
+    return;
+  }
+  const delBtn = e.target.closest('.del-med-btn');
+  if (delBtn) {
+    deleteMed(delBtn.dataset.medId);
+  }
+});
 
 // ── Medication CRUD ───────────────────────────────────────────────────────────
 function openAddMedModal() {
