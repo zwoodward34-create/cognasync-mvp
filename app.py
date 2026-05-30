@@ -3556,6 +3556,9 @@ def api_intel_generate_brief(patient_id):
         'text':            brief_result['text'],
         'crisis_detected': brief_result.get('crisis_sessions', 0) > 0,
         'session_count':   aggregated['session_count'],
+        'scores':          aggregated,
+        'period_start':    period_start,
+        'period_end':      period_end,
     }), 201
 
 

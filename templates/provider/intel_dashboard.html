@@ -310,13 +310,107 @@
     color: var(--danger, #c0392b);
     border-radius: 4px;
   }
-  .brief-body {
-    font-size: 0.9rem;
-    line-height: 1.7;
-    white-space: pre-wrap;
-    font-family: var(--font-sans, 'DM Sans', sans-serif);
+  /* ── Brief dashboard visuals ─────────────────────────────── */
+  .brief-dashboard { display: flex; flex-direction: column; gap: 12px; margin-bottom: 20px; }
+
+  .brief-metric-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(100px, 1fr));
+    gap: 8px;
+  }
+  .brief-metric {
+    background: var(--bg, #f8f9fa);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 13px;
+  }
+  .brief-metric-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-secondary);
+    margin-bottom: 4px;
+  }
+  .brief-metric-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    line-height: 1;
     color: var(--text-primary);
   }
+  .score-red   { color: #c0392b !important; }
+  .score-amber { color: #d97706 !important; }
+  .score-green { color: #16a34a !important; }
+
+  .brief-charts {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .brief-chart-box {
+    background: var(--bg, #f8f9fa);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 11px 13px;
+  }
+  .brief-chart-title {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-secondary);
+    margin-bottom: 7px;
+  }
+  .brief-chart-svg { width: 100%; display: block; }
+
+  .brief-pattern-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+  }
+  .brief-pattern-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-secondary);
+  }
+  .pattern-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.74rem;
+    font-weight: 500;
+    padding: 3px 9px;
+    border-radius: 100px;
+    text-transform: capitalize;
+  }
+  .speech-note {
+    font-size: 0.74rem;
+    font-weight: 500;
+    padding: 3px 10px;
+    border-radius: 100px;
+    background: #ede9fe;
+    color: #5b21b6;
+  }
+
+  /* ── Brief text (formatted) ───────────────────────────────── */
+  .brief-divider { border: none; border-top: 1px solid var(--border); margin: 16px 0 18px; }
+  .brief-body { font-size: 0.88rem; line-height: 1.7; color: var(--text-primary); }
+  .brief-body h4 {
+    font-size: 0.68rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-secondary);
+    margin: 18px 0 5px;
+  }
+  .brief-body h4:first-child { margin-top: 0; }
+  .brief-body p  { margin: 0 0 9px; }
+  .brief-body ul, .brief-body ol { margin: 0 0 9px; padding-left: 18px; }
+  .brief-body li { margin-bottom: 3px; }
+
   .brief-generating {
     display: flex;
     align-items: center;
@@ -774,18 +868,180 @@ async function generateBrief() {
   }
 }
 
+// ── Color helpers ─────────────────────────────────────────────────────────────
+const PATTERN_COLORS = {
+  'depressive':      { bg: '#dbeafe', fg: '#1e3a8a' },
+  'anxiety_stress':  { bg: '#fef9c3', fg: '#854d0e' },
+  'mania_hypomania': { bg: '#fce7f3', fg: '#831843' },
+  'psychosis_risk':  { bg: '#fee2e2', fg: '#7f1d1d' },
+  'crisis':          { bg: '#fee2e2', fg: '#991b1b' },
+  'mixed':           { bg: '#ede9fe', fg: '#4c1d95' },
+};
+function patternColor(k) { return PATTERN_COLORS[k] || { bg: '#f3f4f6', fg: '#374151' }; }
+function moodBarColor(v) { return v < 4 ? '#ef4444' : v < 6 ? '#f59e0b' : '#22c55e'; }
+function sleepBarColor(v){ return v < 5 ? '#ef4444' : v < 6.5 ? '#f59e0b' : '#22c55e'; }
+
+// ── Metric tiles ──────────────────────────────────────────────────────────────
+function buildMetricTiles(scores, sessionCount) {
+  function tile(label, val, fmtFn, clsFn) {
+    const cls = typeof clsFn === 'function' ? clsFn(val) : '';
+    return `<div class="brief-metric">
+      <div class="brief-metric-label">${label}</div>
+      <div class="brief-metric-value ${cls}">${fmtFn(val)}</div>
+    </div>`;
+  }
+  const moodCls  = v => v == null ? '' : v < 4 ? 'score-red' : v < 6 ? 'score-amber' : 'score-green';
+  const sleepCls = v => v == null ? '' : v < 5 ? 'score-red' : v < 6.5 ? 'score-amber' : 'score-green';
+  const strCls   = v => v == null ? '' : v > 4 ? 'score-red' : v > 2 ? 'score-amber' : 'score-green';
+  const crisClass= v => v > 0 ? 'score-red' : 'score-green';
+  return `<div class="brief-metric-row">
+    ${tile('Sessions', sessionCount || 0, v => v, null)}
+    ${tile('Mood avg', scores.mood_avg, v => v != null ? v.toFixed(1)+'/10' : '—', moodCls)}
+    ${tile('Sleep avg', scores.sleep_avg, v => v != null ? v.toFixed(1)+'h' : '—', sleepCls)}
+    ${tile('Stressors/session', scores.stressor_count_avg, v => v != null ? v.toFixed(1) : '—', strCls)}
+    ${tile('Crisis sessions', scores.crisis_sessions || 0, v => v, crisClass)}
+  </div>`;
+}
+
+// ── Sparkline chart ───────────────────────────────────────────────────────────
+function buildSparkline(series, title, maxVal, colorFn) {
+  if (!series || series.length === 0) return '';
+  const W = 200, H = 68, PTOP = 14, PBOT = 4, PSIDE = 3, GAP = 3;
+  const n = series.length;
+  const barW = Math.min(32, Math.max(4, Math.floor((W - PSIDE*2 - GAP*(n-1)) / n)));
+  const chartH = H - PTOP - PBOT;
+  const avg = series.reduce((a, b) => a + b, 0) / n;
+  const avgY = PTOP + chartH - (avg / maxVal) * chartH;
+
+  let svgInner = '';
+  series.forEach((v, i) => {
+    const x = PSIDE + i * (barW + GAP);
+    const barH = Math.max(2, (Math.min(v, maxVal) / maxVal) * chartH);
+    const y = PTOP + chartH - barH;
+    const col = colorFn(v);
+    svgInner += `<rect x="${x}" y="${y.toFixed(1)}" width="${barW}" height="${barH.toFixed(1)}" rx="2" fill="${col}"/>`;
+    if (n <= 8) {
+      svgInner += `<text x="${(x + barW/2).toFixed(1)}" y="${(y - 2).toFixed(1)}" text-anchor="middle" font-size="8" fill="${col}" font-family="system-ui,sans-serif" font-weight="600">${v % 1 === 0 ? v : v.toFixed(1)}</text>`;
+    }
+  });
+  // avg dashed line
+  const lineX2 = PSIDE + (n-1)*(barW+GAP) + barW;
+  svgInner += `<line x1="${PSIDE}" y1="${avgY.toFixed(1)}" x2="${lineX2}" y2="${avgY.toFixed(1)}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 2"/>`;
+
+  return `<div class="brief-chart-box">
+    <div class="brief-chart-title">${escHtml(title)} <span style="font-weight:400;text-transform:none;letter-spacing:0;">(avg ${avg.toFixed(1)})</span></div>
+    <svg class="brief-chart-svg" viewBox="0 0 ${W} ${H}" height="68">
+      ${svgInner}
+    </svg>
+  </div>`;
+}
+
+// ── Pattern / speech badges ───────────────────────────────────────────────────
+function buildPatternRow(counts, speechConcern) {
+  const entries = Object.entries(counts || {}).filter(([k]) => k !== 'none_detected').sort((a, b) => b[1]-a[1]);
+  if (entries.length === 0 && !speechConcern) return '';
+  let html = '<div class="brief-pattern-row"><span class="brief-pattern-label">Patterns</span>';
+  entries.forEach(([k, cnt]) => {
+    const { bg, fg } = patternColor(k);
+    html += `<span class="pattern-pill" style="background:${bg};color:${fg}">${escHtml(k.replace(/_/g,' '))} <strong>${cnt}</strong></span>`;
+  });
+  if (speechConcern > 0) {
+    html += `<span class="speech-note">🔊 Speech concern · ${speechConcern} session${speechConcern !== 1 ? 's' : ''}</span>`;
+  }
+  return html + '</div>';
+}
+
+// ── Markdown → HTML ───────────────────────────────────────────────────────────
+function markdownToHtml(raw) {
+  if (!raw) return '';
+  const lines = raw.replace(/\r\n/g, '\n').split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
+    // Blank
+    if (!line.trim()) { i++; continue; }
+    // ## or **Header** alone on line → section heading
+    if (line.match(/^#{1,3}\s/) || (line.match(/^\*\*[^*]+\*\*\s*$/) && line.length < 90)) {
+      const head = line.replace(/^#+\s*/, '').replace(/\*\*/g, '').replace(/:+\s*$/, '').trim();
+      out.push(`<h4>${escHtml(head)}</h4>`);
+      i++; continue;
+    }
+    // Bullet list block
+    if (line.match(/^[-•]\s/)) {
+      const items = [];
+      while (i < lines.length && lines[i].match(/^[-•]\s/)) {
+        items.push(`<li>${inlineMd(lines[i].replace(/^[-•]\s/, ''))}</li>`); i++;
+      }
+      out.push(`<ul>${items.join('')}</ul>`); continue;
+    }
+    // Numbered list block
+    if (line.match(/^\d+[.)]\s/)) {
+      const items = [];
+      while (i < lines.length && lines[i].match(/^\d+[.)]\s/)) {
+        items.push(`<li>${inlineMd(lines[i].replace(/^\d+[.)]\s/, ''))}</li>`); i++;
+      }
+      out.push(`<ol>${items.join('')}</ol>`); continue;
+    }
+    // Paragraph — accumulate until blank or new block-level marker
+    const para = [];
+    while (i < lines.length && lines[i].trim()
+           && !lines[i].match(/^[-•]\s/)
+           && !lines[i].match(/^\d+[.)]\s/)
+           && !lines[i].match(/^#+\s/)
+           && !(lines[i].match(/^\*\*[^*]+\*\*\s*$/) && lines[i].length < 90)) {
+      para.push(lines[i]); i++;
+    }
+    if (para.length) out.push(`<p>${inlineMd(para.join(' '))}</p>`);
+  }
+  return out.join('');
+}
+
+function inlineMd(t) {
+  return escHtml(t)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/_(.*?)_/g, '<em>$1</em>');
+}
+
+// ── Master brief renderer ─────────────────────────────────────────────────────
 function renderBrief(data) {
   const isCrisis = data.crisis_detected;
-  const dateStr  = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-  const n        = data.session_count || '?';
-  return `
-    <div class="brief-card ${isCrisis ? 'crisis-flag' : ''}">
-      <div class="brief-meta">
-        <div class="brief-meta-left">Generated ${dateStr} · ${n} session${n !== 1 ? 's' : ''}</div>
-        ${isCrisis ? '<span class="crisis-badge">🔴 Crisis flag</span>' : ''}
-      </div>
-      <div class="brief-body">${escHtml(data.text)}</div>
-    </div>`;
+  const dateStr  = data.generated_at
+    ? data.generated_at.slice(0, 10)
+    : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const n        = data.session_count || 0;
+  const text     = data.text || data.content || '';
+  const scores   = data.scores || {};
+  const period   = (data.period_start && data.period_end)
+    ? ` · ${data.period_start.slice(0,10)} → ${data.period_end.slice(0,10)}`
+    : '';
+
+  const hasMoodChart  = (scores.mood_estimates  || []).length > 0;
+  const hasSleepChart = (scores.sleep_hours_series || []).length > 0;
+  const hasCharts     = hasMoodChart || hasSleepChart;
+  const hasPatterns   = Object.keys(scores.clinical_pattern_counts || {}).some(k => k !== 'none_detected');
+  const speechConcern = scores.speech_concern_sessions || 0;
+
+  const dashboard = `<div class="brief-dashboard">
+    ${buildMetricTiles(scores, n)}
+    ${hasCharts ? `<div class="brief-charts">
+      ${hasMoodChart  ? buildSparkline(scores.mood_estimates,      'Mood estimate', 10, moodBarColor)  : ''}
+      ${hasSleepChart ? buildSparkline(scores.sleep_hours_series,  'Sleep (hrs)',   12, sleepBarColor) : ''}
+    </div>` : ''}
+    ${buildPatternRow(scores.clinical_pattern_counts, speechConcern)}
+  </div>`;
+
+  const hasVisuals = n > 0 || hasCharts || hasPatterns || speechConcern;
+
+  return `<div class="brief-card ${isCrisis ? 'crisis-flag' : ''}">
+    <div class="brief-meta">
+      <div class="brief-meta-left">Generated ${escHtml(dateStr)}${escHtml(period)} · ${n} session${n !== 1 ? 's' : ''}</div>
+      ${isCrisis ? '<span class="crisis-badge">🔴 Crisis flag</span>' : ''}
+    </div>
+    ${hasVisuals ? dashboard : ''}
+    ${hasVisuals && text ? '<hr class="brief-divider">' : ''}
+    <div class="brief-body">${markdownToHtml(text)}</div>
+  </div>`;
 }
 
 // ── Load historical brief ────────────────────────────────────────────
@@ -803,22 +1059,10 @@ async function loadBrief(briefId, tabEl) {
     const res = await fetch(`/api/intel/brief/${briefId}`, { credentials: 'same-origin' });
     const data = await res.json();
     if (!res.ok) {
-      histContent.innerHTML = `<p style="color:var(--danger,#c0392b)">${data.error || 'Failed to load.'}</p>`;
+      histContent.innerHTML = `<p style="color:var(--danger,#c0392b)">${escHtml(data.error || 'Failed to load.')}</p>`;
       return;
     }
-    const isCrisis = data.crisis_detected;
-    const dateStr  = data.generated_at ? data.generated_at.slice(0, 10) : '—';
-    histContent.innerHTML = `
-      <div class="brief-card ${isCrisis ? 'crisis-flag' : ''}">
-        <div class="brief-meta">
-          <div class="brief-meta-left">
-            Generated ${dateStr} · ${data.session_count || '?'} session${(data.session_count || 0) !== 1 ? 's' : ''}
-            ${data.period_start ? ' · ' + data.period_start + ' to ' + (data.period_end || '—') : ''}
-          </div>
-          ${isCrisis ? '<span class="crisis-badge">🔴 Crisis flag</span>' : ''}
-        </div>
-        <div class="brief-body">${escHtml(data.content)}</div>
-      </div>`;
+    histContent.innerHTML = renderBrief(data);
   } catch (e) {
     histContent.innerHTML = '<p style="color:var(--danger,#c0392b)">Network error.</p>';
   }
