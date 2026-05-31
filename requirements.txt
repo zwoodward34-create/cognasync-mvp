@@ -29,7 +29,6 @@ MarkupSafe==3.0.3
 librosa==0.10.2
 numpy==1.26.4
 packaging==26.1
-parselmouth==0.4.3
 postgrest==0.18.0
 scipy==1.13.1
 soundfile==0.12.1
