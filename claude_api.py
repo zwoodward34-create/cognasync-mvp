@@ -500,6 +500,498 @@ def analyze_checkin(checkin_data, checkin_type, baseline=None):
         return {'status': 'safe', 'text': 'Check-in recorded successfully.'}
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# PSYCHIATRY BRIEF — Mode C (Psychiatrist)
+# Medication-first, quantitative-primary, graphical-data-ready
+# ─────────────────────────────────────────────────────────────────────────────
+
+_PSYCHIATRY_SYSTEM = """You are generating a pre-appointment clinical brief for a PSYCHIATRIST (Mode C — Psychiatrist variant).
+
+AUDIENCE: A prescribing psychiatrist with 15–20 minutes per appointment. They need:
+1. Medication-relevant signals immediately
+2. Hard numbers, not prose descriptions of numbers
+3. Convergence/divergence flags (self-report vs. objective indicators)
+4. Clear flags at the top, not buried at the end
+
+STRUCTURE (use exactly these section headers in this order):
+
+## Trajectory
+One sentence maximum. State the overall direction and name any key divergence (e.g., self-reported mood elevated but Stability Score lower, or Crash Risk rising despite low stress reports).
+
+## Core Stability Metrics
+Present as a compact table or tightly structured list. Include ALL of:
+- Stability Score: avg X/10 | trend | high: X | low: X
+- Crash Risk: avg X/10 | trend | days ≥7: N
+- Nervous System Load: avg X/10 | trend
+- Mood Distortion: Δ X pts (self-report vs. Stability Score) — flag if Δ > 2.5
+
+## Medication
+Lead with the current regimen. Then:
+- Adherence: X/Y check-ins logged | any gaps?
+- Stim Load: avg X/10 | days ≥7: N | days ≥9: N
+- Timing: note variability if SD > 60 min across logged doses
+- If fatigue or crash symptoms are logged and timing precedes them, note the timing pattern (not cause)
+- Do NOT advise changes. Do NOT comment on whether regimen is adequate.
+
+## Quantitative Summary
+Tight data block — numbers first, words minimal:
+- Mood: avg X/10 | trend | range X–X
+- Sleep: avg X hrs | range X–X | Sleep Disruption avg X/10
+- Energy: avg X/10 | trend
+- Stress: avg X/10 | trend
+- Irritability: avg X/10 (include range if notable)
+
+## Symptom Patterns
+Only include if ≥3 occurrences. Format: "[Symptom]: N of T days. Co-signals: [variable] [higher/lower] on symptom days (avg X vs X, Δ=X)." If medication context exists, note timing only. Omit if no symptoms meet threshold.
+
+## Session Intelligence
+For each processed recording, structure as:
+- **[Date] [Session type]**
+- Reported mood: patient's own words about how they felt
+- Observed speech (text-inferred, §24 vocab): rate / prosody / coherence / vocal affect / arousal. Frame as "session speech showed [X]."
+- Acoustic measurements (waveform — cite only when present in data): articulation rate (sps), pause ratio, F0 CV, HNR dB. Flag out-of-range values: artic <3.5 sps = slowed; pause ratio >35% = elevated silence; F0 CV <0.05 = flat prosody; HNR <10 dB = strained/breathy.
+- Affect model (research signal — cite only when present): valence / arousal / dominance with labels. Append "— research signal, not diagnostic."
+- Medication-relevant content: what the patient said about medications, side effects, timing, or adherence
+- Key themes: stressors, avoidance, safety language
+- Convergence note: when acoustic measurements + text features + check-in scores align, name it explicitly (e.g., "Flat prosody, reduced F0 CV 0.03, and affect model valence −0.4 are convergent with check-in mood of 3/10 that day.")
+If no acoustic measurements exist for a session, state "acoustic data not available."
+
+## 🚨 Flags
+List only. Each flag = one line with supporting data point. Format: "[Flag]: [data]". If none: "No threshold alerts for this period."
+
+## Suggested Discussion Topics
+3 items maximum. Anchor each to a specific data point. Medication-relevant first.
+
+RULES:
+- No warm conversational prose. Number first, label second.
+- Never say "you should" or advise medication changes.
+- Never diagnose. Use "data shows" / "logged" / "reported."
+- Mood Distortion (Δ > 2.5): always surface it.
+- Acoustic measurements capture HOW the patient spoke — surface them as distinct from transcript content, not as a repeat of it.
+- Omit Positive Correlates, Coping Activities, Sunlight, Workload Friction unless threshold-crossing.
+- Alcohol: include only if ≥3 units/use day or ≥4 drinking days in 7-day window.
+- Keep the entire brief under 700 words.
+"""
+
+
+def _build_chart_data(checkin_data):
+    """Compute per-day chart arrays from checkin_data. Pure computation, no API call.
+
+    Returns a dict with parallel arrays (one entry per check-in, sorted by date)
+    suitable for Chart.js rendering.
+    """
+    import database as _db  # local import to avoid circular at module level
+
+    rows = []
+    for c in checkin_data:
+        ext = {}
+        if c.get('extended_data'):
+            try:
+                ext = (json.loads(c['extended_data'])
+                       if isinstance(c['extended_data'], str)
+                       else c.get('extended_data', {}))
+            except Exception:
+                pass
+
+        mood   = c.get('mood_score')
+        stress = c.get('stress_score')
+        sleep  = c.get('sleep_hours')
+        energy = ext.get('energy')
+        meds   = c.get('medications') or []
+        if isinstance(meds, str):
+            try:
+                meds = json.loads(meds)
+            except Exception:
+                meds = []
+
+        scores = _db._compute_checkin_scores(mood, stress, sleep, ext, meds)
+
+        date_str = c.get('checkin_date') or c.get('date') or (c.get('created_at') or '')[:10]
+        rows.append({
+            'date':             date_str,
+            'mood':             float(mood)   if mood   is not None else None,
+            'stability_score':  scores.get('stability_score'),
+            'crash_risk':       scores.get('crash_risk'),
+            'sleep_hours':      float(sleep)  if sleep  is not None else None,
+            'sleep_disruption': scores.get('sleep_disruption'),
+            'stim_load':        scores.get('stim_load'),
+            'energy':           float(energy) if energy is not None else None,
+            'stress':           float(stress) if stress is not None else None,
+        })
+
+    # Sort by date, deduplicate by taking last entry per date
+    from collections import OrderedDict
+    by_date = OrderedDict()
+    for r in sorted(rows, key=lambda x: x['date']):
+        by_date[r['date']] = r
+
+    sorted_rows = list(by_date.values())
+    keys = ['mood', 'stability_score', 'crash_risk', 'sleep_hours',
+            'sleep_disruption', 'stim_load', 'energy', 'stress']
+
+    chart = {'dates': [r['date'] for r in sorted_rows]}
+    for k in keys:
+        chart[k] = [r[k] for r in sorted_rows]
+
+    # Period averages (skip None)
+    def _avg(lst):
+        vals = [v for v in lst if v is not None]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    chart['averages'] = {k: _avg(chart[k]) for k in keys}
+    return chart
+
+
+def generate_psychiatry_summary(checkin_data, journal_data, days=14,
+                                 period_start=None, period_end=None,
+                                 appointment_date=None,
+                                 symptom_patterns=None,
+                                 substance_flags=None,
+                                 safety_flags=None,
+                                 session_context=None,
+                                 raw_voice_transcripts=None):
+    """Mode C (Psychiatrist) — medication-first, quantitative-primary brief.
+
+    Returns {'status', 'text', 'raw', 'chart_data'} where chart_data contains
+    parallel date-indexed arrays for Chart.js rendering on the frontend.
+    """
+    # Build chart data first (pure computation, always succeeds)
+    try:
+        chart_data = _build_chart_data(checkin_data)
+    except Exception as _cde:
+        chart_data = {}
+
+    # ── Reuse generate_appointment_summary's data parsing by delegating ──────
+    # We call it with audience='provider' to get the structured Mode C data
+    # block, then override the system prompt with the psychiatry-specific one.
+    # This avoids duplicating the 200-line checkin parsing logic.
+    #
+    # The approach: monkey-patch the system prompt by calling the internal
+    # _call_claude directly with our prompt after building user_content
+    # via generate_appointment_summary's parsing infrastructure.
+    #
+    # Simpler approach: duplicate the key stats extraction inline (small),
+    # then call _call_claude with _PSYCHIATRY_SYSTEM.
+
+    # ── Parse checkin data for psychiatry-relevant fields ─────────────────────
+    checkin_rows = []
+    mood_vals, stress_vals, sleep_vals, energy_vals = [], [], [], []
+    irrit_vals, motiv_vals = [], []
+    meds_logged = high_stim_days = 0
+
+    for c in checkin_data:
+        ext = {}
+        if c.get('extended_data'):
+            try:
+                ext = (json.loads(c['extended_data'])
+                       if isinstance(c['extended_data'], str)
+                       else c.get('extended_data', {}))
+            except Exception:
+                pass
+
+        mood   = c.get('mood_score')
+        stress = c.get('stress_score')
+        sleep  = c.get('sleep_hours')
+        energy = ext.get('energy')
+
+        meds = c.get('medications') or []
+        if isinstance(meds, str):
+            try:
+                meds = json.loads(meds)
+            except Exception:
+                meds = []
+
+        import database as _db
+        scores = _db._compute_checkin_scores(mood, stress, sleep, ext, meds)
+
+        stim = scores.get('stim_load')
+        if stim is not None and float(stim) >= 7:
+            high_stim_days += 1
+
+        row = {
+            'date':             c.get('checkin_date', c.get('date', '')),
+            'type':             c.get('checkin_type', 'on_demand'),
+            'mood':             mood,
+            'stress':           stress,
+            'sleep_hours':      sleep,
+            'stability_score':  scores.get('stability_score'),
+            'crash_risk':       scores.get('crash_risk'),
+            'ns_load':          scores.get('ns_load'),
+            'sleep_disruption': scores.get('sleep_disruption'),
+            'stim_load':        stim,
+            'mood_distortion':  scores.get('mood_distortion'),
+        }
+        if energy is not None:
+            row['energy'] = energy
+        if ext.get('irritability') is not None:
+            row['irritability'] = ext['irritability']
+            irrit_vals.append(float(ext['irritability']))
+        if ext.get('motivation') is not None:
+            motiv_vals.append(float(ext['motivation']))
+        if ext.get('caffeine_mg') is not None:
+            row['caffeine_mg'] = ext['caffeine_mg']
+        if meds:
+            meds_logged += 1
+            row['meds_taken'] = sum(1 for m in meds if isinstance(m, dict) and m.get('taken'))
+
+        checkin_rows.append(row)
+        if mood   is not None: mood_vals.append(float(mood))
+        if stress is not None: stress_vals.append(float(stress))
+        if sleep  is not None: sleep_vals.append(float(sleep))
+        if energy is not None: energy_vals.append(float(energy))
+
+    def _avg(v): return round(sum(v) / len(v), 1) if v else None
+    def _trend(v):
+        if len(v) < 2: return 'insufficient data'
+        return 'improving' if v[-1] > v[0] else 'declining' if v[-1] < v[0] else 'stable'
+    def _std(v):
+        if len(v) < 2: return None
+        m = sum(v) / len(v)
+        return round((sum((x - m) ** 2 for x in v) / len(v)) ** 0.5, 2)
+
+    n = len(checkin_rows)
+
+    # Compute aggregated score stats from chart_data arrays
+    stab_vals  = [v for v in chart_data.get('stability_score', []) if v is not None]
+    cr_vals    = [v for v in chart_data.get('crash_risk', [])       if v is not None]
+    ns_vals    = [v for v in chart_data.get('stim_load', [])        if v is not None]
+    sd_vals    = [v for v in chart_data.get('sleep_disruption', []) if v is not None]
+
+    # Mood Distortion: avg |reported mood - stability_score| across paired days
+    distortion_vals = []
+    for r in checkin_rows:
+        m = r.get('mood')
+        s = r.get('stability_score')
+        if m is not None and s is not None:
+            distortion_vals.append(abs(float(m) - float(s)))
+    avg_distortion = _avg(distortion_vals)
+
+    stats = {
+        'total_checkins':      n,
+        'period_days':         days,
+        'avg_mood':            _avg(mood_vals),
+        'mood_trend':          _trend(mood_vals),
+        'mood_range':          [min(mood_vals), max(mood_vals)] if mood_vals else None,
+        'avg_stress':          _avg(stress_vals),
+        'stress_trend':        _trend(stress_vals),
+        'avg_sleep_hours':     _avg(sleep_vals),
+        'sleep_range':         [min(sleep_vals), max(sleep_vals)] if sleep_vals else None,
+        'avg_energy':          _avg(energy_vals),
+        'energy_trend':        _trend(energy_vals),
+        'checkins_with_meds':  meds_logged,
+        'high_stim_load_days': high_stim_days,
+        'avg_stability_score': _avg(stab_vals),
+        'stability_trend':     _trend(stab_vals),
+        'stability_range':     [round(min(stab_vals), 1), round(max(stab_vals), 1)] if stab_vals else None,
+        'avg_crash_risk':      _avg(cr_vals),
+        'crash_risk_trend':    _trend(cr_vals),
+        'crash_risk_high_days': sum(1 for v in cr_vals if v >= 7),
+        'avg_sleep_disruption':_avg(sd_vals),
+        'avg_mood_distortion': avg_distortion,
+        'avg_irritability':    _avg(irrit_vals) if irrit_vals else None,
+    }
+
+    n_days = days
+    period_label = (
+        f"{period_start} to {period_end}" if period_start and period_end
+        else f"Last {n_days} days"
+    )
+    if appointment_date:
+        period_label += f" (appointment: {appointment_date})"
+
+    # ── Journal rows ──────────────────────────────────────────────────────────
+    journal_rows = []
+    for j in journal_data:
+        entry_date = (j.get('entry_date') or j.get('created_at', ''))[:10]
+        content    = j.get('content') or j.get('raw_entry') or ''
+        if content:
+            journal_rows.append({'date': entry_date, 'content': content[:600]})
+
+    # ── Symptom section ───────────────────────────────────────────────────────
+    symptom_section = ''
+    if symptom_patterns:
+        lines = []
+        for sp in symptom_patterns:
+            sym   = sp.get('symptom', '')
+            d_rep = sp.get('days_reported', 0)
+        d_tot = sp.get('total_days', n)
+        co    = sp.get('co_occurring') or []
+        med   = sp.get('medication_context')
+        line  = f"{sym}: {d_rep} of {d_tot} days."
+        if co:
+            co_str = '; '.join(
+                f"{c['label']} {c['direction']} on symptom days "
+                f"(avg {c['avg_on_symptom_days']} vs {c['avg_off_symptom_days']}, Δ={c['delta']})"
+                for c in co[:2]
+            )
+            line += f" Co-signals: {co_str}."
+        if med:
+            line += (f" Medication context: {med.get('change_type', 'change')} in "
+                     f"{med.get('medication_name', 'medication')} "
+                     f"{abs(med.get('days_before_symptom_onset', 0))} days before first entry.")
+        lines.append(line)
+        if lines:
+            symptom_section = '\n\nSYMPTOM PATTERNS:\n' + '\n'.join(lines)
+
+    # ── Safety section ────────────────────────────────────────────────────────
+    safety_section = ''
+    if safety_flags and safety_flags.get('signals_found'):
+        sf = safety_flags
+        safety_section = (
+            f"\n\nINTERPERSONAL SAFETY SIGNAL: Language patterns in {sf.get('signal_count', '?')} "
+            f"journal entries ({sf.get('first_signal_date', '?')} – {sf.get('most_recent_date', '?')}; "
+            f"most recent {sf.get('recency_days', '?')} days ago). Clinical assessment recommended."
+        )
+
+    # ── Substance section ─────────────────────────────────────────────────────
+    substance_section = ''
+    if substance_flags and substance_flags.get('alert_level') in ('watch', 'concern'):
+        sf = substance_flags
+        lines = []
+        for sub in ('alcohol', 'cannabis', 'nicotine', 'other'):
+            sd = sf.get(sub, {})
+            if sd.get('use_days', 0) > 0:
+                lines.append(
+                    f"{sub.capitalize()}: {sd['use_days']} of {sf.get('total_days', n)} days "
+                    f"(alert: {sd.get('alert_level', 'watch')})"
+                )
+        if lines:
+            substance_section = '\n\nSUBSTANCE USE FLAGS:\n' + '\n'.join(lines)
+
+    # ── Session context ───────────────────────────────────────────────────────
+    session_section = ''
+    has_acoustic = False
+    if session_context:
+        blocks = []
+        for s in session_context[:5]:
+            if s.get('processing_status') != 'complete':
+                continue
+            feat   = s.get('features') or {}
+            sc     = s.get('scores') or {}
+            sf_obs = feat.get('speech_features') or {}
+            acf    = sc.get('acoustic_features') or {}
+            afd    = sc.get('affect_dimensions') or {}
+            vocab  = acf.get('vocabulary') or {}
+            raw_m  = acf.get('raw') or {}
+
+            b = f"[{s.get('session_date', '?')}] {s.get('session_type', 'session').replace('_', ' ')}"
+            if s.get('crisis_detected'):
+                b = '🔴 CRISIS DETECTED — ' + b
+
+            # Patient-reported mood from transcript
+            mood_d = feat.get('mood_description') or feat.get('patient_mood_description')
+            if mood_d:
+                b += f'\n  Reported mood: {mood_d}'
+
+            # Observed affect + speech (text-inferred, §24 vocabulary)
+            sf_parts = []
+            if sf_obs.get('speech_rate'):
+                sf_parts.append(f"rate={sf_obs['speech_rate']}")
+            if sf_obs.get('prosody'):
+                sf_parts.append(f"prosody={sf_obs['prosody']}")
+            if sf_obs.get('pauses'):
+                sf_parts.append(f"pauses={sf_obs['pauses']}")
+            if sf_obs.get('speech_coherence'):
+                sf_parts.append(f"coherence={sf_obs['speech_coherence']}")
+            if sf_obs.get('arousal'):
+                sf_parts.append(f"arousal={sf_obs['arousal']}")
+            if sf_obs.get('vocal_affect'):
+                sf_parts.append(f"vocal_affect={sf_obs['vocal_affect']}")
+            if sf_parts:
+                b += f'\n  Speech features (text-inferred): {", ".join(sf_parts)}'
+            if sf_obs.get('clinical_pattern_type') and sf_obs['clinical_pattern_type'] != 'none_detected':
+                b += f'\n  Clinical pattern type: {sf_obs["clinical_pattern_type"]}'
+
+            # Waveform acoustic measurements (from audio processing)
+            measured = []
+            if raw_m.get('articulation_rate_sps') is not None:
+                measured.append(f"articulation rate {raw_m['articulation_rate_sps']:.2f} sps")
+            if raw_m.get('pause_ratio') is not None:
+                measured.append(f"pause ratio {raw_m['pause_ratio']:.0%}")
+            if raw_m.get('f0_cv') is not None:
+                measured.append(f"F0 CV {raw_m['f0_cv']:.3f}")
+            if raw_m.get('hnr_db') is not None:
+                measured.append(f"HNR {raw_m['hnr_db']:.1f} dB")
+            if measured:
+                has_acoustic = True
+                b += f'\n  Acoustic measurements (waveform): {", ".join(measured)}'
+            if vocab.get('clinical_pattern_type') and vocab['clinical_pattern_type'] != 'none_detected':
+                b += f'\n  Waveform-inferred pattern: {vocab["clinical_pattern_type"]}'
+
+            # Affect model output (VAD — valence/arousal/dominance)
+            if afd.get('model_available') and afd.get('valence') is not None:
+                b += (
+                    f'\n  Affect model (research signal): '
+                    f'valence {afd["valence"]:.2f} ({afd.get("valence_label","?")}), '
+                    f'arousal {afd["arousal"]:.2f} ({afd.get("arousal_label","?")}), '
+                    f'dominance {afd["dominance"]:.2f} ({afd.get("dominance_label","?")}) '
+                    f'— pattern: {afd.get("pattern","N/A")}'
+                )
+
+            # Key themes from transcript
+            themes = feat.get('key_themes') or []
+            if themes:
+                b += f'\n  Themes: {", ".join(themes[:4])}'
+
+            # Baseline deviation note
+            if sf_obs.get('baseline_deviation'):
+                b += f'\n  Baseline deviation: {sf_obs["baseline_deviation"]}'
+
+            blocks.append(b)
+
+        pending = [s for s in session_context if s.get('processing_status') != 'complete']
+        if blocks:
+            session_section = (
+                f'\n\nSESSION RECORDINGS ({len(blocks)} processed'
+                + (f', {len(pending)} pending' if pending else '')
+                + '):\n\n'
+                + '\n\n'.join(blocks)
+            )
+            if has_acoustic:
+                session_section += (
+                    '\n\nNote: sessions with acoustic measurements were processed from audio. '
+                    'Articulation rate (sps = syllables/sec; typical 4–6), pause ratio '
+                    '(proportion of recording in silence; elevated = psychomotor slowing or '
+                    'planning difficulty), F0 CV (pitch variability; reduced = flat prosody), '
+                    'HNR dB (voice quality; lower = breathiness/strain). '
+                    'Apply §24 interpretation vocabulary. No diagnostic claims.\n'
+                )
+
+    # ── Raw voice transcripts ─────────────────────────────────────────────────
+    voice_block = ''
+    if raw_voice_transcripts:
+        lines = []
+        for vt in raw_voice_transcripts:
+            lines.append(f"[{vt.get('date', '?')}] {vt.get('transcript', '').strip()}")
+        if lines:
+            voice_block = (
+                '\n\nPATIENT VOICE RECORDINGS (raw transcripts — analyze for medication-relevant '
+                'content, mood themes, avoidance patterns, and safety language):\n\n'
+                + '\n\n'.join(lines)
+            )
+
+    user_content = (
+        f"REVIEW PERIOD: {period_label}\n\n"
+        f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}\n\n"
+        f"DAILY CHECK-INS ({n} total):\n{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
+        f"JOURNAL ENTRIES ({len(journal_rows)} total):\n{json.dumps(journal_rows, indent=2, default=str)}"
+        f"{symptom_section}"
+        f"{substance_section}"
+        f"{safety_section}"
+        f"{session_section}"
+        f"{voice_block}"
+    )
+
+    raw   = _call_claude(_PSYCHIATRY_SYSTEM, user_content, max_tokens=1000)
+    clean = _sanitize_output(raw)
+    if clean is None:
+        clean = (
+            "A summary was generated but contained language that requires clinical review. "
+            "Please regenerate or contact support."
+        )
+    return {'status': 'safe', 'text': clean, 'raw': raw, 'chart_data': chart_data}
+
+
 def generate_appointment_summary(checkin_data, journal_data, days=14,
                                   period_start=None, period_end=None,
                                   appointment_date=None,

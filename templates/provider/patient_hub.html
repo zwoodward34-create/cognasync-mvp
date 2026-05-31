@@ -767,7 +767,56 @@
     .hub-table th, .hub-table td { padding: 8px 10px; }
     .risk-strip-date { margin-left: 0; width: 100%; }
   }
+
+  /* ── Psychiatry chart grid (inside brief modal) ── */
+  #brief-chart-section {
+    display: none;
+    margin: 0 0 20px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+  #brief-chart-section.visible { display: block; }
+  .brief-chart-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  .brief-chart-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .brief-chart-card {
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 10px 12px 8px;
+    background: #fafafa;
+  }
+  .brief-chart-card-title {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .brief-chart-card canvas { width: 100% !important; height: 100px !important; }
+  .brief-chart-pills { display: flex; gap: 5px; flex-wrap: wrap; margin-top: 5px; }
+  .brief-chart-pill {
+    font-size: 0.62rem;
+    background: #fff;
+    border: 1px solid var(--border);
+    border-radius: 99px;
+    padding: 1px 6px;
+    color: var(--text-muted);
+  }
+  .brief-chart-pill strong { color: var(--text); font-weight: 600; }
+  @media (max-width: 600px) { .brief-chart-grid { grid-template-columns: 1fr; } }
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 {% endblock %}
 
 {% block content %}
@@ -871,6 +920,33 @@
           <button class="brief-modal-close" onclick="closeBriefModal()">✕</button>
         </div>
       </div>
+      <!-- Psychiatry data charts — visible only when chart_data returned -->
+      <div id="brief-chart-section">
+        <div class="brief-chart-label">Data Trends</div>
+        <div class="brief-chart-grid">
+          <div class="brief-chart-card">
+            <div class="brief-chart-card-title">Mood &amp; Stability Score</div>
+            <canvas id="bmc-mood-stab"></canvas>
+            <div class="brief-chart-pills" id="bmc-mood-stab-pills"></div>
+          </div>
+          <div class="brief-chart-card">
+            <div class="brief-chart-card-title">Crash Risk &amp; Stim Load</div>
+            <canvas id="bmc-crash"></canvas>
+            <div class="brief-chart-pills" id="bmc-crash-pills"></div>
+          </div>
+          <div class="brief-chart-card">
+            <div class="brief-chart-card-title">Sleep hrs &amp; Disruption</div>
+            <canvas id="bmc-sleep"></canvas>
+            <div class="brief-chart-pills" id="bmc-sleep-pills"></div>
+          </div>
+          <div class="brief-chart-card">
+            <div class="brief-chart-card-title">Stim Load &amp; Energy</div>
+            <canvas id="bmc-stim"></canvas>
+            <div class="brief-chart-pills" id="bmc-stim-pills"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="brief-modal-body" id="brief-modal-body">
         <p style="color:var(--text-muted);">Generating…</p>
       </div>
@@ -1569,7 +1645,10 @@ function _briefTextToHtml(text) {
     .replace(/\n/g, '<br>');
 }
 
-function _showBriefModal(text, meta, briefId) {
+// Track active Chart.js instances so we can destroy before re-rendering
+const _briefCharts = {};
+
+function _showBriefModal(text, meta, briefId, chartData) {
   _currentBriefText = text;
   _currentBriefId   = briefId || null;
   const modal    = document.getElementById('brief-modal');
@@ -1582,6 +1661,135 @@ function _showBriefModal(text, meta, briefId) {
   if (copyBtn) copyBtn.style.display = '';
   if (pdfBtn)  pdfBtn.style.display  = '';
   modal.style.display = 'flex';
+  _renderBriefCharts(chartData || null);
+}
+
+function _pill(label, val, unit) {
+  if (val === null || val === undefined) return '';
+  return `<span class="brief-chart-pill">${label} <strong>${val}${unit}</strong></span>`;
+}
+
+function _renderBriefCharts(cd) {
+  const section = document.getElementById('brief-chart-section');
+  if (!section) return;
+
+  // Destroy existing charts
+  Object.values(_briefCharts).forEach(c => { try { c.destroy(); } catch(e) {} });
+  for (const k in _briefCharts) delete _briefCharts[k];
+
+  if (!cd || !cd.dates || !cd.dates.length) {
+    section.classList.remove('visible');
+    return;
+  }
+
+  section.classList.add('visible');
+
+  const labels = cd.dates.map(d => {
+    const dt = new Date(d + 'T12:00:00');
+    return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  });
+
+  const baseOpts = {
+    responsive: true,
+    maintainAspectRatio: false,
+    animation: false,
+    plugins: { legend: { display: true, labels: { font: { size: 8 }, boxWidth: 8, padding: 5 } } },
+    scales: {
+      x: { ticks: { font: { size: 7 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 7 },
+           grid: { color: '#f3f4f6' } },
+      y: { ticks: { font: { size: 7 } }, grid: { color: '#f3f4f6' } }
+    }
+  };
+  const ns = v => (v === null || v === undefined) ? null : v;
+  const avgs = cd.averages || {};
+
+  // 1. Mood & Stability
+  _briefCharts.moodStab = new Chart(document.getElementById('bmc-mood-stab'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Mood', data: cd.mood.map(ns),
+          borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.08)',
+          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: true },
+        { label: 'Stability', data: (cd.stability_score || []).map(ns),
+          borderColor: '#7c3aed', backgroundColor: 'transparent',
+          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: true, borderDash: [4,3] },
+      ]
+    },
+    options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, min: 0, max: 10 } } }
+  });
+  document.getElementById('bmc-mood-stab-pills').innerHTML =
+    _pill('Mood avg', avgs.mood, '/10') + _pill('Stability avg', avgs.stability_score, '/10');
+
+  // 2. Crash Risk & Stim Load
+  _briefCharts.crash = new Chart(document.getElementById('bmc-crash'), {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Crash Risk', data: (cd.crash_risk || []).map(ns),
+          borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.08)',
+          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: true, fill: true },
+        { label: 'Stim Load', data: (cd.stim_load || []).map(ns),
+          borderColor: '#d97706', backgroundColor: 'transparent',
+          borderWidth: 1.5, pointRadius: 2, tension: 0.3, spanGaps: true, borderDash: [4,3] },
+      ]
+    },
+    options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, min: 0, max: 10 } } }
+  });
+  document.getElementById('bmc-crash-pills').innerHTML =
+    _pill('Crash avg', avgs.crash_risk, '/10') + _pill('Stim avg', avgs.stim_load, '/10');
+
+  // 3. Sleep hours (bar) + disruption (line)
+  _briefCharts.sleep = new Chart(document.getElementById('bmc-sleep'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Sleep hrs', data: (cd.sleep_hours || []).map(ns),
+          backgroundColor: 'rgba(16,185,129,0.4)', borderColor: 'rgba(16,185,129,0.7)',
+          borderWidth: 1, yAxisID: 'yH' },
+        { label: 'Disruption', data: (cd.sleep_disruption || []).map(ns),
+          type: 'line',
+          borderColor: '#dc2626', backgroundColor: 'transparent',
+          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: true, yAxisID: 'yS' },
+      ]
+    },
+    options: { ...baseOpts, scales: {
+      x: baseOpts.scales.x,
+      yH: { type: 'linear', position: 'left',  min: 0, max: 12,
+            ticks: { font: { size: 7 } }, grid: { color: '#f3f4f6' } },
+      yS: { type: 'linear', position: 'right', min: 0, max: 10,
+            ticks: { font: { size: 7 } }, grid: { drawOnChartArea: false } },
+    }}
+  });
+  document.getElementById('bmc-sleep-pills').innerHTML =
+    _pill('Avg', avgs.sleep_hours, ' hrs') + _pill('Disruption avg', avgs.sleep_disruption, '/10');
+
+  // 4. Stim Load bar (color-coded) + Energy line
+  _briefCharts.stim = new Chart(document.getElementById('bmc-stim'), {
+    type: 'bar',
+    data: {
+      labels,
+      datasets: [
+        { label: 'Stim Load', data: (cd.stim_load || []).map(ns),
+          backgroundColor: (cd.stim_load || []).map(v =>
+            v === null ? 'rgba(209,213,219,0.4)' :
+            v >= 8    ? 'rgba(220,38,38,0.55)'   :
+            v >= 6    ? 'rgba(217,119,6,0.55)'   :
+                        'rgba(37,99,235,0.35)'
+          ), borderWidth: 0 },
+        { label: 'Energy', data: (cd.energy || []).map(ns),
+          type: 'line',
+          borderColor: '#16a34a', backgroundColor: 'transparent',
+          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: true },
+      ]
+    },
+    options: { ...baseOpts, scales: { ...baseOpts.scales, y: { ...baseOpts.scales.y, min: 0, max: 10 } } }
+  });
+  document.getElementById('bmc-stim-pills').innerHTML =
+    _pill('Stim avg', avgs.stim_load, '/10') + _pill('Energy avg', avgs.energy, '/10');
 }
 
 function generateBrief() {
@@ -1636,7 +1844,7 @@ async function confirmGenerateBrief() {
       const end   = (data.date_range_end   || '').slice(0, 10);
       const meta  = start && end ? `${start} — ${end} (${days} days)` : '';
       _currentBriefDays = days;
-      _showBriefModal(text, meta, data.summary_id || data.brief_id || null);
+      _showBriefModal(text, meta, data.summary_id || data.brief_id || null, data.chart_data || null);
       loadBriefBank();
     } else {
       body.innerHTML = '<p style="color:#c0392b;">' + _esc((data && data.error) || 'Generation failed — try again.') + '</p>';
@@ -1650,6 +1858,8 @@ async function confirmGenerateBrief() {
 
 function closeBriefModal() {
   document.getElementById('brief-modal').style.display = 'none';
+  const cs = document.getElementById('brief-chart-section');
+  if (cs) cs.classList.remove('visible');
 }
 
 async function copyBrief() {
