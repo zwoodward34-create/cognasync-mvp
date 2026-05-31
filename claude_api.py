@@ -549,7 +549,7 @@ For each processed recording, structure as:
 - **[Date] [Session type]**
 - Reported mood: patient's own words about how they felt
 - Observed speech (text-inferred, §24 vocab): rate / prosody / coherence / vocal affect / arousal. Frame as "session speech showed [X]."
-- Acoustic measurements (waveform — cite only when present in data): articulation rate (sps), pause ratio, F0 CV, HNR dB. Flag out-of-range values: artic <3.5 sps = slowed; pause ratio >35% = elevated silence; F0 CV <0.05 = flat prosody; HNR <10 dB = strained/breathy.
+- Acoustic measurements (waveform — cite only when present in data): articulation rate (sps), pause ratio, F0 CV, HNR dB, jitter (%), shimmer (%). Flag out-of-range values: artic <3.5 sps = slowed; pause ratio >35% = elevated silence; F0 CV <0.05 = flat prosody; HNR <15 dB = reduced harmonic quality; jitter >1% = elevated vocal instability; shimmer >5% = elevated amplitude perturbation. Pattern interpretation: both jitter ↑ + shimmer ↑ = autonomic stress signal (anxiety/depression); jitter markedly elevated with shimmer normal = acute distress pattern; both trending ↓ from prior sessions = possible treatment response. Never infer diagnosis from voice metrics alone — state the numbers and the pattern, route clinical interpretation to the provider.
 - Affect model (research signal — cite only when present): valence / arousal / dominance with labels. Append "— research signal, not diagnostic."
 - Medication-relevant content: what the patient said about medications, side effects, timing, or adherence
 - Key themes: stressors, avoidance, safety language
@@ -921,6 +921,10 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                 measured.append(f"F0 CV {raw_m['f0_cv']:.3f}")
             if raw_m.get('hnr_db') is not None:
                 measured.append(f"HNR {raw_m['hnr_db']:.1f} dB")
+            if raw_m.get('jitter_local') is not None:
+                measured.append(f"jitter {raw_m['jitter_local']*100:.2f}%")
+            if raw_m.get('shimmer_local') is not None:
+                measured.append(f"shimmer {raw_m['shimmer_local']*100:.2f}%")
             if measured:
                 has_acoustic = True
                 b += f'\n  Acoustic measurements (waveform): {", ".join(measured)}'

@@ -341,8 +341,10 @@ _F0_CV_FLAT     = 0.10   # below → flat prosody
 _F0_CV_ELEVATED = 0.28   # above → elevated prosody
 
 # Voice quality — Praat metrics
-_JITTER_STRAIN   = 0.020  # > 2.0 % local jitter → strain signal
-_SHIMMER_STRAIN  = 0.060  # > 6.0 % local shimmer → strain signal
+# Clinical literature: jitter > 1% and shimmer > 5% are pathological thresholds.
+# Reference: Nardelli et al. / MDVP norms. Prior values (2%, 6%) were too permissive.
+_JITTER_STRAIN   = 0.010  # > 1.0 % local jitter → strain signal
+_SHIMMER_STRAIN  = 0.050  # > 5.0 % local shimmer → strain signal
 _HNR_LOW         = 15.0   # < 15 dB → reduced harmonic quality
 
 # Amplitude variability
