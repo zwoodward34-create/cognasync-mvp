@@ -2734,64 +2734,18 @@ def api_provider_generate_summary(patient_id):
         limit=10,
     )
 
-    # Fallback: surface voice notes transcribed under the old pipeline that
-    # never created clinical_sessions rows. Run extract_features() on them now
-    # and create the clinical_sessions row so future briefs find them via the
-    # normal path.
+    # Collect raw voice note transcripts for the period.
+    # Passed directly to the brief prompt — no extra Claude call, no timeout risk.
+    raw_voice_transcripts = []
     try:
         known_dates = {s['session_date'] for s in session_context if s.get('session_date')}
-        orphan_notes = db.get_voice_notes_for_period(
-            patient_id=patient_id,
-            period_start=period_start,
-            period_end=period_end,
-            limit=5,
-        )
-        for vn in orphan_notes:
+        for vn in db.get_voice_notes_for_period(patient_id, period_start, period_end, limit=5):
             vn_date = (vn.get('created_at') or '')[:10]
-            # Skip if a voice_note session already exists for this date
-            if vn_date in known_dates:
-                continue
-            transcript_text = vn.get('transcript', '').strip()
-            if not transcript_text:
-                continue
-            try:
-                from transcript_engine import extract_features as _ef
-                pop_flags = db.get_patient_population_flags(patient_id) or {}
-                extraction = _ef(
-                    transcript_text=transcript_text,
-                    session_date=vn_date,
-                    session_type='voice_note',
-                    population_flags=pop_flags,
-                )
-                sid = db.store_clinical_session(
-                    provider_id=None,
-                    patient_id=patient_id,
-                    session_date=vn_date,
-                    session_type='voice_note',
-                    transcript_raw=transcript_text,
-                    transcript_source='voice_note',
-                )
-                if sid:
-                    db.store_session_features(
-                        session_id=sid,
-                        patient_id=patient_id,
-                        extraction_result=extraction,
-                    )
-                    session_context.append({
-                        'session_id':        sid,
-                        'session_date':      vn_date,
-                        'session_type':      'voice_note',
-                        'processing_status': 'complete',
-                        'transcript_source': 'voice_note',
-                        'crisis_detected':   extraction.get('crisis_detected', False),
-                        'features':          extraction.get('features') or {},
-                        'scores':            extraction.get('scores') or {},
-                    })
-                    known_dates.add(vn_date)
-            except Exception as _vne:
-                app.logger.warning(f'[brief] Voice note fallback failed for {vn.get("id")}: {_vne}')
-    except Exception as _vne_outer:
-        app.logger.warning(f'[brief] Voice note fallback outer error: {_vne_outer}')
+            text = (vn.get('transcript') or '').strip()
+            if text and vn_date not in known_dates:
+                raw_voice_transcripts.append({'date': vn_date, 'transcript': text})
+    except Exception as _vne:
+        app.logger.warning(f'[brief] voice note query failed: {_vne}')
 
     provider_type = user.get('provider_type')
     try:
@@ -2805,6 +2759,7 @@ def api_provider_generate_summary(patient_id):
                 safety_flags=flags.get('safety'),
                 substance_flags=flags.get('substance'),
                 session_context=session_context or [],
+                raw_voice_transcripts=raw_voice_transcripts or [],
             )
         else:
             # psychiatrist, unknown, or None — default to Mode C provider brief
@@ -2824,6 +2779,7 @@ def api_provider_generate_summary(patient_id):
                 lexical_data=lexical_data,
                 readability_data=readability_data,
                 session_context=session_context or [],
+                raw_voice_transcripts=raw_voice_transcripts or [],
             )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503

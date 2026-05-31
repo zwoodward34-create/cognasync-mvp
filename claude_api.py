@@ -510,7 +510,8 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                                   what_worked=None,
                                   lexical_data=None,
                                   readability_data=None,
-                                  session_context=None):
+                                  session_context=None,
+                                  raw_voice_transcripts=None):
     """Synthesize check-in and journal data into a pre-appointment summary.
 
     audience='patient'  → humanized, conversational (Mode B)
@@ -1197,6 +1198,31 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                 "Frame it as: here's what was also true on your best days — nothing more.\n"
             )
 
+    # ── Raw voice transcript block ─────────────────────────────────────────────
+    voice_transcript_block = ''
+    if raw_voice_transcripts and audience == 'provider':
+        lines = []
+        for vt in raw_voice_transcripts:
+            lines.append(f"[{vt.get('date', 'unknown date')}] {vt.get('transcript', '').strip()}")
+        if lines:
+            voice_transcript_block = (
+                "\n\nPATIENT VOICE RECORDINGS (raw transcripts from voice note sessions "
+                "not yet fully processed — analyze for mood themes, stressors, "
+                "concerning language, and key content; apply §24 speech feature vocabulary "
+                "where observable from text; surface in Session Intelligence section):\n\n"
+                + "\n\n".join(lines)
+            )
+            summary_system += (
+                "\n\nFor PATIENT VOICE RECORDINGS: include a **Voice Note Sessions** "
+                "subsection inside Session Intelligence (or create Session Intelligence if no "
+                "processed sessions exist). For each recording, note the date, key themes "
+                "raised, any mood/emotional tone observable in the language, any stressors or "
+                "concerns named by the patient, and any language meeting crisis or safety "
+                "detection criteria. Apply §3 forbidden language rules. "
+                "Do not fabricate acoustic measurements — these are text-only transcripts. "
+                "Frame observations as 'the patient described' or 'the recording included.'\n"
+            )
+
     user_content = (
         f"REVIEW PERIOD: {period_label}\n\n"
         f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}"
@@ -1207,6 +1233,7 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         f"{substance_section if audience == 'provider' else substance_patient_note}"
         f"{safety_section}"
         f"{session_section}"
+        f"{voice_transcript_block}"
         f"{lexical_section}"
         f"{what_worked_section}"
     )
@@ -1225,7 +1252,8 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
                               days=14, period_start=None, period_end=None,
                               appointment_date=None,
                               safety_flags=None, substance_flags=None,
-                              session_context=None):
+                              session_context=None,
+                              raw_voice_transcripts=None):
     """Therapy-weighted Mode C summary for therapists and counselors.
 
     Leads with journal themes and behavioral patterns (social quality, coping,
@@ -1595,6 +1623,26 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
                 "patient talked about before acoustic data.\n"
             )
 
+    # ── Raw voice transcript block (therapy) ──────────────────────────────────
+    therapy_voice_block = ''
+    if raw_voice_transcripts:
+        lines = []
+        for vt in raw_voice_transcripts:
+            lines.append(f"[{vt.get('date', 'unknown date')}] {vt.get('transcript', '').strip()}")
+        if lines:
+            therapy_voice_block = (
+                "\n\nPATIENT VOICE RECORDINGS (raw transcripts — analyze for interpersonal "
+                "themes, emotional content, coping language, and stressors; include in "
+                "Session Intelligence section):\n\n"
+                + "\n\n".join(lines)
+            )
+            summary_system += (
+                "\n\nFor PATIENT VOICE RECORDINGS: add a **Voice Note Sessions** subsection "
+                "in Session Intelligence (or create it). Note date, key themes, emotional tone "
+                "observable in the language, stressors named, and any safety language. "
+                "Lead with interpersonal and behavioral content. Do not fabricate acoustic data.\n"
+            )
+
     user_content = (
         f"REVIEW PERIOD: {period_label}\n\n"
         f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}"
@@ -1606,6 +1654,7 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         f"{therapy_substance_section}"
         f"{therapy_safety_section}"
         f"{therapy_session_section}"
+        f"{therapy_voice_block}"
     )
 
     raw = _call_claude(summary_system, user_content, max_tokens=900)   # spec §15: 900 for Mode B/C
