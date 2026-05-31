@@ -815,6 +815,9 @@
   }
   .brief-chart-pill strong { color: var(--text); font-weight: 600; }
   @media (max-width: 600px) { .brief-chart-grid { grid-template-columns: 1fr; } }
+  .brief-md-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
+  .brief-md-table th, .brief-md-table td { border: 1px solid #e5e7eb; padding: 5px 10px; text-align: left; }
+  .brief-md-table thead { background: #f3f4f6; font-weight: 600; }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 {% endblock %}
@@ -1636,8 +1639,31 @@ let _currentBriefId   = null;   // saved brief_id — used by printBrief() to av
 let _currentBriefDays = 14;
 
 function _briefTextToHtml(text) {
-  return text
+  // Markdown tables → HTML before escaping
+  text = text.replace(/((?:^|\n)(\|.+\|[ \t]*\n?)+)/g, tableBlock => {
+    const rows = tableBlock.trim().split('\n').filter(r => r.trim());
+    const dataRows = rows.filter(r => !/^\|[\s\-:|]+\|/.test(r));
+    if (!dataRows.length) return tableBlock;
+    const htmlRows = dataRows.map((r, i) => {
+      const cells = r.split('|').slice(1, -1).map(c => c.trim());
+      const tag = i === 0 ? 'th' : 'td';
+      return '<tr>' + cells.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
+    });
+    return '\x00TABLE\x00<table class="brief-md-table"><thead>' + htmlRows[0] +
+           '</thead><tbody>' + htmlRows.slice(1).join('') + '</tbody></table>\x00ENDTABLE\x00';
+  });
+
+  // Horizontal rules
+  text = text.replace(/^---+$/gm, '\x00HR\x00');
+
+  const escaped = text
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    // Restore table and hr placeholders
+    .replace(/\x00TABLE\x00([\s\S]*?)\x00ENDTABLE\x00/g, (_, t) =>
+      t.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&'))
+    .replace(/\x00HR\x00/g, '<hr>');
+
+  return escaped
     .replace(/^### (.+)$/gm, '</p><h3>$1</h3><p>')
     .replace(/^## (.+)$/gm,  '</p><h3>$1</h3><p>')
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
@@ -1695,7 +1721,7 @@ function _renderBriefCharts(cd) {
     animation: false,
     plugins: { legend: { display: true, labels: { font: { size: 8 }, boxWidth: 8, padding: 5 } } },
     scales: {
-      x: { ticks: { font: { size: 7 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 7 },
+      x: { ticks: { font: { size: 7 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
            grid: { color: '#f3f4f6' } },
       y: { ticks: { font: { size: 7 } }, grid: { color: '#f3f4f6' } }
     }

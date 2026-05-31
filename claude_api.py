@@ -716,7 +716,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
             'sleep_hours':      sleep,
             'stability_score':  scores.get('stability_score'),
             'crash_risk':       scores.get('crash_risk'),
-            'ns_load':          scores.get('ns_load'),
+            'ns_load':          scores.get('nervous_system_load'),
             'sleep_disruption': scores.get('sleep_disruption'),
             'stim_load':        stim,
             'mood_distortion':  scores.get('mood_distortion'),
@@ -754,41 +754,50 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
     # Compute aggregated score stats from chart_data arrays
     stab_vals  = [v for v in chart_data.get('stability_score', []) if v is not None]
     cr_vals    = [v for v in chart_data.get('crash_risk', [])       if v is not None]
-    ns_vals    = [v for v in chart_data.get('stim_load', [])        if v is not None]
     sd_vals    = [v for v in chart_data.get('sleep_disruption', []) if v is not None]
+
+    # Nervous System Load per check-in row (already computed by _compute_checkin_scores)
+    ns_load_vals = [float(r['ns_load']) for r in checkin_rows if r.get('ns_load') is not None]
 
     # Mood Distortion: avg |reported mood - stability_score| across paired days
     distortion_vals = []
+    max_distortion  = None
     for r in checkin_rows:
         m = r.get('mood')
         s = r.get('stability_score')
         if m is not None and s is not None:
-            distortion_vals.append(abs(float(m) - float(s)))
+            d = abs(float(m) - float(s))
+            distortion_vals.append(d)
+            if max_distortion is None or d > max_distortion:
+                max_distortion = round(d, 2)
     avg_distortion = _avg(distortion_vals)
 
     stats = {
-        'total_checkins':      n,
-        'period_days':         days,
-        'avg_mood':            _avg(mood_vals),
-        'mood_trend':          _trend(mood_vals),
-        'mood_range':          [min(mood_vals), max(mood_vals)] if mood_vals else None,
-        'avg_stress':          _avg(stress_vals),
-        'stress_trend':        _trend(stress_vals),
-        'avg_sleep_hours':     _avg(sleep_vals),
-        'sleep_range':         [min(sleep_vals), max(sleep_vals)] if sleep_vals else None,
-        'avg_energy':          _avg(energy_vals),
-        'energy_trend':        _trend(energy_vals),
-        'checkins_with_meds':  meds_logged,
-        'high_stim_load_days': high_stim_days,
-        'avg_stability_score': _avg(stab_vals),
-        'stability_trend':     _trend(stab_vals),
-        'stability_range':     [round(min(stab_vals), 1), round(max(stab_vals), 1)] if stab_vals else None,
-        'avg_crash_risk':      _avg(cr_vals),
-        'crash_risk_trend':    _trend(cr_vals),
+        'total_checkins':       n,
+        'period_days':          days,
+        'avg_mood':             _avg(mood_vals),
+        'mood_trend':           _trend(mood_vals),
+        'mood_range':           [min(mood_vals), max(mood_vals)] if mood_vals else None,
+        'avg_stress':           _avg(stress_vals),
+        'stress_trend':         _trend(stress_vals),
+        'avg_sleep_hours':      _avg(sleep_vals),
+        'sleep_range':          [min(sleep_vals), max(sleep_vals)] if sleep_vals else None,
+        'avg_energy':           _avg(energy_vals),
+        'energy_trend':         _trend(energy_vals),
+        'checkins_with_meds':   meds_logged,
+        'high_stim_load_days':  high_stim_days,
+        'avg_stability_score':  _avg(stab_vals),
+        'stability_trend':      _trend(stab_vals),
+        'stability_range':      [round(min(stab_vals), 1), round(max(stab_vals), 1)] if stab_vals else None,
+        'avg_crash_risk':       _avg(cr_vals),
+        'crash_risk_trend':     _trend(cr_vals),
         'crash_risk_high_days': sum(1 for v in cr_vals if v >= 7),
-        'avg_sleep_disruption':_avg(sd_vals),
-        'avg_mood_distortion': avg_distortion,
-        'avg_irritability':    _avg(irrit_vals) if irrit_vals else None,
+        'avg_sleep_disruption': _avg(sd_vals),
+        'avg_nervous_system_load': _avg(ns_load_vals) if ns_load_vals else None,
+        'ns_load_trend':        _trend(ns_load_vals) if ns_load_vals else 'insufficient data',
+        'avg_mood_distortion':  avg_distortion,
+        'max_mood_distortion':  max_distortion,
+        'avg_irritability':     _avg(irrit_vals) if irrit_vals else None,
     }
 
     n_days = days
@@ -982,7 +991,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         f"{voice_block}"
     )
 
-    raw   = _call_claude(_PSYCHIATRY_SYSTEM, user_content, max_tokens=1000)
+    raw   = _call_claude(_PSYCHIATRY_SYSTEM, user_content, max_tokens=1400)
     clean = _sanitize_output(raw)
     if clean is None:
         clean = (

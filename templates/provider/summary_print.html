@@ -270,6 +270,10 @@
       text-align: center;
     }
 
+    .md-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 11px; }
+    .md-table th, .md-table td { border: 1px solid #d1d5db; padding: 4px 8px; text-align: left; }
+    .md-table thead { background: #f3f4f6; font-weight: 600; }
+
     /* ── Print styles ── */
     @media print {
       .period-selector { display: none !important; }
@@ -444,7 +448,33 @@ function changePeriod(days) {
 (function formatSummary() {
   const el = document.getElementById('summary-content');
   if (!el) return;
-  let html = el.innerHTML;
+  // Work on plain text so pipe characters aren't HTML-encoded
+  let text = el.innerText || el.textContent;
+
+  // Markdown table → HTML table
+  text = text.replace(/((?:^|\n)(\|.+\|[ \t]*\n)+)/g, tableBlock => {
+    const rows = tableBlock.trim().split('\n').filter(r => r.trim());
+    // Filter out separator rows (|---|---|)
+    const dataRows = rows.filter(r => !/^\|[\s\-:|]+\|/.test(r));
+    if (!dataRows.length) return tableBlock;
+    const htmlRows = dataRows.map((r, i) => {
+      const cells = r.split('|').slice(1, -1).map(c => c.trim());
+      const tag = i === 0 ? 'th' : 'td';
+      return '<tr>' + cells.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
+    });
+    return '<table class="md-table"><thead>' + htmlRows[0] + '</thead><tbody>' +
+           htmlRows.slice(1).join('') + '</tbody></table>';
+  });
+
+  // Horizontal rules
+  text = text.replace(/^---+$/gm, '<hr>');
+
+  // Escape HTML before further processing
+  let html = text
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // Restore table/hr tags
+    .replace(/&lt;(\/?(table|thead|tbody|tr|th|td|hr)[^>]*)&gt;/g, '<$1>');
+
   html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
   html = html.replace(/(^|<br>)(#{1,3})\s+(.+?)(<br>|$)/g, (_, pre, hashes, text, post) => {
     return pre + '<h2>' + text.trim() + '</h2>' + post;
@@ -475,7 +505,7 @@ function changePeriod(days) {
     animation: false,
     plugins: { legend: { display: true, labels: { font: { size: 9 }, boxWidth: 10, padding: 6 } } },
     scales: {
-      x: { ticks: { font: { size: 8 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 8 },
+      x: { ticks: { font: { size: 8 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 14 },
            grid: { color: '#f3f4f6' } },
       y: { ticks: { font: { size: 8 } }, grid: { color: '#f3f4f6' } }
     }
