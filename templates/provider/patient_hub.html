@@ -189,6 +189,23 @@
   }
   .brief-modal-body h3:first-child { margin-top: 0; }
 
+  /* ── Brief period chips ─────────────────────────────────────────────────── */
+  .hub-brief-chip {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.8rem;
+    padding: 5px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .hub-brief-chip.active {
+    background: var(--accent);
+    color: #fff;
+    border-color: var(--accent);
+  }
+
   /* ── Brief bank ──────────────────────────────────────────────────────────── */
   .brief-bank-item {
     display: flex;
@@ -807,6 +824,35 @@
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">
         <button class="hub-action-btn" onclick="closeVoiceModal()">Cancel</button>
         <button class="hub-action-btn hub-action-btn--primary" id="voice-modal-send-btn" onclick="confirmVoiceSMS()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Brief options pre-flight modal -->
+  <div id="brief-options-modal" onclick="if(event.target===this)closeBriefOptionsModal()" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:1100;align-items:center;justify-content:center;">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:12px;width:340px;max-width:92vw;padding:24px;font-family:'DM Sans',sans-serif;">
+      <div style="font-family:'DM Serif Display',serif;font-size:1.05rem;margin-bottom:16px;">Brief Options</div>
+
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Period</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px;">
+        <button class="hub-brief-chip active" data-days="14" onclick="selectBriefChip(this)">14 days</button>
+        <button class="hub-brief-chip" data-days="30" onclick="selectBriefChip(this)">30 days</button>
+        <button class="hub-brief-chip" data-days="60" onclick="selectBriefChip(this)">60 days</button>
+        <button class="hub-brief-chip" data-days="90" onclick="selectBriefChip(this)">90 days</button>
+      </div>
+
+      <div style="font-size:0.8rem;color:var(--text-muted);margin-bottom:8px;">Include</div>
+      <label style="display:flex;align-items:flex-start;gap:10px;padding:10px 0;border-top:1px solid var(--border);cursor:pointer;">
+        <input type="checkbox" id="hub-filter-meds" style="margin-top:2px;accent-color:var(--accent);">
+        <div>
+          <div style="font-size:0.88rem;">Medication context</div>
+          <div style="font-size:0.72rem;color:var(--text-muted);">Active prescriptions from records</div>
+        </div>
+      </label>
+
+      <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
+        <button class="hub-action-btn" onclick="closeBriefOptionsModal()">Cancel</button>
+        <button class="hub-action-btn hub-action-btn--primary" id="hub-brief-confirm-btn" onclick="confirmGenerateBrief()">Generate</button>
       </div>
     </div>
   </div>
@@ -1535,7 +1581,27 @@ function _showBriefModal(text, meta) {
   modal.style.display = 'flex';
 }
 
-async function generateBrief() {
+function generateBrief() {
+  // Open the options modal instead of firing immediately
+  document.getElementById('brief-options-modal').style.display = 'flex';
+}
+
+function closeBriefOptionsModal() {
+  document.getElementById('brief-options-modal').style.display = 'none';
+}
+
+function selectBriefChip(el) {
+  document.querySelectorAll('.hub-brief-chip').forEach(c => c.classList.remove('active'));
+  el.classList.add('active');
+}
+
+async function confirmGenerateBrief() {
+  const chip = document.querySelector('.hub-brief-chip.active');
+  const days = chip ? parseInt(chip.dataset.days, 10) : 14;
+  const includeMeds = document.getElementById('hub-filter-meds').checked;
+
+  closeBriefOptionsModal();
+
   const btn  = document.getElementById('btn-generate-brief');
   const body = document.getElementById('brief-modal-body');
   const modal = document.getElementById('brief-modal');
@@ -1552,10 +1618,12 @@ async function generateBrief() {
   modal.style.display = 'flex';
 
   try {
+    const payload = { days };
+    if (includeMeds) payload.include_medications = true;
     const res  = await fetch('/api/provider/generate-summary/' + PATIENT_ID, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ days: 30 }),
+      body: JSON.stringify(payload),
       credentials: 'same-origin',
     });
     const data = await res.json();
@@ -1563,7 +1631,7 @@ async function generateBrief() {
     if (text) {
       const start = (data.date_range_start || '').slice(0, 10);
       const end   = (data.date_range_end   || '').slice(0, 10);
-      const meta  = start && end ? start + ' — ' + end : '';
+      const meta  = start && end ? `${start} — ${end} (${days} days)` : '';
       _showBriefModal(text, meta);
       loadBriefBank();
     } else {

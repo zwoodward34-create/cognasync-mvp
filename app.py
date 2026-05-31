@@ -2671,6 +2671,65 @@ def api_provider_generate_summary(patient_id):
         limit=10,
     )
 
+    # Fallback: surface voice notes transcribed under the old pipeline that
+    # never created clinical_sessions rows. Run extract_features() on them now
+    # and create the clinical_sessions row so future briefs find them via the
+    # normal path.
+    try:
+        known_dates = {s['session_date'] for s in session_context if s.get('session_date')}
+        orphan_notes = db.get_voice_notes_for_period(
+            patient_id=patient_id,
+            period_start=period_start,
+            period_end=period_end,
+            limit=5,
+        )
+        for vn in orphan_notes:
+            vn_date = (vn.get('created_at') or '')[:10]
+            # Skip if a voice_note session already exists for this date
+            if vn_date in known_dates:
+                continue
+            transcript_text = vn.get('transcript', '').strip()
+            if not transcript_text:
+                continue
+            try:
+                from transcript_engine import extract_features as _ef
+                pop_flags = db.get_patient_population_flags(patient_id) or {}
+                extraction = _ef(
+                    transcript_text=transcript_text,
+                    session_date=vn_date,
+                    session_type='voice_note',
+                    population_flags=pop_flags,
+                )
+                sid = db.store_clinical_session(
+                    provider_id=None,
+                    patient_id=patient_id,
+                    session_date=vn_date,
+                    session_type='voice_note',
+                    transcript_raw=transcript_text,
+                    transcript_source='voice_note',
+                )
+                if sid:
+                    db.store_session_features(
+                        session_id=sid,
+                        patient_id=patient_id,
+                        extraction_result=extraction,
+                    )
+                    session_context.append({
+                        'session_id':        sid,
+                        'session_date':      vn_date,
+                        'session_type':      'voice_note',
+                        'processing_status': 'complete',
+                        'transcript_source': 'voice_note',
+                        'crisis_detected':   extraction.get('crisis_detected', False),
+                        'features':          extraction.get('features') or {},
+                        'scores':            extraction.get('scores') or {},
+                    })
+                    known_dates.add(vn_date)
+            except Exception as _vne:
+                app.logger.warning(f'[brief] Voice note fallback failed for {vn.get("id")}: {_vne}')
+    except Exception as _vne_outer:
+        app.logger.warning(f'[brief] Voice note fallback outer error: {_vne_outer}')
+
     provider_type = user.get('provider_type')
     try:
         if provider_type in ('therapist', 'counselor'):
@@ -3547,6 +3606,50 @@ def api_intel_generate_brief(patient_id):
             limit=20,
         )
 
+    # Fallback: lazily process voice notes not yet in clinical_sessions
+    if not session_ids:
+        try:
+            known_dates = {s['session_date'] for s in sessions_data if s.get('session_date')}
+            orphans = db.get_voice_notes_for_period(
+                patient_id=patient_id,
+                period_start=period_start,
+                period_end=period_end,
+                limit=5,
+            )
+            for vn in orphans:
+                vn_date = (vn.get('created_at') or '')[:10]
+                if vn_date in known_dates:
+                    continue
+                text = (vn.get('transcript') or '').strip()
+                if not text:
+                    continue
+                try:
+                    from transcript_engine import extract_features as _ef
+                    extraction = _ef(transcript_text=text, session_date=vn_date, session_type='voice_note')
+                    sid = db.store_clinical_session(
+                        provider_id=None,
+                        patient_id=patient_id,
+                        session_date=vn_date,
+                        session_type='voice_note',
+                        transcript_raw=text,
+                        transcript_source='voice_note',
+                    )
+                    if sid:
+                        db.store_session_features(session_id=sid, patient_id=patient_id, extraction_result=extraction)
+                        sessions_data.append({
+                            'session_id': sid, 'session_date': vn_date,
+                            'session_type': 'voice_note', 'processing_status': 'complete',
+                            'transcript_source': 'voice_note',
+                            'crisis_detected': extraction.get('crisis_detected', False),
+                            'features': extraction.get('features') or {},
+                            'scores': extraction.get('scores') or {},
+                        })
+                        known_dates.add(vn_date)
+                except Exception as _e:
+                    app.logger.warning(f'[intel-brief] voice note fallback: {_e}')
+        except Exception as _e2:
+            app.logger.warning(f'[intel-brief] voice note outer: {_e2}')
+
     if not sessions_data:
         return jsonify({'error': 'No sessions found for the specified period'}), 404
 
@@ -3906,8 +4009,9 @@ def api_voice_submit(token_str):
                     )
                     if acoustic_result:
                         scores = extraction.setdefault('scores', {})
-                        scores['acoustic_features'] = acoustic_result.get('vocabulary', {})
-                        scores['affect_dimensions'] = acoustic_result.get('affect', {})
+                        scores['acoustic_features'] = acoustic_result  # full dict: {vocabulary, raw, affect}
+                        if acoustic_result.get('affect'):
+                            scores['affect_dimensions'] = acoustic_result['affect']
                 except Exception as ae:
                     app.logger.warning(f'[voice] Acoustic extraction skipped: {ae}')
 

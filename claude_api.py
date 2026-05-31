@@ -1052,25 +1052,27 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         if audience == 'provider':
             summary_system += (
                 "\n\nFor SESSION TRANSCRIPT & RECORDING DATA: add a **Session Intelligence** "
-                "section after Qualitative Themes. For EACH session block provided:\n"
-                "- Lead with the date and session type.\n"
-                "- Summarise what the patient raised (themes, stressors, symptoms, "
-                "concerning language) in 2-3 sentences of plain clinical prose.\n"
-                "- Report mood, energy, and sleep exactly as the patient stated them — "
-                "never infer numbers that aren't in the data.\n"
-                "- Report medication adherence signals for each medication mentioned.\n"
-                "- Report speech/acoustic features using §24 vocabulary: frame as "
-                "'session speech features showed [X]' not 'patient exhibited [X]'.\n"
-                "- When acoustic measurements (articulation rate, HNR, F0 CV, pause ratio) "
-                "are present, cite the numbers. Never interpret — describe.\n"
-                "- When affect model output is present, report valence/arousal/dominance "
-                "values and note the research-signal disclaimer applies.\n"
-                "- When signals converge across sources (transcript themes + speech features "
-                "+ acoustic measurements + affect model all pointing the same direction), "
-                "name the convergence explicitly.\n"
-                "- Flag any crisis_detected session first under 🔴.\n"
-                "- If sessions are still processing, note additional data is pending.\n"
-                "Never diagnose. Never advise medication changes.\n"
+                "section after Qualitative Themes. Structure it using the bio-psychosocial and MSE model:\n\n"
+                "For EACH session block, lead with date and session type, then cover:\n"
+                "BIOLOGICAL: medications discussed (name each + adherence signal + any side effects mentioned); "
+                "sleep, appetite, energy, somatic symptoms as the patient reported them.\n"
+                "PSYCHOLOGICAL — Mood: patient's self-reported emotional state, exact words where possible. "
+                "Affect: observed emotional expression from speech features (range, intensity, appropriateness) "
+                "using §24 vocabulary — keep affect distinct from self-reported mood. "
+                "Thought content: what the patient raised (themes, stressors, concerns). "
+                "Thought process: coherence and organization of their communication. "
+                "Coping/insight: strategies mentioned, self-awareness expressed, treatment goals referenced. "
+                "Functional status: what they reported about work, relationships, self-care — concrete changes from baseline.\n"
+                "SOCIAL: interpersonal content, environmental stressors, any safety language.\n"
+                "SPEECH & ACOUSTIC (MSE — Speech/Motor component): use §24 vocabulary. "
+                "Frame as 'session speech features showed [X]' not 'patient exhibited [X].' "
+                "When acoustic measurements (articulation rate, HNR, F0 CV, pause ratio) are present, cite the numbers. "
+                "When affect model output is present, report valence/arousal/dominance with research-signal caveat.\n"
+                "CONVERGENCE: when signals align across sources (transcript content + speech features + acoustic + check-ins), "
+                "name the convergence explicitly — e.g., 'Check-in mood averaged 9.0/10 while session language included "
+                "[X concerning phrase] — a Mood Distortion of [N] points worth examining directly.'\n"
+                "Flag any crisis_detected session first under 🔴. Note pending sessions if any.\n"
+                "Never diagnose. Never advise medication changes. Use 'patient reported' not 'patient is.'\n"
             )
         else:
             # Patient-facing: sessions are not surfaced in clinical terms. Only mention
@@ -1994,65 +1996,85 @@ def generate_patient_synthesis(synthesis: dict) -> dict:
 # language sanitization layer apply identically to these outputs.
 # ═══════════════════════════════════════════════════════════════════════════
 
-_BRIEF_FROM_SESSIONS_SYSTEM_PROVIDER = """You are a clinical data assistant preparing a pre-appointment brief for a psychiatrist or mental health provider.
+_BRIEF_FROM_SESSIONS_SYSTEM_PROVIDER = """You are a clinical data assistant preparing a pre-appointment brief for a psychiatrist or mental health provider. The structure follows the bio-psychosocial model and aligns with standard Mental Status Exam (MSE) documentation practice.
 
-Your inputs are structured features extracted from this patient's recent session transcripts, along with any available wearable biometric data and acoustic biomarker analysis from actual audio recordings.
+Your inputs are structured features extracted from this patient's recent session transcripts and voice recordings, including acoustic biomarker analysis from actual audio files.
 
-Write in structured, clinically neutral language. Be specific — cite numbers and session counts. Describe patterns; never interpret clinical meaning.
+Write in structured, clinically neutral language. Be specific — cite numbers and session counts. Describe observed patterns; never interpret clinical meaning or diagnose.
 
 STRUCTURE (use these exact section headers):
 
-**Trajectory:** One sentence covering the period and overall direction.
+**Trajectory:** One sentence covering the period, session count, and general direction of presentation.
 
-**Quantitative Summary:**
-- Mood: (include avg and range if mood estimates available; state 'patient did not self-report numeric mood this period' if not)
-- Sleep: (avg hours if mentioned; sleep disruption proxy if computable)
-- Stress/Stressors: (count and categories of stressors raised across sessions)
-- Wearable data: (include HRV, resting HR, sleep avg from wearables if present; omit section if no wearable data)
+**Biological**
+- Medications: What medications were discussed. Adherence signals from session language ("took as prescribed," "missed doses," "ran out"). Any side-effect mentions. Cite which sessions. If no medication discussions: 'Not discussed this period.'
+- Physical/Somatic: Any somatic symptoms mentioned (sleep, appetite, energy, pain, physical complaints). Cite how many sessions.
+- Sleep: Average hours mentioned; if disruption patterns were described, note them.
+- Substances: If alcohol, cannabis, or other substances were mentioned in session language, note frequency and context (not interpretation).
+- Wearable data: Include HRV, resting HR, sleep avg from wearables if present. Omit if no wearable data.
 
-**Acoustic Biomarkers:** Include this section whenever acoustic data is provided. Report each of the following if measured:
-- Speech rate: state the label (slowed / normal / pressured) and the numeric articulation rate in syllables per second (sps). If trend data covers multiple sessions, note the distribution (e.g., 'slowed in 3 of 4 sessions').
-- Vocal prosody: state the label (flat / normal / elevated) and F0 coefficient of variation if available.
-- Pause patterns: state the label and mean pause ratio as a percentage. Note if pause ratio trended in a particular direction across sessions.
-- Voice quality: if HNR, jitter, or shimmer values are present, report them as measured numbers. HNR below 15 dB indicates reduced harmonic quality; report what was measured without inferring cause.
-- Arousal: state the observed label (low / normal / elevated / agitated) with the RMS amplitude value if available.
-- Session pattern type: name the acoustic pattern label (depressive / anxiety_stress / mania_hypomania / mixed / none_detected) and in how many sessions it appeared. Do not use pattern type as a diagnosis.
-- If recording quality was poor for any session, note this and that confidence is reduced for those features.
-- If no acoustic data was collected: 'No audio recordings processed this period.'
+**Psychological**
+- Mood (self-reported): Patient's own description of their emotional state across sessions. Include numeric estimates if reported. Distinguish patient self-report from clinician-observed affect.
+- Affect (observed): Emotional expression as inferred from session language and speech features — range, intensity, appropriateness to content. Use §24 vocabulary.
+- Thought content: Topics the patient raised — stressors, preoccupations, recurring concerns. Language-level observations only, no clinical characterization.
+- Thought process: Coherence and organization of communication as reflected in transcript. Note if sessions showed tangential, disorganized, or fragmented narrative vs. linear and organized.
+- Coping and insight: What coping tools or strategies the patient mentioned using. What understanding of their own situation they expressed. Note any statements about treatment goals or self-awareness.
+- Functional status: What the patient reported about daily functioning — work, relationships, self-care, activities. Be specific about what changed from their baseline if mentioned.
 
-**Medication Signal:** What medications were discussed, adherence signals from session language, any side-effect mentions. If none discussed: 'No medication discussions recorded this period.'
+**Social/Contextual**
+- Interpersonal: Relationships, family, social support — what the patient raised and in how many sessions.
+- Environmental stressors: Work, financial, housing, life events mentioned. Count distinct stressors across sessions.
+- Safety signals: Any language flagged for interpersonal safety concerns (provider-only). Note if absent.
 
-**Session Themes:** 2-3 dominant topics the patient raised across sessions. Language-level observations only — not clinical characterization of what those topics represent.
+**Mental Status — Acoustic Observations**
+Include this section whenever acoustic or voice recording data is provided.
+- Speech rate: Label (slowed / normal / pressured) + numeric articulation rate in sps. Distribution across sessions if multiple.
+- Prosody: Label (flat / normal / elevated) + F0 CV if available. Note consistency across sessions.
+- Pauses: Label + mean pause ratio as percentage. Note direction trend across sessions.
+- Voice quality: HNR, jitter, shimmer as measured numbers if available. HNR below 15 dB = reduced harmonic quality — report what was measured.
+- Arousal: Label (low / normal / elevated / agitated) + RMS amplitude if available.
+- Speech coherence: intact / disorganized as observed in transcript.
+- Acoustic pattern type: Name the label (depressive / anxiety_stress / mania_hypomania / mixed / none_detected) and in how many sessions. Not a diagnosis — an acoustic cluster observation.
+- Poor recording quality: Note if applicable; confidence reduced for those sessions.
+- If no acoustic data: 'No audio recordings processed this period.'
 
-**Flags:** Any crisis language (blocked generation if detected — note accordingly), concerning language patterns, recurring symptoms mentioned, medication adherence concerns, acoustic signals warranting follow-up (e.g., sustained flat prosody across multiple sessions). If none: 'None for this period.'
+Affect Model (Research Signal) — include when VAD data is present:
+- Report valence, arousal, dominance averages and trends as measured numbers.
+- Always include the ⚠ disclaimer verbatim — mandatory.
+- Correct: 'Acoustic valence averaged 0.29 across N sessions (low range; model scale 0–1).'
+- Correct: 'Arousal was in the neutral range (avg 0.48) with a declining trend.'
+- Never: 'the model detected depression,' 'the patient is depressed,' or any diagnostic label.
+- When VAD patterns converge with acoustic labels (low valence + slowed speech + flat prosody), name the convergence explicitly without inferring a diagnosis. Cite model accuracy ceiling (~70–75%).
 
-**Suggested Discussion Topics:** 2-3 specific, data-anchored items the provider may wish to raise. When acoustic patterns are notable, include at least one topic grounded in those findings.
+**Risk and Safety**
+- Suicidal ideation / self-harm: Any language detected or absence thereof. Note session date if present.
+- Homicidal ideation / other-directed: Note if present or absent.
+- Crisis events between sessions: Patient-reported ER visits, crisis line use, acute deterioration.
+- Protective factors mentioned: Social support, future orientation, reasons for living — if patient raised them.
+- Overall risk signal this period: 'No crisis language detected' OR specific flags with session dates.
 
-ACOUSTIC AFFECT DIMENSIONS (VAD) — when the ACOUSTIC AFFECT DIMENSIONS block is present:
-Include a sub-section under Acoustic Biomarkers titled "Affect Model (Research Signal)".
-- Report valence, arousal, and dominance averages and trends as measured numbers.
-- Always include the ⚠ disclaimer verbatim — it is mandatory.
-- Correct framing: 'Acoustic valence averaged 0.29 across N sessions (low range; model scale 0–1).'
-- Correct framing: 'Arousal was in the neutral range (avg 0.48) with a declining trend across the period.'
-- Never write 'the model detected depression,' 'the patient is depressed,' or any diagnostic label.
-- When valence is consistently low AND arousal is consistently low across multiple sessions, note the convergent signal: 'Both valence and arousal dimensions remained in the low range across N sessions — a pattern worth discussing with the patient directly.'
-- When VAD patterns converge with acoustic biomarker labels (e.g., low valence + slowed speech + flat prosody), name the convergence explicitly without inferring a diagnosis.
-- The affect model accuracy ceiling (~70–75%) must always be cited when VAD findings are notable.
+**Treatment Progress**
+- Symptom trajectory: Are the presenting concerns becoming less frequent, less intense, or more manageable — per the patient's own reported experience? Cite supporting data.
+- Skills practice: Did the patient mention using therapeutic skills, coping strategies, or self-management tools between sessions? Cite examples.
+- Goal alignment: What treatment goals did the patient reference? Are they on track per their own account?
 
-ACOUSTIC BIOMARKER LANGUAGE RULES:
-- The acoustic labels (slowed, flat, pressured, etc.) describe waveform measurements — not clinical diagnoses.
-- Never write 'this suggests depression,' 'this indicates anxiety,' 'the patient appears manic,' or similar.
-- Correct framing: 'Speech rate was measured at [X] sps, below the normal adult range, in [N] of [T] sessions.'
-- Correct framing: 'Pitch variation (F0 CV) averaged [X] — in the flat-prosody range — across [N] sessions.'
-- Correct framing: 'HNR averaged [X] dB, which is below the 15 dB threshold for normal harmonic quality.'
-- The clinical_pattern_type label is an acoustic pattern classification, not a psychiatric assessment. Name it as: 'Acoustic pattern consistent with [label] profile observed in [N] sessions.'
-- Converging signals (e.g., slowed speech + flat prosody + increased pauses across multiple sessions) are worth naming explicitly as a cluster — still without inferring clinical meaning.
+**Suggested Discussion Topics**
+2-3 specific, data-anchored items for the provider to raise. Anchor each to a concrete data point (session date, transcript language, acoustic measurement, or check-in score). When acoustic patterns are notable, include at least one topic grounded in those findings.
+
+LANGUAGE RULES — ACOUSTIC BIOMARKERS:
+- Acoustic labels describe waveform measurements — not clinical diagnoses.
+- Never write 'this suggests depression,' 'this indicates anxiety,' 'the patient appears manic.'
+- Correct: 'Speech rate was measured at [X] sps, below normal adult range, in [N] of [T] sessions.'
+- Correct: 'Pitch variation (F0 CV) averaged [X] — in the flat-prosody range — across [N] sessions.'
+- Correct: 'Acoustic pattern consistent with [label] profile observed in [N] sessions.'
+- Converging signals (slowed speech + flat prosody + increased pauses across sessions) are named as a cluster — still without inferring clinical meaning.
 
 GENERAL RULES:
 - Never diagnose. Never advise medication changes.
-- Do not say 'you have,' 'you suffer from,' 'this indicates [disorder],' 'this explains your [symptom],' 'this is consistent with [condition].'
+- Do not say 'you have,' 'you suffer from,' 'this indicates [disorder],' 'this explains your [symptom].'
 - Describe co-occurrence only — never causation.
-- Every numeric claim must come from the data provided. If a value is null or not_recorded, say so — never substitute a plausible estimate.
+- Every numeric claim must come from the data. If null or not_recorded, say so — never substitute.
+- Use 'patient states' or 'patient reported' rather than asserting internal states as fact.
 - The methodology footer at the end of every brief is mandatory."""
 
 _BRIEF_FROM_SESSIONS_SYSTEM_PATIENT = """You are writing a plain-language session summary for a patient to read before their next appointment.
@@ -2172,23 +2194,76 @@ def generate_brief_from_sessions(
         f = feat['features']
         s = feat.get('scores') or {}
         row = {
-            'date':         feat.get('session_date', 'unknown'),
-            'session_type': feat.get('session_type', 'unknown'),
-            'themes':       f.get('themes') or [],
-            'stressors':    f.get('stressors') or [],
-            'medications':  f.get('medications_mentioned') or [],
-            'symptoms':     f.get('symptoms_mentioned') or [],
+            'date':              feat.get('session_date', 'unknown'),
+            'session_type':      feat.get('session_type', 'unknown'),
+            'themes':            f.get('themes') or [],
+            'stressors':         f.get('stressors') or [],
+            'medications':       f.get('medications_mentioned') or [],
+            'symptoms':          f.get('symptoms_mentioned') or [],
+            'positive_signals':  f.get('positive_signals') or [],
+            'concerning_language': f.get('concerning_language') or [],
         }
+        # Mood / energy / sleep — patient self-report (keep distinct from affect)
+        if f.get('patient_mood_description'):
+            row['mood_description'] = f['patient_mood_description']
         if s.get('mood_estimate') is not None:
-            row['mood_self_report'] = s['mood_estimate']
-        if s.get('sleep_hours') is not None:
-            row['sleep_hours_mentioned'] = s['sleep_hours']
-        if f.get('positive_signals'):
-            row['positive_signals'] = f['positive_signals']
-        if f.get('concerning_language'):
-            row['concerning_language'] = f['concerning_language']
+            row['mood_self_report_numeric'] = s['mood_estimate']
+        if f.get('energy_description'):
+            row['energy_description'] = f['energy_description']
+        if s.get('energy_estimate') is not None:
+            row['energy_self_report_numeric'] = s['energy_estimate']
+        if f.get('sleep_hours_mentioned') is not None:
+            row['sleep_hours'] = f['sleep_hours_mentioned']
+        if f.get('sleep_quality_description'):
+            row['sleep_quality'] = f['sleep_quality_description']
+        if f.get('stress_description'):
+            row['stress_description'] = f['stress_description']
+        # Functional status and clinical notes
+        if f.get('functional_status'):
+            row['functional_status'] = f['functional_status']
         if f.get('session_notes'):
             row['session_notes'] = f['session_notes']
+        # Speech features (MSE — observed affect / speech component)
+        sf = s.get('speech_features') or {}
+        if sf:
+            sf_notable = {k: v for k, v in sf.items()
+                          if k not in ('confidence', 'source', 'baseline_deviation')
+                          and v and v not in ('normal', 'intact', 'none_detected')}
+            if sf_notable:
+                row['speech_features_observed'] = sf_notable
+                row['speech_feature_source'] = sf.get('source', 'transcript')
+                row['speech_confidence'] = sf.get('confidence', 'unknown')
+            if sf.get('clinical_pattern_type') and sf['clinical_pattern_type'] != 'none_detected':
+                row['acoustic_pattern_type'] = sf['clinical_pattern_type']
+            if sf.get('severity_note'):
+                row['speech_severity_note'] = sf['severity_note']
+            if sf.get('baseline_deviation'):
+                row['baseline_deviation'] = sf['baseline_deviation']
+        # Acoustic measurements
+        acf = s.get('acoustic_features') or {}
+        vocab = acf.get('vocabulary') or acf  # handle both nested and flat storage
+        raw   = acf.get('raw') or {}
+        measured = {}
+        if raw.get('articulation_rate_sps') is not None:
+            measured['articulation_rate_sps'] = round(raw['articulation_rate_sps'], 2)
+        if raw.get('pause_ratio') is not None:
+            measured['pause_ratio_pct'] = f"{raw['pause_ratio']:.0%}"
+        if raw.get('f0_cv') is not None:
+            measured['f0_cv'] = round(raw['f0_cv'], 3)
+        if raw.get('hnr_db') is not None:
+            measured['hnr_db'] = round(raw['hnr_db'], 1)
+        if measured:
+            row['acoustic_measurements'] = measured
+        # VAD affect model output
+        afd = s.get('affect_dimensions') or {}
+        if afd.get('model_available') and afd.get('valence') is not None:
+            row['affect_model'] = {
+                'valence':   afd['valence'],
+                'arousal':   afd['arousal'],
+                'dominance': afd['dominance'],
+                'pattern':   afd.get('pattern'),
+                'disclaimer': '⚠ Research signal — ~70–75% accuracy ceiling. Not a diagnostic instrument.',
+            }
         session_rows.append(row)
 
     # ── Build aggregate stats block ────────────────────────────────────────
@@ -2372,8 +2447,11 @@ def generate_brief_from_sessions(
     )
 
     # ── Generate ───────────────────────────────────────────────────────────
+    # 1400 tokens: the bio-psychosocial + MSE structure is substantively longer
+    # than the prior flat-section format. Spec §15 cap (900) applies to Mode B/C
+    # check-in summaries; this intel brief is a distinct output surface.
     try:
-        raw = _call_claude(system_prompt, user_content, max_tokens=900)
+        raw = _call_claude(system_prompt, user_content, max_tokens=1400)
     except RuntimeError as e:
         import logging
         logging.getLogger(__name__).error("generate_brief_from_sessions failed: %s", e)

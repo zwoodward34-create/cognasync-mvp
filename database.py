@@ -5699,6 +5699,40 @@ def get_voice_notes_for_patient(patient_id: str, limit: int = 10) -> list:
         return []
 
 
+def get_voice_notes_for_period(
+    patient_id: str,
+    period_start: str | None = None,
+    period_end: str | None = None,
+    limit: int = 20,
+) -> list:
+    """
+    Return voice notes with transcripts for a patient within a date range.
+    Used as a fallback when voice notes were processed before the pipeline
+    created clinical_sessions rows — ensures they still surface in briefs.
+
+    Returns rows from voice_notes where transcript IS NOT NULL.
+    """
+    try:
+        q = (
+            supabase_admin.table('voice_notes')
+            .select('id, patient_id, created_at, transcript, guiding_question, audio_url')
+            .eq('patient_id', patient_id)
+            .not_.is_('transcript', 'null')
+            .order('created_at', desc=True)
+            .limit(limit)
+        )
+        if period_start:
+            q = q.gte('created_at', period_start)
+        if period_end:
+            # Add one day to period_end so 'YYYY-MM-DD' includes the full day
+            q = q.lte('created_at', period_end + 'T23:59:59')
+        res = q.execute()
+        return res.data or []
+    except Exception as e:
+        print(f'[db] get_voice_notes_for_period error: {e}')
+        return []
+
+
 def update_voice_note_transcript(
     voice_note_id: str,
     transcript: str,
