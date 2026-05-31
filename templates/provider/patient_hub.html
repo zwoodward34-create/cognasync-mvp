@@ -1638,37 +1638,62 @@ let _currentBriefText = '';
 let _currentBriefId   = null;   // saved brief_id — used by printBrief() to avoid regeneration
 let _currentBriefDays = 14;
 
-function _briefTextToHtml(text) {
-  // Markdown tables → HTML before escaping
-  text = text.replace(/((?:^|\n)(\|.+\|[ \t]*\n?)+)/g, tableBlock => {
-    const rows = tableBlock.trim().split('\n').filter(r => r.trim());
-    const dataRows = rows.filter(r => !/^\|[\s\-:|]+\|/.test(r));
-    if (!dataRows.length) return tableBlock;
-    const htmlRows = dataRows.map((r, i) => {
-      const cells = r.split('|').slice(1, -1).map(c => c.trim());
-      const tag = i === 0 ? 'th' : 'td';
-      return '<tr>' + cells.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
-    });
-    return '\x00TABLE\x00<table class="brief-md-table"><thead>' + htmlRows[0] +
-           '</thead><tbody>' + htmlRows.slice(1).join('') + '</tbody></table>\x00ENDTABLE\x00';
-  });
+function _briefTextToHtml(raw) {
+  const lines = raw.split('\n');
+  const out = [];
+  let i = 0;
+  while (i < lines.length) {
+    const line = lines[i];
 
-  // Horizontal rules
-  text = text.replace(/^---+$/gm, '\x00HR\x00');
+    // Markdown table block
+    if (/^\|/.test(line)) {
+      const tableLines = [];
+      while (i < lines.length && /^\|/.test(lines[i])) { tableLines.push(lines[i]); i++; }
+      const dataRows = tableLines.filter(r => !/^\|[\s\-:|]+\|$/.test(r.trim()));
+      if (dataRows.length) {
+        const makeRow = (r, isHead) => {
+          const cells = r.split('|').slice(1, -1).map(c => c.trim());
+          const t = isHead ? 'th' : 'td';
+          return '<tr>' + cells.map(c => `<${t}>${c}</${t}>`).join('') + '</tr>';
+        };
+        out.push('<table class="brief-md-table"><thead>' + makeRow(dataRows[0], true) +
+                 '</thead><tbody>' + dataRows.slice(1).map(r => makeRow(r, false)).join('') +
+                 '</tbody></table>');
+      }
+      continue;
+    }
 
-  const escaped = text
-    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
-    // Restore table and hr placeholders
-    .replace(/\x00TABLE\x00([\s\S]*?)\x00ENDTABLE\x00/g, (_, t) =>
-      t.replace(/&lt;/g,'<').replace(/&gt;/g,'>').replace(/&amp;/g,'&'))
-    .replace(/\x00HR\x00/g, '<hr>');
+    // Horizontal rule
+    if (/^---+$/.test(line.trim())) { out.push('<hr>'); i++; continue; }
 
-  return escaped
-    .replace(/^### (.+)$/gm, '</p><h3>$1</h3><p>')
-    .replace(/^## (.+)$/gm,  '</p><h3>$1</h3><p>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\n\n/g, '</p><p>')
-    .replace(/\n/g, '<br>');
+    // Heading
+    const hm = line.match(/^#{1,3}\s+(.+)/);
+    if (hm) { out.push(`<h3>${hm[1].trim()}</h3>`); i++; continue; }
+
+    // List item
+    if (/^[-•]\s+/.test(line)) {
+      const items = [];
+      while (i < lines.length && /^[-•]\s+/.test(lines[i])) {
+        items.push('<li>' + lines[i].replace(/^[-•]\s+/, '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') + '</li>');
+        i++;
+      }
+      out.push('<ul>' + items.join('') + '</ul>');
+      continue;
+    }
+
+    if (!line.trim()) { out.push(''); i++; continue; }
+    out.push(line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'));
+    i++;
+  }
+
+  return out.reduce((acc, line, idx) => {
+    if (line === '') return acc + '</p><p>';
+    if (line.startsWith('<h3>') || line.startsWith('<hr>') ||
+        line.startsWith('<table') || line.startsWith('<ul>')) {
+      return acc + '</p>' + line + '<p>';
+    }
+    return acc + (idx > 0 && acc && !acc.endsWith('<p>') && !acc.endsWith('>') ? '<br>' : '') + line;
+  }, '<p>').replace(/<p><\/p>/g, '') + '</p>';
 }
 
 // Track active Chart.js instances so we can destroy before re-rendering

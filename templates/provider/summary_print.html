@@ -424,9 +424,8 @@
       <strong>Unable to generate summary:</strong> {{ error_msg }}
     </div>
   {% elif summary_text %}
-    <div class="summary-body" id="summary-content">
-      {{ summary_text | replace('\n\n', '</p><p>') | replace('\n', '<br>') | replace('**', '') | safe }}
-    </div>
+    <div class="summary-body" id="summary-content"></div>
+    <script>window._summaryRaw = {{ summary_text | tojson }};</script>
   {% endif %}
 
   <!-- Footer -->
@@ -447,45 +446,74 @@ function changePeriod(days) {
 // ── Format markdown summary ──────────────────────────────────────────────────
 (function formatSummary() {
   const el = document.getElementById('summary-content');
-  if (!el) return;
-  // Work on plain text so pipe characters aren't HTML-encoded
-  let text = el.innerText || el.textContent;
+  if (!el || typeof window._summaryRaw === 'undefined') return;
 
-  // Markdown table → HTML table
-  text = text.replace(/((?:^|\n)(\|.+\|[ \t]*\n)+)/g, tableBlock => {
-    const rows = tableBlock.trim().split('\n').filter(r => r.trim());
-    // Filter out separator rows (|---|---|)
-    const dataRows = rows.filter(r => !/^\|[\s\-:|]+\|/.test(r));
-    if (!dataRows.length) return tableBlock;
-    const htmlRows = dataRows.map((r, i) => {
-      const cells = r.split('|').slice(1, -1).map(c => c.trim());
-      const tag = i === 0 ? 'th' : 'td';
-      return '<tr>' + cells.map(c => `<${tag}>${c}</${tag}>`).join('') + '</tr>';
-    });
-    return '<table class="md-table"><thead>' + htmlRows[0] + '</thead><tbody>' +
-           htmlRows.slice(1).join('') + '</tbody></table>';
-  });
+  function mdToHtml(raw) {
+    const lines = raw.split('\n');
+    const out = [];
+    let i = 0;
+    while (i < lines.length) {
+      const line = lines[i];
 
-  // Horizontal rules
-  text = text.replace(/^---+$/gm, '<hr>');
+      // Markdown table block
+      if (/^\|/.test(line)) {
+        const tableLines = [];
+        while (i < lines.length && /^\|/.test(lines[i])) {
+          tableLines.push(lines[i]);
+          i++;
+        }
+        const dataRows = tableLines.filter(r => !/^\|[\s\-:|]+\|$/.test(r.trim()));
+        if (dataRows.length) {
+          const makeRow = (r, isHead) => {
+            const cells = r.split('|').slice(1, -1).map(c => c.trim());
+            const t = isHead ? 'th' : 'td';
+            return '<tr>' + cells.map(c => `<${t}>${c}</${t}>`).join('') + '</tr>';
+          };
+          out.push('<table class="md-table"><thead>' + makeRow(dataRows[0], true) +
+                   '</thead><tbody>' + dataRows.slice(1).map(r => makeRow(r, false)).join('') +
+                   '</tbody></table>');
+        }
+        continue;
+      }
 
-  // Escape HTML before further processing
-  let html = text
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    // Restore table/hr tags
-    .replace(/&lt;(\/?(table|thead|tbody|tr|th|td|hr)[^>]*)&gt;/g, '<$1>');
+      // Horizontal rule
+      if (/^---+$/.test(line.trim())) { out.push('<hr>'); i++; continue; }
 
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  html = html.replace(/(^|<br>)(#{1,3})\s+(.+?)(<br>|$)/g, (_, pre, hashes, text, post) => {
-    return pre + '<h2>' + text.trim() + '</h2>' + post;
-  });
-  html = html.replace(/(^|<br>)[•\-]\s+(.+?)(?=<br>|$)/g, (_, pre, text) => {
-    return pre + '<li>' + text.trim() + '</li>';
-  });
-  html = html.replace(/(<li>.*?<\/li>(\s*<br>)*)+/gs, match => {
-    return '<ul>' + match.replace(/<br>/g, '').trim() + '</ul>';
-  });
-  el.innerHTML = html;
+      // Heading
+      const hm = line.match(/^(#{1,3})\s+(.+)/);
+      if (hm) { out.push(`<h2>${hm[2].trim()}</h2>`); i++; continue; }
+
+      // List item
+      if (/^[-•]\s+/.test(line)) {
+        const items = [];
+        while (i < lines.length && /^[-•]\s+/.test(lines[i])) {
+          items.push('<li>' + lines[i].replace(/^[-•]\s+/, '').replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>') + '</li>');
+          i++;
+        }
+        out.push('<ul>' + items.join('') + '</ul>');
+        continue;
+      }
+
+      // Blank line
+      if (!line.trim()) { out.push(''); i++; continue; }
+
+      // Normal paragraph line
+      out.push(line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'));
+      i++;
+    }
+
+    // Join: blank lines become paragraph breaks, others become <br>
+    return out.reduce((acc, line, idx) => {
+      if (line === '') return acc + '</p><p>';
+      if (line.startsWith('<h2>') || line.startsWith('<hr>') ||
+          line.startsWith('<table>') || line.startsWith('<ul>')) {
+        return acc + '</p>' + line + '<p>';
+      }
+      return acc + (idx > 0 && acc && !acc.endsWith('<p>') && !acc.endsWith('>') ? '<br>' : '') + line;
+    }, '<p>').replace(/(<p>)+(<\/p>)+|<p><\/p>/g, '') + '</p>';
+  }
+
+  el.innerHTML = mdToHtml(window._summaryRaw);
 })();
 
 // ── Psychiatry charts ────────────────────────────────────────────────────────

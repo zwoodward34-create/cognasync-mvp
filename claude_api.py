@@ -995,7 +995,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         f"{voice_block}"
     )
 
-    raw   = _call_claude(_PSYCHIATRY_SYSTEM, user_content, max_tokens=1400)
+    raw   = _call_claude(_PSYCHIATRY_SYSTEM, user_content, max_tokens=2000)
     clean = _sanitize_output(raw)
     if clean is None:
         clean = (
