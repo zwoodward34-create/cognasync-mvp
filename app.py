@@ -1007,7 +1007,12 @@ def provider_patient_trends(patient_id):
 @app.route('/provider/patient/<patient_id>/summary/print')
 @limiter.limit("10/hour")
 def provider_summary_print(patient_id):
-    """Generate and render a print-optimized Mode C clinical summary."""
+    """Render a print-optimized Mode C clinical summary.
+
+    If ?brief_id=<uuid> is provided, renders the already-generated saved brief
+    (same text the provider saw in the modal). Otherwise generates fresh.
+    This prevents the print version from being a different Claude call.
+    """
     import claude_api
     user, redir = _require_provider()
     if redir:
@@ -1022,43 +1027,101 @@ def provider_summary_print(patient_id):
     period_start = start_dt.isoformat()
     period_end   = end_dt.isoformat()
 
-    perms = _get_provider_perms(user['id'], patient_id)
     patient = db.get_patient_detail(patient_id, days=days)
     if not patient:
         flash('Patient not found', 'error')
         return redirect(url_for('provider_dashboard'))
 
-    checkins = _strip_checkin_fields(db.get_checkins_in_range(patient_id, period_start, period_end), perms)
-    journals = db.get_journals_in_range(patient_id, period_start, period_end) if perms.get('journals_raw', True) else []
-
     summary_text = None
     error_msg = None
 
-    if checkins or journals:
-        symptom_patterns = db.find_symptom_correlations(patient_id, days=days)
-        flags = db.get_patient_flags(patient_id, days=days)
-        what_worked = db.get_what_worked_patterns(patient_id, days=max(days, 60))
-        lexical_data = db.compute_lexical_diversity(patient_id, days=days)
-        readability_data = db.compute_readability(patient_id, days=days)
-        try:
-            result = claude_api.generate_appointment_summary(
-                checkins, journals,
-                days=days,
+    # ── Fast path: render a previously saved brief by ID ─────────────────────
+    # summary_id comes from the modal generation; renders the exact same text
+    # the provider just saw — no second Claude call, no divergence.
+    brief_id = request.args.get('brief_id')
+    if brief_id:
+        saved = db.get_summary_by_id(brief_id, patient_id)
+        if saved:
+            summary_text = saved.get('summary_text') or saved.get('content', '')
+            period_start = saved.get('date_range_start') or period_start
+            period_end   = saved.get('date_range_end')   or period_end
+        else:
+            error_msg = 'Brief not found or access denied.'
+
+    # ── Slow path: generate fresh (includes session context + voice notes) ────
+    if not summary_text and not error_msg:
+        perms = _get_provider_perms(user['id'], patient_id)
+        checkins = _strip_checkin_fields(db.get_checkins_in_range(patient_id, period_start, period_end), perms)
+        journals = db.get_journals_in_range(patient_id, period_start, period_end) if perms.get('journals_raw', True) else []
+
+        if checkins or journals:
+            symptom_patterns = db.find_symptom_correlations(patient_id, days=days)
+            flags            = db.get_patient_flags(patient_id, days=days)
+            what_worked      = db.get_what_worked_patterns(patient_id, days=max(days, 60))
+            lexical_data     = db.compute_lexical_diversity(patient_id, days=days)
+            readability_data = db.compute_readability(patient_id, days=days)
+
+            # Pull session context (transcripts + voice notes)
+            session_context = db.get_clinical_sessions_for_period(
+                patient_id=patient_id,
                 period_start=period_start,
                 period_end=period_end,
-                audience='provider',
-                symptom_patterns=symptom_patterns,
-                substance_flags=flags.get('substance'),
-                safety_flags=flags.get('safety'),
-                what_worked=what_worked,
-                lexical_data=lexical_data,
-                readability_data=readability_data,
+                limit=10,
             )
-            summary_text = result['text']
-        except RuntimeError as e:
-            error_msg = str(e)
-    else:
-        error_msg = 'No check-in or journal data found for this period.'
+            # Voice note fallback — same as api_provider_generate_summary
+            try:
+                known_dates = {s['session_date'] for s in session_context if s.get('session_date')}
+                for vn in db.get_voice_notes_for_period(patient_id, period_start, period_end, limit=5):
+                    vn_date = (vn.get('created_at') or '')[:10]
+                    if vn_date in known_dates:
+                        continue
+                    text = (vn.get('transcript') or '').strip()
+                    if not text:
+                        continue
+                    try:
+                        from transcript_engine import extract_features as _ef
+                        extraction = _ef(transcript_text=text, session_date=vn_date, session_type='voice_note')
+                        sid = db.store_clinical_session(
+                            provider_id=None, patient_id=patient_id,
+                            session_date=vn_date, session_type='voice_note',
+                            transcript_raw=text, transcript_source='voice_note',
+                        )
+                        if sid:
+                            db.store_session_features(session_id=sid, patient_id=patient_id, extraction_result=extraction)
+                            session_context.append({
+                                'session_id': sid, 'session_date': vn_date,
+                                'session_type': 'voice_note', 'processing_status': 'complete',
+                                'transcript_source': 'voice_note',
+                                'crisis_detected': extraction.get('crisis_detected', False),
+                                'features': extraction.get('features') or {},
+                                'scores':   extraction.get('scores') or {},
+                            })
+                            known_dates.add(vn_date)
+                    except Exception as _ve:
+                        app.logger.warning(f'[print] voice note fallback: {_ve}')
+            except Exception as _ve2:
+                app.logger.warning(f'[print] voice note outer: {_ve2}')
+
+            try:
+                result = claude_api.generate_appointment_summary(
+                    checkins, journals,
+                    days=days,
+                    period_start=period_start,
+                    period_end=period_end,
+                    audience='provider',
+                    symptom_patterns=symptom_patterns,
+                    substance_flags=flags.get('substance'),
+                    safety_flags=flags.get('safety'),
+                    what_worked=what_worked,
+                    lexical_data=lexical_data,
+                    readability_data=readability_data,
+                    session_context=session_context or [],
+                )
+                summary_text = result['text']
+            except RuntimeError as e:
+                error_msg = str(e)
+        else:
+            error_msg = 'No check-in or journal data found for this period.'
 
     return render_template(
         'provider/summary_print.html',

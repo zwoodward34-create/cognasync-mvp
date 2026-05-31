@@ -578,6 +578,27 @@ def create_summary(patient_id, summary_text, date_range_start, date_range_end, r
         return None
 
 
+def get_summary_by_id(summary_id: str, patient_id: str | None = None) -> dict | None:
+    """
+    Fetch a single summary row by ID.
+    If patient_id is provided, verifies ownership (provider access pattern uses
+    patient_id to scope the lookup).
+    Returns None if not found.
+    """
+    try:
+        q = supabase_admin.table('summaries').select('*').eq('id', str(summary_id))
+        if patient_id:
+            q = q.eq('user_id', str(patient_id))
+        result = q.single().execute()
+        row = result.data
+        if row and not row.get('summary_text'):
+            row['summary_text'] = row.get('content', '')
+        return row
+    except Exception as e:
+        print(f'[db] get_summary_by_id error: {e}')
+        return None
+
+
 def get_summaries(patient_id):
     """Get all summaries for a patient, normalising field names for template compatibility."""
     try:

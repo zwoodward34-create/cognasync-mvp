@@ -1556,6 +1556,8 @@ function showToast(msg, isError) {
 
 // ── Brief helpers ─────────────────────────────────────────────────────────────
 let _currentBriefText = '';
+let _currentBriefId   = null;   // saved brief_id — used by printBrief() to avoid regeneration
+let _currentBriefDays = 14;
 
 function _briefTextToHtml(text) {
   return text
@@ -1567,8 +1569,9 @@ function _briefTextToHtml(text) {
     .replace(/\n/g, '<br>');
 }
 
-function _showBriefModal(text, meta) {
+function _showBriefModal(text, meta, briefId) {
   _currentBriefText = text;
+  _currentBriefId   = briefId || null;
   const modal    = document.getElementById('brief-modal');
   const body     = document.getElementById('brief-modal-body');
   const metaEl   = document.getElementById('brief-modal-meta');
@@ -1632,7 +1635,8 @@ async function confirmGenerateBrief() {
       const start = (data.date_range_start || '').slice(0, 10);
       const end   = (data.date_range_end   || '').slice(0, 10);
       const meta  = start && end ? `${start} — ${end} (${days} days)` : '';
-      _showBriefModal(text, meta);
+      _currentBriefDays = days;
+      _showBriefModal(text, meta, data.summary_id || data.brief_id || null);
       loadBriefBank();
     } else {
       body.innerHTML = '<p style="color:#c0392b;">' + _esc((data && data.error) || 'Generation failed — try again.') + '</p>';
@@ -1662,7 +1666,11 @@ async function copyBrief() {
 }
 
 function printBrief() {
-  window.open('/provider/patient/' + PATIENT_ID + '/summary/print?days=30', '_blank');
+  // Prefer brief_id so the print route renders the exact same saved brief
+  // (avoids a second independent Claude call that produces different output).
+  let url = '/provider/patient/' + PATIENT_ID + '/summary/print?days=' + (_currentBriefDays || 14);
+  if (_currentBriefId) url += '&brief_id=' + encodeURIComponent(_currentBriefId);
+  window.open(url, '_blank');
 }
 
 // ── Brief bank ────────────────────────────────────────────────────────────────
