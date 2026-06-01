@@ -1111,8 +1111,8 @@ def provider_summary_print(patient_id):
                         raw_voice_transcripts=raw_voice_transcripts,
                     )
                 else:
-                    lexical_data    = db.compute_lexical_diversity(patient_id, days=days)
-                    readability_data = db.compute_readability(patient_id, days=days)
+                    lexical_data    = db.compute_lexical_diversity(patient_id, days=max(days, 30))
+                    readability_data = db.compute_readability(patient_id, days=max(days, 30))
                     what_worked     = db.get_what_worked_patterns(patient_id, days=max(days, 60))
                     result = claude_api.generate_appointment_summary(
                         checkins, journals,
@@ -1859,8 +1859,8 @@ def api_create_summary():
     # Substance flags surfaced to patient only at concern level (see claude_api.py)
     flags = db.get_patient_flags(user['id'], days=days)
     what_worked = db.get_what_worked_patterns(user['id'], days=max(days, 60))
-    lexical_data = db.compute_lexical_diversity(user['id'], days=days)
-    readability_data = db.compute_readability(user['id'], days=days)
+    lexical_data = db.compute_lexical_diversity(user['id'], days=max(days, 30))
+    readability_data = db.compute_readability(user['id'], days=max(days, 30))
 
     try:
         result = claude_api.generate_appointment_summary(
@@ -2793,8 +2793,8 @@ def api_provider_generate_summary(patient_id):
             )
         else:
             # unknown / None — fall back to Mode C provider brief
-            lexical_data = db.compute_lexical_diversity(patient_id, days=summary_days)
-            readability_data = db.compute_readability(patient_id, days=summary_days)
+            lexical_data = db.compute_lexical_diversity(patient_id, days=max(summary_days, 30))
+            readability_data = db.compute_readability(patient_id, days=max(summary_days, 30))
             result = claude_api.generate_appointment_summary(
                 checkins, journals,
                 days=summary_days,
