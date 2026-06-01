@@ -2776,8 +2776,8 @@ def api_provider_generate_summary(patient_id):
                 raw_voice_transcripts=raw_voice_transcripts or [],
             )
         elif provider_type == 'psychiatrist':
-            _pt_profile = db.supabase_admin.table('profiles').select('full_name').eq('id', patient_id).maybe_single().execute()
-            _pt_name = (_pt_profile.data or {}).get('full_name') if _pt_profile else None
+            _pt_profile = db.supabase_admin.table('profiles').select('full_name').eq('id', patient_id).limit(1).execute()
+            _pt_name = (_pt_profile.data[0].get('full_name') if _pt_profile.data else None)
             result = claude_api.generate_psychiatry_summary(
                 checkins, journals,
                 days=summary_days,

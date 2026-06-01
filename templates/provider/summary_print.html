@@ -465,7 +465,7 @@ function changePeriod(days) {
         const dataRows = tableLines.filter(r => !/^\|[\s\-:|]+\|$/.test(r.trim()));
         if (dataRows.length) {
           const makeRow = (r, isHead) => {
-            const cells = r.split('|').slice(1, -1).map(c => c.trim());
+            const cells = r.split('|').slice(1, -1).map(c => c.trim().replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'));
             const t = isHead ? 'th' : 'td';
             return '<tr>' + cells.map(c => `<${t}>${c}</${t}>`).join('') + '</tr>';
           };

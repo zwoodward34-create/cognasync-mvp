@@ -111,11 +111,12 @@ _CRISIS_FEATURE_KEYWORDS = {
 # These only raise the adjusted score when raw_score is in the passive range.
 # Direct intent / plan / means always produce Level 3+ regardless.
 _POPULATION_PASSIVE_MODIFIER = {
-    'adolescent':             1,
-    'older_adult':            1,
-    'veteran':                1,
-    'prior_self_harm':        1,
-    'serious_mental_illness': 1,
+    'adolescent':               1,
+    'older_adult':              1,
+    'veteran':                  1,
+    'prior_self_harm':          1,
+    'serious_mental_illness':   1,
+    'substance_use_disorder':   1,  # Active SUD increases risk when passive signals present
 }
 
 # Population-specific amplifier keywords — additional contextual signals
@@ -146,6 +147,11 @@ _POPULATION_AMPLIFIERS = {
         'voices', 'hearing things', 'seeing things',
         'not taking my medication', 'stopped my medication', 'off my meds',
         'manic episode', 'psychotic episode', "can't tell what's real",
+    ],
+    'substance_use_disorder': [
+        'drinking to cope', 'need a drink', "can't stop drinking", 'relapsed',
+        'using again', 'back to using', 'drinking more than i should',
+        'needed to get high', "can't function without", 'binge',
     ],
 }
 
@@ -192,7 +198,8 @@ def _score_crisis_features(text: str, population_flags: dict | None = None) -> d
         population_flags: Optional {population_name: bool} indicating which
                           population groups apply to this patient.
                           Valid keys: 'adolescent', 'older_adult', 'veteran',
-                          'prior_self_harm', 'serious_mental_illness'
+                          'prior_self_harm', 'serious_mental_illness',
+                          'substance_use_disorder'
 
     Returns:
         {
@@ -307,18 +314,57 @@ CRISIS_RESPONSE = (
     "You're not alone. Please talk to someone who can help."
 )
 
+# Injected into every system prompt that generates patient- or provider-facing text.
+# Keeps the safety floor consistent regardless of which generation path is used.
+_SAFETY_RULES_BLOCK = (
+    "SAFETY RULES (non-negotiable — apply to every sentence):\n"
+    "- Never diagnose. Never name a disorder or clinical condition the patient 'has' or 'is'.\n"
+    "- Never advise medication changes (starting, stopping, increasing, decreasing, timing).\n"
+    "- Describe data, not clinical meaning. 'Mood averaged 4.2/10' is correct. "
+    "'Mood has been consistently low' is a clinical interpretation — do not write it.\n"
+    "- Causal inference is forbidden. Never write 'caused by,' 'leads to,' 'results in,' "
+    "'due to,' 'overstimulation,' 'rebound,' 'withdrawal,' or 'this is why.' "
+    "Use co-occurrence language only: 'coincided with,' 'on the same days as,' 'following.'\n"
+    "- Diagnostic vocabulary is forbidden even in provider-facing output. Do not write "
+    "'anhedonia,' 'dysregulation,' 'psychosis,' 'mania,' 'depression,' 'anxiety disorder,' "
+    "or any DSM/ICD term. Describe the observable pattern instead.\n"
+    "- Do not speculate beyond logged data. Omit any observation that cannot be anchored "
+    "to a specific data point. Never write 'likely,' 'probably,' or 'possibly' without "
+    "citing at least two supporting data points.\n"
+    "- Flags must state data, not cause or interpretation. "
+    "'Irritability 3/10 on 2026-05-24; stim load 8, caffeine 320 mg that day' is correct. "
+    "'Potential overstimulation' is a causal inference — do not write it.\n"
+    "- Never write 'this confirms,' 'this explains,' 'this is a sign of,' or 'this indicates [condition].'\n"
+)
+
 FORBIDDEN_PATTERNS = [
+    # ── Diagnostic claims (spec §3) ───────────────────────────────────────────
     ('you have ', 'noting you may be experiencing'),
     ('you suffer from ', 'you\'ve described experiences that'),
     ('diagnosed with', 'this pattern'),
     ('you are depressed', 'you\'ve described feeling down'),
     ('you are anxious', 'you\'ve noted anxiety'),
     ('you are manic', 'you\'ve described an elevated period'),
+    ('you are struggling with', 'you\'ve noted increased difficulty with'),
+    ('this is a sign of', 'this pattern coincides with'),
+    ('this confirms that', 'the data is consistent with'),
+    # ── Medication advice (spec §3) ───────────────────────────────────────────
     ('stop taking', 'discuss with your provider changes to'),
     ('reduce your dose', 'discuss dosing with your provider'),
+    ('increase your dose', 'discuss dosing with your provider'),
     ('you should take', 'some people find it helpful to discuss'),
     ('this will make you better', 'many people find this approach helpful'),
+    # ── Causal / outcome claims (spec §3) ─────────────────────────────────────
+    # Note: keep these specific enough not to mangle negated or legitimate sentences.
+    # Broad patterns like 'caused by the', 'this indicates ', 'side effect of'
+    # are intentionally excluded — they match inside benign constructions and are
+    # handled at the prompt level instead.
     ('this explains your', 'this pattern coincides with'),
+    ('this is caused by', 'this pattern coincides with'),
+    ('caused by your medication', 'coinciding with your medication timing'),
+    ('this is a side effect', 'worth discussing with your provider regarding'),
+    ('this is a sign of', 'this pattern coincides with'),
+    ('this confirms that', 'the data is consistent with'),
 ]
 
 
@@ -337,15 +383,50 @@ def check_crisis(text):
 
 
 def _sanitize_output(text):
+    """Apply spec §3 forbidden-language enforcement.
+
+    Two tiers:
+    - HARD_BLOCK patterns: output is suppressed entirely (returns None).
+      Reserved for diagnostic claims and medication advice that cannot be
+      safely substituted without changing meaning.
+    - SUBSTITUTION patterns: the forbidden phrase is replaced in-place and a
+      warning is logged. Used for causal/outcome language where a spec-compliant
+      rephrasing preserves the clinical intent.
+    """
+    # Hard-block patterns — suppress the whole output
+    HARD_BLOCK = {
+        'you are depressed',
+        'you are anxious',
+        'you are manic',
+        'stop taking',
+        'reduce your dose',
+        'increase your dose',
+        'you should take',
+        'this will make you better',
+    }
     lower = text.lower()
-    for forbidden, _ in FORBIDDEN_PATTERNS:
-        if forbidden in lower:
+    for phrase in HARD_BLOCK:
+        if phrase in lower:
             logger.warning(
-                "FORBIDDEN_PATTERN caught in output: %r — output suppressed.",
-                forbidden,
+                "HARD_BLOCK pattern caught in output: %r — output suppressed.",
+                phrase,
             )
             return None
-    return text
+
+    # Substitution pass — replace in-place, case-insensitive
+    import re as _re
+    result = text
+    for forbidden, replacement in FORBIDDEN_PATTERNS:
+        if forbidden in HARD_BLOCK:
+            continue  # already handled above
+        pattern = _re.compile(_re.escape(forbidden), _re.IGNORECASE)
+        if pattern.search(result):
+            logger.warning(
+                "SUBSTITUTION pattern caught in output: %r — replacing with %r.",
+                forbidden, replacement,
+            )
+            result = pattern.sub(replacement, result)
+    return result
 
 
 def _call_claude(system_prompt, user_content, max_tokens=600):
@@ -377,8 +458,10 @@ STRICT RULES:
 - Never say "you have," "you suffer from," "you are [disorder]," or name any condition
 - Do not interpret hyperbolic or venting language as evidence of cognitive distortion — someone saying "I'm a disaster" is expressing frustration, not a clinical state
 - Do not offer coping advice or therapeutic interventions
-- Do not use clinical terms (dysregulation, rumination, affect, etc.) — write in plain language
-- Never diagnose, prescribe, or imply a clinical meaning behind what the user wrote"""
+- Do not use clinical terms (dysregulation, rumination, affect, anhedonia, etc.) — write in plain language
+- Never diagnose, prescribe, or imply a clinical meaning behind what the user wrote
+- Never write "this explains," "this is caused by," "this suggests [condition]," or any causal/diagnostic inference
+- Never speculate beyond what the user actually wrote"""
 
 
 def analyze_journal(entry_text):
@@ -505,73 +588,90 @@ def analyze_checkin(checkin_data, checkin_type, baseline=None):
 # Medication-first, quantitative-primary, graphical-data-ready
 # ─────────────────────────────────────────────────────────────────────────────
 
-_PSYCHIATRY_SYSTEM = """You are generating a pre-appointment clinical brief for a PSYCHIATRIST (Mode C — Psychiatrist variant).
-
-AUDIENCE: A prescribing psychiatrist with 15–20 minutes per appointment. They need:
-1. Medication-relevant signals immediately
-2. Hard numbers, not prose descriptions of numbers
-3. Convergence/divergence flags (self-report vs. objective indicators)
-4. Clear flags at the top, not buried at the end
-
-STRUCTURE (use exactly these section headers in this order):
-
-## Trajectory
-One sentence maximum. State the overall direction and name any key divergence (e.g., self-reported mood elevated but Stability Score lower, or Crash Risk rising despite low stress reports).
-
-## Core Stability Metrics
-Present as a compact table or tightly structured list. Include ALL of:
-- Stability Score: avg X/10 | trend | high: X | low: X
-- Crash Risk: avg X/10 | trend | days ≥7: N
-- Nervous System Load: avg X/10 | trend
-- Mood Distortion: Δ X pts (self-report vs. Stability Score) — flag if Δ > 2.5
-
-## Medication
-Lead with the current regimen. Then:
-- Adherence: X/Y check-ins logged | any gaps?
-- Stim Load: avg X/10 | days ≥7: N | days ≥9: N
-- Timing: note variability if SD > 60 min across logged doses
-- If fatigue or crash symptoms are logged and timing precedes them, note the timing pattern (not cause)
-- Do NOT advise changes. Do NOT comment on whether regimen is adequate.
-
-## Quantitative Summary
-Tight data block — numbers first, words minimal:
-- Mood: avg X/10 | trend | range X–X
-- Sleep: avg X hrs | range X–X | Sleep Disruption avg X/10
-- Energy: avg X/10 | trend
-- Stress: avg X/10 | trend
-- Irritability: avg X/10 (include range if notable)
-
-## Symptom Patterns
-Only include if ≥3 occurrences. Format: "[Symptom]: N of T days. Co-signals: [variable] [higher/lower] on symptom days (avg X vs X, Δ=X)." If medication context exists, note timing only. Omit if no symptoms meet threshold.
-
-## Session Intelligence
-For each processed recording, structure as:
-- **[Date] [Session type]**
-- Reported mood: patient's own words about how they felt
-- Observed speech (text-inferred, §24 vocab): rate / prosody / coherence / vocal affect / arousal. Frame as "session speech showed [X]."
-- Acoustic measurements (waveform — cite only when present in data): articulation rate (sps), pause ratio, F0 CV, HNR dB, jitter (%), shimmer (%). Flag out-of-range values: artic <3.5 sps = slowed; pause ratio >35% = elevated silence; F0 CV <0.05 = flat prosody; HNR <15 dB = reduced harmonic quality; jitter >1% = elevated vocal instability; shimmer >5% = elevated amplitude perturbation. Pattern interpretation: both jitter ↑ + shimmer ↑ = autonomic stress signal (anxiety/depression); jitter markedly elevated with shimmer normal = acute distress pattern; both trending ↓ from prior sessions = possible treatment response. Never infer diagnosis from voice metrics alone — state the numbers and the pattern, route clinical interpretation to the provider.
-- Affect model (research signal — cite only when present): valence / arousal / dominance with labels. Append "— research signal, not diagnostic."
-- Medication-relevant content: what the patient said about medications, side effects, timing, or adherence
-- Key themes: stressors, avoidance, safety language
-- Convergence note: when acoustic measurements + text features + check-in scores align, name it explicitly (e.g., "Flat prosody, reduced F0 CV 0.03, and affect model valence −0.4 are convergent with check-in mood of 3/10 that day.")
-If no acoustic measurements exist for a session, state "acoustic data not available."
-
-## 🚨 Flags
-List only. Each flag = one line with supporting data point. Format: "[Flag]: [data]". If none: "No threshold alerts for this period."
-
-## Suggested Discussion Topics
-3 items maximum. Anchor each to a specific data point. Medication-relevant first.
-
-RULES:
-- No warm conversational prose. Number first, label second.
-- Never say "you should" or advise medication changes.
-- Never diagnose. Use "data shows" / "logged" / "reported."
-- Mood Distortion (Δ > 2.5): always surface it.
-- Acoustic measurements capture HOW the patient spoke — surface them as distinct from transcript content, not as a repeat of it.
-- Omit Positive Correlates, Coping Activities, Sunlight, Workload Friction unless threshold-crossing.
-- Alcohol: include only if ≥3 units/use day or ≥4 drinking days in 7-day window.
-- Keep the entire brief under 700 words.
-"""
+_PSYCHIATRY_SYSTEM = (
+    "You are generating a pre-appointment clinical brief for a PSYCHIATRIST (Mode C — Psychiatrist variant).\n\n"
+    "AUDIENCE: A prescribing psychiatrist with 15–20 minutes per appointment. They need:\n"
+    "1. Medication-relevant signals immediately\n"
+    "2. Hard numbers, not prose descriptions of numbers\n"
+    "3. Convergence/divergence flags (self-report vs. objective indicators)\n"
+    "4. Clear flags at the top, not buried at the end\n\n"
+    "STRUCTURE (use exactly these section headers in this order):\n\n"
+    "## Trajectory\n"
+    "One sentence maximum. State the overall direction and name any key divergence "
+    "(e.g., self-reported mood elevated but Stability Score lower, or Crash Risk rising despite low stress reports).\n\n"
+    "## Core Stability Metrics\n"
+    "Present as a compact table or tightly structured list. Include ALL of:\n"
+    "- Stability Score: avg X/10 | trend | high: X | low: X\n"
+    "- Crash Risk: avg X/10 | trend | days ≥7: N\n"
+    "- Nervous System Load: avg X/10 | trend\n"
+    "- Mood Distortion: Δ X pts (self-report vs. Stability Score) — flag if Δ > 2.5\n\n"
+    "## Medication\n"
+    "Lead with the current regimen. Then:\n"
+    "- Adherence: X/Y check-ins logged | any gaps?\n"
+    "- Stim Load: avg X/10 | days ≥7: N | days ≥9: N\n"
+    "- Timing: note variability if SD > 60 min across logged doses\n"
+    "- If fatigue or crash symptoms are logged and timing precedes them, note the timing pattern (not cause)\n"
+    "- Do NOT advise changes. Do NOT comment on whether regimen is adequate.\n\n"
+    "## Quantitative Summary\n"
+    "Tight data block — numbers first, words minimal:\n"
+    "- Mood: avg X/10 | trend | range X–X\n"
+    "- Sleep: avg X hrs | range X–X | Sleep Disruption avg X/10\n"
+    "- Energy: avg X/10 | trend\n"
+    "- Stress: avg X/10 | trend\n"
+    "- Irritability: avg X/10 (include range if notable)\n\n"
+    "## Symptom Patterns\n"
+    "Only include if ≥3 occurrences. Format: \"[Symptom]: N of T days. Co-signals: [variable] "
+    "[higher/lower] on symptom days (avg X vs X, Δ=X).\" If medication context exists, note timing only. "
+    "Omit if no symptoms meet threshold.\n\n"
+    "## Session Intelligence\n"
+    "For each processed recording, structure as:\n"
+    "- **[Date] [Session type]**\n"
+    "- Reported mood: patient's own words about how they felt\n"
+    "- Observed speech (text-inferred, §24 vocab): rate / prosody / coherence / vocal affect / arousal. "
+    "Frame as \"session speech showed [X].\"\n"
+    "- Acoustic measurements (waveform — cite only when present in data): articulation rate (sps), "
+    "pause ratio, F0 CV, HNR dB, jitter (%), shimmer (%). "
+    "Flag out-of-range values: artic <3.5 sps = slowed; pause ratio >35% = elevated silence; "
+    "F0 CV <0.05 = flat prosody; HNR <15 dB = reduced harmonic quality; "
+    "jitter >1% = elevated vocal perturbation; jitter >2.5% = markedly elevated vocal perturbation; "
+    "shimmer >5% = elevated amplitude perturbation; shimmer >8% = markedly elevated amplitude perturbation. "
+    "Pattern clusters (acoustic observations only — never infer a diagnosis): "
+    "both jitter ↑ + shimmer ↑ = elevated vocal instability pattern; "
+    "jitter markedly elevated (>2.5%) with shimmer in normal range = acute jitter-dominant perturbation "
+    "(note separately — distinct from combined elevation); "
+    "both trending ↓ from prior sessions = vocal stability improvement pattern. "
+    "Recording confound: jitter/shimmer measurements are most reliable when recorded at ≥80 dB SPL. "
+    "If SPL data is unavailable or recording quality is noted as low, append "
+    "\"(recording quality not confirmed — interpret with caution)\" to any jitter/shimmer observation. "
+    "Never infer diagnosis from voice metrics alone — state the numbers and the pattern, "
+    "route clinical interpretation to the provider.\n"
+    "- Affect model (research signal — cite only when present): valence / arousal / dominance with labels. "
+    "Append \"— research signal, not diagnostic.\"\n"
+    "- Medication-relevant content: what the patient said about medications, side effects, timing, or adherence\n"
+    "- Key themes: stressors, avoidance, safety language\n"
+    "- Convergence note: when acoustic measurements + text features + check-in scores align, name it explicitly "
+    "(e.g., \"Flat prosody, reduced F0 CV 0.03, and affect model valence −0.4 are convergent with check-in mood of 3/10 that day.\")\n"
+    "If no acoustic measurements exist for a session, state \"acoustic data not available.\"\n\n"
+    "## 🚨 Flags\n"
+    "List only. Each flag = one line with supporting data point. Format: \"[Flag]: [data]\". "
+    "If none: \"No threshold alerts for this period.\"\n\n"
+    "## Suggested Discussion Topics\n"
+    "3 items maximum. Anchor each to a specific data point. Medication-relevant first.\n\n"
+    + _SAFETY_RULES_BLOCK
+    + "STRUCTURAL RULES:\n"
+    "- Begin output directly with the ## Trajectory header. Do NOT write any preamble "
+    "(no \"Patient:\", \"Review Period:\", \"Generated:\" lines — that information is already rendered by the document template).\n"
+    "- If last_checkin_date is more than 3 days before period_end, state this in the Trajectory section: "
+    "\"Most recent check-in: [last_checkin_date]. No check-in data for the final [N] days of the review window.\"\n"
+    "- No warm conversational prose. Number first, label second.\n"
+    "- Mood Distortion is defined as |reported mood score − Stability Score|. Flag ONLY when Δ > 2.5. "
+    "Do NOT apply the Mood Distortion flag to divergence between mood check-ins and speech content — "
+    "that is a convergence/divergence observation and must be labeled as such.\n"
+    "- Acoustic measurements capture HOW the patient spoke — surface them as distinct from transcript content.\n"
+    "- Omit Positive Correlates, Coping Activities, Sunlight, Workload Friction unless threshold-crossing.\n"
+    "- Alcohol: include only if ≥3 units/use day or ≥4 drinking days in 7-day window.\n"
+    "- Keep the entire brief under 700 words.\n"
+)
 
 
 def _build_chart_data(checkin_data):
@@ -649,7 +749,8 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                                  substance_flags=None,
                                  safety_flags=None,
                                  session_context=None,
-                                 raw_voice_transcripts=None):
+                                 raw_voice_transcripts=None,
+                                 patient_name=None):
     """Mode C (Psychiatrist) — medication-first, quantitative-primary brief.
 
     Returns {'status', 'text', 'raw', 'chart_data'} where chart_data contains
@@ -772,9 +873,18 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                 max_distortion = round(d, 2)
     avg_distortion = _avg(distortion_vals)
 
+    # Last check-in date — used to surface data gaps in the brief
+    all_checkin_dates = sorted(
+        [r['date'] for r in checkin_rows if r.get('date')],
+        reverse=True
+    )
+    last_checkin_date = all_checkin_dates[0] if all_checkin_dates else None
+
     stats = {
         'total_checkins':       n,
         'period_days':          days,
+        'last_checkin_date':    last_checkin_date,
+        'period_end':           period_end,
         'avg_mood':             _avg(mood_vals),
         'mood_trend':           _trend(mood_vals),
         'mood_range':           [min(mood_vals), max(mood_vals)] if mood_vals else None,
@@ -798,6 +908,10 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         'avg_mood_distortion':  avg_distortion,
         'max_mood_distortion':  max_distortion,
         'avg_irritability':     _avg(irrit_vals) if irrit_vals else None,
+        # Use chart_data averages for stim_load so text and chart agree
+        # (chart_data deduplicates to one row per calendar day, which is the
+        # correct unit; checkin_rows may have multiple entries per day).
+        'avg_stim_load':        chart_data.get('averages', {}).get('stim_load'),
     }
 
     n_days = days
@@ -983,7 +1097,9 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                 + '\n\n'.join(lines)
             )
 
+    patient_line = f"PATIENT: {patient_name}\n" if patient_name else ""
     user_content = (
+        f"{patient_line}"
         f"REVIEW PERIOD: {period_label}\n\n"
         f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}\n\n"
         f"DAILY CHECK-INS ({n} total):\n{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
@@ -1253,12 +1369,11 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             "**Qualitative Themes:** 2-3 patterns from journal language. Observations only — no clinical interpretation.\n"
             f"{symptom_instructions}"
             "**Flags:** Threshold crossings with supporting data. If none, write 'None for this period.'\n"
-            "**Suggested Discussion Topics:** 2-3 specific, data-anchored items.\n"
-            "RULES: Never diagnose. Never advise medication changes. "
-            "Do not say 'you have,' 'you suffer from,' 'this indicates [disorder].' "
-            "For symptom patterns: describe co-occurrence only — never causation. "
-            "Never say 'this explains' or 'caused by' or 'this is a side effect of.' "
-            f"Always state: '{data_boundary}'"
+            "**Suggested Discussion Topics:** 2-3 specific, data-anchored items. "
+            "Frame as topics for the provider to explore — never as advice or recommendations. "
+            "Do not use diagnostic vocabulary in topic framing.\n"
+            + _SAFETY_RULES_BLOCK
+            + f"Always state: '{data_boundary}'"
         )
     else:
         symptom_instructions = (
@@ -1285,11 +1400,9 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             f"{symptom_instructions}"
             "5. Two or three specific things worth bringing to the appointment, framed as questions they might want to ask. "
             "If symptom patterns are present, add one symptom-related question.\n\n"
-            "RULES:\n"
+            + _SAFETY_RULES_BLOCK
+            + "Additional patient-facing rules:\n"
             "- Use 'you' naturally — this is their data about themselves\n"
-            "- Never say 'you have [condition],' 'you suffer from,' 'you are [clinical state]'\n"
-            "- Never advise medication changes\n"
-            "- For symptom patterns: describe co-occurrence only — never causation or diagnosis\n"
             "- Translate scores into lived experience where possible ('your sleep averaged 5.2 hours, which is below where you usually aim')\n"
             "- If advanced data (exercise, social quality, coping activities) is present, weave it in naturally — don't just list fields\n"
             "- Be honest about what the data can and can't tell you\n"
@@ -1920,11 +2033,9 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         "**Flags:** Any patterns worth direct clinical attention with supporting data. "
         "If none, write 'None for this period.'\n"
         "**Suggested Discussion Topics:** 2-3 specific, therapy-relevant topics anchored to the data. "
-        "Frame as questions the provider might explore.\n\n"
-        "RULES:\n"
-        "- Never diagnose or name a disorder\n"
-        "- Never advise medication changes\n"
-        "- Do not say 'you have,' 'you suffer from,' or 'this indicates [disorder]'\n"
+        "Frame as questions the provider might explore. Do not use diagnostic vocabulary in topic framing.\n\n"
+        + _SAFETY_RULES_BLOCK
+        + "Additional therapy-context rules:\n"
         "- Behavioral signals (social quality, coping, workload friction) are PRIMARY — cite them first\n"
         "- Medication is not the lens here; if logged, it is background context only\n"
         "- Write in concise, clinically neutral prose — data-first, not narrative-first\n"
@@ -2585,7 +2696,7 @@ Include this section whenever acoustic or voice recording data is provided.
 - Speech rate: Label (slowed / normal / pressured) + numeric articulation rate in sps. Distribution across sessions if multiple.
 - Prosody: Label (flat / normal / elevated) + F0 CV if available. Note consistency across sessions.
 - Pauses: Label + mean pause ratio as percentage. Note direction trend across sessions.
-- Voice quality: HNR, jitter, shimmer as measured numbers if available. HNR below 15 dB = reduced harmonic quality — report what was measured.
+- Voice quality: HNR, jitter, shimmer as measured numbers if available. HNR below 15 dB = reduced harmonic quality. Jitter >1% = elevated vocal perturbation; jitter >2.5% = markedly elevated (note as distinct pattern). Shimmer >5% = elevated amplitude perturbation; shimmer >8% = markedly elevated. When jitter is markedly elevated with shimmer in normal range, note this as a distinct acoustic pattern separate from combined elevation. If recording SPL is unavailable or quality is flagged as low, append "(recording quality not confirmed)" to any jitter/shimmer value.
 - Arousal: Label (low / normal / elevated / agitated) + RMS amplitude if available.
 - Speech coherence: intact / disorganized as observed in transcript.
 - Acoustic pattern type: Name the label (depressive / anxiety_stress / mania_hypomania / mixed / none_detected) and in how many sessions. Not a diagnosis — an acoustic cluster observation.
@@ -2626,7 +2737,9 @@ LANGUAGE RULES — ACOUSTIC BIOMARKERS:
 GENERAL RULES:
 - Never diagnose. Never advise medication changes.
 - Do not say 'you have,' 'you suffer from,' 'this indicates [disorder],' 'this explains your [symptom].'
-- Describe co-occurrence only — never causation.
+- Describe co-occurrence only — never causation. Never write 'caused by,' 'leads to,' 'results in,' 'due to,' 'overstimulation,' 'rebound,' or 'withdrawal.'
+- Diagnostic vocabulary is forbidden even in provider output. Do not write 'anhedonia,' 'dysregulation,' 'psychosis,' 'mania,' 'depression,' 'anxiety disorder,' or any DSM/ICD term.
+- Do not speculate. Every claim must be anchored to a specific data point. Never write 'likely,' 'probably,' or 'possibly' without citing at least two supporting observations.
 - Every numeric claim must come from the data. If null or not_recorded, say so — never substitute.
 - Use 'patient states' or 'patient reported' rather than asserting internal states as fact.
 - The methodology footer at the end of every brief is mandatory."""
@@ -2648,6 +2761,9 @@ RULES:
 - Use 'you' naturally — this is about their own experience
 - Never say 'you have [condition],' 'you suffer from,' 'you are [clinical state]'
 - Never advise medication changes
+- Never write 'caused by,' 'this explains,' 'this suggests [condition],' or any causal or diagnostic inference
+- Never use clinical vocabulary (anhedonia, dysregulation, rumination, affect, etc.) — write in everyday language
+- Do not speculate beyond what was actually discussed in sessions or shown in the data
 - Translate session themes into the patient's own language where possible — not your characterization
 - Be honest about what the data can and cannot tell them
 - The note at the end about data sources is mandatory"""
