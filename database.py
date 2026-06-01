@@ -3289,6 +3289,40 @@ def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
                 theme_counts[theme] = theme_counts.get(theme, 0) + 1
     journal_themes = [t for t, _ in sorted(theme_counts.items(), key=lambda x: -x[1])[:3]]
 
+    # ── Clinical sessions (audio recordings / transcripts) in period ──────────
+    recording_count      = 0
+    recording_has_audio  = False
+    recording_dominant_pattern = None
+    recording_crisis_count = 0
+    try:
+        sess_resp = supabase_admin.table('clinical_sessions').select(
+            'id, session_type, processing_status, transcript_source, '
+            'session_features(scores, crisis_detected)'
+        ).eq('patient_id', str(patient_id)).eq(
+            'processing_status', 'complete'
+        ).gte('session_date', since_iso).execute()
+        sess_rows = sess_resp.data or []
+
+        pattern_counts: dict = {}
+        for sr in sess_rows:
+            recording_count += 1
+            sf = sr.get('session_features') or {}
+            feat_row = sf if isinstance(sf, dict) else (sf[0] if sf else {})
+            if feat_row.get('crisis_detected'):
+                recording_crisis_count += 1
+            scores = feat_row.get('scores') or {}
+            acf = scores.get('acoustic_features') or {}
+            if acf and (acf.get('raw') or acf.get('vocabulary')):
+                recording_has_audio = True
+                vocab = acf.get('vocabulary') or {}
+                pattern = vocab.get('clinical_pattern_type')
+                if pattern and pattern != 'none_detected':
+                    pattern_counts[pattern] = pattern_counts.get(pattern, 0) + 1
+        if pattern_counts:
+            recording_dominant_pattern = max(pattern_counts, key=pattern_counts.get)
+    except Exception:
+        pass
+
     return {
         'since_date':         since_iso,
         'days_in_period':     days_in_period,
@@ -3315,9 +3349,14 @@ def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
         'has_appointment':    has_appointment,
         'appointment_date':   appointment_date,
         # Session notes from the last completed appointment (feed-forward context)
-        'session_notes':      session_notes,
-        'care_plan_changes':  care_plan_changes,
-        'session_actions':    session_actions,
+        'session_notes':           session_notes,
+        'care_plan_changes':       care_plan_changes,
+        'session_actions':         session_actions,
+        # Clinical sessions / audio recordings in period
+        'recording_count':         recording_count,
+        'recording_has_audio':     recording_has_audio,
+        'recording_dominant_pattern': recording_dominant_pattern,
+        'recording_crisis_count':  recording_crisis_count,
     }
 
 

@@ -2728,6 +2728,30 @@ function renderBriefBody(d, patientId) {
     }
   }
 
+  // Session recordings / audio analysis
+  if (d.recording_count > 0) {
+    const patientIdStr = String(patientId);
+    const crisisBar = d.recording_crisis_count > 0
+      ? `<span style="color:#c0392b;font-weight:600;font-size:0.72rem;">⚠ ${d.recording_crisis_count} crisis signal${d.recording_crisis_count !== 1 ? 's' : ''} detected</span>`
+      : '';
+    const acousticLine = d.recording_has_audio
+      ? (d.recording_dominant_pattern
+          ? `<span style="font-size:0.75rem;color:var(--text-secondary);">Dominant acoustic pattern: <strong>${d.recording_dominant_pattern.replace(/_/g,' ')}</strong></span>`
+          : `<span style="font-size:0.75rem;color:var(--text-secondary);">Acoustic analysis available</span>`)
+      : `<span style="font-size:0.75rem;color:var(--text-muted);">Transcripts processed (no waveform audio)</span>`;
+    html += `<div style="background:var(--bg-secondary,#f8f9fa);border:1px solid var(--border);border-radius:8px;padding:11px 14px;margin-bottom:12px;">
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:5px;">
+        <div style="font-size:0.68rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-muted);">Session Recordings</div>
+        <a href="/provider/intel/${patientIdStr}" style="font-size:0.72rem;color:var(--accent,#5b4fcf);text-decoration:none;white-space:nowrap;">Full analysis →</a>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+        <span style="font-size:0.82rem;font-weight:600;">${d.recording_count} recording${d.recording_count !== 1 ? 's' : ''} processed</span>
+        ${acousticLine}
+        ${crisisBar}
+      </div>
+    </div>`;
+  }
+
   // Previous session notes
   const hasNotes   = d.session_notes && d.session_notes.trim();
   const hasPlan    = d.care_plan_changes && d.care_plan_changes.trim();
