@@ -148,7 +148,8 @@ def get_patient_population_flags(patient_user_id: str) -> dict:
     null, or the profile row doesn't exist yet.
 
     Supported flag keys (all boolean):
-        adolescent, older_adult, veteran, prior_self_harm, serious_mental_illness
+        adolescent, older_adult, veteran, prior_self_harm, serious_mental_illness,
+        substance_use_disorder
     """
     try:
         response = supabase_admin.table('patient_profiles') \
@@ -3000,6 +3001,99 @@ def update_provider_appointment(appt_id: str, provider_id: str, updates: dict) -
         return True
     except Exception as e:
         print(f"Error updating appointment: {e}")
+        return False
+
+
+def get_provider_calendar_appointments(provider_id: str, patient_id: str) -> list:
+    """Return calendar events for a patient: past sessions + upcoming scheduled entries."""
+    try:
+        today = date.today().isoformat()
+        res = supabase_admin.table('provider_appointments').select(
+            'id, started_at, completed_at, status, appointment_type, next_appointment_notes'
+        ).eq('provider_id', str(provider_id)).eq('patient_id', str(patient_id)).order(
+            'started_at', desc=False
+        ).execute()
+        rows = res.data or []
+        events = []
+        for r in rows:
+            raw_started = r.get('started_at') or ''
+            event_date = raw_started[:10] if raw_started else ''
+            event_time = raw_started[11:16] if len(raw_started) > 10 else None
+            status = r.get('status', '')
+            if not event_date:
+                continue
+            events.append({
+                'id':         r['id'],
+                'date':       event_date,
+                'time':       event_time,
+                'title':      r.get('appointment_type') or 'Appointment',
+                'event_type': 'appointment',
+                'status':     status,
+                'notes':      r.get('next_appointment_notes') or '',
+                'is_past':    event_date < today,
+                'is_session': status in ('active', 'completed'),
+            })
+        return events
+    except Exception as e:
+        print(f"[db] get_provider_calendar_appointments error: {e}", flush=True)
+        return []
+
+
+def create_calendar_appointment(provider_id: str, patient_id: str, event_date: str,
+                                event_time: str | None, title: str, notes: str,
+                                event_type: str = 'appointment') -> dict | None:
+    """Create a scheduled calendar entry in provider_appointments."""
+    try:
+        started_at = event_date
+        if event_time:
+            started_at = f"{event_date}T{event_time}:00"
+        row = {
+            'provider_id':             str(provider_id),
+            'patient_id':              str(patient_id),
+            'status':                  'scheduled',
+            'started_at':              started_at,
+            'appointment_type':        title or 'Appointment',
+            'next_appointment_notes':  notes or '',
+            'period_days':             30,
+        }
+        resp = supabase_admin.table('provider_appointments').insert(row).execute()
+        return (resp.data or [None])[0]
+    except Exception as e:
+        print(f"[db] create_calendar_appointment error: {e}", flush=True)
+        return None
+
+
+def update_calendar_appointment(appt_id: str, provider_id: str, event_date: str,
+                                event_time: str | None, title: str, notes: str) -> bool:
+    """Update a scheduled calendar entry (only status='scheduled' records)."""
+    try:
+        started_at = event_date
+        if event_time:
+            started_at = f"{event_date}T{event_time}:00"
+        payload = {
+            'started_at':             started_at,
+            'appointment_type':       title or 'Appointment',
+            'next_appointment_notes': notes or '',
+            'updated_at':             datetime.utcnow().isoformat(),
+        }
+        supabase_admin.table('provider_appointments').update(payload).eq(
+            'id', str(appt_id)).eq('provider_id', str(provider_id)).eq(
+            'status', 'scheduled').execute()
+        return True
+    except Exception as e:
+        print(f"[db] update_calendar_appointment error: {e}", flush=True)
+        return False
+
+
+def delete_calendar_appointment(appt_id: str, provider_id: str) -> bool:
+    """Delete a scheduled calendar entry (only status='scheduled' records)."""
+    try:
+        supabase_admin.table('provider_appointments').delete().eq(
+            'id', str(appt_id)).eq('provider_id', str(provider_id)).eq(
+            'status', 'scheduled').execute()
+        return True
+    except Exception as e:
+        print(f"[db] delete_calendar_appointment error: {e}", flush=True)
         return False
 
 

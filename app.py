@@ -1096,6 +1096,7 @@ def provider_summary_print(patient_id):
                         safety_flags=flags.get('safety'),
                         session_context=session_context or [],
                         raw_voice_transcripts=raw_voice_transcripts,
+                        patient_name=patient.get('full_name'),
                     )
                     chart_data = result.get('chart_data')
                 elif provider_type in ('therapist', 'counselor'):
@@ -2775,6 +2776,8 @@ def api_provider_generate_summary(patient_id):
                 raw_voice_transcripts=raw_voice_transcripts or [],
             )
         elif provider_type == 'psychiatrist':
+            _pt_profile = db.supabase_admin.table('profiles').select('full_name').eq('id', patient_id).maybe_single().execute()
+            _pt_name = (_pt_profile.data or {}).get('full_name') if _pt_profile else None
             result = claude_api.generate_psychiatry_summary(
                 checkins, journals,
                 days=summary_days,
@@ -2786,6 +2789,7 @@ def api_provider_generate_summary(patient_id):
                 safety_flags=flags.get('safety'),
                 session_context=session_context or [],
                 raw_voice_transcripts=raw_voice_transcripts or [],
+                patient_name=_pt_name,
             )
         else:
             # unknown / None — fall back to Mode C provider brief
@@ -4820,6 +4824,66 @@ def internal_trigger_voice_sms():
 
 
 # ── end Twilio routes ─────────────────────────────────────────────────────────
+
+# ── Provider calendar API ─────────────────────────────────────────────────────
+
+@app.route('/api/provider/patient/<patient_id>/calendar', methods=['GET'])
+def api_provider_patient_calendar_list(patient_id):
+    user, err = _api_user('provider')
+    if err: return err
+    events = db.get_provider_calendar_appointments(user['id'], patient_id)
+    return jsonify({'events': events})
+
+
+@app.route('/api/provider/patient/<patient_id>/calendar', methods=['POST'])
+def api_provider_patient_calendar_create(patient_id):
+    user, err = _api_user('provider')
+    if err: return err
+    data = request.get_json() or {}
+    event_date = (data.get('date') or '').strip()
+    if not event_date:
+        return jsonify({'error': 'date is required'}), 400
+    event = db.create_calendar_appointment(
+        provider_id=user['id'],
+        patient_id=patient_id,
+        event_date=event_date,
+        event_time=(data.get('time') or '').strip() or None,
+        title=(data.get('title') or 'Appointment').strip(),
+        notes=(data.get('notes') or '').strip(),
+        event_type=(data.get('event_type') or 'appointment').strip(),
+    )
+    if not event:
+        return jsonify({'error': 'Could not create appointment'}), 500
+    return jsonify({'ok': True, 'event': event})
+
+
+@app.route('/api/provider/patient/<patient_id>/calendar/<event_id>', methods=['PATCH'])
+def api_provider_patient_calendar_update(patient_id, event_id):
+    user, err = _api_user('provider')
+    if err: return err
+    data = request.get_json() or {}
+    event_date = (data.get('date') or '').strip()
+    if not event_date:
+        return jsonify({'error': 'date is required'}), 400
+    ok = db.update_calendar_appointment(
+        appt_id=event_id,
+        provider_id=user['id'],
+        event_date=event_date,
+        event_time=(data.get('time') or '').strip() or None,
+        title=(data.get('title') or 'Appointment').strip(),
+        notes=(data.get('notes') or '').strip(),
+    )
+    return jsonify({'ok': ok})
+
+
+@app.route('/api/provider/patient/<patient_id>/calendar/<event_id>', methods=['DELETE'])
+def api_provider_patient_calendar_delete(patient_id, event_id):
+    user, err = _api_user('provider')
+    if err: return err
+    ok = db.delete_calendar_appointment(event_id, user['id'])
+    return jsonify({'ok': ok})
+
+# ── end calendar API ──────────────────────────────────────────────────────────
 
 
 if __name__ == '__main__':
