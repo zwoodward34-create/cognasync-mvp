@@ -1334,6 +1334,180 @@
 
   /* ── Add Patient modal ───────────────────────────────────────────────────── */
   /* (styles handled inline) */
+
+  /* ══════════════════════════════════════════════════════════════════════
+     MOBILE — 768px (tablets / small tablets)
+     ══════════════════════════════════════════════════════════════════════ */
+  @media (max-width: 768px) {
+    /* Hub panel: narrower so roster stays visible */
+    .pd-brief-drawer {
+      width: 400px;
+      right: -420px;
+    }
+    .pd-roster-col.hub-open {
+      margin-right: 400px;
+    }
+
+    /* Page header: compress search */
+    .pd-search { width: 140px; }
+
+    /* Patient rows: hide meds chips */
+    .pd-row-meds { display: none; }
+
+    /* Stream tiles stay 2-col at this size */
+
+    /* Calendar event form: stack time under date */
+    .pd-cal-form-row { flex-wrap: wrap; }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     MOBILE — 520px (small tablets / large phones)
+     ══════════════════════════════════════════════════════════════════════ */
+  @media (max-width: 520px) {
+    /* Hub panel: full-screen overlay */
+    .pd-brief-drawer {
+      width: 100%;
+      right: -105%;
+    }
+    .pd-brief-drawer.open {
+      right: 0;
+    }
+    /* Roster: don't shift — hub overlays it */
+    .pd-roster-col.hub-open {
+      margin-right: 0 !important;
+    }
+
+    /* Page header: stack vertically */
+    .pd-page-hdr {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 14px 16px 12px;
+    }
+    .pd-page-hdr-actions {
+      width: 100%;
+      justify-content: space-between;
+    }
+    .pd-search { width: 0; flex: 1; }
+
+    /* Filter bar: horizontal scroll, no wrap */
+    .pd-filter-bar {
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      scrollbar-width: none;
+      padding-bottom: 4px;
+      margin-bottom: 12px;
+      gap: 5px;
+    }
+    .pd-filter-bar::-webkit-scrollbar { display: none; }
+    .pd-filter-btn { flex-shrink: 0; }
+
+    /* Patient rows: hide stats + meds on all states */
+    .pd-row-stats { display: none; }
+    .pd-row-meds  { display: none; }
+    .pd-row-appt  { display: none; }
+    /* Already hidden by .hub-open rules — ensure standalone too */
+
+    /* Roster column padding */
+    .pd-roster-col { padding: 12px 14px 40px; }
+
+    /* ── Hub panel internals ── */
+
+    /* Topbar: shrink for narrow */
+    .pd-hub-topbar { padding: 14px 16px 12px; gap: 8px; }
+    .pd-hub-patient-name { font-size: 1.1rem; }
+    .pd-hub-profile-link { padding: 4px 10px; font-size: 0.72rem; }
+
+    /* Stream tiles: 2-col is fine at full width */
+    .pd-stream-tiles { padding: 14px 16px; gap: 8px; }
+
+    /* Hub body padding */
+    .pd-hub-body { padding: 16px 16px 48px; }
+
+    /* Stat grid: 2-col stays fine at full width */
+
+    /* Brief appt bar: stack buttons */
+    .pd-brief-appt-bar {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+      padding: 12px;
+    }
+    .pd-brief-appt-btn,
+    .pd-brief-appt-btn-ghost {
+      text-align: center;
+      padding: 11px 14px;
+      min-height: 44px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    /* Touch targets: flag resolve + submit buttons */
+    .pd-flag-resolve-btn {
+      padding: 5px 12px;
+      min-height: 36px;
+    }
+    .pd-flag-submit-btn {
+      min-height: 44px;
+      width: 100%;
+    }
+    .pd-flag-body-input { min-height: 64px; }
+
+    /* Calendar: view toggle + filter stack */
+    .pd-calendar-hdr { flex-direction: column; align-items: flex-start; gap: 8px; }
+    .pd-calendar-controls { width: 100%; justify-content: space-between; }
+    .pd-cal-view-btn { padding: 5px 14px; min-height: 36px; }
+    .pd-cal-filter-select { flex: 1; min-height: 36px; }
+
+    /* Calendar month nav: larger tap targets */
+    .pd-cal-nav-btn { padding: 5px 14px; min-height: 36px; }
+
+    /* Calendar event cards: smaller padding */
+    .pd-cal-event-card { padding: 8px 10px; gap: 8px; }
+
+    /* Calendar form: single-column */
+    .pd-cal-form-row { flex-direction: column; gap: 8px; }
+    .pd-cal-form-field { min-width: unset; width: 100%; }
+    .pd-cal-form-input { min-height: 42px; }
+    .pd-cal-save-btn,
+    .pd-cal-cancel-btn { min-height: 44px; flex: 1; }
+    .pd-cal-form-actions { justify-content: stretch; }
+
+    /* Calendar add button: larger tap target */
+    .pd-cal-add-btn { min-height: 44px; }
+
+    /* Hub open btn */
+    .pd-hub-open-btn { padding: 14px 20px; min-height: 50px; }
+
+    /* Proactive + therapy cards */
+    .pd-proactive-card { padding: 10px 12px; }
+    .pd-brief-beh-grid { grid-template-columns: 1fr 1fr; }
+
+    /* Generate buttons */
+    .pd-brief-gen-btn { width: 100%; min-height: 44px; }
+
+    /* Close button — bigger hit area on mobile */
+    .pd-brief-close { padding: 8px 10px; font-size: 1.2rem; }
+
+    /* Inbound banner */
+    #inbound-banner { padding: 10px 14px; }
+  }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     MOBILE — 380px (small phones)
+     ══════════════════════════════════════════════════════════════════════ */
+  @media (max-width: 380px) {
+    .pd-hub-topbar-right { gap: 6px; }
+    .pd-hub-profile-link { display: none; }
+    .pd-stream-tiles { grid-template-columns: 1fr 1fr; gap: 6px; }
+    .pd-stream-tile-val { font-size: 1.05rem; }
+    .pd-brief-stat-grid { grid-template-columns: 1fr 1fr; }
+    .pd-cal-grid { gap: 1px; }
+    .pd-cal-day { min-height: 30px; }
+    .pd-cal-day-num { font-size: 0.6rem; }
+  }
 </style>
 {% endblock %}
 
@@ -1619,6 +1793,10 @@
     </div>{# /pd-roster-col #}
   </div>{# /pd-layout #}
 
+  <!-- Mobile backdrop: tap to close hub -->
+  <div id="pd-hub-backdrop" onclick="closeBrief()"
+       style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:199;"></div>
+
   <!-- ── Patient hub (right-side panel) ────────────────────────────────────── -->
   <!-- NOTE: id="pd-brief-drawer" kept for JS compatibility -->
   <div class="pd-brief-drawer" id="pd-brief-drawer">
@@ -1767,6 +1945,9 @@ function openHub(pid) {
   const drawer = document.getElementById('pd-brief-drawer');
   drawer.classList.add('open');
   document.getElementById('pd-roster-col').classList.add('hub-open');
+  // Show backdrop on mobile
+  const backdrop = document.getElementById('pd-hub-backdrop');
+  if (backdrop && window.innerWidth <= 520) backdrop.style.display = '';
 }
 
 function _checkinLabel(pt) {
@@ -2798,6 +2979,8 @@ function closeBrief() {
   document.getElementById('pd-brief-drawer').classList.remove('open');
   document.getElementById('pd-roster-col') && document.getElementById('pd-roster-col').classList.remove('hub-open');
   document.querySelectorAll('.pd-row.active').forEach(r => r.classList.remove('active'));
+  const backdrop = document.getElementById('pd-hub-backdrop');
+  if (backdrop) backdrop.style.display = 'none';
   _activeHubPid = null;
   _activePid    = null;
 }
