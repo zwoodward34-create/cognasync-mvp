@@ -1476,8 +1476,8 @@
         <div class="ch-adh-hdr">4-Week Medication Adherence</div>
         <div class="ch-adh-legend">
           <div class="ch-adh-leg-item"><div class="ch-adh-leg-cell ch-adh-leg-cell--taken"></div>Taken</div>
-          <div class="ch-adh-leg-item"><div class="ch-adh-leg-cell ch-adh-leg-cell--missed"></div>Missed</div>
-          <div class="ch-adh-leg-item"><div class="ch-adh-leg-cell ch-adh-leg-cell--unknown"></div>No data</div>
+          <div class="ch-adh-leg-item"><div class="ch-adh-leg-cell ch-adh-leg-cell--missed"></div>Not taken</div>
+          <div class="ch-adh-leg-item"><div class="ch-adh-leg-cell ch-adh-leg-cell--unknown"></div>No response</div>
         </div>
         <div id="ch-adh-grid" class="ch-adh-grid"></div>
         <div class="ch-adh-pct" id="ch-adh-pct"></div>
@@ -1616,55 +1616,6 @@
       <div class="hub-empty">No session recordings on file.
         <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}" style="color:var(--accent);text-decoration:none;display:block;margin-top:6px;font-size:0.8rem;">Upload a transcript →</a>
       </div>
-      {% endif %}
-    </div>
-  </div>
-
-  <!-- ── Medication Adherence Data ─────────────────────────────────────────── -->
-  <div class="hub-section collapsed" id="section-meds">
-    <div class="hub-section-hdr" data-toggle="meds">
-      <div class="hub-section-hdr-left">
-        <div class="hub-section-dot"></div>
-        <span class="hub-section-title">Medication Adherence</span>
-        <span class="hub-section-meta">{{ medications|length }} medication{{ 's' if medications|length != 1 }} · last 30 days</span>
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;" onclick="event.stopPropagation();openAddMedModal()">⊕ Add</button>
-        <span class="hub-section-chevron">›</span>
-      </div>
-    </div>
-    <div class="hub-section-body">
-      {% if medications %}
-        {% for med in medications %}
-        {% set med_id = med.id %}
-        {% set events = medication_events | selectattr('medication_id', 'equalto', med_id) | list %}
-        {% set taken_count = events | selectattr('taken', 'equalto', true) | list | length %}
-        {% set total_count = events | length %}
-        <div class="med-row" id="med-row-{{ med_id }}">
-          <div style="min-width:140px;">
-            <div class="med-name">{{ med.name }}</div>
-            <div class="med-dose">{{ med.standard_dose }}{{ med.dose_unit if med.dose_unit else '' }}{% if med.frequency %} · {{ med.frequency }}{% endif %}</div>
-          </div>
-          <div class="med-calendar">
-            {% for event in events[-30:] %}
-            <div class="med-day {% if event.taken %}med-day--taken{% else %}med-day--missed{% endif %}" title="{{ event.event_date[:10] if event.event_date else '' }} — {{ 'Taken' if event.taken else 'Missed' }}">{% if event.event_date %}{{ event.event_date[5:7].lstrip('0') or '0' }}/{{ event.event_date[8:10].lstrip('0') or '0' }}{% else %}?{% endif %}</div>
-            {% endfor %}
-            {% if not events %}<span style="font-size:0.78rem;color:var(--text-muted);">No events logged</span>{% endif %}
-          </div>
-          <div class="med-stat">
-            {% if total_count > 0 %}{{ taken_count }}/{{ total_count }}<br><span style="font-size:0.68rem;">{{ (taken_count / total_count * 100) | round | int }}%</span>{% else %}—{% endif %}
-          </div>
-          <div style="display:flex;gap:4px;flex-shrink:0;">
-            <button class="hub-action-btn edit-med-btn" style="font-size:0.68rem;padding:3px 8px;"
-                    data-med-id="{{ med_id }}" data-med-name="{{ med.name | e }}"
-                    data-med-dose="{{ med.standard_dose }}" data-med-unit="{{ med.dose_unit or 'mg' }}"
-                    data-med-freq="{{ med.frequency or '' }}" data-med-category="{{ med.category or '' }}">Edit</button>
-            <button class="delete-btn del-med-btn" title="Remove medication" data-med-id="{{ med_id }}">✕</button>
-          </div>
-        </div>
-        {% endfor %}
-      {% else %}
-      <div class="hub-empty" id="meds-empty-msg">No medications on file.</div>
       {% endif %}
     </div>
   </div>
@@ -2977,7 +2928,8 @@ function buildAdherenceGrid() {
         if (ev.taken > 0) { cls = 'ch-adh-cell--taken'; takenTotal++; }
         else if (ev.missed > 0) { cls = 'ch-adh-cell--missed'; missedTotal++; }
       }
-      weeksHtml += '<div class="ch-adh-cell ' + cls + '" title="' + day + '"></div>';
+      var dayNum = parseInt(day.slice(8), 10);
+      weeksHtml += '<div class="ch-adh-cell ' + cls + '" title="' + day + '">' + dayNum + '</div>';
     });
     weeksHtml += '</div>';
   }
