@@ -1457,3 +1457,159 @@ Linguistic biomarker analysis operates at the accuracy level of a high-volume sc
 - Narrative coherence observations come from the AI's own analysis of journal content passed in the prompt — not a separate function; the AI applies the rules above when analyzing raw journal text
 - Readability analysis is handled by `compute_readability(entries)` in `database.py` — returns grade level per entry and trend direction
 - None of these signals appear in Mode A (check-in insight) — they are longitudinal and require multi-entry analysis
+
+---
+
+## 26. Non-Respondent Signal Detection
+
+### Core Principle
+
+Silence is data. A patient who stops responding to SMS prompts is communicating something — even if that something is unknown. CognaSync tracks non-response patterns explicitly and surfaces them as a first-class clinical signal, distinct from simply "not enough data." The absence of engagement is not a data gap to be papered over; it is a pattern with its own clinical weight.
+
+**The framing for all non-respondent output: describe the pattern, never assign a reason.**
+
+---
+
+### Data Foundation
+
+Non-respondent detection is built on the `sms_tokens` table. Each row is one prompt sent:
+- `flow_type` — which channel: `medication` | `short` | `full` | `voice`
+- `created_at` — when the prompt was sent
+- `used_at` — when the patient responded (NULL = no response)
+
+`compute_engagement_stats()` in `database.py` returns all engagement signals. New fields added in this section:
+
+| Field | Type | Description |
+|---|---|---|
+| `sms_by_flow[ft]['unanswered_dates']` | list[str] | ISO dates of unanswered prompts for each channel |
+| `max_prompt_gap` | int | Longest consecutive run of unanswered-prompt days |
+| `prompt_gap_segments` | list[dict] | `[{start, end, days}]` for streaks ≥5 unanswered days |
+| `extended_no_response` | bool | True when `max_prompt_gap ≥ 5` |
+| `overall_sms_rate` | float | Response rate across all channels combined (0.0–1.0) |
+| `insufficient_data` | bool | True when `overall_sms_rate < 0.40` AND ≥3 prompts sent |
+
+---
+
+### The Four Provider-Facing Signals
+
+#### 1. Per-Channel Unanswered Dates
+
+For each SMS channel (medication adherence, short check-in, full check-in, voice recording), the provider sees:
+- How many prompts were sent on that channel
+- How many were answered
+- The specific calendar dates of unanswered prompts
+
+**Output format (Mode C Engagement subsection):**
+```
+• medication adherence: 8 of 14 (57%) — unanswered on: 2025-04-03, 2025-04-07, 2025-04-11, 2025-04-12, 2025-04-15, 2025-04-18
+• short check-in: 5 of 10 (50%) — unanswered on: 2025-04-02, 2025-04-08, 2025-04-14, 2025-04-20, 2025-04-22
+• voice recording: 0 of 4 (0%) — unanswered on: 2025-04-01, 2025-04-08, 2025-04-15, 2025-04-22
+```
+
+Omit the "unanswered on" line for channels with 100% response.
+
+**Language rules:**
+- "unanswered on" — not "missed on," "skipped on," "ignored on"
+- Never suggest the patient chose not to respond
+- Never imply technical failure vs. patient disengagement — they are indistinguishable from the data
+
+#### 2. Extended No-Response Streak (5+ Days)
+
+**Threshold:** 5 or more consecutive calendar days where at least one SMS prompt was sent AND none were answered — across any channel.
+
+**Flag level:** 🔴
+
+**Mode C Flags section format:**
+```
+🔴 Extended non-response — [N] consecutive days without responding to any SMS prompt ([start date] – [end date]). Clinical check-in recommended.
+```
+
+If multiple streaks occurred in the window, list each one separately.
+
+**What this is not:** This is a streak of unanswered *prompted* days — different from `max_consecutive_gap` (calendar-day silence). A patient who wasn't prompted on certain days does not count those days in the streak.
+
+**Language rules:**
+- "clinical check-in recommended" is the routing phrase — it surfaces to the provider, not the patient
+- Do NOT say "the patient went silent," "the patient withdrew," "the patient stopped engaging"
+- Do NOT speculate about burnout, avoidance, or deterioration — describe the count and dates only
+
+#### 3. Selective Channel Non-Response
+
+Already governed by `sms_divergent` (§ existing engagement section). When ≥2 channels each have ≥2 prompts sent and response rates diverge by ≥40 percentage points, this is a distinct clinical picture.
+
+**Example:** Responding to medication adherence prompts at 90% but voice recording at 10% is different from total silence — it suggests the patient is engaged but specifically avoiding one channel.
+
+**Flag level:** 🟡
+
+**Mode C Flags section format:**
+```
+🟡 Selective channel engagement — patient responded to medication adherence at 90% but voice recording at 10%.
+```
+
+#### 4. Insufficient Data Warning (< 40% Overall Response Rate)
+
+**Threshold:** Overall SMS response rate across all channels < 40%, with ≥3 prompts sent. This is the point at which the summary is built from a minority of the expected data — the provider needs to know that any pattern observations are statistically fragile.
+
+**Flag level:** 🔴 — placed FIRST in the Flags section, before all other flags
+
+**Mode C format:**
+
+Top of Flags:
+```
+🔴 ⚠ Insufficient data — overall response rate is [pct]% across all channels. Pattern observations in this summary are based on a minority of expected data points and should be interpreted with caution.
+```
+
+One sentence in the Trajectory section:
+```
+Note: the low response rate ([pct]%) limits confidence in the observations below.
+```
+
+The rest of the summary is NOT suppressed — what data exists should be surfaced, clearly flagged as limited. Suppressing the summary would deprive the provider of the data that does exist.
+
+**This is a distinct concept from low participation rate (which compares active days to calendar days).** A patient could have a low participation rate but still respond to every prompt they receive. The insufficient-data flag specifically measures whether the *prompted* engagement is sufficient to support pattern analysis.
+
+---
+
+### Mode D Alert Formats
+
+**Extended no-response streak:**
+```
+🔴 Non-Response Streak — [patient name] did not respond to any SMS prompt for [N] consecutive days ([start]–[end]).
+```
+
+**Insufficient data:**
+```
+🔴 Insufficient Engagement Data — overall SMS response rate is [pct]% ([N] of [T] prompts answered). Summary data should be interpreted with caution.
+```
+
+**Selective channel non-response:**
+```
+🟡 Selective Channel Engagement — responded to [high channel] at [high pct]% but [low channel] at [low pct]%.
+```
+
+---
+
+### What NOT to Surface in Patient-Facing Output (Mode A / Mode B)
+
+Non-respondent signals are **provider-only**. They must never appear in Mode A (check-in insight) or Mode B (patient summary) in the flag or clinical-signal form described above.
+
+Mode B may include a neutral, non-shaming acknowledgment of engagement (e.g., "You logged check-ins on [N] of [P] days") — but this is a factual note, not a flag, and must not reference response rates, streaks, or the insufficient-data threshold.
+
+**Never in patient-facing output:**
+- Response rate percentages
+- "Extended non-response" or any streak language
+- "Insufficient data" framing
+- Specific unanswered dates
+- Any comparison of the patient's response rate to a threshold
+
+---
+
+### Integration Points
+
+- `compute_engagement_stats()` — computes all non-respondent fields; called from `app.py` routes before any summary generation
+- `generate_appointment_summary(audience='provider')` — Mode C; engagement signals injected into Quantitative Summary and Flags sections
+- `generate_psychiatric_summary()` — Mode C psychiatry path; same signals, same injection pattern
+- Provider dashboard routes — Mode D alerts generated from `extended_no_response` and `insufficient_data` flags
+- Mode A (`analyze_checkin()`) — engagement data is NOT passed; these signals do not appear in post-check-in insights
+- Mode B (`generate_appointment_summary(audience='patient')`) — only the neutral participation sentence; no flags
+

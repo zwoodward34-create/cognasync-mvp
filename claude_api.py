@@ -750,7 +750,8 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                                  safety_flags=None,
                                  session_context=None,
                                  raw_voice_transcripts=None,
-                                 patient_name=None):
+                                 patient_name=None,
+                                 engagement_data=None):
     """Mode C (Psychiatrist) — medication-first, quantitative-primary brief.
 
     Returns {'status', 'text', 'raw', 'chart_data'} where chart_data contains
@@ -1097,6 +1098,168 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                 + '\n\n'.join(lines)
             )
 
+    # ── Engagement section (reuse same logic as generate_appointment_summary) ──
+    psych_engagement_section = ''
+    psych_system_addon        = ''   # dynamic additions to _PSYCHIATRY_SYSTEM
+    if engagement_data:
+        e = engagement_data
+        period_days          = e.get('period_days', 0)
+        active_days          = e.get('active_days', 0)
+        participation        = e.get('participation_rate')
+        max_gap              = e.get('max_consecutive_gap', 0)
+        gap_segs             = e.get('gap_segments') or []
+        sms_sent             = e.get('sms_prompts_sent', 0)
+        sms_rate             = e.get('sms_response_rate')
+        sms_responses        = e.get('sms_responses', 0)
+        sms_by_flow          = e.get('sms_by_flow') or {}
+        sms_divergent        = e.get('sms_divergent', False)
+        src_breakdown        = e.get('source_breakdown') or {}
+        days_since           = e.get('days_since_last')
+        extended_no_response = e.get('extended_no_response', False)
+        prompt_gap_segs      = e.get('prompt_gap_segments') or []
+        max_prompt_gap       = e.get('max_prompt_gap', 0)
+        overall_sms_rate     = e.get('overall_sms_rate')
+        insufficient_data    = e.get('insufficient_data', False)
+
+        pct = f"{round(participation * 100)}%" if participation is not None else "N/A"
+        eg_lines = [
+            f"\n\nENGAGEMENT DATA (period: {period_days} days):",
+            f"- Active days: {active_days} of {period_days} ({pct})",
+            f"- Longest calendar gap: {max_gap} day{'s' if max_gap != 1 else ''}",
+        ]
+        if gap_segs:
+            eg_lines.append("- Silent periods (≥3 days): "
+                            + "; ".join(f"{g['start']}–{g['end']} ({g['days']}d)"
+                                        for g in gap_segs))
+        if days_since is not None:
+            eg_lines.append(f"- Days since last check-in: {days_since}")
+        if sms_sent > 0:
+            eg_lines.append(
+                f"- SMS prompts: {sms_sent} sent | {sms_responses} responded "
+                f"| {round((sms_rate or 0) * 100)}% rate"
+            )
+        # Per-channel breakdown with unanswered dates (Mode C — always provider-facing)
+        if sms_by_flow:
+            _flow_order = ('medication', 'short', 'full', 'voice')
+            flow_lines = []
+            for ft in _flow_order:
+                fs = sms_by_flow.get(ft)
+                if fs and fs['sent'] > 0:
+                    unanswered = fs.get('unanswered_dates') or []
+                    unanswered_str = (
+                        f" — unanswered: {', '.join(unanswered)}" if unanswered else ''
+                    )
+                    flow_lines.append(
+                        f"  • {fs['label']}: {fs['responded']} of {fs['sent']} "
+                        f"({round(fs['response_rate'] * 100)}%){unanswered_str}"
+                    )
+            for ft, fs in sms_by_flow.items():
+                if ft not in _flow_order and fs['sent'] > 0:
+                    unanswered = fs.get('unanswered_dates') or []
+                    unanswered_str = (
+                        f" — unanswered: {', '.join(unanswered)}" if unanswered else ''
+                    )
+                    flow_lines.append(
+                        f"  • {fs['label']}: {fs['responded']} of {fs['sent']} "
+                        f"({round(fs['response_rate'] * 100)}%){unanswered_str}"
+                    )
+            if flow_lines:
+                eg_lines.append("- Per-channel response rates:\n" + '\n'.join(flow_lines))
+        if max_prompt_gap > 0:
+            eg_lines.append(
+                f"- Longest unanswered-prompt streak: {max_prompt_gap} day"
+                f"{'s' if max_prompt_gap != 1 else ''}"
+            )
+            if prompt_gap_segs:
+                eg_lines.append(
+                    "- Extended no-response streaks (≥5 days): "
+                    + "; ".join(f"{g['start']}–{g['end']} ({g['days']}d)"
+                                for g in prompt_gap_segs)
+                )
+        if overall_sms_rate is not None:
+            eg_lines.append(
+                f"- Overall SMS rate (all channels): {round(overall_sms_rate * 100)}%"
+                + (" ⚠ BELOW 40% — INSUFFICIENT DATA" if insufficient_data else "")
+            )
+        if src_breakdown:
+            eg_lines.append("- Source: "
+                            + ", ".join(f"{k}: {v}"
+                                        for k, v in sorted(src_breakdown.items())))
+        psych_engagement_section = '\n'.join(eg_lines)
+
+        # Dynamic system prompt additions for engagement signals
+        psych_system_addon = (
+            "\n\nFor ENGAGEMENT DATA: add a compact **Engagement** subsection in "
+            "## Quantitative Summary. Format:\n"
+            "- Participation: [active_days] of [period_days] days ([pct]%)\n"
+            "- Longest calendar gap: [N] days\n"
+            "- Per-channel response rates: list each channel with responded/sent, "
+            "percentage, and specific unanswered dates if any"
+        )
+        if gap_segs:
+            psych_system_addon += "\n- Silent periods: list date ranges"
+        if sms_sent > 0:
+            psych_system_addon += "\n- SMS: [responded] of [sent] prompts ([pct]%)"
+        psych_system_addon += (
+            "\nIf participation <50%: add 🟡 to Flags: "
+            "'Low engagement — [N] of [P] days logged.' "
+            "If <25%: upgrade to 🔴. "
+            "Never say 'non-compliant' or 'avoidant.'\n"
+        )
+
+        # Extended no-response streak: 5+ consecutive unanswered-prompt days
+        if extended_no_response:
+            streak_detail = '; '.join(
+                f"{g['start']}–{g['end']} ({g['days']}d)"
+                for g in prompt_gap_segs
+            ) if prompt_gap_segs else f"{max_prompt_gap} days"
+            psych_system_addon += (
+                f"\nEXTENDED NO-RESPONSE STREAK: {max_prompt_gap} consecutive days "
+                f"with unanswered prompts ({streak_detail}). "
+                "Add 🔴 to Flags: 'Extended non-response — [N] consecutive days without "
+                "responding to any SMS prompt ([date range]). Clinical check-in "
+                "recommended.' Do NOT speculate about the cause.\n"
+            )
+
+        # Insufficient-data warning: overall rate < 40%
+        if insufficient_data:
+            overall_pct = round((overall_sms_rate or 0) * 100)
+            psych_system_addon += (
+                f"\nINSUFFICIENT DATA WARNING: overall SMS response rate is "
+                f"{overall_pct}% — below 40% threshold. "
+                "Add 🔴 at TOP of Flags: '⚠ Insufficient data — overall response "
+                f"rate is {overall_pct}% across all channels. Pattern observations "
+                "in this summary are based on a minority of expected data points and "
+                "should be interpreted with caution.' "
+                "Also note once in Trajectory: 'Low response rate limits confidence "
+                "in the observations below.' "
+                "Do NOT suppress the rest of the summary — surface what exists, "
+                "clearly flagged as limited.\n"
+            )
+
+        if sms_divergent:
+            eligible = [(ft, sms_by_flow[ft])
+                        for ft in sms_by_flow if sms_by_flow[ft]['sent'] >= 2]
+            eligible.sort(key=lambda x: x[1]['response_rate'], reverse=True)
+            high_label = eligible[0][1]['label']
+            high_pct   = round(eligible[0][1]['response_rate'] * 100)
+            low_label  = eligible[-1][1]['label']
+            low_pct    = round(eligible[-1][1]['response_rate'] * 100)
+            psych_system_addon += (
+                f"\nSELECTIVE ENGAGEMENT DETECTED: response rate varies across channels "
+                f"({high_label}: {high_pct}% vs. {low_label}: {low_pct}%). "
+                "Add 🟡 to Flags: 'Selective channel engagement — responded to "
+                "[high channel] at [high pct]% but [low channel] at [low pct]%.' "
+                "Do NOT interpret the reason.\n"
+            )
+        if max_gap >= 14:
+            psych_system_addon += (
+                "\nIMPORTANT — §8 gap rule: gap of "
+                f"{max_gap} consecutive days detected. "
+                "State in Trajectory that data contains a significant gap. "
+                "Treat segments independently. Do NOT carry patterns across the gap.\n"
+            )
+
     patient_line = f"PATIENT: {patient_name}\n" if patient_name else ""
     user_content = (
         f"{patient_line}"
@@ -1104,6 +1267,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}\n\n"
         f"DAILY CHECK-INS ({n} total):\n{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
         f"JOURNAL ENTRIES ({len(journal_rows)} total):\n{json.dumps(journal_rows, indent=2, default=str)}"
+        f"{psych_engagement_section}"
         f"{symptom_section}"
         f"{substance_section}"
         f"{safety_section}"
@@ -1111,7 +1275,8 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         f"{voice_block}"
     )
 
-    raw   = _call_claude(_PSYCHIATRY_SYSTEM, user_content, max_tokens=2000)
+    psych_system = _PSYCHIATRY_SYSTEM + psych_system_addon
+    raw   = _call_claude(psych_system, user_content, max_tokens=2000)
     clean = _sanitize_output(raw)
     if clean is None:
         clean = (
@@ -1132,7 +1297,8 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                                   lexical_data=None,
                                   readability_data=None,
                                   session_context=None,
-                                  raw_voice_transcripts=None):
+                                  raw_voice_transcripts=None,
+                                  engagement_data=None):
     """Synthesize check-in and journal data into a pre-appointment summary.
 
     audience='patient'  → humanized, conversational (Mode B)
@@ -1816,6 +1982,250 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                 "Frame it as: here's what was also true on your best days — nothing more.\n"
             )
 
+    # ── Engagement / response-rate section ───────────────────────────────────
+    engagement_section = ''
+    if engagement_data:
+        e = engagement_data
+        period_days          = e.get('period_days', 0)
+        active_days          = e.get('active_days', 0)
+        participation        = e.get('participation_rate')
+        max_gap              = e.get('max_consecutive_gap', 0)
+        gap_segs             = e.get('gap_segments') or []
+        sms_sent             = e.get('sms_prompts_sent', 0)
+        sms_rate             = e.get('sms_response_rate')
+        sms_responses        = e.get('sms_responses', 0)
+        sms_by_flow          = e.get('sms_by_flow') or {}
+        sms_divergent        = e.get('sms_divergent', False)
+        src_breakdown        = e.get('source_breakdown') or {}
+        type_breakdown       = e.get('type_breakdown') or {}
+        days_since_last      = e.get('days_since_last')
+        extended_no_response = e.get('extended_no_response', False)
+        prompt_gap_segs      = e.get('prompt_gap_segments') or []
+        max_prompt_gap       = e.get('max_prompt_gap', 0)
+        overall_sms_rate     = e.get('overall_sms_rate')
+        insufficient_data    = e.get('insufficient_data', False)
+
+        pct = f"{round(participation * 100)}%" if participation is not None else "N/A"
+        lines = [
+            f"\n\nENGAGEMENT DATA (period: {period_days} days):",
+            f"- Active days (≥1 check-in): {active_days} of {period_days} ({pct})",
+            f"- Longest calendar gap: {max_gap} day{'s' if max_gap != 1 else ''}",
+        ]
+
+        if gap_segs:
+            seg_strs = [f"{g['start']} – {g['end']} ({g['days']} days)" for g in gap_segs]
+            lines.append(f"- Silent periods (≥3 consecutive days): {'; '.join(seg_strs)}")
+        else:
+            lines.append("- Silent periods (≥3 consecutive days): none")
+
+        if days_since_last is not None:
+            lines.append(f"- Days since most recent check-in: {days_since_last}")
+
+        if sms_sent > 0:
+            lines.append(
+                f"- SMS prompts sent this period: {sms_sent} | "
+                f"check-ins submitted via SMS: {sms_responses} | "
+                f"SMS response rate: {round((sms_rate or 0) * 100)}%"
+            )
+
+        # Per-feature SMS breakdown — include when ≥2 flow types have data
+        # (Mode C only; Mode B gets aggregate only to avoid overwhelming the patient view)
+        # For each channel, also list the specific dates of unanswered prompts so the
+        # provider knows exactly which days each route went unresponded.
+        if audience == 'provider' and sms_by_flow:
+            _flow_order = ('medication', 'short', 'full', 'voice')
+            flow_lines = []
+            for ft in _flow_order:
+                fs = sms_by_flow.get(ft)
+                if fs and fs['sent'] > 0:
+                    unanswered = fs.get('unanswered_dates') or []
+                    unanswered_str = (
+                        f" — unanswered on: {', '.join(unanswered)}"
+                        if unanswered else ''
+                    )
+                    flow_lines.append(
+                        f"  • {fs['label']}: {fs['responded']} of {fs['sent']} "
+                        f"({round(fs['response_rate'] * 100)}%){unanswered_str}"
+                    )
+            # Any unexpected flow types not in the canonical order
+            for ft, fs in sms_by_flow.items():
+                if ft not in _flow_order and fs['sent'] > 0:
+                    unanswered = fs.get('unanswered_dates') or []
+                    unanswered_str = (
+                        f" — unanswered on: {', '.join(unanswered)}"
+                        if unanswered else ''
+                    )
+                    flow_lines.append(
+                        f"  • {fs['label']}: {fs['responded']} of {fs['sent']} "
+                        f"({round(fs['response_rate'] * 100)}%){unanswered_str}"
+                    )
+            if flow_lines:
+                lines.append("- Per-channel response rates and unanswered dates:\n"
+                             + '\n'.join(flow_lines))
+
+        # Prompt-streak data: consecutive days with an unanswered prompt
+        if audience == 'provider' and max_prompt_gap > 0:
+            lines.append(
+                f"- Longest streak of unanswered prompts: {max_prompt_gap} day"
+                f"{'s' if max_prompt_gap != 1 else ''}"
+            )
+            if prompt_gap_segs:
+                streak_strs = [
+                    f"{g['start']} – {g['end']} ({g['days']} days)"
+                    for g in prompt_gap_segs
+                ]
+                lines.append(
+                    f"- Extended no-response streaks (≥5 days): {'; '.join(streak_strs)}"
+                )
+
+        if overall_sms_rate is not None and audience == 'provider':
+            lines.append(
+                f"- Overall SMS response rate (all channels): "
+                f"{round(overall_sms_rate * 100)}%"
+                + (" ⚠ BELOW 40% — INSUFFICIENT DATA FLAG" if insufficient_data else "")
+            )
+
+        if src_breakdown:
+            src_str = ', '.join(f"{k}: {v}" for k, v in sorted(src_breakdown.items()))
+            lines.append(f"- Check-in source breakdown: {src_str}")
+
+        if type_breakdown:
+            type_str = ', '.join(f"{k}: {v}" for k, v in sorted(type_breakdown.items()))
+            lines.append(f"- Check-in type breakdown: {type_str}")
+
+        engagement_section = '\n'.join(lines)
+
+        # ── System prompt additions ────────────────────────────────────────────
+        if audience == 'provider':
+            # Mode C: engagement is a first-class clinical signal.
+            # Low participation may reflect avoidance, life disruption, or
+            # tech barriers — flag it but don't interpret the cause.
+            engagement_system_note = (
+                "\n\nFor ENGAGEMENT DATA: add an **Engagement** subsection inside "
+                "the Quantitative Summary section. "
+                "Format:\n"
+                "- Participation: [active_days] of [period_days] days ([pct]%)\n"
+                "- Longest calendar gap: [N] days"
+            )
+            if gap_segs:
+                engagement_system_note += (
+                    "\n- Silent periods: list date ranges with duration"
+                )
+            if sms_sent > 0:
+                engagement_system_note += (
+                    "\n- SMS response rate: [N] of [N] prompts ([pct]%)"
+                )
+            if sms_by_flow:
+                engagement_system_note += (
+                    "\n- Per-channel response rates: list each channel with "
+                    "responded/sent, percentage, AND the specific dates of unanswered "
+                    "prompts (e.g. 'unanswered on: 2025-04-03, 2025-04-07'). "
+                    "Omit the unanswered dates line if a channel had no unanswered prompts."
+                )
+            if src_breakdown:
+                engagement_system_note += "\n- Source breakdown (web / sms / manual)"
+            engagement_system_note += (
+                "\nIf participation rate is below 50%, add a 🟡 flag in the Flags "
+                "section: 'Low engagement — [active_days] of [period_days] days "
+                "logged. Summary reflects available data only.' "
+                "If participation rate is below 25%, upgrade to 🔴. "
+                "Never interpret the reason for non-engagement. "
+                "Never say the patient was 'non-compliant,' 'avoidant,' or "
+                "'disengaged.' Describe only the count and rate.\n"
+            )
+
+            # Extended no-response streak: 5+ consecutive days with unanswered prompts
+            if extended_no_response:
+                streak_detail = '; '.join(
+                    f"{g['start']} – {g['end']} ({g['days']} days)"
+                    for g in prompt_gap_segs
+                ) if prompt_gap_segs else f"{max_prompt_gap} days"
+                engagement_system_note += (
+                    f"\nEXTENDED NO-RESPONSE STREAK: the patient did not respond to any "
+                    f"SMS prompt for {max_prompt_gap} or more consecutive days "
+                    f"({streak_detail}). "
+                    "Add a 🔴 flag in the Flags section: "
+                    "'Extended non-response — [N] consecutive days without responding to "
+                    "any SMS prompt ([date range]). Clinical check-in recommended.' "
+                    "Do NOT speculate about the cause.\n"
+                )
+
+            # Insufficient-data warning: overall SMS response rate < 40%
+            if insufficient_data:
+                overall_pct = round((overall_sms_rate or 0) * 100)
+                engagement_system_note += (
+                    f"\nINSUFFICIENT DATA WARNING: the patient's overall SMS response "
+                    f"rate across all channels is {overall_pct}% — below the 40% "
+                    "threshold for meaningful pattern analysis. "
+                    "Add a 🔴 flag at the TOP of the Flags section (before all others): "
+                    "'⚠ Insufficient data — overall response rate is [pct]% across all "
+                    "channels. Pattern observations in this summary are based on a "
+                    "minority of expected data points and should be interpreted with "
+                    "caution.' "
+                    "Also add one sentence to the Trajectory section: "
+                    "'Note: the low response rate ([pct]%) limits confidence in the "
+                    "observations below.' "
+                    "Do NOT suppress or omit the rest of the summary — surface what "
+                    "data exists, clearly flagged as limited.\n"
+                )
+
+            # Selective non-response: divergent engagement across feature types
+            if sms_divergent:
+                # Find highest and lowest response rate flows for the instruction
+                eligible = [(ft, sms_by_flow[ft])
+                            for ft in sms_by_flow if sms_by_flow[ft]['sent'] >= 2]
+                eligible.sort(key=lambda x: x[1]['response_rate'], reverse=True)
+                high_label = eligible[0][1]['label']
+                high_pct   = round(eligible[0][1]['response_rate'] * 100)
+                low_label  = eligible[-1][1]['label']
+                low_pct    = round(eligible[-1][1]['response_rate'] * 100)
+                engagement_system_note += (
+                    f"\nSELECTIVE ENGAGEMENT DETECTED: the patient's response rate "
+                    f"varies significantly across channels "
+                    f"({high_label}: {high_pct}% vs. {low_label}: {low_pct}%). "
+                    "Add a 🟡 note in the Flags section: "
+                    "'Selective channel engagement — patient responded to [high channel] "
+                    "at [high pct]% but [low channel] at [low pct]%.' "
+                    "Do NOT interpret the reason. Frame as a pattern worth discussing "
+                    "directly with the patient to understand any barriers.\n"
+                )
+            # §8 fourteen-day gap rule: split-segment note
+            if max_gap >= 14:
+                engagement_system_note += (
+                    "\nIMPORTANT — CLAUDE.md §8 gap rule: a gap of "
+                    f"{max_gap} consecutive days was detected. "
+                    "In the Trajectory section, state explicitly that the "
+                    "data contains a significant gap and that pattern "
+                    "observations are limited to the segments on either side "
+                    "of it. Do NOT carry patterns from before the gap into "
+                    "the post-gap analysis.\n"
+                )
+            summary_system += engagement_system_note
+
+        else:
+            # Mode B: brief, non-shaming acknowledgment for the patient.
+            # The patient deserves to see their own engagement picture but
+            # we don't want to make them feel judged about missed check-ins.
+            engagement_system_note = (
+                "\n\nFor ENGAGEMENT DATA: weave one sentence into the "
+                "'What the numbers showed' section. "
+                f"Example: 'You logged check-ins on {active_days} of the "
+                f"{period_days} days in this period.' "
+                "If there were long gaps, note them as factual context only: "
+                "'There was a stretch of [N] days without a log — so the "
+                "picture for that window is less complete.' "
+                "Do NOT frame low engagement as a failing or a concern. "
+                "Do NOT say 'you missed' or 'you skipped.' "
+                "Keep it to one sentence — do not dwell on it.\n"
+            )
+            if max_gap >= 14:
+                engagement_system_note += (
+                    "IMPORTANT: note once, plainly, that there was a gap of "
+                    f"more than two weeks in the data, and that observations "
+                    "before and after that gap are treated separately.\n"
+                )
+            summary_system += engagement_system_note
+
     # ── Raw voice transcript block ─────────────────────────────────────────────
     voice_transcript_block = ''
     if raw_voice_transcripts and audience == 'provider':
@@ -1847,6 +2257,7 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         f"{adv_section}\n\n"
         f"DAILY CHECK-INS ({n} total):\n{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
         f"JOURNAL ENTRIES ({len(journal_rows)} total):\n{json.dumps(journal_rows, indent=2, default=str)}"
+        f"{engagement_section}"
         f"{symptom_section}"
         f"{substance_section if audience == 'provider' else substance_patient_note}"
         f"{safety_section}"
@@ -1871,7 +2282,8 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
                               appointment_date=None,
                               safety_flags=None, substance_flags=None,
                               session_context=None,
-                              raw_voice_transcripts=None):
+                              raw_voice_transcripts=None,
+                              engagement_data=None):
     """Therapy-weighted Mode C summary for therapists and counselors.
 
     Leads with journal themes and behavioral patterns (social quality, coping,
@@ -2239,6 +2651,133 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
                 "patient talked about before acoustic data.\n"
             )
 
+    # ── Engagement section (therapy — Mode C only, same logic as psychiatry) ────
+    therapy_engagement_section = ''
+    if engagement_data:
+        e = engagement_data
+        period_days      = e.get('period_days', 0)
+        active_days      = e.get('active_days', 0)
+        participation    = e.get('participation_rate')
+        max_gap          = e.get('max_consecutive_gap', 0)
+        gap_segs         = e.get('gap_segments') or []
+        sms_sent         = e.get('sms_prompts_sent', 0)
+        sms_rate         = e.get('sms_response_rate')
+        sms_responses    = e.get('sms_responses', 0)
+        src_breakdown    = e.get('source_breakdown') or {}
+        type_breakdown   = e.get('type_breakdown') or {}
+        days_since_last  = e.get('days_since_last')
+        sms_by_flow      = e.get('sms_by_flow') or {}
+        sms_divergent    = e.get('sms_divergent', False)
+
+        pct = f"{round(participation * 100)}%" if participation is not None else "N/A"
+        eg_lines = [
+            f"\n\nENGAGEMENT DATA (period: {period_days} days):",
+            f"- Active days (≥1 check-in): {active_days} of {period_days} ({pct})",
+            f"- Longest gap without any check-in: {max_gap} day{'s' if max_gap != 1 else ''}",
+        ]
+
+        if gap_segs:
+            seg_strs = [f"{g['start']} – {g['end']} ({g['days']} days)" for g in gap_segs]
+            eg_lines.append(f"- Silent periods (≥3 consecutive days): {'; '.join(seg_strs)}")
+        else:
+            eg_lines.append("- Silent periods (≥3 consecutive days): none")
+
+        if days_since_last is not None:
+            eg_lines.append(f"- Days since most recent check-in: {days_since_last}")
+
+        if sms_sent > 0:
+            eg_lines.append(
+                f"- SMS prompts sent this period: {sms_sent} | "
+                f"check-ins submitted via SMS: {sms_responses} | "
+                f"SMS response rate: {round((sms_rate or 0) * 100)}%"
+            )
+            if len(sms_by_flow) > 1:
+                _flow_order = ('medication', 'short', 'full', 'voice')
+                flow_lines = []
+                for ft in _flow_order:
+                    fs = sms_by_flow.get(ft)
+                    if fs and fs['sent'] > 0:
+                        flow_lines.append(
+                            f"  • {fs['label']}: {fs['responded']} of {fs['sent']} "
+                            f"({round(fs['response_rate'] * 100)}%)"
+                        )
+                for ft, fs in sms_by_flow.items():
+                    if ft not in _flow_order and fs['sent'] > 0:
+                        flow_lines.append(
+                            f"  • {fs['label']}: {fs['responded']} of {fs['sent']} "
+                            f"({round(fs['response_rate'] * 100)}%)"
+                        )
+                if flow_lines:
+                    eg_lines.append("- Per-feature response rates:\n" + '\n'.join(flow_lines))
+
+        if src_breakdown:
+            src_str = ', '.join(f"{k}: {v}" for k, v in sorted(src_breakdown.items()))
+            eg_lines.append(f"- Check-in source breakdown: {src_str}")
+
+        if type_breakdown:
+            type_str = ', '.join(f"{k}: {v}" for k, v in sorted(type_breakdown.items()))
+            eg_lines.append(f"- Check-in type breakdown: {type_str}")
+
+        therapy_engagement_section = '\n'.join(eg_lines)
+
+        # System-prompt instruction — Mode C (provider) only
+        th_eng_note = (
+            "\n\nFor ENGAGEMENT DATA: add an **Engagement** subsection inside "
+            "the **Flags** section (or before it if there are no other flags). "
+            "Format:\n"
+            "- Participation: [active_days] of [period_days] days ([pct]%)\n"
+            "- Longest gap: [N] days"
+        )
+        if gap_segs:
+            th_eng_note += "\n- Silent periods: list date ranges with duration"
+        if sms_sent > 0:
+            th_eng_note += "\n- SMS response rate: [N] of [N] prompts ([pct]%)"
+            if len(sms_by_flow) > 1:
+                th_eng_note += (
+                    "\n- Per-feature response rates: list each feature type "
+                    "with responded/sent count and percentage"
+                )
+        if src_breakdown:
+            th_eng_note += "\n- Source breakdown (web / sms / manual)"
+        th_eng_note += (
+            "\nIf participation rate is below 50%, add a 🟡 flag: "
+            "'Low engagement — [active_days] of [period_days] days logged. "
+            "Summary reflects available data only.' "
+            "If below 25%, upgrade to 🔴. "
+            "Never say 'non-compliant,' 'avoidant,' or 'disengaged.' "
+            "Describe only the count and rate.\n"
+        )
+        if sms_divergent:
+            eligible = [(ft, sms_by_flow[ft])
+                        for ft in sms_by_flow if sms_by_flow[ft]['sent'] >= 2]
+            eligible.sort(key=lambda x: x[1]['response_rate'], reverse=True)
+            high_label = eligible[0][1]['label']
+            high_pct   = round(eligible[0][1]['response_rate'] * 100)
+            low_label  = eligible[-1][1]['label']
+            low_pct    = round(eligible[-1][1]['response_rate'] * 100)
+            th_eng_note += (
+                f"\nSELECTIVE ENGAGEMENT DETECTED: the patient's response rate "
+                f"varies significantly across feature types "
+                f"({high_label}: {high_pct}% vs. {low_label}: {low_pct}%). "
+                "Add a 🟡 note in the Flags section: "
+                f"'Selective engagement — consistently responded to {high_label} "
+                f"({high_pct}%) but not {low_label} ({low_pct}%). "
+                "Barrier or format preference worth exploring in session.' "
+                "Do NOT interpret the reason. Frame as a pattern worth discussing "
+                "directly with the patient to understand any barriers.\n"
+            )
+        if max_gap >= 14:
+            th_eng_note += (
+                "\nIMPORTANT — CLAUDE.md §8 gap rule: a gap of "
+                f"{max_gap} consecutive days was detected. "
+                "In the Trajectory section, state explicitly that the data "
+                "contains a significant gap and that pattern observations are "
+                "limited to the segments on either side of it. "
+                "Do NOT carry patterns from before the gap into the "
+                "post-gap analysis.\n"
+            )
+        summary_system += th_eng_note
+
     # ── Raw voice transcript block (therapy) ──────────────────────────────────
     therapy_voice_block = ''
     if raw_voice_transcripts:
@@ -2267,6 +2806,7 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         f"{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
         f"JOURNAL ENTRIES ({len(journal_rows)} total):\n"
         f"{json.dumps(journal_rows, indent=2, default=str)}"
+        f"{therapy_engagement_section}"
         f"{therapy_substance_section}"
         f"{therapy_safety_section}"
         f"{therapy_session_section}"

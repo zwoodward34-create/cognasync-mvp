@@ -1,0 +1,16 @@
+The **Mental Fitness Vocal Biomarker (MFVB)** is a novel scoring system designed to help users track their mental well-being in real-world settings through a smartphone application 1\. The term "Mental Fitness" was deliberately chosen to avoid the stigma often associated with psychiatric illnesses and disorders. By drawing an analogy to physical fitness, the terminology promotes the idea of proactively building mental strength, resilience, and vitality 2, 3\.  
+Here are the key details about how the MFVB works and its clinical efficacy based on recent prospective cohort research:  
+**How It Works**
+
+* **Brief Voice Journaling:** Users interact with the system by recording a 30-second voice journal, either responding to predefined prompts or speaking about their own topics 4, 5\.  
+* **Targeted Acoustic Features:** The system extracts eight specific vocal features that research has strongly linked to mental health conditions (especially depression). These features include jitter, shimmer, pitch variability, energy variability, vowel space, phonation duration, speech rate, and pause duration 6\.  
+* **Transparent Scoring:** Unlike many complex AI models, the MFVB algorithm does not use machine learning to generate its score. Instead, it normalizes the values of the eight extracted features against a large reference database and averages them 6, 7\.  
+* **User-Friendly Categories:** The output is a single score from 0 to 100, where a higher score indicates greater mental fitness. To make the results easy to interpret, scores are grouped into three actionable categories: "Excellent" (80-100), "Good" (70-79), and "Pay Attention" (0-69) 7, 8\.
+
+**Efficacy and Study Findings**A study validated the MFVB by comparing its scores against the M3 Checklist—a transdiagnostic tool used to measure symptoms of depression, anxiety, PTSD, and bipolar disorder 9, 10\. The biomarker successfully stratified individuals based on their risk for elevated mental health symptoms 9\.
+
+* **The Importance of Longitudinal Tracking:** The predictive power of the MFVB significantly increased when users were monitored continuously. While analyzing a single 30-second voice sample yielded a relative risk ratio of 1.53 for detecting elevated symptoms, aggregating the data over a two-week period improved the risk ratio to 2.00 9, 11\.  
+* **The Impact of High Engagement:** Participants who were highly engaged with the app (using it 5 to 6 times a week) saw the most dramatic results, with a risk ratio of 8.50. This underscores that frequent, continuous observation provides the most accurate reflection of a user's mental state 11-13.
+
+**User Experience and Feedback**Participants generally found the MFVB application convenient and user-friendly 14\. Many valued it as a bridge between clinical therapy sessions, noting that it encouraged structured self-reflection, positive daily routines, and provided a reassuring, objective perspective on their emotions 14, 15\.  
+However, some users noted limitations. A common critique was the strict 30-second recording limit, which some felt restricted their self-expression. Others mentioned occasional technical glitches, questioned the accuracy of the score if it conflicted with their own self-assessment, or raised concerns about data privacy 16, 17\.  

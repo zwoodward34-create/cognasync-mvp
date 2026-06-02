@@ -6835,7 +6835,10 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
         if sms_prompts_sent > 0:
             sms_response_rate = round(sms_responses / sms_prompts_sent, 3)
 
-        # Per-flow-type breakdown: used_at IS NOT NULL = patient clicked through
+        # Per-flow-type breakdown: used_at IS NOT NULL = patient clicked through.
+        # Also tracks unanswered_dates — the calendar dates on which a prompt of this
+        # type was sent but never responded to. Used to give providers a specific list
+        # of which days each channel went unanswered, rather than just totals.
         _FLOW_LABELS = {
             'medication': 'medication adherence',
             'short':      'short check-in',
@@ -6847,17 +6850,24 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
             ft = r.get('flow_type') or 'unknown'
             if ft not in sms_by_flow:
                 sms_by_flow[ft] = {
-                    'sent':          0,
-                    'responded':     0,
-                    'response_rate': 0.0,
-                    'label':         _FLOW_LABELS.get(ft, ft),
+                    'sent':             0,
+                    'responded':        0,
+                    'response_rate':    0.0,
+                    'label':            _FLOW_LABELS.get(ft, ft),
+                    'unanswered_dates': [],   # ISO dates of unanswered prompts
                 }
             sms_by_flow[ft]['sent'] += 1
             if r.get('used_at'):
                 sms_by_flow[ft]['responded'] += 1
+            else:
+                # Record the calendar date this unanswered prompt was sent
+                sent_date = (r.get('created_at') or '')[:10]
+                if sent_date and sent_date not in sms_by_flow[ft]['unanswered_dates']:
+                    sms_by_flow[ft]['unanswered_dates'].append(sent_date)
         for fs in sms_by_flow.values():
             fs['response_rate'] = (round(fs['responded'] / fs['sent'], 3)
                                    if fs['sent'] > 0 else 0.0)
+            fs['unanswered_dates'].sort()   # chronological order
 
         # Divergence flag: ≥2 flow types each with ≥2 prompts sent, where the gap
         # between the highest and lowest response rate is ≥ 0.40 (40 percentage points).
@@ -6872,25 +6882,105 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
             if max(rates) - min(rates) >= 0.40:
                 sms_divergent = True
 
+        # ── Consecutive no-response streak (prompt-based) ─────────────────────
+        # Walk prompt dates in chronological order and find the longest run of
+        # consecutive calendar days where at least one prompt was sent AND none
+        # were answered. Distinct from max_consecutive_gap (calendar-day silence)
+        # because it only counts days the patient was actually prompted.
+        # A 5+ day streak is the threshold for a provider-facing flag.
+        all_prompt_dates = sorted({
+            (r.get('created_at') or '')[:10]
+            for r in sms_rows
+            if (r.get('created_at') or '')[:10]
+        })
+        unanswered_prompt_date_set = set()
+        for ft, fs in sms_by_flow.items():
+            unanswered_prompt_date_set.update(fs['unanswered_dates'])
+
+        max_prompt_gap   = 0          # longest run of consecutive unanswered-prompt days
+        prompt_run_start = None
+        prompt_run_len   = 0
+        prompt_gap_segs  = []         # [{start, end, days}] for runs ≥ 5
+
+        for d in all_prompt_dates:
+            if d in unanswered_prompt_date_set:
+                if prompt_run_start is None:
+                    prompt_run_start = d
+                prompt_run_len += 1
+            else:
+                if prompt_run_len > 0:
+                    if prompt_run_len > max_prompt_gap:
+                        max_prompt_gap = prompt_run_len
+                    if prompt_run_len >= 5:
+                        prompt_run_end = (
+                            _date.fromisoformat(prompt_run_start)
+                            + _td(days=prompt_run_len - 1)
+                        ).isoformat()
+                        prompt_gap_segs.append({
+                            'start': prompt_run_start,
+                            'end':   prompt_run_end,
+                            'days':  prompt_run_len,
+                        })
+                prompt_run_start = None
+                prompt_run_len   = 0
+        # Trailing run
+        if prompt_run_len > 0:
+            if prompt_run_len > max_prompt_gap:
+                max_prompt_gap = prompt_run_len
+            if prompt_run_len >= 5:
+                prompt_run_end = (
+                    _date.fromisoformat(prompt_run_start)
+                    + _td(days=prompt_run_len - 1)
+                ).isoformat()
+                prompt_gap_segs.append({
+                    'start': prompt_run_start,
+                    'end':   prompt_run_end,
+                    'days':  prompt_run_len,
+                })
+
+        extended_no_response = max_prompt_gap >= 5   # hard flag for Mode C / Mode D
+
+        # ── Overall SMS response rate across all flow types ───────────────────
+        all_sms_sent      = sum(fs['sent'] for fs in sms_by_flow.values())
+        all_sms_responded = sum(fs['responded'] for fs in sms_by_flow.values())
+        overall_sms_rate  = (round(all_sms_responded / all_sms_sent, 3)
+                             if all_sms_sent > 0 else None)
+
+        # ── Insufficient-data flag ────────────────────────────────────────────
+        # True when overall SMS response rate < 40%, meaning the briefing is
+        # built from a minority of the expected data — providers should weigh
+        # any pattern observations accordingly. Only applies when ≥3 prompts
+        # were sent (avoids false-positive on patients who just enrolled).
+        insufficient_data = (
+            overall_sms_rate is not None
+            and all_sms_sent >= 3
+            and overall_sms_rate < 0.40
+        )
+
         # ── Clean up zero-count keys ──────────────────────────────────────────
         source_breakdown = {k: v for k, v in source_counts.items() if v > 0}
         type_breakdown   = {k: v for k, v in type_counts.items() if v > 0}
 
         return {
-            'period_days':          period_days,
-            'active_days':          active_days,
-            'participation_rate':   participation_rate,      # 0.0–1.0
-            'max_consecutive_gap':  max_consecutive_gap,     # days
-            'gap_segments':         gap_segments,            # [{start, end, days}]
-            'last_checkin_date':    last_checkin_date,
-            'days_since_last':      days_since_last,
-            'sms_prompts_sent':     sms_prompts_sent,        # short/full/voice only
-            'sms_responses':        sms_responses,
-            'sms_response_rate':    sms_response_rate,       # None if no prompts
-            'sms_by_flow':          sms_by_flow,             # per-feature breakdown
-            'sms_divergent':        sms_divergent,           # True if selective non-response
-            'source_breakdown':     source_breakdown,
-            'type_breakdown':       type_breakdown,
+            'period_days':              period_days,
+            'active_days':              active_days,
+            'participation_rate':       participation_rate,      # 0.0–1.0
+            'max_consecutive_gap':      max_consecutive_gap,     # calendar-day gap
+            'gap_segments':             gap_segments,            # [{start, end, days}] ≥3d
+            'last_checkin_date':        last_checkin_date,
+            'days_since_last':          days_since_last,
+            'sms_prompts_sent':         sms_prompts_sent,        # short/full/voice only
+            'sms_responses':            sms_responses,
+            'sms_response_rate':        sms_response_rate,       # None if no prompts
+            'sms_by_flow':              sms_by_flow,             # per-feature breakdown + unanswered_dates
+            'sms_divergent':            sms_divergent,           # True if selective non-response
+            'max_prompt_gap':           max_prompt_gap,          # longest consecutive unanswered-prompt days
+            'prompt_gap_segments':      prompt_gap_segs,         # [{start, end, days}] ≥5d prompt streaks
+            'extended_no_response':     extended_no_response,    # True if max_prompt_gap ≥ 5
+            'overall_sms_rate':         overall_sms_rate,        # rate across all flow types
+            'insufficient_data':        insufficient_data,       # True if overall rate < 40%
+            'source_breakdown':         source_breakdown,
+            'type_breakdown':           type_breakdown,
         }
 
     except Exception as e:

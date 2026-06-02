@@ -102,7 +102,17 @@
       "Bash(npx --no-install agent-browser screenshot /tmp/hub_before.png)",
       "Bash(npx *)",
       "Bash(grep -v \"^$\")",
-      "Bash(pkill -f \"python app.py\")"
+      "Bash(pkill -f \"python app.py\")",
+      "Bash(agent-browser screenshot *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5002/)",
+      "Bash(sed -n '1350,1360p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
+      "Bash(sed -n '1474,1490p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
+      "Bash(sed -n '1750,1770p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
+      "Bash(sed -n '1047,1055p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
+      "Bash(sed -n '1470,1482p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
+      "Bash(sed -n '1790,1800p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
+      "Bash(sed -n '1477,1490p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
+      "Bash(sed -n '1750,1798p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)"
     ]
   }
 }

@@ -1,0 +1,389 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CognaSync SMS Check-In Flow</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #F4F2ED; color: #1a1a1a; padding: 32px 24px 60px; }
+  h1 { font-family: Georgia, serif; font-size: 1.5rem; font-weight: 400; color: #0F6E56; margin-bottom: 4px; }
+  .subtitle { font-size: 0.82rem; color: #666; margin-bottom: 36px; }
+
+  /* Layout */
+  .container { max-width: 960px; margin: 0 auto; }
+  .section { margin-bottom: 40px; }
+  .section-title { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: #888; margin-bottom: 16px; padding-bottom: 8px; border-bottom: 1px solid #ddd; }
+
+  /* Flow diagram */
+  .flow { display: flex; align-items: flex-start; gap: 0; overflow-x: auto; padding-bottom: 8px; }
+  .flow-step { display: flex; flex-direction: column; align-items: center; min-width: 130px; }
+  .flow-arrow { font-size: 1.2rem; color: #ccc; margin-top: 22px; flex-shrink: 0; }
+  .flow-node { 
+    width: 110px; height: 110px; border-radius: 12px; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; text-align: center; gap: 6px;
+    border: 1.5px solid #ddd; background: #fff; padding: 10px;
+  }
+  .flow-node--system { background: #0F6E56; border-color: #0F6E56; color: #fff; }
+  .flow-node--patient { background: #e8f4ff; border-color: #b3d7f5; color: #1a5b99; }
+  .flow-node--parse { background: #fff8e6; border-color: #fad7a0; color: #b45309; }
+  .flow-node--crisis { background: #fdecea; border-color: #f5c6cb; color: #c0392b; }
+  .flow-node--db { background: #e6f4ea; border-color: #9FE1CB; color: #0F6E56; }
+  .flow-node--skip { background: #f5f5f5; border-color: #ddd; color: #888; }
+  .flow-icon { font-size: 1.5rem; }
+  .flow-label { font-size: 0.68rem; font-weight: 600; line-height: 1.3; }
+  .flow-sub { font-size: 0.6rem; color: inherit; opacity: 0.75; }
+  .flow-step-label { font-size: 0.62rem; color: #aaa; margin-top: 7px; text-align: center; }
+
+  /* SMS bubbles */
+  .bubbles { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
+  .bubble-col { display: flex; flex-direction: column; gap: 12px; }
+  .bubble-col-title { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: #888; margin-bottom: 4px; }
+  .bubble {
+    border-radius: 16px; padding: 12px 15px; font-size: 0.82rem; line-height: 1.5;
+    max-width: 340px; position: relative;
+  }
+  .bubble--out { background: #0F6E56; color: #fff; border-bottom-left-radius: 4px; align-self: flex-start; }
+  .bubble--in  { background: #e8f4ff; color: #1a1a1a; border-bottom-right-radius: 4px; align-self: flex-end; border: 1px solid #b3d7f5; }
+  .bubble--crisis { background: #fdecea; color: #c0392b; border: 1px solid #f5c6cb; border-bottom-left-radius: 4px; align-self: flex-start; }
+  .bubble-tag { font-size: 0.6rem; text-transform: uppercase; letter-spacing: 0.07em; opacity: 0.65; margin-bottom: 4px; font-weight: 600; }
+  .bubble-chars { font-size: 0.62rem; opacity: 0.55; margin-top: 5px; text-align: right; }
+
+  /* Score table */
+  .score-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 10px; }
+  .score-card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px 10px; text-align: center; }
+  .score-card--full { border-color: #9FE1CB; background: #e6f4ea; }
+  .score-card--approx { border-color: #fad7a0; background: #fff8e6; }
+  .score-card--partial { border-color: #f5c6cb; background: #fdecea; }
+  .score-name { font-size: 0.7rem; font-weight: 700; color: #333; margin-bottom: 4px; }
+  .score-badge { font-size: 0.62rem; font-weight: 600; padding: 2px 7px; border-radius: 10px; display: inline-block; margin-bottom: 6px; }
+  .score-badge--full { background: #0F6E56; color: #fff; }
+  .score-badge--approx { background: #e8a000; color: #fff; }
+  .score-badge--partial { background: #e5817a; color: #fff; }
+  .score-note { font-size: 0.6rem; color: #777; line-height: 1.4; }
+
+  /* Number map */
+  .num-map { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .num-box { 
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+    background: #fff; border: 1.5px solid #0F6E56; border-radius: 8px;
+    padding: 10px 14px; min-width: 90px;
+  }
+  .num-pos { font-size: 1.4rem; font-weight: 700; color: #0F6E56; font-family: Georgia, serif; }
+  .num-name { font-size: 0.72rem; font-weight: 600; color: #333; }
+  .num-range { font-size: 0.62rem; color: #888; }
+  .num-db { font-size: 0.58rem; color: #aaa; font-family: monospace; margin-top: 2px; }
+  .num-arrow { font-size: 1.4rem; color: #ccc; }
+
+  /* Decision tree */
+  .decision { display: grid; grid-template-columns: auto 1fr; gap: 0; }
+  .decision-row { display: contents; }
+  .decision-cond { 
+    background: #f5f5f5; border: 1px solid #e0e0e0; border-radius: 6px;
+    padding: 7px 12px; font-size: 0.75rem; font-weight: 600; color: #555;
+    margin: 3px 12px 3px 0; white-space: nowrap; align-self: center;
+  }
+  .decision-action { 
+    padding: 7px 0; font-size: 0.78rem; color: #333; align-self: center;
+    border-bottom: 1px solid #eee;
+  }
+  .decision-action--first { color: #c0392b; font-weight: 600; }
+  .decision-action--second { color: #1a5b99; }
+  .decision-action--third { color: #0F6E56; font-weight: 600; }
+  .decision-action--fourth { color: #888; }
+
+  /* Schedule */
+  .schedule { display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 12px; }
+  .sched-card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 14px 12px; }
+  .sched-name { font-size: 0.75rem; font-weight: 700; color: #0F6E56; margin-bottom: 4px; }
+  .sched-time { font-size: 0.7rem; color: #888; margin-bottom: 8px; }
+  .sched-fmt { font-size: 0.68rem; font-family: monospace; background: #f5f5f5; padding: 3px 7px; border-radius: 4px; margin-bottom: 6px; display: inline-block; }
+  .sched-note { font-size: 0.68rem; color: #666; line-height: 1.4; }
+
+  @media (max-width: 700px) {
+    .bubbles { grid-template-columns: 1fr; }
+    .score-grid { grid-template-columns: repeat(2, 1fr); }
+    .schedule { grid-template-columns: 1fr 1fr; }
+    .num-map { gap: 4px; }
+    .num-box { min-width: 70px; padding: 8px 10px; }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+  <h1>CognaSync SMS Daily Check-In</h1>
+  <p class="subtitle">Protocol Design · Format, flow, parse logic, and score coverage</p>
+
+  <!-- Number map -->
+  <div class="section">
+    <div class="section-title">The 5-Number Reply Format</div>
+    <div class="num-map">
+      <div class="num-box">
+        <span class="num-pos">1</span>
+        <span class="num-name">Mood</span>
+        <span class="num-range">0 – 10</span>
+        <span class="num-db">mood_score</span>
+      </div>
+      <div class="num-arrow">→</div>
+      <div class="num-box">
+        <span class="num-pos">2</span>
+        <span class="num-name">Energy</span>
+        <span class="num-range">0 – 10</span>
+        <span class="num-db">ext.energy</span>
+      </div>
+      <div class="num-arrow">→</div>
+      <div class="num-box">
+        <span class="num-pos">3</span>
+        <span class="num-name">Stress</span>
+        <span class="num-range">0 – 10</span>
+        <span class="num-db">stress_score</span>
+      </div>
+      <div class="num-arrow">→</div>
+      <div class="num-box">
+        <span class="num-pos">4</span>
+        <span class="num-name">Sleep Quality</span>
+        <span class="num-range">0 – 10</span>
+        <span class="num-db">ext.sleep_quality</span>
+      </div>
+      <div class="num-arrow">→</div>
+      <div class="num-box">
+        <span class="num-pos">5</span>
+        <span class="num-name">Sleep Hours</span>
+        <span class="num-range">0 – 12 (decimals OK)</span>
+        <span class="num-db">sleep_hours</span>
+      </div>
+    </div>
+    <p style="font-size:0.72rem;color:#888;margin-top:12px;">Mnemonic: <strong>M · E · S · Q · H</strong> &nbsp;— Mood · Energy · Stress · Quality · Hours</p>
+  </div>
+
+  <!-- SMS Bubbles -->
+  <div class="section">
+    <div class="section-title">Message Templates (all 1 SMS segment)</div>
+    <div class="bubbles">
+      <div class="bubble-col">
+        <div class="bubble-col-title">📤 Outbound (system → patient)</div>
+
+        <div>
+          <div class="bubble bubble--out">
+            <div class="bubble-tag">Daily recurring · 147 chars</div>
+            CognaSync: Today's check-in<br>
+            Reply: mood energy stress sleep-quality sleep-hrs<br>
+            Scale 0-10, sleep in hrs (e.g. 6.5)<br>
+            → 7 8 4 6 6.5<br>
+            Reply SKIP to skip.
+          </div>
+        </div>
+
+        <div>
+          <div class="bubble bubble--out">
+            <div class="bubble-tag">Confirmation · 88 chars</div>
+            Got it — check-in logged ✓ Mood 7 · Energy 8 · Stress 4 · Sleep 6.5hrs. Have a good day.
+          </div>
+        </div>
+
+        <div>
+          <div class="bubble bubble--out">
+            <div class="bubble-tag">Med add-on (per med) · 62 chars</div>
+            One more: did you take your Adderall 20mg? Reply Y or N.
+          </div>
+        </div>
+
+        <div>
+          <div class="bubble bubble--out">
+            <div class="bubble-tag">Parse failure · 105 chars</div>
+            Didn't catch that. Reply with 5 numbers: mood energy stress sleep-quality sleep-hrs. Example: 7 8 4 6 6.5
+          </div>
+        </div>
+
+        <div>
+          <div class="bubble bubble--crisis">
+            <div class="bubble-tag">Crisis intercept · 115 chars</div>
+            It sounds like you may be struggling. Please reach out:<br>
+            📞 988 (call or text)<br>
+            💬 Text HOME to 741741<br>
+            🚨 Emergency: 911
+          </div>
+        </div>
+      </div>
+
+      <div class="bubble-col">
+        <div class="bubble-col-title">📥 Inbound (patient → system)</div>
+
+        <div>
+          <div class="bubble bubble--in">
+            <div class="bubble-tag">Standard reply</div>
+            7 8 4 6 6.5
+          </div>
+        </div>
+
+        <div>
+          <div class="bubble bubble--in">
+            <div class="bubble-tag">Also accepted</div>
+            7,8,4,6,6.5
+          </div>
+        </div>
+
+        <div>
+          <div class="bubble bubble--in">
+            <div class="bubble-tag">4-number fallback (no sleep quality)</div>
+            7 8 4 6.5
+          </div>
+        </div>
+
+        <div>
+          <div class="bubble bubble--in">
+            <div class="bubble-tag">Weekly 6-number (adds dissociation)</div>
+            7 8 4 6 6.5 2
+          </div>
+        </div>
+
+        <div>
+          <div class="bubble bubble--in">
+            <div class="bubble-tag">Skip</div>
+            SKIP
+          </div>
+        </div>
+
+        <div>
+          <div class="bubble bubble--in">
+            <div class="bubble-tag">Medication reply (existing handler)</div>
+            Y
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Inbound routing decision tree -->
+  <div class="section">
+    <div class="section-title">Inbound SMS Routing (ordered priority)</div>
+    <div class="decision">
+      <div class="decision-cond">Crisis keywords?</div>
+      <div class="decision-action decision-action--first">→ Send 988/crisis block. Log event. Stop. Never parse further.</div>
+
+      <div class="decision-cond">Y / N / Yes / No?</div>
+      <div class="decision-action decision-action--second">→ Medication reply handler (existing). Update medication_sms_logs.</div>
+
+      <div class="decision-cond">≥ 4 numbers?</div>
+      <div class="decision-action decision-action--third">→ Parse as check-in. Create checkin row. Send confirmation. Queue med add-on SMS if applicable.</div>
+
+      <div class="decision-cond">SKIP / S?</div>
+      <div class="decision-action decision-action--fourth">→ Log skip on active sms_checkin_session. Send acknowledgment.</div>
+
+      <div class="decision-cond">Anything else</div>
+      <div class="decision-action decision-action--fourth">→ If active session exists: send format hint. Otherwise: silently ignore.</div>
+    </div>
+  </div>
+
+  <!-- Score coverage -->
+  <div class="section">
+    <div class="section-title">Computed Score Coverage — SMS vs Full Check-In</div>
+    <div class="score-grid">
+      <div class="score-card score-card--approx">
+        <div class="score-name">Stability Score</div>
+        <div class="score-badge score-badge--approx">Approximate</div>
+        <div class="score-note">Dissociation defaults to 0. Flags dissociation_source='default' in extended_data.</div>
+      </div>
+      <div class="score-card score-card--partial">
+        <div class="score-name">Sleep Disruption</div>
+        <div class="score-badge score-badge--partial">Partial</div>
+        <div class="score-note">Hours only (+2 if &lt;6hrs). Latency and awakenings not captured.</div>
+      </div>
+      <div class="score-card score-card--approx">
+        <div class="score-name">NS Load</div>
+        <div class="score-badge score-badge--approx">Approximate</div>
+        <div class="score-note">Stim load pulled from medication events. Caffeine not captured.</div>
+      </div>
+      <div class="score-card score-card--approx">
+        <div class="score-name">Crash Risk</div>
+        <div class="score-badge score-badge--approx">Approximate</div>
+        <div class="score-note">Nutrition omitted. Falls back to 50/50 SD+NSL weighting (already implemented in database.py).</div>
+      </div>
+      <div class="score-card score-card--approx">
+        <div class="score-name">Mood Distortion</div>
+        <div class="score-badge score-badge--approx">Approximate</div>
+        <div class="score-note">Derived from approximate stability. Directionally accurate.</div>
+      </div>
+    </div>
+    <p style="font-size:0.7rem;color:#888;margin-top:10px;">
+      ✅ Approximate = computable, clinically useful, accuracy within ~15% of full check-in &nbsp;|&nbsp;
+      ⚠️ Partial = computable from available subset, may miss edge cases
+    </p>
+  </div>
+
+  <!-- Send schedule -->
+  <div class="section">
+    <div class="section-title">Recommended Send Schedule</div>
+    <div class="schedule">
+      <div class="sched-card">
+        <div class="sched-name">Daily (Mon–Fri)</div>
+        <div class="sched-time">8:30 AM patient local time</div>
+        <div class="sched-fmt">5-number short</div>
+        <div class="sched-note">Core daily signal. Weekends off by default to reduce fatigue. Provider can override per patient.</div>
+      </div>
+      <div class="sched-card">
+        <div class="sched-name">Weekly (Friday)</div>
+        <div class="sched-time">Same 8:30 AM send</div>
+        <div class="sched-fmt">6-number (+ dissociation)</div>
+        <div class="sched-note">Adds dissociation field for full stability score. Optional one-word week reflection.</div>
+      </div>
+      <div class="sched-card">
+        <div class="sched-name">Onboarding</div>
+        <div class="sched-time">Day of enrollment</div>
+        <div class="sched-fmt">Long-form (2 segments)</div>
+        <div class="sched-note">Full numbered list with label descriptions. Sends once. Patients reference it when learning the format.</div>
+      </div>
+      <div class="sched-card">
+        <div class="sched-name">Ad-hoc</div>
+        <div class="sched-time">Provider-triggered</div>
+        <div class="sched-fmt">Short or magic link</div>
+        <div class="sched-note">Provider sends from patient hub. Short check-in or full React SPA link for pre-appointment depth.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Implementation notes -->
+  <div class="section">
+    <div class="section-title">Implementation Touchpoints</div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;">
+      <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:14px;">
+        <div style="font-size:0.72rem;font-weight:700;color:#0F6E56;margin-bottom:8px;">sms_engine.py — Add</div>
+        <div style="font-size:0.75rem;color:#444;line-height:1.7;font-family:monospace;">
+          send_daily_checkin_sms()<br>
+          parse_sms_checkin_reply()<br>
+          send_checkin_confirmation()<br>
+          send_checkin_format_hint()
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:14px;">
+        <div style="font-size:0.72rem;font-weight:700;color:#0F6E56;margin-bottom:8px;">app.py — Extend</div>
+        <div style="font-size:0.75rem;color:#444;line-height:1.7;font-family:monospace;">
+          /api/sms/inbound → add number-reply branch<br>
+          /api/internal/send-daily-checkin (cron)<br>
+          No existing endpoint changes needed
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:14px;">
+        <div style="font-size:0.72rem;font-weight:700;color:#0F6E56;margin-bottom:8px;">database.py — Add</div>
+        <div style="font-size:0.75rem;color:#444;line-height:1.7;font-family:monospace;">
+          create_sms_checkin_session()<br>
+          resolve_sms_checkin_session()<br>
+          create_checkin() ← no changes needed<br>
+          (checkin_type='sms' already supported)
+        </div>
+      </div>
+      <div style="background:#fff;border:1px solid #ddd;border-radius:8px;padding:14px;">
+        <div style="font-size:0.72rem;font-weight:700;color:#0F6E56;margin-bottom:8px;">New DB table</div>
+        <div style="font-size:0.75rem;color:#444;line-height:1.7;font-family:monospace;">
+          sms_checkin_sessions<br>
+          (patient_id, sent_at, expires_at,<br>
+          replied_at, checkin_id, format)
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>
