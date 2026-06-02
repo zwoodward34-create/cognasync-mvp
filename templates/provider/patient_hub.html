@@ -822,7 +822,15 @@
   /* ═══════════════════════════════════════════════════════════════════════════
      ClaraMind-style full hub layout
      ═══════════════════════════════════════════════════════════════════════════ */
-  .ch-page { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; font-family: 'DM Sans', sans-serif; }
+  .ch-page { max-width: none; margin: 0; padding: 0; font-family: 'DM Sans', sans-serif; }
+  .ch-page-back { padding: 20px 24px 0; }
+  .ch-page-grid { display: grid; grid-template-columns: 1fr 400px; align-items: start; min-height: calc(100vh - 60px); }
+  .ch-left-col { padding: 16px 20px 60px 24px; min-width: 0; overflow: hidden; }
+  .ch-sections { border-left: 1px solid var(--border); padding: 16px 16px 60px; position: sticky; top: 60px; max-height: calc(100vh - 60px); overflow-y: auto; background: var(--bg); }
+  @media (max-width: 1100px) {
+    .ch-page-grid { grid-template-columns: 1fr; }
+    .ch-sections { position: static; max-height: none; border-left: none; border-top: 1px solid var(--border); padding: 16px 24px 60px; }
+  }
 
   /* ── Patient header ── */
   .ch-header {
@@ -1033,8 +1041,8 @@
   .ch-mood-bar-fill--good { background: #5b9e72; }
   .ch-mood-bar-val { font-size: 0.72rem; font-weight: 600; color: var(--text); width: 20px; text-align: right; flex-shrink: 0; }
 
-  /* Below-fold sections wrapper */
-  .ch-sections { margin-top: 8px; }
+  /* Below-fold sections wrapper — overridden by ch-page-grid rule above for right-column positioning */
+  .ch-sections { margin-top: 0; }
   .ch-sections-hdr {
     font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.09em; color: var(--text-muted); margin-bottom: 12px;
@@ -1047,7 +1055,12 @@
 {% block content %}
 <div class="ch-page">
 
-  <a href="{{ url_for('provider_dashboard') }}" class="hub-back">← My Patients</a>
+  <div class="ch-page-back">
+    <a href="{{ url_for('provider_dashboard') }}" class="hub-back">← My Patients</a>
+  </div>
+
+  <div class="ch-page-grid">
+  <div class="ch-left-col">
 
   <!-- ── ClaraMind Patient Header ─────────────────────────────────────────── -->
   <div class="ch-header">
@@ -1473,10 +1486,12 @@
 
   </div>{# /ch-body-grid #}
 
-  <!-- ── Below-fold detail sections ──────────────────────────────────────── -->
+  </div>{# /ch-left-col #}
+
+  <!-- ── Detailed Records — right column ─────────────────────────────────── -->
   <div class="ch-sections">
     <div class="ch-sections-hdr">Detailed Records</div>
-    <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;align-items:start;">
+    <div>
     <div>
 
   <!-- ── Check-in Data ──────────────────────────────────────────────────────── -->
@@ -1751,10 +1766,10 @@
     </div>
   </div>
 
-    </div>{# /sections left col #}
+    </div>{# /sections col #}
 
-    <!-- ── Flags sidebar ────────────────────────────────────────────────────── -->
-    <div class="hub-sidebar">
+    <!-- ── Flags panel (full-width in right column) ─────────────────────────── -->
+    <div class="hub-sidebar" style="margin-top:12px;">
       <div class="flags-panel">
         <div class="flags-panel-hdr">
           <div class="flags-panel-title">🚩 Care Team Flags
@@ -1792,6 +1807,8 @@
 
     </div>{# /sections grid #}
   </div>{# /ch-sections #}
+
+  </div>{# /ch-page-grid #}
 
 </div>{# /ch-page #}
 
