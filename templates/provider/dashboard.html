@@ -1677,31 +1677,37 @@
     display: flex;
     align-items: flex-start;
     min-height: calc(100vh - 180px);
+    position: relative;
   }
-  /* Roster column (left) - inherits .pd-roster-col styles */
+  /* Roster column — narrow left rail */
   .pd-two-col-layout .pd-roster-col {
-    flex: 1;
+    width: 260px;
+    flex-shrink: 0;
     min-width: 0;
     padding: 0 0 40px;
     border-right: 1px solid var(--border);
+    position: relative;
+    z-index: 0;
+    align-self: stretch;
+    background: var(--surface);
   }
   .pd-two-col-layout .pd-roster-col.hub-open {
     margin-right: 500px;
   }
-  /* Hide sidebar when hub panel is open to avoid triple-column crowding */
+  /* Hide sidebar when hub panel is open */
   .pd-roster-col.hub-open ~ .pd-right-sidebar {
     display: none;
   }
 
   /* Roster sub-header */
   .pd-roster-hdr {
-    padding: 14px 20px 0;
+    padding: 14px 14px 0;
     border-bottom: 1px solid var(--border);
     margin-bottom: 0;
   }
   .pd-roster-hdr-title {
     font-family: 'DM Serif Display', serif;
-    font-size: 1.1rem;
+    font-size: 1rem;
     font-weight: 400;
     color: var(--text);
     margin-bottom: 10px;
@@ -1712,26 +1718,36 @@
   }
   .pd-two-col-layout .pd-section-hdr,
   .pd-two-col-layout .pd-row {
-    margin-left: 20px;
-    margin-right: 20px;
+    margin-left: 12px;
+    margin-right: 12px;
   }
   .pd-two-col-layout .pd-section-hdr {
     margin-top: 14px;
   }
+  /* Hide space-hungry columns — only name+email+avatar fit in the narrow rail */
+  .pd-two-col-layout .pd-row-stats,
+  .pd-two-col-layout .pd-row-meds,
+  .pd-two-col-layout .pd-row-appt,
+  .pd-two-col-layout .pd-row-chevron { display: none; }
   .pd-two-col-layout .pd-section-gap { margin-top: 20px; }
-  .pd-two-col-layout .pd-no-results { margin: 0 20px; }
-  .pd-two-col-layout .pd-filter-bar { padding: 10px 20px 10px; border-bottom: 1px solid var(--border); margin-bottom: 0; }
+  .pd-two-col-layout .pd-no-results { margin: 0 12px; }
+  .pd-two-col-layout .pd-filter-bar { padding: 10px 12px 10px; border-bottom: 1px solid var(--border); margin-bottom: 0; }
 
-  /* Right sidebar */
+  /* Cards section — expands to fill remaining width, floats over roster top */
   .pd-right-sidebar {
-    width: 340px;
-    flex-shrink: 0;
-    padding: 16px;
-    display: flex;
-    flex-direction: column;
+    flex: 1;
+    min-width: 0;
+    padding: 14px 16px 16px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
     gap: 14px;
+    align-content: start;
     background: var(--bg);
     min-height: calc(100vh - 180px);
+    position: relative;
+    z-index: 5;
+    margin-left: -1px;
+    box-shadow: -4px 0 18px rgba(0,0,0,0.06);
   }
   .pd-sidebar-card {
     background: var(--surface);
@@ -1866,14 +1882,21 @@
   .pd-sidebar-view-all:hover { background: #f5faf7; }
 
   @media (max-width: 1100px) {
-    .pd-right-sidebar { width: 280px; }
+    .pd-right-sidebar { grid-template-columns: 1fr; }
     .pd-stat-card-val { font-size: 1.7rem; }
   }
   @media (max-width: 900px) {
     .pd-stat-row { grid-template-columns: repeat(2, 1fr); }
     .pd-stat-card:nth-child(2) { border-right: none; }
-    .pd-right-sidebar { display: none; }
-    .pd-two-col-layout .pd-roster-col { border-right: none; }
+    /* Stack vertically on tablet/mobile: roster on top, cards below */
+    .pd-two-col-layout { flex-direction: column; }
+    .pd-two-col-layout .pd-roster-col { width: 100%; border-right: none; border-bottom: 1px solid var(--border); }
+    .pd-right-sidebar { grid-template-columns: 1fr 1fr; box-shadow: none; margin-left: 0; min-height: auto; }
+    /* Restore hidden columns on mobile where full width is available */
+    .pd-two-col-layout .pd-row-stats { display: flex; }
+    .pd-two-col-layout .pd-row-meds  { display: flex; }
+    .pd-two-col-layout .pd-row-appt  { display: block; }
+    .pd-two-col-layout .pd-row-chevron { display: block; }
   }
   @media (max-width: 600px) {
     .pd-dash-hdr { flex-direction: column; align-items: flex-start; padding: 16px; gap: 12px; }
