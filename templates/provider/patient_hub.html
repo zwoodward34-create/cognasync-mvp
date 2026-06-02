@@ -818,48 +818,278 @@
   .brief-md-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
   .brief-md-table th, .brief-md-table td { border: 1px solid #e5e7eb; padding: 5px 10px; text-align: left; }
   .brief-md-table thead { background: #f3f4f6; font-weight: 600; }
+
+  /* ═══════════════════════════════════════════════════════════════════════════
+     ClaraMind-style full hub layout
+     ═══════════════════════════════════════════════════════════════════════════ */
+  .ch-page { max-width: 1200px; margin: 0 auto; padding: 20px 24px 60px; font-family: 'DM Sans', sans-serif; }
+
+  /* ── Patient header ── */
+  .ch-header {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; margin-bottom: 18px; flex-wrap: wrap;
+    background: var(--surface); border: 1px solid var(--border);
+    border-radius: 10px; padding: 16px 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  .ch-header-main { display: flex; align-items: center; gap: 14px; flex: 1; min-width: 0; }
+  .ch-avatar {
+    width: 44px; height: 44px; border-radius: 50%; background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Serif Display', serif; font-size: 1.1rem; flex-shrink: 0;
+  }
+  .ch-identity { min-width: 0; }
+  .ch-name {
+    font-family: 'DM Serif Display', serif; font-size: 1.3rem; color: var(--text);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .ch-identity-meta { font-size: 0.75rem; color: var(--text-muted); margin-top: 3px; }
+  .ch-risk-pill {
+    font-size: 0.65rem; font-weight: 700; padding: 2px 9px; border-radius: 10px; white-space: nowrap;
+  }
+  .ch-risk-pill--high     { background: #fdecea; color: #c0392b; }
+  .ch-risk-pill--moderate { background: #fff4e0; color: #b45309; }
+  .ch-risk-pill--stable   { background: #e6f4ea; color: #1a7f3c; }
+  .ch-med-pill {
+    font-size: 0.65rem; font-weight: 500; background: #e8f4ff; color: #1a5b99;
+    border: 1px solid #b3d7f5; border-radius: 5px; padding: 2px 8px; white-space: nowrap;
+  }
+  .ch-header-actions { display: flex; gap: 8px; flex-shrink: 0; flex-wrap: wrap; }
+  .ch-action-btn {
+    font-size: 0.78rem; font-weight: 500; font-family: 'DM Sans', sans-serif;
+    padding: 6px 13px; border-radius: 6px; border: 1px solid var(--border);
+    background: var(--surface); color: var(--text); cursor: pointer;
+    transition: border-color 0.12s, background 0.12s; white-space: nowrap;
+  }
+  .ch-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .ch-action-btn--primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .ch-action-btn--primary:hover { opacity: 0.88; color: #fff; }
+  .ch-action-btn--sm { font-size: 0.72rem; padding: 5px 11px; }
+  .ch-action-btn:disabled { opacity: 0.5; cursor: default; }
+
+  /* ── Timeline card ── */
+  .ch-timeline-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 20px 12px; margin-bottom: 18px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  .ch-timeline-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+  .ch-timeline-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); }
+  .ch-tl-legend { display: flex; gap: 14px; flex-wrap: wrap; }
+  .ch-tl-leg-item { display: flex; align-items: center; gap: 5px; font-size: 0.65rem; color: var(--text-muted); }
+  .ch-tl-leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+  .ch-tl-leg-dot--session { background: var(--accent); }
+  .ch-tl-leg-dot--checkin { background: #94a3b8; }
+  .ch-tl-leg-dot--crisis  { background: #c0392b; }
+  .ch-tl-leg-dot--flag    { background: #e8a000; }
+  .ch-tl-months { display: flex; justify-content: space-between; margin-bottom: 4px; }
+  .ch-tl-month-lbl { font-size: 0.62rem; color: var(--text-muted); }
+  .ch-tl-track-wrap { position: relative; height: 20px; }
+  .ch-tl-line {
+    position: absolute; top: 50%; left: 0; right: 0;
+    height: 1px; background: var(--border); transform: translateY(-50%);
+  }
+  .ch-tl-dots { position: absolute; top: 0; left: 0; right: 0; height: 100%; }
+  .ch-tl-dot {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 9px; height: 9px; border-radius: 50%; cursor: default;
+    transition: transform 0.12s;
+  }
+  .ch-tl-dot:hover { transform: translate(-50%, -50%) scale(1.6); }
+  .ch-tl-dot--checkin { background: #94a3b8; }
+  .ch-tl-dot--session { background: var(--accent); width: 11px; height: 11px; border: 2px solid var(--surface); box-shadow: 0 0 0 1.5px var(--accent); }
+  .ch-tl-dot--crisis  { background: #c0392b; width: 11px; height: 11px; }
+  .ch-tl-dot--flag    { background: #e8a000; }
+
+  /* ── Two-column body ── */
+  .ch-body-grid {
+    display: grid; grid-template-columns: 1fr 400px; gap: 16px;
+    align-items: start; margin-bottom: 24px;
+  }
+  @media (max-width: 1000px) { .ch-body-grid { grid-template-columns: 1fr; } }
+
+  /* ── Cards ── */
+  .ch-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    overflow: hidden; box-shadow: 0 1px 4px rgba(0,0,0,0.05);
+  }
+  .ch-card-hdr {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 13px 18px; border-bottom: 1px solid var(--border); gap: 10px; flex-wrap: wrap;
+  }
+  .ch-card-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); }
+  .ch-live-badge { font-size: 0.72rem; color: var(--text-muted); white-space: nowrap; }
+  .ch-live-dot { color: #1a7f3c; }
+
+  /* Quick Tags */
+  .ch-qt-section { padding: 12px 18px; border-bottom: 1px solid var(--border); }
+  .ch-qt-label { font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-muted); margin-bottom: 8px; }
+  .ch-qt-wrap { display: flex; flex-wrap: wrap; gap: 6px; }
+  .ch-tag {
+    font-size: 0.72rem; font-weight: 500; padding: 3px 10px; border-radius: 5px;
+    border: 1px solid var(--border); background: var(--bg); color: var(--text-muted);
+    cursor: default;
+  }
+  .ch-tag--active { background: #e8f4ff; border-color: #b3d7f5; color: #1a5b99; }
+  .ch-tag--alert  { background: #fef9f9; border-color: #f5c6cb; color: #c0392b; }
+  .ch-tag--warn   { background: #fff8e6; border-color: #fad7a0; color: #b45309; }
+  .ch-tag--pos    { background: #e6f4ea; border-color: #9FE1CB; color: #0F6E56; }
+
+  /* Note area */
+  .ch-note-section { padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .ch-note-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
+  .ch-note-title { font-size: 0.78rem; font-weight: 600; color: var(--text); }
+  .ch-fmt-wrap { display: flex; gap: 4px; }
+  .ch-fmt-btn {
+    font-size: 0.7rem; font-weight: 500; padding: 3px 9px; border-radius: 4px;
+    border: 1px solid var(--border); background: none; color: var(--text-muted);
+    cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.1s;
+  }
+  .ch-fmt-btn--active { background: var(--text); color: var(--surface); border-color: var(--text); }
+  .ch-note-ta {
+    width: 100%; box-sizing: border-box; min-height: 130px; resize: vertical;
+    font-family: 'DM Sans', sans-serif; font-size: 0.84rem; line-height: 1.6;
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 7px;
+    background: var(--bg); color: var(--text); outline: none;
+    transition: border-color 0.12s;
+  }
+  .ch-note-ta:focus { border-color: var(--accent); }
+  .ch-note-footer { display: flex; align-items: center; justify-content: space-between; margin-top: 8px; }
+  .ch-note-autosave { font-size: 0.7rem; color: var(--text-muted); font-style: italic; }
+
+  /* Previous Sessions accordion */
+  .ch-prev-section { padding: 0; }
+  .ch-prev-label { font-size: 0.58rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.09em; color: var(--text-muted); padding: 10px 18px 8px; }
+  .ch-prev-item { border-top: 1px solid var(--border); }
+  .ch-prev-hdr {
+    display: flex; align-items: center; gap: 10px; padding: 10px 18px;
+    cursor: pointer; transition: background 0.1s; user-select: none;
+  }
+  .ch-prev-hdr:hover { background: var(--bg); }
+  .ch-prev-num {
+    width: 26px; height: 26px; border-radius: 6px; background: var(--border);
+    color: var(--text-muted); font-size: 0.72rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .ch-prev-info { flex: 1; min-width: 0; }
+  .ch-prev-date { font-size: 0.8rem; font-weight: 600; color: var(--text); }
+  .ch-prev-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 1px; }
+  .ch-prev-chevron { font-size: 0.82rem; color: var(--text-muted); transition: transform 0.15s; }
+  .ch-prev-item.open .ch-prev-chevron { transform: rotate(90deg); }
+  .ch-prev-body { display: none; padding: 0 18px 12px 54px; }
+  .ch-prev-item.open .ch-prev-body { display: block; }
+  .ch-prev-text { font-size: 0.8rem; color: var(--text); line-height: 1.6; margin: 0; }
+  .ch-prev-text--empty { color: var(--text-muted); font-style: italic; }
+  .ch-prev-empty { padding: 14px 18px; font-size: 0.8rem; color: var(--text-muted); font-style: italic; }
+
+  /* Clinical data tabs */
+  .ch-data-tabs { display: flex; gap: 3px; }
+  .ch-data-tab {
+    font-size: 0.72rem; font-weight: 500; padding: 4px 11px; border-radius: 5px;
+    border: 1px solid var(--border); background: none; color: var(--text-muted);
+    cursor: pointer; font-family: 'DM Sans', sans-serif; transition: all 0.1s;
+  }
+  .ch-data-tab.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .ch-data-panel { display: none; padding: 14px 18px; border-bottom: 1px solid var(--border); }
+  .ch-data-panel.active { display: block; }
+  .ch-chart-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+  .ch-chart-title { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-muted); }
+  .ch-chart-current { font-size: 0.75rem; color: var(--text-muted); }
+  .ch-chart-current strong { color: var(--text); font-weight: 700; }
+  .ch-chart-wrap canvas { width: 100% !important; }
+
+  /* Medication adherence grid */
+  .ch-adh-hdr { font-size: 0.68rem; font-weight: 600; color: var(--text-muted); margin-bottom: 10px; text-transform: uppercase; letter-spacing: 0.06em; }
+  .ch-adh-grid { margin-bottom: 8px; }
+  .ch-adh-days-hdr { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 4px; }
+  .ch-adh-days-hdr span { text-align: center; font-size: 0.62rem; font-weight: 600; color: var(--text-muted); }
+  .ch-adh-weeks { display: flex; flex-direction: column; gap: 3px; }
+  .ch-adh-week { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+  .ch-adh-cell {
+    aspect-ratio: 1; border-radius: 3px; background: var(--border);
+    cursor: default; transition: opacity 0.1s;
+  }
+  .ch-adh-cell:hover { opacity: 0.75; }
+  .ch-adh-cell--taken   { background: #5b9e72; }
+  .ch-adh-cell--missed  { background: #e5817a; }
+  .ch-adh-cell--unknown { background: #d1d5db; }
+  .ch-adh-legend { display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
+  .ch-adh-leg-item { display: flex; align-items: center; gap: 5px; font-size: 0.65rem; color: var(--text-muted); }
+  .ch-adh-leg-cell { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
+  .ch-adh-leg-cell--taken   { background: #5b9e72; }
+  .ch-adh-leg-cell--missed  { background: #e5817a; }
+  .ch-adh-leg-cell--unknown { background: #d1d5db; }
+  .ch-adh-pct { font-size: 0.75rem; font-weight: 600; color: var(--text-muted); text-align: right; margin-top: 4px; }
+
+  /* Self-reported mood bars */
+  .ch-mood-bars-section { padding: 14px 18px; }
+  .ch-mood-bars-title { font-size: 0.68rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 10px; }
+  .ch-mood-bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 7px; }
+  .ch-mood-bar-lbl { font-size: 0.72rem; color: var(--text-muted); width: 74px; flex-shrink: 0; text-align: right; }
+  .ch-mood-bar-track { flex: 1; height: 8px; background: var(--border); border-radius: 4px; overflow: hidden; }
+  .ch-mood-bar-fill { height: 100%; border-radius: 4px; background: var(--accent); transition: width 0.5s ease; }
+  .ch-mood-bar-fill--low  { background: #e5817a; }
+  .ch-mood-bar-fill--mid  { background: #e8a000; }
+  .ch-mood-bar-fill--good { background: #5b9e72; }
+  .ch-mood-bar-val { font-size: 0.72rem; font-weight: 600; color: var(--text); width: 20px; text-align: right; flex-shrink: 0; }
+
+  /* Below-fold sections wrapper */
+  .ch-sections { margin-top: 8px; }
+  .ch-sections-hdr {
+    font-size: 0.65rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.09em; color: var(--text-muted); margin-bottom: 12px;
+    padding-bottom: 8px; border-bottom: 1px solid var(--border);
+  }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 {% endblock %}
 
 {% block content %}
-<div class="hub-page">
+<div class="ch-page">
 
   <a href="{{ url_for('provider_dashboard') }}" class="hub-back">← My Patients</a>
 
-  <!-- Header -->
-  <div class="hub-header">
-    <div class="hub-header-left">
-      <div class="hub-avatar">{{ patient.full_name[0] | upper }}</div>
-      <div>
-        <h1 class="hub-patient-name">{{ patient.full_name }}</h1>
-        <div class="hub-patient-email">{{ patient.email }}
+  <!-- ── ClaraMind Patient Header ─────────────────────────────────────────── -->
+  <div class="ch-header">
+    <div class="ch-header-main">
+      <div class="ch-avatar">{{ patient.full_name[0] | upper }}</div>
+      <div class="ch-identity">
+        <div class="ch-name">
+          {{ patient.full_name }}
+          {% if risk_snap %}
+            {% if risk_snap.crash_risk is not none and risk_snap.crash_risk >= 7 %}
+              <span class="ch-risk-pill ch-risk-pill--high">High Risk</span>
+            {% elif risk_snap.crash_risk is not none and risk_snap.crash_risk >= 5 %}
+              <span class="ch-risk-pill ch-risk-pill--moderate">Watch</span>
+            {% elif risk_snap.mood is not none and risk_snap.mood < 4 %}
+              <span class="ch-risk-pill ch-risk-pill--high">Low Mood</span>
+            {% else %}
+              <span class="ch-risk-pill ch-risk-pill--stable">Stable</span>
+            {% endif %}
+          {% endif %}
+          {% if medications %}
+            {% for med in medications[:3] %}
+              <span class="ch-med-pill">{{ med.name }}{% if med.standard_dose %} {{ med.standard_dose }}{{ med.dose_unit if med.dose_unit else '' }}{% endif %}</span>
+            {% endfor %}
+            {% if medications|length > 3 %}<span class="ch-med-pill">+{{ medications|length - 3 }} more</span>{% endif %}
+          {% endif %}
+        </div>
+        <div class="ch-identity-meta">
+          {{ patient.email }}
+          &nbsp;·&nbsp; {{ checkins|length }} check-ins
+          &nbsp;·&nbsp; {{ appointments|length }} session{{ 's' if appointments|length != 1 }}
           {% if next_appt %}
-          <span style="margin-left:12px;color:var(--accent);font-size:0.75rem;">
-            Next apt: {{ next_appt.appointment_date[:10] if next_appt.appointment_date else '—' }}
-          </span>
+          &nbsp;·&nbsp; <span style="color:var(--accent);">Next: {{ next_appt.appointment_date[:10] if next_appt.appointment_date else '—' }}</span>
           {% endif %}
         </div>
       </div>
     </div>
-
-    <!-- Action buttons -->
-    <div class="hub-actions">
-      <button class="hub-action-btn hub-action-btn--primary" id="btn-generate-brief" onclick="generateBrief()">
-        ✦ Generate Brief
-      </button>
-      <button class="hub-action-btn" id="btn-short-sms" onclick="sendSMS('short')">
-        Short Check-in SMS
-      </button>
-      <button class="hub-action-btn" id="btn-full-sms" onclick="sendSMS('full')">
-        Full Check-in SMS
-      </button>
-      <button class="hub-action-btn" id="btn-voice-sms" onclick="sendVoiceSMS()">
-        Voice Question SMS
-      </button>
-      <button class="hub-action-btn" id="btn-reminder" onclick="sendReminder()">
-        Push Reminder
-      </button>
+    <div class="ch-header-actions">
+      <button class="ch-action-btn ch-action-btn--primary" id="btn-generate-brief" onclick="generateBrief()">✦ Generate Brief</button>
+      <button class="ch-action-btn" id="btn-short-sms" onclick="sendSMS('short')">Short SMS</button>
+      <button class="ch-action-btn" id="btn-full-sms" onclick="sendSMS('full')">Full SMS</button>
+      <button class="ch-action-btn" id="btn-voice-sms" onclick="sendVoiceSMS()">Voice SMS</button>
+      <button class="ch-action-btn" id="btn-reminder" onclick="sendReminder()">Reminder</button>
     </div>
   </div>
 
@@ -1100,48 +1330,154 @@
   <!-- Toast -->
   <div id="hub-toast"></div>
 
-  <!-- Risk strip -->
-  {% if risk_snap %}
-  <div class="risk-strip">
-    {% if risk_snap.mood is not none %}
-    <div class="risk-chip">
-      <span>Mood</span>
-      <span class="risk-chip-val {% if risk_snap.mood < 5 %}risk-chip-val--red{% elif risk_snap.mood >= 7 %}risk-chip-val--green{% endif %}">
-        {{ risk_snap.mood }}/10
-      </span>
+  <!-- ── Longitudinal Timeline (90 days) ──────────────────────────────────── -->
+  <div class="ch-timeline-card">
+    <div class="ch-timeline-hdr">
+      <span class="ch-timeline-title">Longitudinal Timeline — last 90 days</span>
+      <div class="ch-tl-legend">
+        <div class="ch-tl-leg-item"><div class="ch-tl-leg-dot ch-tl-leg-dot--session"></div>Session</div>
+        <div class="ch-tl-leg-item"><div class="ch-tl-leg-dot ch-tl-leg-dot--checkin"></div>Check-in</div>
+        <div class="ch-tl-leg-item"><div class="ch-tl-leg-dot ch-tl-leg-dot--flag"></div>Flag</div>
+      </div>
     </div>
-    {% endif %}
-    {% if risk_snap.stability is not none %}
-    <div class="risk-chip">
-      <span>Stability</span>
-      <span class="risk-chip-val {% if risk_snap.stability < 4 %}risk-chip-val--red{% elif risk_snap.stability < 6 %}risk-chip-val--amber{% elif risk_snap.stability >= 7 %}risk-chip-val--green{% endif %}">
-        {{ '%.1f'|format(risk_snap.stability) }}
-      </span>
+    <div class="ch-tl-months" id="ch-tl-months" style="position:relative;height:16px;margin-bottom:4px;"></div>
+    <div class="ch-tl-track-wrap">
+      <div class="ch-tl-line"></div>
+      <div class="ch-tl-dots" id="ch-tl-dots"></div>
     </div>
-    {% endif %}
-    {% if risk_snap.crash_risk is not none %}
-    <div class="risk-chip">
-      <span>Crash Risk</span>
-      <span class="risk-chip-val {% if risk_snap.crash_risk >= 7 %}risk-chip-val--red{% elif risk_snap.crash_risk >= 5 %}risk-chip-val--amber{% else %}risk-chip-val--green{% endif %}">
-        {{ '%.1f'|format(risk_snap.crash_risk) }}
-      </span>
-    </div>
-    {% endif %}
-    {% if risk_snap.stim_load is not none %}
-    <div class="risk-chip">
-      <span>Stim Load</span>
-      <span class="risk-chip-val {% if risk_snap.stim_load >= 7 %}risk-chip-val--red{% elif risk_snap.stim_load >= 5 %}risk-chip-val--amber{% endif %}">
-        {{ risk_snap.stim_load }}/10
-      </span>
-    </div>
-    {% endif %}
-    <div class="risk-strip-date">Last check-in: {{ risk_snap.date }}</div>
   </div>
-  {% endif %}
 
-  <!-- ── Two-column layout: main sections left, flags panel right ─────────── -->
-  <div class="hub-layout">
-  <div class="hub-main">
+  <!-- ── Two-column body ──────────────────────────────────────────────────── -->
+  <div class="ch-body-grid">
+
+    <!-- LEFT: Session Notes -->
+    <div class="ch-card ch-notes-col">
+      <div class="ch-card-hdr">
+        <span class="ch-card-title">Session Notes</span>
+        <span class="ch-live-badge"><span class="ch-live-dot">●</span> Current Session</span>
+      </div>
+
+      <!-- Signal tags from risk_snap -->
+      <div class="ch-qt-section">
+        <div class="ch-qt-label">Signal Tags</div>
+        <div class="ch-qt-wrap">
+          {% if risk_snap %}
+            {% if risk_snap.mood is not none %}
+              <span class="ch-tag {% if risk_snap.mood < 5 %}ch-tag--alert{% elif risk_snap.mood >= 7 %}ch-tag--pos{% else %}ch-tag--warn{% endif %}">Mood {{ risk_snap.mood }}/10</span>
+            {% endif %}
+            {% if risk_snap.crash_risk is not none %}
+              <span class="ch-tag {% if risk_snap.crash_risk >= 7 %}ch-tag--alert{% elif risk_snap.crash_risk >= 5 %}ch-tag--warn{% else %}ch-tag--pos{% endif %}">Crash Risk {{ '%.1f'|format(risk_snap.crash_risk) }}</span>
+            {% endif %}
+            {% if risk_snap.stability is not none %}
+              <span class="ch-tag {% if risk_snap.stability < 4 %}ch-tag--alert{% elif risk_snap.stability < 6 %}ch-tag--warn{% else %}ch-tag--pos{% endif %}">Stability {{ '%.1f'|format(risk_snap.stability) }}</span>
+            {% endif %}
+            {% if risk_snap.stim_load is not none %}
+              <span class="ch-tag {% if risk_snap.stim_load >= 7 %}ch-tag--alert{% elif risk_snap.stim_load >= 5 %}ch-tag--warn{% else %}ch-tag--active{% endif %}">Stim Load {{ risk_snap.stim_load }}/10</span>
+            {% endif %}
+            <span class="ch-tag">📅 Last check-in: {{ risk_snap.date }}</span>
+          {% else %}
+            <span class="ch-tag">No recent check-ins</span>
+          {% endif %}
+        </div>
+      </div>
+
+      <!-- Current note textarea -->
+      <div class="ch-note-section">
+        <div class="ch-note-hdr">
+          <span class="ch-note-title">Current Note</span>
+          <div class="ch-fmt-wrap">
+            <button class="ch-fmt-btn ch-fmt-btn--active" id="fmt-SOAP" onclick="setNoteFormat('SOAP')">SOAP</button>
+            <button class="ch-fmt-btn" id="fmt-DAP" onclick="setNoteFormat('DAP')">DAP</button>
+            <button class="ch-fmt-btn" id="fmt-Free" onclick="setNoteFormat('Free')">Free</button>
+          </div>
+        </div>
+        <textarea class="ch-note-ta" id="ch-note-ta" placeholder="Type session notes here…"></textarea>
+        <div class="ch-note-footer">
+          <span class="ch-note-autosave" id="ch-note-status">Draft</span>
+          <button class="ch-action-btn ch-action-btn--sm ch-action-btn--primary" onclick="saveCurrentNote()">Save Note</button>
+        </div>
+      </div>
+
+      <!-- Previous sessions accordion -->
+      <div class="ch-prev-section">
+        <div class="ch-prev-label">Previous Sessions</div>
+        {% set completed_appts = appointments | selectattr('status', 'equalto', 'completed') | list %}
+        {% if completed_appts %}
+          {% for appt in completed_appts[:8] %}
+          <div class="ch-prev-item" id="ch-prev-{{ loop.index }}">
+            <div class="ch-prev-hdr" onclick="togglePrevItem({{ loop.index }})">
+              <div class="ch-prev-num">{{ loop.index }}</div>
+              <div class="ch-prev-info">
+                <div class="ch-prev-date">{{ appt.completed_at[:10] if appt.completed_at else (appt.started_at[:10] if appt.started_at else '—') }}</div>
+                <div class="ch-prev-meta">{{ appt.appointment_type | title if appt.appointment_type else 'Session' }}</div>
+              </div>
+              <span class="ch-prev-chevron">›</span>
+            </div>
+            <div class="ch-prev-body">
+              {% if appt.notes %}
+              <p class="ch-prev-text">{{ appt.notes }}</p>
+              {% else %}
+              <p class="ch-prev-text ch-prev-text--empty">No notes recorded for this session.</p>
+              {% endif %}
+            </div>
+          </div>
+          {% endfor %}
+        {% else %}
+          <div class="ch-prev-empty">No completed sessions yet.</div>
+        {% endif %}
+      </div>
+    </div>{# /ch-notes-col #}
+
+    <!-- RIGHT: Clinical Data -->
+    <div class="ch-card ch-data-col">
+      <div class="ch-card-hdr">
+        <span class="ch-card-title">Clinical Data</span>
+        <div class="ch-data-tabs">
+          <button class="ch-data-tab active" id="tab-mood" onclick="switchTab('mood')">Mood</button>
+          <button class="ch-data-tab" id="tab-sleep" onclick="switchTab('sleep')">Sleep</button>
+          <button class="ch-data-tab" id="tab-meds" onclick="switchTab('meds')">Meds</button>
+        </div>
+      </div>
+
+      <div class="ch-data-panel active" id="ch-panel-mood">
+        <div class="ch-chart-hdr">
+          <span class="ch-chart-title">Mood Score (30 days)</span>
+          {% if risk_snap and risk_snap.mood is not none %}<span class="ch-chart-current">Latest: <strong>{{ risk_snap.mood }}/10</strong></span>{% endif %}
+        </div>
+        <div class="ch-chart-wrap"><canvas id="ch-mood-chart" height="120"></canvas></div>
+      </div>
+
+      <div class="ch-data-panel" id="ch-panel-sleep">
+        <div class="ch-chart-hdr">
+          <span class="ch-chart-title">Sleep Hours (30 days)</span>
+        </div>
+        <div class="ch-chart-wrap"><canvas id="ch-sleep-chart" height="120"></canvas></div>
+      </div>
+
+      <div class="ch-data-panel" id="ch-panel-meds">
+        <div class="ch-adh-hdr">4-Week Medication Adherence</div>
+        <div class="ch-adh-legend">
+          <div class="ch-adh-leg-item"><div class="ch-adh-leg-cell ch-adh-leg-cell--taken"></div>Taken</div>
+          <div class="ch-adh-leg-item"><div class="ch-adh-leg-cell ch-adh-leg-cell--missed"></div>Missed</div>
+          <div class="ch-adh-leg-item"><div class="ch-adh-leg-cell ch-adh-leg-cell--unknown"></div>No data</div>
+        </div>
+        <div id="ch-adh-grid" class="ch-adh-grid"></div>
+        <div class="ch-adh-pct" id="ch-adh-pct"></div>
+      </div>
+
+      <div class="ch-mood-bars-section">
+        <div class="ch-mood-bars-title">Self-Reported Mood — This Week</div>
+        <div id="ch-mood-bars"></div>
+      </div>
+    </div>{# /ch-data-col #}
+
+  </div>{# /ch-body-grid #}
+
+  <!-- ── Below-fold detail sections ──────────────────────────────────────── -->
+  <div class="ch-sections">
+    <div class="ch-sections-hdr">Detailed Records</div>
+    <div style="display:grid;grid-template-columns:1fr 280px;gap:16px;align-items:start;">
+    <div>
 
   <!-- ── Check-in Data ──────────────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-checkins">
@@ -1158,38 +1494,18 @@
       <table class="hub-table">
         <thead>
           <tr>
-            <th>Date</th>
-            <th>Mood</th>
-            <th>Sleep</th>
-            <th>Stress</th>
-            <th>Energy</th>
-            <th>Notes</th>
+            <th>Date</th><th>Mood</th><th>Sleep</th><th>Stress</th><th>Energy</th><th>Notes</th>
           </tr>
         </thead>
         <tbody>
           {% for c in checkins[:30] %}
           <tr>
             <td>{{ c.checkin_date[:10] if c.checkin_date else '—' }}</td>
-            <td class="{% if c.mood_score is not none and c.mood_score < 5 %}val-low{% elif c.mood_score is not none and c.mood_score >= 7 %}val-good{% endif %}">
-              {{ c.mood_score if c.mood_score is not none else '—' }}
-              {%- if c.mood_score is not none %}/10{% endif %}
-            </td>
-            <td class="{% if c.sleep_hours is not none and c.sleep_hours < 6 %}val-low{% elif c.sleep_hours is not none and c.sleep_hours >= 7 %}val-good{% endif %}">
-              {{ '%.1f'|format(c.sleep_hours) if c.sleep_hours is not none else '—' }}
-              {%- if c.sleep_hours is not none %}h{% endif %}
-            </td>
-            <td class="{% if c.stress_score is not none and c.stress_score > 7 %}val-low{% endif %}">
-              {{ c.stress_score if c.stress_score is not none else '—' }}
-              {%- if c.stress_score is not none %}/10{% endif %}
-            </td>
-            <td>
-              {% set ext = c.extended_data if c.extended_data else {} %}
-              {{ ext.energy if ext.energy is not none else '—' }}
-              {%- if ext.energy is not none %}/10{% endif %}
-            </td>
-            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);font-size:0.78rem;">
-              {{ c.notes[:80] if c.notes else '—' }}
-            </td>
+            <td class="{% if c.mood_score is not none and c.mood_score < 5 %}val-low{% elif c.mood_score is not none and c.mood_score >= 7 %}val-good{% endif %}">{{ c.mood_score if c.mood_score is not none else '—' }}{%- if c.mood_score is not none %}/10{% endif %}</td>
+            <td class="{% if c.sleep_hours is not none and c.sleep_hours < 6 %}val-low{% elif c.sleep_hours is not none and c.sleep_hours >= 7 %}val-good{% endif %}">{{ '%.1f'|format(c.sleep_hours) if c.sleep_hours is not none else '—' }}{%- if c.sleep_hours is not none %}h{% endif %}</td>
+            <td class="{% if c.stress_score is not none and c.stress_score > 7 %}val-low{% endif %}">{{ c.stress_score if c.stress_score is not none else '—' }}{%- if c.stress_score is not none %}/10{% endif %}</td>
+            <td>{% set ext = c.extended_data if c.extended_data else {} %}{{ ext.energy if ext.energy is not none else '—' }}{%- if ext.energy is not none %}/10{% endif %}</td>
+            <td style="max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--text-muted);font-size:0.78rem;">{{ c.notes[:80] if c.notes else '—' }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -1220,24 +1536,13 @@
         <div class="voice-card" id="voice-card-{{ note.id }}">
           <div class="voice-card-hdr">
             <span class="voice-date">{{ note.created_at[:10] if note.created_at else '—' }}</span>
-            <span class="voice-badge {% if note.transcript %}voice-badge--done{% endif %}">
-              {{ 'Transcribed' if note.transcript else 'No transcript' }}
-            </span>
-            <button class="delete-btn" title="Delete recording"
-                    onclick="deleteVoiceNote('{{ note.id }}')">✕</button>
+            <span class="voice-badge {% if note.transcript %}voice-badge--done{% endif %}">{{ 'Transcribed' if note.transcript else 'No transcript' }}</span>
+            <button class="delete-btn" title="Delete recording" onclick="deleteVoiceNote('{{ note.id }}')">✕</button>
           </div>
-          {% if note.guiding_question or note.prompt %}
-          <div class="voice-prompt">"{{ note.guiding_question or note.prompt }}"</div>
-          {% endif %}
-          {% if note.transcript %}
-          <div class="voice-transcript">{{ note.transcript }}</div>
-          {% elif note.processing_status == 'error' %}
-          <div style="font-size:0.8rem;color:#c0392b;">
-            Transcription failed{% if note.processing_error %}: {{ note.processing_error }}{% endif %}
-          </div>
-          {% else %}
-          <div style="font-size:0.8rem;color:var(--text-muted);">Recording received — transcript pending.</div>
-          {% endif %}
+          {% if note.guiding_question or note.prompt %}<div class="voice-prompt">"{{ note.guiding_question or note.prompt }}"</div>{% endif %}
+          {% if note.transcript %}<div class="voice-transcript">{{ note.transcript }}</div>
+          {% elif note.processing_status == 'error' %}<div style="font-size:0.8rem;color:#c0392b;">Transcription failed{% if note.processing_error %}: {{ note.processing_error }}{% endif %}</div>
+          {% else %}<div style="font-size:0.8rem;color:var(--text-muted);">Recording received — transcript pending.</div>{% endif %}
         </div>
         {% endfor %}
       {% else %}
@@ -1255,72 +1560,41 @@
         <span class="hub-section-meta">{{ sessions|length }} session{{ 's' if sessions|length != 1 }}</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
-        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;"
-                id="btn-add-transcript">+ Transcript</button>
+        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;" id="btn-add-transcript">+ Transcript</button>
         <span class="hub-section-chevron">›</span>
       </div>
     </div>
     <div class="hub-section-body">
-
-      <!-- Inline transcript upload form (hidden by default) -->
       <div id="transcript-upload-form" style="display:none;padding:16px 18px;border-bottom:1px solid var(--border);background:var(--bg);">
         <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:10px;">Upload Session Transcript</div>
         <div style="display:grid;grid-template-columns:1fr 1fr auto;gap:8px;margin-bottom:10px;align-items:end;">
-          <div>
-            <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Session Date</label>
-            <input type="date" id="ts-date" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
-          </div>
-          <div>
-            <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Session Type</label>
+          <div><label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Session Date</label><input type="date" id="ts-date" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);"></div>
+          <div><label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Session Type</label>
             <select id="ts-type" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
-              <option value="therapy">Therapy</option>
-              <option value="psychiatry">Psychiatry</option>
-              <option value="intake">Intake</option>
-              <option value="followup">Follow-up</option>
-              <option value="group">Group</option>
-              <option value="other">Other</option>
-            </select>
-          </div>
-          <div>
-            <label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Duration (min)</label>
-            <input type="number" id="ts-duration" min="1" max="300" placeholder="—"
-                   style="width:70px;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);">
-          </div>
+              <option value="therapy">Therapy</option><option value="psychiatry">Psychiatry</option><option value="intake">Intake</option><option value="followup">Follow-up</option><option value="group">Group</option><option value="other">Other</option>
+            </select></div>
+          <div><label style="font-size:0.72rem;font-weight:500;color:var(--text-muted);display:block;margin-bottom:3px;">Duration (min)</label><input type="number" id="ts-duration" min="1" max="300" placeholder="—" style="width:70px;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:6px 9px;border:1px solid var(--border);border-radius:6px;background:var(--surface);color:var(--text);"></div>
         </div>
-        <textarea id="ts-text" rows="6" placeholder="Paste session transcript here…"
-                  style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:9px 11px;border:1px solid var(--border);border-radius:6px;resize:vertical;background:var(--surface);color:var(--text);"></textarea>
+        <textarea id="ts-text" rows="6" placeholder="Paste session transcript here…" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:9px 11px;border:1px solid var(--border);border-radius:6px;resize:vertical;background:var(--surface);color:var(--text);"></textarea>
         <div id="ts-err" style="font-size:0.75rem;color:#c0392b;margin-top:5px;display:none;"></div>
         <div style="display:flex;gap:8px;margin-top:10px;justify-content:flex-end;">
           <button class="hub-action-btn" id="ts-cancel-btn">Cancel</button>
           <button class="hub-action-btn hub-action-btn--primary" id="ts-submit-btn">Upload &amp; Analyze</button>
         </div>
       </div>
-
       {% if sessions %}
         {% for s in sessions %}
         <div class="session-card" id="session-card-{{ s.session_id }}">
           <span class="session-date">{{ s.session_date[:10] if s.session_date else (s.created_at[:10] if s.created_at else '—') }}</span>
-          <span class="session-type">
-            {{ s.session_type | title if s.session_type else 'Session' }}
-            {% if s.duration_minutes %}· {{ s.duration_minutes }} min{% endif %}
-          </span>
-          <span class="session-status session-status--{% if s.processing_status == 'complete' %}done{% elif s.processing_status == 'processing' %}processing{% else %}pending{% endif %}">
-            {{ s.processing_status | title if s.processing_status else 'Pending' }}
-          </span>
-          <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}"
-             style="font-size:0.78rem;color:var(--accent);text-decoration:none;white-space:nowrap;">
-            View →
-          </a>
-          <button class="delete-btn" title="Delete session"
-                  onclick="deleteSession('{{ s.session_id }}')">✕</button>
+          <span class="session-type">{{ s.session_type | title if s.session_type else 'Session' }}{% if s.duration_minutes %} · {{ s.duration_minutes }} min{% endif %}</span>
+          <span class="session-status session-status--{% if s.processing_status == 'complete' %}done{% elif s.processing_status == 'processing' %}processing{% else %}pending{% endif %}">{{ s.processing_status | title if s.processing_status else 'Pending' }}</span>
+          <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}" style="font-size:0.78rem;color:var(--accent);text-decoration:none;white-space:nowrap;">View →</a>
+          <button class="delete-btn" title="Delete session" onclick="deleteSession('{{ s.session_id }}')">✕</button>
         </div>
         {% endfor %}
       {% else %}
       <div class="hub-empty">No session recordings on file.
-        <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}"
-           style="color:var(--accent);text-decoration:none;display:block;margin-top:6px;font-size:0.8rem;">
-          Upload a transcript →
-        </a>
+        <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}" style="color:var(--accent);text-decoration:none;display:block;margin-top:6px;font-size:0.8rem;">Upload a transcript →</a>
       </div>
       {% endif %}
     </div>
@@ -1335,8 +1609,7 @@
         <span class="hub-section-meta">{{ medications|length }} medication{{ 's' if medications|length != 1 }} · last 30 days</span>
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
-        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;"
-                onclick="event.stopPropagation();openAddMedModal()">⊕ Add</button>
+        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;" onclick="event.stopPropagation();openAddMedModal()">⊕ Add</button>
         <span class="hub-section-chevron">›</span>
       </div>
     </div>
@@ -1354,36 +1627,19 @@
           </div>
           <div class="med-calendar">
             {% for event in events[-30:] %}
-            <div class="med-day {% if event.taken %}med-day--taken{% else %}med-day--missed{% endif %}"
-                 title="{{ event.event_date[:10] if event.event_date else '' }} — {{ 'Taken' if event.taken else 'Missed' }}">
-              {% if event.event_date %}{{ event.event_date[5:7].lstrip('0') or '0' }}/{{ event.event_date[8:10].lstrip('0') or '0' }}{% else %}?{% endif %}
-            </div>
+            <div class="med-day {% if event.taken %}med-day--taken{% else %}med-day--missed{% endif %}" title="{{ event.event_date[:10] if event.event_date else '' }} — {{ 'Taken' if event.taken else 'Missed' }}">{% if event.event_date %}{{ event.event_date[5:7].lstrip('0') or '0' }}/{{ event.event_date[8:10].lstrip('0') or '0' }}{% else %}?{% endif %}</div>
             {% endfor %}
-            {% if not events %}
-            <span style="font-size:0.78rem;color:var(--text-muted);">No events logged</span>
-            {% endif %}
+            {% if not events %}<span style="font-size:0.78rem;color:var(--text-muted);">No events logged</span>{% endif %}
           </div>
           <div class="med-stat">
-            {% if total_count > 0 %}
-            {{ taken_count }}/{{ total_count }}
-            <br>
-            <span style="font-size:0.68rem;">
-              {{ (taken_count / total_count * 100) | round | int }}%
-            </span>
-            {% else %}
-            —
-            {% endif %}
+            {% if total_count > 0 %}{{ taken_count }}/{{ total_count }}<br><span style="font-size:0.68rem;">{{ (taken_count / total_count * 100) | round | int }}%</span>{% else %}—{% endif %}
           </div>
           <div style="display:flex;gap:4px;flex-shrink:0;">
             <button class="hub-action-btn edit-med-btn" style="font-size:0.68rem;padding:3px 8px;"
-                    data-med-id="{{ med_id }}"
-                    data-med-name="{{ med.name | e }}"
-                    data-med-dose="{{ med.standard_dose }}"
-                    data-med-unit="{{ med.dose_unit or 'mg' }}"
-                    data-med-freq="{{ med.frequency or '' }}"
-                    data-med-category="{{ med.category or '' }}">Edit</button>
-            <button class="delete-btn del-med-btn" title="Remove medication"
-                    data-med-id="{{ med_id }}">✕</button>
+                    data-med-id="{{ med_id }}" data-med-name="{{ med.name | e }}"
+                    data-med-dose="{{ med.standard_dose }}" data-med-unit="{{ med.dose_unit or 'mg' }}"
+                    data-med-freq="{{ med.frequency or '' }}" data-med-category="{{ med.category or '' }}">Edit</button>
+            <button class="delete-btn del-med-btn" title="Remove medication" data-med-id="{{ med_id }}">✕</button>
           </div>
         </div>
         {% endfor %}
@@ -1408,24 +1664,13 @@
         {% for j in journals %}
         <div style="padding:12px 18px;border-bottom:1px solid var(--border);">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
-            <span style="font-size:0.75rem;color:var(--text-muted);">
-              {{ j.entry_date[:10] if j.entry_date else (j.created_at[:10] if j.created_at else '—') }}
-            </span>
-            {% if j.share_with_provider %}
-            <span style="font-size:0.65rem;font-weight:500;text-transform:uppercase;letter-spacing:.05em;
-                         padding:2px 7px;border-radius:4px;background:#d4edda;color:#1a7f3c;">Shared</span>
-            {% else %}
-            <span style="font-size:0.65rem;color:var(--text-muted);">Private</span>
-            {% endif %}
+            <span style="font-size:0.75rem;color:var(--text-muted);">{{ j.entry_date[:10] if j.entry_date else (j.created_at[:10] if j.created_at else '—') }}</span>
+            {% if j.share_with_provider %}<span style="font-size:0.65rem;font-weight:500;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:4px;background:#d4edda;color:#1a7f3c;">Shared</span>
+            {% else %}<span style="font-size:0.65rem;color:var(--text-muted);">Private</span>{% endif %}
           </div>
-          <p style="font-size:0.84rem;color:var(--text);line-height:1.55;margin:0;">
-            {{ j.content[:300] if j.content else '—' }}{% if j.content and j.content|length > 300 %}…{% endif %}
-          </p>
+          <p style="font-size:0.84rem;color:var(--text);line-height:1.55;margin:0;">{{ j.content[:300] if j.content else '—' }}{% if j.content and j.content|length > 300 %}…{% endif %}</p>
           {% if j.ai_insight %}
-          <div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-left:3px solid var(--accent);
-                      font-size:0.78rem;color:var(--text-muted);line-height:1.55;">
-            <em>{{ j.ai_insight[:200] if j.ai_insight else '' }}{% if j.ai_insight and j.ai_insight|length > 200 %}…{% endif %}</em>
-          </div>
+          <div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-left:3px solid var(--accent);font-size:0.78rem;color:var(--text-muted);line-height:1.55;"><em>{{ j.ai_insight[:200] if j.ai_insight else '' }}{% if j.ai_insight and j.ai_insight|length > 200 %}…{% endif %}</em></div>
           {% endif %}
         </div>
         {% endfor %}
@@ -1451,10 +1696,7 @@
       {% for member in care_team.active %}
       <div class="care-member">
         <div class="care-avatar-sm">{{ member.provider_name[0]|upper }}</div>
-        <div style="flex:1;">
-          <div class="care-name">{{ member.provider_name }}</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);">{{ member.provider_email }}</div>
-        </div>
+        <div style="flex:1;"><div class="care-name">{{ member.provider_name }}</div><div style="font-size:0.75rem;color:var(--text-muted);">{{ member.provider_email }}</div></div>
         <span class="care-role-badge">{{ member.role_label }}</span>
       </div>
       {% endfor %}
@@ -1464,10 +1706,7 @@
       {% for member in care_team.pending %}
       <div class="care-member" style="opacity:0.7;">
         <div class="care-avatar-sm" style="background:var(--text-muted);">{{ member.provider_name[0]|upper }}</div>
-        <div style="flex:1;">
-          <div class="care-name">{{ member.provider_name }}</div>
-          <div style="font-size:0.75rem;color:var(--text-muted);">Invite pending</div>
-        </div>
+        <div style="flex:1;"><div class="care-name">{{ member.provider_name }}</div><div style="font-size:0.75rem;color:var(--text-muted);">Invite pending</div></div>
         <span class="care-role-badge">{{ member.role_label }}</span>
       </div>
       {% endfor %}
@@ -1507,69 +1746,54 @@
       <div class="wearable-placeholder">
         <div class="wearable-placeholder-icon">⌚</div>
         <div class="wearable-placeholder-title">Wearable integration coming soon</div>
-        <div class="wearable-placeholder-sub">
-          Heart rate variability, sleep staging, and activity data from Apple Health,
-          Garmin, and Fitbit will appear here once connected.
-        </div>
+        <div class="wearable-placeholder-sub">Heart rate variability, sleep staging, and activity data from Apple Health, Garmin, and Fitbit will appear here once connected.</div>
       </div>
     </div>
   </div>
 
-  </div>{# /hub-main #}
+    </div>{# /sections left col #}
 
-  <!-- ── Flags sidebar (persistent, always visible) ────────────────────────── -->
-  <div class="hub-sidebar">
-    <div class="flags-panel">
-      <div class="flags-panel-hdr">
-        <div class="flags-panel-title">
-          🚩 Care Team Flags
-          <span class="flags-panel-count" id="flags-active-count" style="display:none;">0</span>
+    <!-- ── Flags sidebar ────────────────────────────────────────────────────── -->
+    <div class="hub-sidebar">
+      <div class="flags-panel">
+        <div class="flags-panel-hdr">
+          <div class="flags-panel-title">🚩 Care Team Flags
+            <span class="flags-panel-count" id="flags-active-count" style="display:none;">0</span>
+          </div>
+          <button class="hub-action-btn" style="font-size:0.7rem;padding:3px 9px;" onclick="toggleFlagForm()">+ Flag</button>
         </div>
-        <button class="hub-action-btn" style="font-size:0.7rem;padding:3px 9px;"
-                onclick="toggleFlagForm()">+ Flag</button>
-      </div>
-
-      <!-- Post flag form -->
-      <div class="flag-post-form" id="hub-flag-form">
-        <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">New Flag</div>
-        <select id="hub-flag-type"
-                style="width:100%;font-size:0.82rem;padding:6px 8px;border:1px solid var(--border);
-                       background:var(--surface);color:var(--text);border-radius:6px;margin-bottom:8px;box-sizing:border-box;">
-          <option value="observation">Observation</option>
-          <option value="concern">Concern</option>
-          <option value="progress">Progress</option>
-          <option value="coordination_needed">Needs Coordination</option>
-        </select>
-        <textarea id="hub-flag-body" rows="3" placeholder="Note for the care team…"
-                  style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;
-                         padding:7px 9px;border:1px solid var(--border);background:var(--surface);
-                         color:var(--text);border-radius:6px;resize:vertical;"></textarea>
-        <div id="hub-flag-err" style="font-size:0.75rem;color:#c0392b;margin-top:5px;display:none;"></div>
-        <div style="display:flex;gap:7px;margin-top:9px;">
-          <button class="hub-action-btn hub-action-btn--primary" id="hub-flag-submit" onclick="submitHubFlag()" style="flex:1;justify-content:center;">Post</button>
-          <button class="hub-action-btn" onclick="toggleFlagForm()">Cancel</button>
+        <div class="flag-post-form" id="hub-flag-form">
+          <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">New Flag</div>
+          <select id="hub-flag-type" style="width:100%;font-size:0.82rem;padding:6px 8px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;margin-bottom:8px;box-sizing:border-box;">
+            <option value="observation">Observation</option>
+            <option value="concern">Concern</option>
+            <option value="progress">Progress</option>
+            <option value="coordination_needed">Needs Coordination</option>
+          </select>
+          <textarea id="hub-flag-body" rows="3" placeholder="Note for the care team…" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:7px 9px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;resize:vertical;"></textarea>
+          <div id="hub-flag-err" style="font-size:0.75rem;color:#c0392b;margin-top:5px;display:none;"></div>
+          <div style="display:flex;gap:7px;margin-top:9px;">
+            <button class="hub-action-btn hub-action-btn--primary" id="hub-flag-submit" onclick="submitHubFlag()" style="flex:1;justify-content:center;">Post</button>
+            <button class="hub-action-btn" onclick="toggleFlagForm()">Cancel</button>
+          </div>
         </div>
-      </div>
-
-      <!-- Active flags -->
-      <div class="flags-panel-body" id="flags-active-list">
-        <div class="flags-panel-empty" id="flags-empty-msg">No open flags.</div>
-      </div>
-
-      <!-- Resolved flags (collapsed by default) -->
-      <div class="flags-resolved-section" id="flags-resolved-section" style="display:none;">
-        <button class="flags-resolved-toggle" id="flags-resolved-toggle" onclick="toggleResolvedFlags()">
-          <span id="flags-resolved-toggle-icon">▶</span>
-          <span id="flags-resolved-toggle-label">Show resolved</span>
-        </button>
-        <div id="flags-resolved-list"></div>
+        <div class="flags-panel-body" id="flags-active-list">
+          <div class="flags-panel-empty" id="flags-empty-msg">No open flags.</div>
+        </div>
+        <div class="flags-resolved-section" id="flags-resolved-section" style="display:none;">
+          <button class="flags-resolved-toggle" id="flags-resolved-toggle" onclick="toggleResolvedFlags()">
+            <span id="flags-resolved-toggle-icon">▶</span>
+            <span id="flags-resolved-toggle-label">Show resolved</span>
+          </button>
+          <div id="flags-resolved-list"></div>
+        </div>
       </div>
     </div>
-  </div>
 
-  </div>{# /hub-layout #}
+    </div>{# /sections grid #}
+  </div>{# /ch-sections #}
 
-</div>{# /hub-page #}
+</div>{# /ch-page #}
 
 <script>
 const PATIENT_ID = {{ patient.patient_id | tojson }};
@@ -2526,5 +2750,252 @@ async function loadHubFlags() {
 
 // Load flags on page ready
 loadHubFlags();
+
+// ── ClaraMind hub data ────────────────────────────────────────────────────────
+const CH_CHECKINS = {{ checkins | tojson }};
+const CH_MED_EVENTS = {{ medication_events | tojson }};
+const CH_APPOINTMENTS = {{ appointments | tojson }};
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(name) {
+  ['mood','sleep','meds'].forEach(function(t) {
+    var tabEl = document.getElementById('tab-' + t);
+    var panEl = document.getElementById('ch-panel-' + t);
+    if (tabEl) tabEl.classList.toggle('active', t === name);
+    if (panEl) panEl.classList.toggle('active', t === name);
+  });
+  if (name === 'mood' && !window._chMoodChartBuilt) buildMoodChart();
+  if (name === 'sleep' && !window._chSleepChartBuilt) buildSleepChart();
+  if (name === 'meds' && !window._chAdhBuilt) buildAdherenceGrid();
+}
+
+// ── Previous sessions accordion ───────────────────────────────────────────────
+function togglePrevItem(n) {
+  var el = document.getElementById('ch-prev-' + n);
+  if (el) el.classList.toggle('open');
+}
+
+// ── Note format switcher ──────────────────────────────────────────────────────
+var _noteFmt = 'SOAP';
+function setNoteFormat(fmt) {
+  _noteFmt = fmt;
+  ['SOAP','DAP','Free'].forEach(function(f) {
+    var btn = document.getElementById('fmt-' + f);
+    if (btn) btn.classList.toggle('ch-fmt-btn--active', f === fmt);
+  });
+  var ta = document.getElementById('ch-note-ta');
+  if (!ta || ta.value.trim()) return;
+  if (fmt === 'SOAP') ta.placeholder = 'S: Subjective…\nO: Objective…\nA: Assessment…\nP: Plan…';
+  else if (fmt === 'DAP') ta.placeholder = 'D: Data…\nA: Assessment…\nP: Plan…';
+  else ta.placeholder = 'Type session notes here…';
+}
+
+// ── Note save (localStorage) ──────────────────────────────────────────────────
+var NOTE_KEY = 'ch-note-' + PATIENT_ID;
+(function() {
+  var ta = document.getElementById('ch-note-ta');
+  var status = document.getElementById('ch-note-status');
+  if (!ta) return;
+  var saved = localStorage.getItem(NOTE_KEY);
+  if (saved) { ta.value = saved; if (status) status.textContent = 'Saved draft'; }
+  ta.addEventListener('input', function() {
+    if (status) status.textContent = 'Unsaved…';
+  });
+})();
+
+function saveCurrentNote() {
+  var ta = document.getElementById('ch-note-ta');
+  var status = document.getElementById('ch-note-status');
+  if (!ta) return;
+  localStorage.setItem(NOTE_KEY, ta.value);
+  var t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
+  if (status) status.textContent = 'Saved · ' + t;
+  showToast('Note saved');
+}
+
+// ── Timeline builder ──────────────────────────────────────────────────────────
+(function buildTimeline() {
+  var dotsEl = document.getElementById('ch-tl-dots');
+  var monthsEl = document.getElementById('ch-tl-months');
+  if (!dotsEl || !monthsEl) return;
+
+  var now = new Date();
+  var start = new Date(now);
+  start.setDate(start.getDate() - 89);
+  var span = 90;
+
+  function pct(dateStr) {
+    var d = new Date(dateStr);
+    var diff = (d - start) / (1000 * 60 * 60 * 24);
+    return Math.max(0, Math.min(100, (diff / span) * 100));
+  }
+
+  // Month labels
+  var cur = new Date(start.getFullYear(), start.getMonth(), 1);
+  var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  var mHtml = '';
+  while (cur <= now) {
+    mHtml += '<span class="ch-tl-month-lbl" style="position:absolute;left:' + pct(cur).toFixed(1) + '%;">' + monthNames[cur.getMonth()] + '</span>';
+    cur.setMonth(cur.getMonth() + 1);
+  }
+  monthsEl.innerHTML = mHtml;
+
+  var dots = '';
+  if (CH_CHECKINS) CH_CHECKINS.forEach(function(c) {
+    var d = c.checkin_date || c.created_at;
+    if (!d) return;
+    var p = pct(d).toFixed(1);
+    dots += '<div class="ch-tl-dot ch-tl-dot--checkin" style="left:' + p + '%" title="Check-in: ' + d.slice(0,10) + '"></div>';
+  });
+  if (CH_APPOINTMENTS) CH_APPOINTMENTS.forEach(function(a) {
+    var d = a.completed_at || a.started_at;
+    if (!d) return;
+    var p = pct(d).toFixed(1);
+    dots += '<div class="ch-tl-dot ch-tl-dot--session" style="left:' + p + '%" title="Session: ' + d.slice(0,10) + '"></div>';
+  });
+  dotsEl.innerHTML = dots;
+})();
+
+// ── Mood Chart ────────────────────────────────────────────────────────────────
+window._chMoodChartBuilt = false;
+function buildMoodChart() {
+  var canvas = document.getElementById('ch-mood-chart');
+  if (!canvas || !window.Chart) return;
+  var pts = (CH_CHECKINS || [])
+    .filter(function(c) { return c.mood_score !== null && c.mood_score !== undefined; })
+    .slice(-30);
+  if (!pts.length) return;
+  new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: pts.map(function(c) { return (c.checkin_date || '').slice(5,10); }),
+      datasets: [{
+        data: pts.map(function(c) { return c.mood_score; }),
+        borderColor: '#0F6E56',
+        backgroundColor: 'rgba(15,110,86,0.08)',
+        borderWidth: 2, pointRadius: 3, pointBackgroundColor: '#0F6E56',
+        fill: true, tension: 0.35
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx) { return ctx.parsed.y + '/10'; } } } },
+      scales: {
+        x: { ticks: { maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } },
+        y: { min: 0, max: 10, ticks: { stepSize: 2, font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } }
+      }
+    }
+  });
+  window._chMoodChartBuilt = true;
+}
+
+// ── Sleep Chart ───────────────────────────────────────────────────────────────
+window._chSleepChartBuilt = false;
+function buildSleepChart() {
+  var canvas = document.getElementById('ch-sleep-chart');
+  if (!canvas || !window.Chart) return;
+  var pts = (CH_CHECKINS || [])
+    .filter(function(c) { return c.sleep_hours !== null && c.sleep_hours !== undefined; })
+    .slice(-30);
+  if (!pts.length) return;
+  new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels: pts.map(function(c) { return (c.checkin_date || '').slice(5,10); }),
+      datasets: [{
+        data: pts.map(function(c) { return c.sleep_hours; }),
+        backgroundColor: pts.map(function(c) { return c.sleep_hours < 6 ? '#e5817a' : c.sleep_hours >= 7 ? '#5b9e72' : '#e8a000'; }),
+        borderRadius: 3
+      }]
+    },
+    options: {
+      responsive: true,
+      plugins: { legend: { display: false }, tooltip: { callbacks: { label: function(ctx) { return ctx.parsed.y + ' hrs'; } } } },
+      scales: {
+        x: { ticks: { maxTicksLimit: 7, font: { size: 10 } }, grid: { display: false } },
+        y: { min: 0, max: 12, ticks: { stepSize: 2, font: { size: 10 } }, grid: { color: 'rgba(0,0,0,0.05)' } }
+      }
+    }
+  });
+  window._chSleepChartBuilt = true;
+}
+
+// ── Medication Adherence Grid ─────────────────────────────────────────────────
+window._chAdhBuilt = false;
+function buildAdherenceGrid() {
+  var grid = document.getElementById('ch-adh-grid');
+  var pctEl = document.getElementById('ch-adh-pct');
+  if (!grid) return;
+  if (!CH_MED_EVENTS || !CH_MED_EVENTS.length) {
+    grid.innerHTML = '<p style="font-size:0.8rem;color:var(--text-muted);">No medication events logged.</p>';
+    window._chAdhBuilt = true; return;
+  }
+  var today = new Date();
+  var days = [];
+  for (var i = 27; i >= 0; i--) {
+    var d = new Date(today); d.setDate(d.getDate() - i);
+    days.push(d.toISOString().slice(0,10));
+  }
+  var eventMap = {};
+  CH_MED_EVENTS.forEach(function(e) {
+    var d = (e.event_date || '').slice(0,10);
+    if (!eventMap[d]) eventMap[d] = { taken: 0, missed: 0 };
+    if (e.taken) eventMap[d].taken++; else eventMap[d].missed++;
+  });
+  var dayHdr = '<div class="ch-adh-days-hdr">' + ['Su','Mo','Tu','We','Th','Fr','Sa'].map(function(d){ return '<span>' + d + '</span>'; }).join('') + '</div>';
+  var takenTotal = 0, missedTotal = 0;
+  var weeksHtml = '';
+  for (var w = 0; w < 4; w++) {
+    var week = days.slice(w*7, w*7+7);
+    weeksHtml += '<div class="ch-adh-week">';
+    week.forEach(function(day) {
+      var ev = eventMap[day];
+      var cls = 'ch-adh-cell--unknown';
+      if (ev) {
+        if (ev.taken > 0) { cls = 'ch-adh-cell--taken'; takenTotal++; }
+        else if (ev.missed > 0) { cls = 'ch-adh-cell--missed'; missedTotal++; }
+      }
+      weeksHtml += '<div class="ch-adh-cell ' + cls + '" title="' + day + '"></div>';
+    });
+    weeksHtml += '</div>';
+  }
+  grid.innerHTML = dayHdr + '<div class="ch-adh-weeks">' + weeksHtml + '</div>';
+  var total = takenTotal + missedTotal;
+  if (pctEl && total > 0) pctEl.textContent = Math.round(takenTotal/total*100) + '% adherence (' + takenTotal + '/' + total + ' logged days)';
+  window._chAdhBuilt = true;
+}
+
+// ── Self-reported mood bars (this week) ───────────────────────────────────────
+(function buildMoodBars() {
+  var el = document.getElementById('ch-mood-bars');
+  if (!el) return;
+  var today = new Date();
+  var days = [];
+  for (var i = 6; i >= 0; i--) {
+    var d = new Date(today); d.setDate(d.getDate() - i);
+    days.push(d.toISOString().slice(0,10));
+  }
+  var dayNames = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  var checkinMap = {};
+  (CH_CHECKINS || []).forEach(function(c) {
+    var d = (c.checkin_date || '').slice(0,10);
+    if (d) checkinMap[d] = c.mood_score;
+  });
+  var html = days.map(function(d) {
+    var score = checkinMap[d];
+    var dow = new Date(d + 'T12:00:00').getDay();
+    var pct = (score !== undefined && score !== null) ? (score / 10 * 100) : 0;
+    var cls = (!score && score !== 0) ? '' : score < 4 ? 'ch-mood-bar-fill--low' : score < 7 ? 'ch-mood-bar-fill--mid' : 'ch-mood-bar-fill--good';
+    return '<div class="ch-mood-bar-row">' +
+      '<span class="ch-mood-bar-lbl">' + dayNames[dow] + '</span>' +
+      '<div class="ch-mood-bar-track"><div class="ch-mood-bar-fill ' + cls + '" style="width:' + pct + '%"></div></div>' +
+      '<span class="ch-mood-bar-val">' + (score !== undefined && score !== null ? score : '—') + '</span>' +
+    '</div>';
+  }).join('');
+  el.innerHTML = html;
+})();
+
+// Build mood chart on page load (default visible tab)
+buildMoodChart();
 </script>
 {% endblock %}
