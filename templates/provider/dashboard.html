@@ -383,141 +383,222 @@
   }
   .pd-brief-drawer.open { right: 0; }
 
-  /* Hub top bar */
-  .pd-hub-topbar {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    padding: 22px 24px 18px;
-    border-bottom: 1px solid var(--border);
-    background: var(--surface);
-    flex-shrink: 0;
-    gap: 12px;
-  }
-  .pd-hub-patient-name {
-    font-family: 'DM Serif Display', serif;
-    font-size: 1.3rem;
-    color: var(--text);
-    margin: 0 0 4px;
-    line-height: 1.2;
-  }
-  .pd-hub-patient-email {
-    font-size: 0.78rem;
-    color: var(--text-muted);
-  }
-  .pd-hub-topbar-right {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    flex-shrink: 0;
-    padding-top: 3px;
-  }
-  .pd-hub-profile-link {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--accent);
-    text-decoration: none;
-    padding: 5px 12px;
-    border: 1px solid var(--accent);
-    border-radius: 6px;
-    white-space: nowrap;
-    transition: background 0.1s;
-  }
-  .pd-hub-profile-link:hover { background: #f0f9f5; }
+  /* ── Hub v2: Patient Panel ───────────────────────────────────────────────── */
   .pd-brief-close {
-    background: none;
-    border: none;
-    cursor: pointer;
-    font-size: 1.1rem;
-    color: var(--text-muted);
-    padding: 5px 7px;
-    border-radius: 4px;
-    line-height: 1;
-    transition: background 0.1s, color 0.1s;
+    background: none; border: none; cursor: pointer; font-size: 1rem;
+    color: var(--text-muted); padding: 4px 6px; border-radius: 4px; line-height: 1;
+    transition: background 0.1s, color 0.1s; flex-shrink: 0;
   }
   .pd-brief-close:hover { background: var(--bg); color: var(--text); }
 
-  /* Hub scrollable body */
-  .pd-hub-body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 24px 24px 40px;
-  }
-
-  /* ── Data stream tiles ───────────────────────────────────────────────────── */
-  .pd-stream-tiles {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-    padding: 20px 24px;
-    border-bottom: 1px solid var(--border);
-    background: var(--bg);
-  }
-  .pd-stream-tile {
+  /* Hub header */
+  .hub2-header {
     background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 9px;
-    padding: 13px 15px;
-    transition: border-color 0.12s;
-  }
-  .pd-stream-tile:hover { border-color: #b0d4c3; }
-  .pd-stream-tile--placeholder {
-    opacity: 0.45;
-    cursor: default;
-  }
-  .pd-stream-tile-label {
-    font-size: 0.62rem;
-    font-weight: 500;
-    text-transform: uppercase;
-    letter-spacing: 0.07em;
-    color: var(--text-muted);
-    margin-bottom: 7px;
-    display: flex;
-    align-items: center;
-    gap: 5px;
-  }
-  .pd-stream-tile-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: var(--accent);
+    border-bottom: 1px solid var(--border);
+    padding: 14px 18px 12px;
     flex-shrink: 0;
   }
-  .pd-stream-tile--placeholder .pd-stream-tile-dot { background: var(--border); }
-  .pd-stream-tile-val {
-    font-size: 1.25rem;
-    font-weight: 400;
-    color: var(--text);
-    font-family: 'DM Serif Display', serif;
-    line-height: 1.1;
+  .hub2-header-top {
+    display: flex; align-items: center; gap: 10px; margin-bottom: 10px;
   }
-  .pd-stream-tile-val.low  { color: #c0392b; }
-  .pd-stream-tile-val.good { color: #1a7f3c; }
-  .pd-stream-tile-sub {
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    margin-top: 4px;
-    line-height: 1.4;
+  .hub2-avatar {
+    width: 38px; height: 38px; border-radius: 50%;
+    background: var(--accent); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'DM Serif Display', serif; font-size: 0.95rem; flex-shrink: 0;
+  }
+  .hub2-identity { flex: 1; min-width: 0; }
+  .hub2-name {
+    font-family: 'DM Serif Display', serif; font-size: 1.1rem;
+    color: var(--text); line-height: 1.2;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .hub2-meta { font-size: 0.7rem; color: var(--text-muted); margin-top: 1px; }
+  .hub2-header-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+  .hub2-risk-badge {
+    font-size: 0.62rem; font-weight: 700; padding: 2px 8px;
+    border-radius: 10px; white-space: nowrap;
+  }
+  .hub2-risk-badge:empty { display: none; }
+  .hub2-risk-badge--crisis { background: #fdecea; color: #c0392b; }
+  .hub2-risk-badge--safety { background: #fff4e0; color: #b45309; }
+  .hub2-risk-badge--watch  { background: #fef9ee; color: #7a5c1e; }
+  .hub2-risk-badge--stable { background: #e6f4ea; color: #1a7f3c; }
+  .hub2-header-bottom {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap;
+  }
+  .hub2-med-badges { display: flex; gap: 4px; flex-wrap: wrap; flex: 1; min-width: 0; }
+  .hub2-med-badge {
+    font-size: 0.64rem; font-weight: 500;
+    background: #e8f4ff; color: #1a5b99; border: 1px solid #b3d7f5;
+    border-radius: 4px; padding: 2px 7px; white-space: nowrap;
+  }
+  .hub2-med-none { font-size: 0.68rem; color: var(--text-muted); font-style: italic; }
+  .hub2-btns { display: flex; gap: 6px; flex-shrink: 0; }
+  .hub2-btn-ghost {
+    font-size: 0.7rem; font-weight: 500; color: var(--accent);
+    border: 1px solid var(--accent); border-radius: 5px; padding: 4px 10px;
+    text-decoration: none; white-space: nowrap; transition: background 0.1s;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .hub2-btn-ghost:hover { background: #f0f9f5; }
+  .hub2-btn-primary {
+    font-size: 0.7rem; font-weight: 600; background: var(--accent); color: #fff;
+    border: none; border-radius: 5px; padding: 4px 11px;
+    cursor: pointer; white-space: nowrap; font-family: 'DM Sans', sans-serif; transition: opacity 0.1s;
+  }
+  .hub2-btn-primary:hover { opacity: 0.88; }
+  .hub2-btn-primary:disabled { opacity: 0.5; cursor: default; }
+
+  /* Timeline strip */
+  .hub2-timeline-wrap {
+    background: var(--bg); border-bottom: 1px solid var(--border);
+    padding: 10px 18px 8px; flex-shrink: 0;
+  }
+  .hub2-timeline-inner { position: relative; min-height: 20px; margin-bottom: 6px; }
+  .hub2-timeline-line {
+    position: absolute; top: 50%; left: 0; right: 0;
+    height: 1px; background: var(--border); transform: translateY(-50%);
+  }
+  .hub2-timeline-dots {
+    position: relative; display: flex; align-items: center;
+    justify-content: space-between; width: 100%; z-index: 1; min-height: 20px;
+  }
+  .hub2-tl-dot {
+    width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    cursor: default; transition: transform 0.12s; position: relative; display: inline-block;
+  }
+  .hub2-tl-dot:hover { transform: scale(1.6); }
+  .hub2-tl-dot--checkin { background: #94a3b8; }
+  .hub2-tl-dot--session { background: var(--accent); width: 10px; height: 10px; border: 2px solid #fff; box-shadow: 0 0 0 1.5px var(--accent); }
+  .hub2-tl-dot--crisis  { background: #c0392b; width: 10px; height: 10px; }
+  .hub2-tl-dot--flag    { background: #e8a000; }
+  .hub2-timeline-legend { display: flex; gap: 12px; flex-wrap: wrap; }
+  .hub2-tl-legend-item  { display: flex; align-items: center; gap: 4px; font-size: 0.58rem; color: var(--text-muted); }
+  .hub2-tl-legend-dot   { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .hub2-timeline-empty  { font-size: 0.7rem; color: var(--text-muted); font-style: italic; }
+
+  /* Hub scrollable body */
+  .pd-hub-body { flex: 1; overflow-y: auto; padding: 16px 18px 40px; }
+
+  /* Metric tiles */
+  .hub2-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 7px; margin-bottom: 16px; }
+  .hub2-tile {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+  }
+  .hub2-tile-label {
+    font-size: 0.58rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 4px;
+  }
+  .hub2-tile-val {
+    font-size: 1.15rem; font-family: 'DM Serif Display', serif;
+    color: var(--text); line-height: 1.1;
+  }
+  .hub2-tile-val.low  { color: #c0392b; }
+  .hub2-tile-val.good { color: #1a7f3c; }
+  .hub2-tile-val.warn { color: #b45309; }
+  .hub2-tile-sub { font-size: 0.65rem; color: var(--text-muted); margin-top: 3px; }
+
+  /* Section label */
+  .hub2-section-label {
+    font-size: 0.6rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 7px;
   }
 
-  /* ── Patient Hub CTA button ──────────────────────────────────────────────── */
-  .pd-hub-open-btn {
-    display: block;
-    padding: 13px 20px;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-size: 0.88rem;
-    font-weight: 500;
-    font-family: 'DM Sans', sans-serif;
-    text-align: center;
-    text-decoration: none;
-    cursor: pointer;
-    transition: opacity 0.12s;
-    letter-spacing: 0.01em;
+  /* Signal tags */
+  .hub2-tags-section { margin-bottom: 14px; }
+  .hub2-tags { display: flex; flex-wrap: wrap; gap: 5px; }
+  .hub2-tag {
+    font-size: 0.68rem; font-weight: 500; padding: 3px 9px;
+    border-radius: 5px; border: 1px solid; cursor: default;
   }
-  .pd-hub-open-btn:hover { opacity: 0.88; color: #fff; }
+  .hub2-tag--alert { background: #fef9f9; border-color: #f5c6cb; color: #c0392b; }
+  .hub2-tag--warn  { background: #fff8e6; border-color: #fad7a0; color: #b45309; }
+  .hub2-tag--info  { background: #f0f9f5; border-color: #9FE1CB; color: #0F6E56; }
+  .hub2-tag--muted { background: var(--bg); border-color: var(--border); color: var(--text-muted); }
+
+  /* Mood chart */
+  .hub2-chart-section { margin-bottom: 16px; }
+  .hub2-chart-wrap {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; overflow: hidden;
+  }
+  .hub2-chart-wrap svg { display: block; width: 100%; }
+  .hub2-chart-no-data {
+    font-size: 0.75rem; color: var(--text-muted); font-style: italic;
+    text-align: center; padding: 16px 0;
+  }
+
+  /* Med adherence */
+  .hub2-adh-section { margin-bottom: 16px; }
+  .hub2-adh-bar-wrap {
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px;
+  }
+  .hub2-adh-pct {
+    font-family: 'DM Serif Display', serif; font-size: 1.3rem;
+    color: var(--text); margin-bottom: 6px;
+  }
+  .hub2-adh-pct.good { color: #1a7f3c; }
+  .hub2-adh-pct.warn { color: #b45309; }
+  .hub2-adh-pct.low  { color: #c0392b; }
+  .hub2-adh-track {
+    height: 5px; background: var(--border); border-radius: 3px;
+    overflow: hidden; margin-bottom: 5px;
+  }
+  .hub2-adh-fill { height: 100%; border-radius: 3px; background: var(--accent); transition: width 0.5s ease; }
+  .hub2-adh-fill.warn { background: #e8a000; }
+  .hub2-adh-fill.low  { background: #c0392b; }
+  .hub2-adh-label { font-size: 0.67rem; color: var(--text-muted); }
+
+  /* Previous sessions */
+  .hub2-sessions-section { margin-bottom: 18px; }
+  .hub2-loading { font-size: 0.73rem; color: var(--text-muted); font-style: italic; }
+  .hub2-session-item {
+    border: 1px solid var(--border); border-radius: 7px;
+    margin-bottom: 6px; overflow: hidden; background: var(--bg);
+  }
+  .hub2-session-hdr {
+    display: flex; align-items: center; gap: 8px; padding: 9px 12px;
+    cursor: pointer; transition: background 0.1s; user-select: none;
+  }
+  .hub2-session-hdr:hover { background: #f5faf7; }
+  .hub2-session-num {
+    width: 22px; height: 22px; border-radius: 5px; background: var(--border);
+    color: var(--text-muted); font-size: 0.65rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .hub2-session-info { flex: 1; min-width: 0; }
+  .hub2-session-date { font-size: 0.78rem; font-weight: 600; color: var(--text); }
+  .hub2-session-type { font-size: 0.67rem; color: var(--text-muted); margin-top: 1px; }
+  .hub2-session-chevron { font-size: 0.7rem; color: var(--text-muted); transition: transform 0.15s; }
+  .hub2-session-item.open .hub2-session-chevron { transform: rotate(90deg); }
+  .hub2-session-body {
+    display: none; padding: 0 12px 10px 12px;
+    font-size: 0.76rem; color: var(--text); line-height: 1.6;
+    border-top: 1px solid var(--border);
+  }
+  .hub2-session-item.open .hub2-session-body { display: block; }
+  .hub2-session-snippet {
+    margin-top: 6px; color: var(--text-muted);
+    font-style: italic; font-size: 0.72rem; line-height: 1.5;
+  }
+
+  /* SMS button */
+  .hub2-sms-btn {
+    display: block; width: 100%; text-align: center; padding: 9px;
+    background: none; border: 1px solid var(--border); border-radius: 7px;
+    font-size: 0.76rem; font-weight: 500; color: var(--text-muted);
+    cursor: pointer; font-family: 'DM Sans', sans-serif;
+    transition: border-color 0.12s, color 0.12s; margin-bottom: 8px;
+  }
+  .hub2-sms-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .hub2-sms-btn--sent  { border-color: #1a7f3c !important; color: #1a7f3c !important; }
+  .hub2-sms-btn--error { border-color: #c0392b !important; color: #c0392b !important; }
+
+  /* ── Compat: kept for renderBriefBody ────────────────────────────────────── */
+  .pd-hub-open-btn { display: none; } /* replaced by hub2-btn-primary */
 
   /* Brief data summary preview (shown before full brief) */
   .pd-brief-preview {
@@ -1412,18 +1493,13 @@
     /* Roster column padding */
     .pd-roster-col { padding: 12px 14px 40px; }
 
-    /* ── Hub panel internals ── */
-
-    /* Topbar: shrink for narrow */
-    .pd-hub-topbar { padding: 14px 16px 12px; gap: 8px; }
-    .pd-hub-patient-name { font-size: 1.1rem; }
-    .pd-hub-profile-link { padding: 4px 10px; font-size: 0.72rem; }
-
-    /* Stream tiles: 2-col is fine at full width */
-    .pd-stream-tiles { padding: 14px 16px; gap: 8px; }
-
-    /* Hub body padding */
-    .pd-hub-body { padding: 16px 16px 48px; }
+    /* ── Hub v2 panel internals ── */
+    .hub2-header { padding: 12px 14px 10px; }
+    .hub2-name { font-size: 1rem; }
+    .hub2-timeline-wrap { padding: 8px 14px 7px; }
+    .pd-hub-body { padding: 14px 14px 48px; }
+    .hub2-tiles { gap: 6px; }
+    .hub2-btn-ghost, .hub2-btn-primary { font-size: 0.68rem; padding: 4px 9px; }
 
     /* Stat grid: 2-col stays fine at full width */
 
@@ -1499,10 +1575,10 @@
      MOBILE — 380px (small phones)
      ══════════════════════════════════════════════════════════════════════ */
   @media (max-width: 380px) {
-    .pd-hub-topbar-right { gap: 6px; }
-    .pd-hub-profile-link { display: none; }
-    .pd-stream-tiles { grid-template-columns: 1fr 1fr; gap: 6px; }
-    .pd-stream-tile-val { font-size: 1.05rem; }
+    .hub2-btns { flex-direction: column; gap: 4px; }
+    .hub2-btn-ghost { display: none; }
+    .hub2-tiles { grid-template-columns: 1fr 1fr; gap: 5px; }
+    .hub2-tile-val { font-size: 1rem; }
     .pd-brief-stat-grid { grid-template-columns: 1fr 1fr; }
     .pd-cal-grid { gap: 1px; }
     .pd-cal-day { min-height: 30px; }
@@ -2785,63 +2861,127 @@
        style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.35);z-index:199;"></div>
 
   <!-- ── Patient hub (right-side panel) ────────────────────────────────────── -->
-  <!-- NOTE: id="pd-brief-drawer" kept for JS compatibility -->
   <div class="pd-brief-drawer" id="pd-brief-drawer">
 
-    <!-- Hidden elements retained for JS (renderBriefBody writes to these IDs) -->
-    <span id="brief-drawer-title" style="display:none;"></span>
+    <!-- Hidden compat elements (renderBriefBody writes to these IDs) -->
+    <span id="brief-drawer-title"    style="display:none;"></span>
     <span id="brief-drawer-subtitle" style="display:none;"></span>
+    <span id="hub-tile-checkin-val"  style="display:none;"></span>
+    <span id="hub-tile-checkin-sub"  style="display:none;"></span>
+    <span id="hub-tile-mood-val"     style="display:none;"></span>
+    <span id="hub-tile-mood-sub"     style="display:none;"></span>
+    <a    id="hub-open-btn"          style="display:none;" href="#"></a>
 
-    <!-- Hub top bar -->
-    <div class="pd-hub-topbar" id="hub-topbar">
-      <div>
-        <div class="pd-hub-patient-name" id="hub-patient-name">—</div>
-        <div class="pd-hub-patient-email" id="hub-patient-email"></div>
+    <!-- ── Header ── -->
+    <div class="hub2-header">
+      <div class="hub2-header-top">
+        <div class="hub2-avatar" id="hub2-avatar">—</div>
+        <div class="hub2-identity">
+          <div class="hub2-name" id="hub-patient-name">—</div>
+          <div class="hub2-meta" id="hub-patient-email"></div>
+        </div>
+        <div class="hub2-header-actions">
+          <span class="hub2-risk-badge" id="hub2-risk-badge"></span>
+          <button class="pd-brief-close" onclick="closeBrief()" title="Close">✕</button>
+        </div>
       </div>
-      <div class="pd-hub-topbar-right">
-        <a id="hub-profile-link" href="#" class="pd-hub-profile-link">View Profile →</a>
-        <button class="pd-brief-close" onclick="closeBrief()" title="Close">✕</button>
+      <div class="hub2-header-bottom">
+        <div class="hub2-med-badges" id="hub2-med-badges"></div>
+        <div class="hub2-btns">
+          <a id="hub-profile-link" href="#" class="hub2-btn-ghost">Profile →</a>
+          <button id="hub-create-brief-btn" class="hub2-btn-primary" onclick="hubCreateBrief()">✦ Generate Brief</button>
+        </div>
       </div>
     </div>
 
-    <!-- Data stream tiles -->
-    <div class="pd-stream-tiles" id="hub-stream-tiles">
-      <div class="pd-stream-tile" id="hub-tile-checkin">
-        <div class="pd-stream-tile-label"><span class="pd-stream-tile-dot"></span>Check-in</div>
-        <div class="pd-stream-tile-val" id="hub-tile-checkin-val">—</div>
-        <div class="pd-stream-tile-sub" id="hub-tile-checkin-sub"></div>
+    <!-- ── Longitudinal Timeline ── -->
+    <div class="hub2-timeline-wrap">
+      <div class="hub2-timeline-inner">
+        <div class="hub2-timeline-line"></div>
+        <div class="hub2-timeline-dots" id="hub2-timeline-dots">
+          <span class="hub2-timeline-empty">Loading…</span>
+        </div>
       </div>
-      <div class="pd-stream-tile" id="hub-tile-mood">
-        <div class="pd-stream-tile-label"><span class="pd-stream-tile-dot"></span>Mood · 14d avg</div>
-        <div class="pd-stream-tile-val" id="hub-tile-mood-val">—</div>
-        <div class="pd-stream-tile-sub" id="hub-tile-mood-sub"></div>
-      </div>
-      <div class="pd-stream-tile pd-stream-tile--placeholder">
-        <div class="pd-stream-tile-label"><span class="pd-stream-tile-dot"></span>Voice</div>
-        <div class="pd-stream-tile-val">—</div>
-        <div class="pd-stream-tile-sub">Coming soon</div>
-      </div>
-      <div class="pd-stream-tile pd-stream-tile--placeholder">
-        <div class="pd-stream-tile-label"><span class="pd-stream-tile-dot"></span>Wearable</div>
-        <div class="pd-stream-tile-val">—</div>
-        <div class="pd-stream-tile-sub">Coming soon</div>
+      <div class="hub2-timeline-legend">
+        <span class="hub2-tl-legend-item">
+          <span class="hub2-tl-legend-dot" style="background:#94a3b8;"></span>Check-in
+        </span>
+        <span class="hub2-tl-legend-item">
+          <span class="hub2-tl-legend-dot" style="background:var(--accent);"></span>Session
+        </span>
+        <span class="hub2-tl-legend-item">
+          <span class="hub2-tl-legend-dot" style="background:#c0392b;"></span>Crisis flag
+        </span>
       </div>
     </div>
 
-    <!-- Hub scrollable body -->
+    <!-- ── Scrollable body ── -->
     <div class="pd-hub-body">
 
-      <!-- Data summary preview (retained for JS compat) -->
-      <div id="hub-brief-preview" style="display:none;">
-        <table id="hub-preview-table"></table>
+      <!-- 2×2 metric tiles -->
+      <div class="hub2-tiles">
+        <div class="hub2-tile">
+          <div class="hub2-tile-label">Mood · 14d avg</div>
+          <div class="hub2-tile-val" id="hub2-tile-mood-val">—</div>
+          <div class="hub2-tile-sub" id="hub2-tile-mood-sub"></div>
+        </div>
+        <div class="hub2-tile">
+          <div class="hub2-tile-label">Sleep · 14d avg</div>
+          <div class="hub2-tile-val" id="hub2-tile-sleep-val">—</div>
+          <div class="hub2-tile-sub" id="hub2-tile-sleep-sub"></div>
+        </div>
+        <div class="hub2-tile">
+          <div class="hub2-tile-label">Stress · 14d avg</div>
+          <div class="hub2-tile-val" id="hub2-tile-stress-val">—</div>
+          <div class="hub2-tile-sub" id="hub2-tile-stress-sub"></div>
+        </div>
+        <div class="hub2-tile">
+          <div class="hub2-tile-label">Med Adherence</div>
+          <div class="hub2-tile-val" id="hub2-tile-adh-val">—</div>
+          <div class="hub2-tile-sub" id="hub2-tile-adh-sub"></div>
+        </div>
       </div>
+
+      <!-- Signal tags -->
+      <div class="hub2-tags-section" id="hub2-tags-section" style="display:none;">
+        <div class="hub2-section-label">Signals</div>
+        <div class="hub2-tags" id="hub2-tags"></div>
+      </div>
+
+      <!-- Mood trend chart -->
+      <div class="hub2-chart-section">
+        <div class="hub2-section-label">Mood Trend · Last 30 Days</div>
+        <div class="hub2-chart-wrap" id="hub2-chart-wrap">
+          <div class="hub2-chart-no-data">Loading…</div>
+        </div>
+      </div>
+
+      <!-- Medication adherence -->
+      <div class="hub2-adh-section">
+        <div class="hub2-section-label">Medication Adherence · Last 30 Days</div>
+        <div class="hub2-adh-bar-wrap">
+          <div class="hub2-adh-pct" id="hub2-adh-pct">—</div>
+          <div class="hub2-adh-track">
+            <div class="hub2-adh-fill" id="hub2-adh-fill" style="width:0%;"></div>
+          </div>
+          <div class="hub2-adh-label" id="hub2-adh-label">No data</div>
+        </div>
+      </div>
+
+      <!-- Previous sessions accordion -->
+      <div class="hub2-sessions-section">
+        <div class="hub2-section-label">Previous Sessions</div>
+        <div id="hub2-sessions-list"><div class="hub2-loading">Loading…</div></div>
+      </div>
+
+      <!-- Brief output area (renderBriefBody writes here) -->
+      <div id="hub-brief-preview" style="display:none;"><table id="hub-preview-table"></table></div>
       <div id="brief-drawer-body"></div>
 
-      <!-- Patient Hub CTA -->
-      <p style="font-size:0.72rem;font-weight:500;text-transform:uppercase;letter-spacing:0.07em;color:var(--text-muted);margin:0 0 10px;">Full Patient View</p>
-      <a id="hub-open-btn" href="#" class="pd-hub-open-btn">
-        Open Patient Hub →
-      </a>
+      <!-- SMS outreach -->
+      <button id="hub-sms-btn" class="hub2-sms-btn" data-pid="" data-name=""
+              onclick="hubSendSMS()">Send Check-in SMS ↗</button>
+
     </div>
   </div>
 
@@ -2886,13 +3026,8 @@ function openHub(pid) {
   const pt = _PATIENTS[pid];
   if (!pt) return;
 
-  // If same patient — toggle
-  if (_activeHubPid === pid) {
-    closeBrief();
-    return;
-  }
+  if (_activeHubPid === pid) { closeBrief(); return; }
 
-  // Deactivate previous row, activate this one
   document.querySelectorAll('.pd-row.active').forEach(r => r.classList.remove('active'));
   const row = document.getElementById('pd-row-' + pid);
   if (row) row.classList.add('active');
@@ -2900,41 +3035,114 @@ function openHub(pid) {
   _activeHubPid = pid;
   _activePid    = pid;
 
-  // Populate hub header
+  // ── Populate header ──
+  const initials = (pt.name || '?').split(' ').map(w => w[0]).slice(0,2).join('').toUpperCase();
+  document.getElementById('hub2-avatar').textContent       = initials;
   document.getElementById('hub-patient-name').textContent  = pt.name;
   document.getElementById('hub-patient-email').textContent = pt.email;
   document.getElementById('hub-profile-link').href         = pt.profileUrl;
   document.getElementById('hub-open-btn').href             = pt.hubUrl;
 
-  // Populate stream tiles
-  _populateStreamTiles(pid, pt);
+  // Risk badge
+  const badge = document.getElementById('hub2-risk-badge');
+  const flags = pt.modeDFlags || {};
+  if (pt.modeDFlags && flags.safety && flags.safety.signals_found) {
+    badge.textContent = '⚠ Safety Flag'; badge.className = 'hub2-risk-badge hub2-risk-badge--crisis';
+  } else if (flags.substance && flags.substance.alert_level === 'concern') {
+    badge.textContent = '⚠ Substance'; badge.className = 'hub2-risk-badge hub2-risk-badge--safety';
+  } else if (pt.moodRecent !== null && pt.moodRecent < 4) {
+    badge.textContent = '● Low Mood'; badge.className = 'hub2-risk-badge hub2-risk-badge--watch';
+  } else if (pt.moodRecent !== null && pt.moodRecent >= 7) {
+    badge.textContent = '● Stable'; badge.className = 'hub2-risk-badge hub2-risk-badge--stable';
+  } else {
+    badge.textContent = ''; badge.className = 'hub2-risk-badge';
+  }
 
-  // Reset brief area
-  document.getElementById('brief-drawer-body').innerHTML  = '';
+  // Medication badges
+  const medWrap = document.getElementById('hub2-med-badges');
+  if (pt.meds && pt.meds.length) {
+    medWrap.innerHTML = pt.meds.slice(0, 3).map(m =>
+      '<span class="hub2-med-badge">' + _esc(m.name + (m.dose ? ' ' + m.dose + (m.dose_unit || '') : '')) + '</span>'
+    ).join('') + (pt.meds.length > 3 ? '<span class="hub2-med-badge" style="background:var(--bg);border-color:var(--border);color:var(--text-muted);">+' + (pt.meds.length - 3) + ' more</span>' : '');
+  } else {
+    medWrap.innerHTML = '<span class="hub2-med-none">No medications logged</span>';
+  }
+
+  // ── Populate static metric tiles ──
+  const moodEl  = document.getElementById('hub2-tile-mood-val');
+  const moodSub = document.getElementById('hub2-tile-mood-sub');
+  if (pt.moodRecent !== null) {
+    moodEl.textContent  = pt.moodRecent + '/10';
+    moodEl.className    = 'hub2-tile-val' + (pt.moodRecent < 5 ? ' low' : pt.moodRecent >= 7 ? ' good' : '');
+    const arrow = pt.moodDir === 'up' ? ' ↑' : pt.moodDir === 'down' ? ' ↓' : '';
+    const delta = pt.moodDelta !== null ? arrow + (pt.moodDelta > 0 ? '+' : '') + pt.moodDelta : '';
+    moodSub.textContent = 'avg' + (delta ? ' · ' + delta.trim() : '');
+  } else {
+    moodEl.textContent = '—'; moodEl.className = 'hub2-tile-val';
+    moodSub.textContent = 'No check-in data';
+  }
+  const sleepEl  = document.getElementById('hub2-tile-sleep-val');
+  const sleepSub = document.getElementById('hub2-tile-sleep-sub');
+  if (pt.sleepRecent !== null) {
+    sleepEl.textContent  = pt.sleepRecent + 'h';
+    sleepEl.className    = 'hub2-tile-val' + (pt.sleepRecent < 6 ? ' low' : pt.sleepRecent >= 7 ? ' good' : '');
+    sleepSub.textContent = '14-day average';
+  } else {
+    sleepEl.textContent = '—'; sleepEl.className = 'hub2-tile-val'; sleepSub.textContent = '';
+  }
+  const stressEl  = document.getElementById('hub2-tile-stress-val');
+  const stressSub = document.getElementById('hub2-tile-stress-sub');
+  if (pt.stressRecent !== null) {
+    stressEl.textContent  = pt.stressRecent + '/10';
+    stressEl.className    = 'hub2-tile-val' + (pt.stressRecent >= 7 ? ' low' : pt.stressRecent <= 4 ? ' good' : '');
+    stressSub.textContent = '14-day average';
+  } else {
+    stressEl.textContent = '—'; stressEl.className = 'hub2-tile-val'; stressSub.textContent = '';
+  }
+  document.getElementById('hub2-tile-adh-val').textContent  = '—';
+  document.getElementById('hub2-tile-adh-val').className    = 'hub2-tile-val';
+  document.getElementById('hub2-tile-adh-sub').textContent  = 'Loading…';
+
+  // ── Signal tags ──
+  _renderHubTags(pt);
+
+  // ── Reset async sections ──
+  document.getElementById('hub2-timeline-dots').innerHTML  = '<span class="hub2-timeline-empty">Loading…</span>';
+  document.getElementById('hub2-chart-wrap').innerHTML     = '<div class="hub2-chart-no-data">Loading…</div>';
+  document.getElementById('hub2-adh-pct').textContent      = '—';
+  document.getElementById('hub2-adh-pct').className        = 'hub2-adh-pct';
+  document.getElementById('hub2-adh-fill').style.width     = '0%';
+  document.getElementById('hub2-adh-label').textContent    = 'Loading…';
+  document.getElementById('hub2-sessions-list').innerHTML  = '<div class="hub2-loading">Loading…</div>';
+  document.getElementById('brief-drawer-body').innerHTML   = '';
   document.getElementById('hub-brief-preview').style.display = 'none';
 
-  // Pre-populate data summary preview table
-  _buildPreviewTable(pid, pt);
-  document.getElementById('hub-brief-preview').style.display = '';
+  // Reset Generate Brief button
+  const bBtn = document.getElementById('hub-create-brief-btn');
+  bBtn.disabled = false; bBtn.textContent = '✦ Generate Brief'; bBtn.style.display = '';
 
-  // Copy metadata for renderBriefBody
-  _apptMeta[pid] = {
-    status: pt.lastApptStatus,
-    id:     pt.lastApptId,
-  };
+  // ── Compat metadata for renderBriefBody ──
+  _apptMeta[pid]   = { status: pt.lastApptStatus, id: pt.lastApptId };
   _modeDFlags[pid] = pt.modeDFlags || {};
-
-  // Sync legacy title spans (renderBriefBody reads brief-drawer-subtitle)
   document.getElementById('brief-drawer-title').textContent    = 'Between-Session Brief — ' + pt.name;
   document.getElementById('brief-drawer-subtitle').textContent = '';
 
-  // Open panel
-  const drawer = document.getElementById('pd-brief-drawer');
-  drawer.classList.add('open');
+  // SMS button
+  const smsBtn = document.getElementById('hub-sms-btn');
+  smsBtn.dataset.pid  = pid;
+  smsBtn.dataset.name = pt.name;
+  smsBtn.textContent  = 'Send Check-in SMS ↗';
+  smsBtn.classList.remove('hub2-sms-btn--sent', 'hub2-sms-btn--error');
+  delete smsBtn.dataset.confirming;
+
+  // ── Open panel ──
+  document.getElementById('pd-brief-drawer').classList.add('open');
   document.getElementById('pd-roster-col').classList.add('hub-open');
-  // Show backdrop on mobile
   const backdrop = document.getElementById('pd-hub-backdrop');
   if (backdrop && window.innerWidth <= 520) backdrop.style.display = '';
+
+  // ── Async data load ──
+  _loadHubData(pid, pt);
 }
 
 function _checkinLabel(pt) {
@@ -2944,29 +3152,253 @@ function _checkinLabel(pt) {
   return pt.daysSinceCheckin + 'd ago';
 }
 
-function _populateStreamTiles(pid, pt) {
-  // Check-in tile
-  const ciVal = document.getElementById('hub-tile-checkin-val');
-  const ciSub = document.getElementById('hub-tile-checkin-sub');
-  ciVal.textContent = _checkinLabel(pt);
-  ciVal.className   = 'pd-stream-tile-val' + (pt.daysSinceCheckin !== null && pt.daysSinceCheckin > 7 ? ' low' : '');
-  ciSub.textContent = pt.lastCheckin ? 'Last: ' + pt.lastCheckin : '';
+function _renderHubTags(pt) {
+  const tags = [];
+  const flags = pt.modeDFlags || {};
+  if (flags.safety && flags.safety.signals_found)
+    tags.push({ label: 'Safety Flag', cls: 'hub2-tag--alert' });
+  if (flags.substance && flags.substance.alert_level === 'concern')
+    tags.push({ label: 'Substance Signal', cls: 'hub2-tag--warn' });
+  if (flags.substance && flags.substance.alert_level === 'watch')
+    tags.push({ label: 'Substance Watch', cls: 'hub2-tag--warn' });
+  if (pt.moodRecent !== null && pt.moodRecent < 4.5)
+    tags.push({ label: 'Low Mood', cls: 'hub2-tag--alert' });
+  else if (pt.moodRecent !== null && pt.moodDir === 'down')
+    tags.push({ label: 'Mood Declining', cls: 'hub2-tag--warn' });
+  if (pt.sleepRecent !== null && pt.sleepRecent < 5.5)
+    tags.push({ label: 'Sleep Deficit', cls: 'hub2-tag--warn' });
+  if (pt.stressRecent !== null && pt.stressRecent >= 7)
+    tags.push({ label: 'High Stress', cls: 'hub2-tag--warn' });
+  if (pt.daysSinceCheckin !== null && pt.daysSinceCheckin > 7)
+    tags.push({ label: 'Inactive ' + pt.daysSinceCheckin + 'd', cls: 'hub2-tag--muted' });
+  if (pt.daysSinceCheckin === 0)
+    tags.push({ label: 'Checked In Today', cls: 'hub2-tag--info' });
+  if (pt.lastApptStatus === 'active')
+    tags.push({ label: '● Active Session', cls: 'hub2-tag--info' });
 
-  // Mood tile
-  const moodVal = document.getElementById('hub-tile-mood-val');
-  const moodSub = document.getElementById('hub-tile-mood-sub');
-  if (pt.moodRecent !== null) {
-    moodVal.textContent = pt.moodRecent + '/10';
-    moodVal.className   = 'pd-stream-tile-val' +
-      (pt.moodRecent < 5 ? ' low' : pt.moodRecent >= 7 ? ' good' : '');
-    const arrow = pt.moodDir === 'up' ? ' ↑' : pt.moodDir === 'down' ? ' ↓' : ' →';
-    const delta = pt.moodDelta !== null ? arrow + ' ' + (pt.moodDelta > 0 ? '+' : '') + pt.moodDelta : '';
-    moodSub.textContent = '14-day avg' + delta;
+  const sec = document.getElementById('hub2-tags-section');
+  const wrap = document.getElementById('hub2-tags');
+  if (tags.length) {
+    wrap.innerHTML = tags.map(t =>
+      '<span class="hub2-tag ' + t.cls + '">' + _esc(t.label) + '</span>'
+    ).join('');
+    sec.style.display = '';
   } else {
-    moodVal.textContent = '—';
-    moodVal.className   = 'pd-stream-tile-val';
-    moodSub.textContent = 'No check-in data';
+    sec.style.display = 'none';
   }
+}
+
+async function _loadHubData(pid, pt) {
+  try {
+    // Parallel fetch: trends + summaries
+    const [trendsRes, summariesRes] = await Promise.allSettled([
+      fetch('/api/provider/patient/' + pid + '/trends?days=30', { credentials: 'same-origin' }),
+      fetch('/api/provider/patient/' + pid + '/summaries', { credentials: 'same-origin' }),
+    ]);
+
+    // ── Trends data ──
+    if (trendsRes.status === 'fulfilled' && trendsRes.value.ok) {
+      const t = await trendsRes.value.json();
+
+      // Update mood tile with full avg
+      const moodAvg = t.mood && t.mood.average !== null ? t.mood.average : null;
+      if (moodAvg !== null) {
+        const moodEl = document.getElementById('hub2-tile-mood-val');
+        moodEl.textContent = moodAvg.toFixed(1) + '/10';
+        moodEl.className   = 'hub2-tile-val' + (moodAvg < 5 ? ' low' : moodAvg >= 7 ? ' good' : '');
+        document.getElementById('hub2-tile-mood-sub').textContent = t.total_checkins + ' check-ins · 30d';
+      }
+
+      // Sleep tile
+      const sleepAvg = t.sleep && t.sleep.average !== null ? t.sleep.average : null;
+      if (sleepAvg !== null) {
+        const slEl = document.getElementById('hub2-tile-sleep-val');
+        slEl.textContent = sleepAvg.toFixed(1) + 'h';
+        slEl.className   = 'hub2-tile-val' + (sleepAvg < 6 ? ' low' : sleepAvg >= 7 ? ' good' : '');
+        document.getElementById('hub2-tile-sleep-sub').textContent = '30-day average';
+      }
+
+      // Stress tile
+      const stressAvg = t.stress && t.stress.average !== null ? t.stress.average : null;
+      if (stressAvg !== null) {
+        const stEl = document.getElementById('hub2-tile-stress-val');
+        stEl.textContent = stressAvg.toFixed(1) + '/10';
+        stEl.className   = 'hub2-tile-val' + (stressAvg >= 7 ? ' low' : stressAvg <= 4 ? ' good' : '');
+        document.getElementById('hub2-tile-stress-sub').textContent = '30-day average';
+      }
+
+      // Adherence tile + bar
+      const adh = t.medication_adherence;
+      const adhEl = document.getElementById('hub2-tile-adh-val');
+      const adhPct = document.getElementById('hub2-adh-pct');
+      const adhFill = document.getElementById('hub2-adh-fill');
+      const adhLbl = document.getElementById('hub2-adh-label');
+      if (adh !== null && adh !== undefined) {
+        const adhClass = adh >= 80 ? 'good' : adh >= 60 ? 'warn' : 'low';
+        adhEl.textContent  = adh + '%';
+        adhEl.className    = 'hub2-tile-val ' + adhClass;
+        document.getElementById('hub2-tile-adh-sub').textContent = '30-day adherence';
+        adhPct.textContent  = adh + '%';
+        adhPct.className    = 'hub2-adh-pct ' + adhClass;
+        adhFill.style.width = adh + '%';
+        adhFill.className   = 'hub2-adh-fill' + (adh < 60 ? ' low' : adh < 80 ? ' warn' : '');
+        adhLbl.textContent  = adh >= 80 ? 'Adherence is strong' : adh >= 60 ? 'Some doses missed' : 'Significant missed doses';
+        if (!pt.meds || !pt.meds.length) { adhLbl.textContent = 'No medications on file'; }
+      } else {
+        adhEl.textContent = '—'; adhEl.className = 'hub2-tile-val';
+        document.getElementById('hub2-tile-adh-sub').textContent = 'No med data';
+        adhPct.textContent = '—'; adhFill.style.width = '0%'; adhLbl.textContent = 'No medication data recorded';
+      }
+
+      // ── Mood line chart ──
+      _renderMoodChart(t.mood, t.total_checkins);
+
+      // ── Timeline ──
+      _renderTimeline(t.mood && t.mood.dates ? t.mood.dates : []);
+    } else {
+      document.getElementById('hub2-chart-wrap').innerHTML = '<div class="hub2-chart-no-data">No check-in data</div>';
+      document.getElementById('hub2-timeline-dots').innerHTML = '<span class="hub2-timeline-empty">No data</span>';
+    }
+
+    // ── Summaries / sessions ──
+    if (summariesRes.status === 'fulfilled' && summariesRes.value.ok) {
+      const s = await summariesRes.value.json();
+      _renderSessionsList(s.summaries || []);
+    } else {
+      document.getElementById('hub2-sessions-list').innerHTML = '<div class="hub2-loading">No sessions found</div>';
+    }
+
+  } catch(e) {
+    console.warn('[hub] _loadHubData error:', e);
+    document.getElementById('hub2-chart-wrap').innerHTML     = '<div class="hub2-chart-no-data">Could not load data</div>';
+    document.getElementById('hub2-timeline-dots').innerHTML  = '<span class="hub2-timeline-empty">Error</span>';
+    document.getElementById('hub2-sessions-list').innerHTML  = '<div class="hub2-loading">Error loading sessions</div>';
+  }
+}
+
+function _renderMoodChart(moodData, totalCheckins) {
+  const wrap = document.getElementById('hub2-chart-wrap');
+  if (!moodData || !moodData.daily_scores || moodData.daily_scores.length < 2) {
+    wrap.innerHTML = '<div class="hub2-chart-no-data">Not enough data to chart</div>';
+    return;
+  }
+  const scores = moodData.daily_scores;
+  const dates  = moodData.dates || [];
+  const W = 410, H = 90, padL = 24, padR = 8, padT = 8, padB = 20;
+  const w = W - padL - padR, h = H - padT - padB;
+  const n = scores.length;
+  const xStep = w / Math.max(n - 1, 1);
+  const yScale = v => padT + h - (v / 10) * h;
+
+  // Build path
+  const pts = scores.map((v, i) => [padL + i * xStep, yScale(v)]);
+  const linePath = pts.map((p, i) => (i === 0 ? 'M' : 'L') + p[0].toFixed(1) + ',' + p[1].toFixed(1)).join(' ');
+  const areaPath = linePath + ' L' + pts[pts.length-1][0].toFixed(1) + ',' + (padT+h) + ' L' + padL + ',' + (padT+h) + ' Z';
+
+  // Y axis labels
+  const yLabels = [0, 5, 10].map(v =>
+    `<text x="${padL - 4}" y="${yScale(v) + 4}" text-anchor="end" fill="#94a3b8" font-size="8">${v}</text>`
+  ).join('');
+
+  // Y grid lines
+  const yGrid = [5].map(v =>
+    `<line x1="${padL}" y1="${yScale(v)}" x2="${padL + w}" y2="${yScale(v)}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="3,3"/>`
+  ).join('');
+
+  // X date labels (show ~4 evenly spaced)
+  const xIdxs = [0, Math.floor(n/3), Math.floor(2*n/3), n-1].filter((v, i, a) => a.indexOf(v) === i && v < n);
+  const xLabels = xIdxs.map(i => {
+    const d = dates[i] ? dates[i].slice(5) : ''; // MM-DD
+    return `<text x="${(padL + i * xStep).toFixed(1)}" y="${H - 3}" text-anchor="middle" fill="#94a3b8" font-size="7.5">${d}</text>`;
+  }).join('');
+
+  // Dots for each point
+  const dotColor = v => v < 5 ? '#e74c3c' : v >= 7 ? '#1a7f3c' : '#0F6E56';
+  const dots = pts.map((p, i) =>
+    `<circle cx="${p[0].toFixed(1)}" cy="${p[1].toFixed(1)}" r="2.5" fill="${dotColor(scores[i])}" opacity="0.8"/>`
+  ).join('');
+
+  wrap.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;">
+      <defs>
+        <linearGradient id="moodGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#0F6E56" stop-opacity="0.18"/>
+          <stop offset="100%" stop-color="#0F6E56" stop-opacity="0.02"/>
+        </linearGradient>
+      </defs>
+      ${yGrid}
+      <path d="${areaPath}" fill="url(#moodGrad)"/>
+      <path d="${linePath}" fill="none" stroke="#0F6E56" stroke-width="1.8" stroke-linejoin="round" stroke-linecap="round"/>
+      ${dots}
+      ${yLabels}
+      ${xLabels}
+    </svg>
+    <div style="font-size:0.63rem;color:#94a3b8;margin-top:4px;">${n} data points · avg ${moodData.average !== null ? moodData.average.toFixed(1) : '—'}/10</div>`;
+}
+
+function _renderTimeline(checkinDates) {
+  const dotsEl = document.getElementById('hub2-timeline-dots');
+  if (!checkinDates || !checkinDates.length) {
+    dotsEl.innerHTML = '<span class="hub2-timeline-empty">No check-ins in past 30 days</span>';
+    return;
+  }
+
+  // Build date map for even spacing across the date range
+  const allDates = [...checkinDates].sort();
+  const startMs  = new Date(allDates[0]).getTime();
+  const endMs    = new Date(allDates[allDates.length - 1]).getTime();
+  const range    = Math.max(endMs - startMs, 1);
+
+  const set = new Set(checkinDates);
+  // Limit to max 40 dots to avoid crowding
+  const step = allDates.length > 40 ? Math.ceil(allDates.length / 40) : 1;
+  const shown = allDates.filter((_, i) => i % step === 0 || i === allDates.length - 1);
+
+  if (shown.length < 2) {
+    // Single dot — just center it
+    dotsEl.innerHTML = '<span class="hub2-tl-dot hub2-tl-dot--checkin" title="' + _esc(shown[0] || '') + '" style="margin:auto;"></span>';
+    return;
+  }
+
+  // Render as absolutely-positioned dots within a relative container
+  const items = shown.map(d => {
+    const pct = ((new Date(d).getTime() - startMs) / range * 100).toFixed(1);
+    return `<span class="hub2-tl-dot hub2-tl-dot--checkin" title="${_esc(d)}"
+      style="position:absolute;left:calc(${pct}% - 4px);top:50%;transform:translateY(-50%);"></span>`;
+  }).join('');
+
+  dotsEl.style.position = 'relative';
+  dotsEl.style.height   = '20px';
+  dotsEl.innerHTML = items;
+}
+
+function _renderSessionsList(summaries) {
+  const list = document.getElementById('hub2-sessions-list');
+  if (!summaries || !summaries.length) {
+    list.innerHTML = '<div class="hub2-loading">No sessions recorded yet</div>';
+    return;
+  }
+  const items = summaries.slice(0, 5).map((s, i) => {
+    const dateStr = s.created_at ? s.created_at.slice(0, 10) : (s.date || '—');
+    const type    = s.summary_type === 'provider' ? 'Provider summary' : s.summary_type === 'patient' ? 'Patient summary' : 'Session brief';
+    const snippet = (s.summary_text || s.content || '').slice(0, 160).replace(/\n/g, ' ');
+    const num     = summaries.length - i;
+    return `
+      <div class="hub2-session-item" id="hub2-sess-${i}">
+        <div class="hub2-session-hdr" onclick="this.closest('.hub2-session-item').classList.toggle('open')">
+          <div class="hub2-session-num">${num}</div>
+          <div class="hub2-session-info">
+            <div class="hub2-session-date">${_esc(dateStr)}</div>
+            <div class="hub2-session-type">${_esc(type)}</div>
+          </div>
+          <span class="hub2-session-chevron">›</span>
+        </div>
+        <div class="hub2-session-body">
+          ${snippet ? '<p class="hub2-session-snippet">' + _esc(snippet) + (snippet.length >= 160 ? '…' : '') + '</p>' : '<p style="color:var(--text-muted);font-style:italic;font-size:0.72rem;">No content available</p>'}
+        </div>
+      </div>`;
+  }).join('');
+  list.innerHTML = items;
 }
 
 function _buildPreviewTable(pid, pt) {

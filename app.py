@@ -1084,6 +1084,11 @@ def provider_summary_print(patient_id):
             except Exception as _ve:
                 app.logger.warning(f'[print] voice note fallback: {_ve}')
 
+            engagement_data = db.compute_engagement_stats(
+                patient_id, days=days,
+                period_start=period_start, period_end=period_end,
+            )
+
             try:
                 if provider_type == 'psychiatrist':
                     result = claude_api.generate_psychiatry_summary(
@@ -1097,6 +1102,7 @@ def provider_summary_print(patient_id):
                         session_context=session_context or [],
                         raw_voice_transcripts=raw_voice_transcripts,
                         patient_name=patient.get('full_name'),
+                        engagement_data=engagement_data,
                     )
                     chart_data = result.get('chart_data')
                 elif provider_type in ('therapist', 'counselor'):
@@ -1109,6 +1115,7 @@ def provider_summary_print(patient_id):
                         substance_flags=flags.get('substance'),
                         session_context=session_context or [],
                         raw_voice_transcripts=raw_voice_transcripts,
+                        engagement_data=engagement_data,
                     )
                 else:
                     lexical_data    = db.compute_lexical_diversity(patient_id, days=max(days, 30))
@@ -1128,6 +1135,7 @@ def provider_summary_print(patient_id):
                         readability_data=readability_data,
                         session_context=session_context or [],
                         raw_voice_transcripts=raw_voice_transcripts,
+                        engagement_data=engagement_data,
                     )
                 summary_text = result['text']
             except RuntimeError as e:
@@ -1861,6 +1869,7 @@ def api_create_summary():
     what_worked = db.get_what_worked_patterns(user['id'], days=max(days, 60))
     lexical_data = db.compute_lexical_diversity(user['id'], days=max(days, 30))
     readability_data = db.compute_readability(user['id'], days=max(days, 30))
+    engagement_data = db.compute_engagement_stats(user['id'], days=days)
 
     try:
         result = claude_api.generate_appointment_summary(
@@ -1870,7 +1879,8 @@ def api_create_summary():
             safety_flags=None,   # safety flags are provider-only — never passed to patient route
             what_worked=what_worked,
             lexical_data=lexical_data,
-            readability_data=readability_data)
+            readability_data=readability_data,
+            engagement_data=engagement_data)
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
 
@@ -2231,6 +2241,7 @@ def api_provider_therapy_summary(patient_id):
     checkins   = _strip_checkin_fields(db.get_checkins(patient_id, days), perms)
     journals   = db.get_journals(patient_id, limit=20, shared_only=True) if perms.get('journals_raw', True) else []
     behavioral = db.get_behavioral_data(patient_id, days=days) if perms.get('advanced_data', True) else {}
+    engagement = db.compute_engagement_stats(patient_id, days=days)
 
     try:
         result = claude_api.generate_therapy_summary(
@@ -2238,6 +2249,7 @@ def api_provider_therapy_summary(patient_id):
             journal_data=journals,
             behavioral_data=behavioral,
             days=days,
+            engagement_data=engagement,
         )
         return jsonify(result), 200
     except RuntimeError as e:
@@ -2763,6 +2775,11 @@ def api_provider_generate_summary(patient_id):
 
     provider_type = user.get('provider_type')
     try:
+        engagement_data = db.compute_engagement_stats(
+            patient_id, days=summary_days,
+            period_start=period_start, period_end=period_end,
+        )
+
         if provider_type in ('therapist', 'counselor'):
             result = claude_api.generate_therapy_summary(
                 checkins, journals,
@@ -2774,6 +2791,7 @@ def api_provider_generate_summary(patient_id):
                 substance_flags=flags.get('substance'),
                 session_context=session_context or [],
                 raw_voice_transcripts=raw_voice_transcripts or [],
+                engagement_data=engagement_data,
             )
         elif provider_type == 'psychiatrist':
             _pt_profile = db.supabase_admin.table('profiles').select('full_name').eq('id', patient_id).limit(1).execute()
@@ -2790,6 +2808,7 @@ def api_provider_generate_summary(patient_id):
                 session_context=session_context or [],
                 raw_voice_transcripts=raw_voice_transcripts or [],
                 patient_name=_pt_name,
+                engagement_data=engagement_data,
             )
         else:
             # unknown / None — fall back to Mode C provider brief
@@ -2810,6 +2829,7 @@ def api_provider_generate_summary(patient_id):
                 readability_data=readability_data,
                 session_context=session_context or [],
                 raw_voice_transcripts=raw_voice_transcripts or [],
+                engagement_data=engagement_data,
             )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503
