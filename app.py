@@ -4883,6 +4883,73 @@ def api_provider_patient_calendar_delete(patient_id, event_id):
     ok = db.delete_calendar_appointment(event_id, user['id'])
     return jsonify({'ok': ok})
 
+# ── Provider cross-patient appointment manager API ────────────────────────────
+
+@app.route('/api/provider/appointments', methods=['GET'])
+def api_provider_appointments_all():
+    """Return all appointments across all patients for the provider."""
+    user, err = _api_user('provider')
+    if err: return err
+    from_date = request.args.get('from')
+    to_date   = request.args.get('to')
+    events = db.get_all_provider_appointments(user['id'], from_date, to_date)
+    return jsonify(events), 200
+
+
+@app.route('/api/provider/appointments', methods=['POST'])
+def api_provider_appointments_create():
+    """Create a scheduled appointment for any patient."""
+    user, err = _api_user('provider')
+    if err: return err
+    data = request.get_json() or {}
+    patient_id = (data.get('patient_id') or '').strip()
+    event_date = (data.get('date') or '').strip()
+    if not patient_id or not event_date:
+        return jsonify({'error': 'patient_id and date are required'}), 400
+    event = db.create_calendar_appointment(
+        provider_id=user['id'],
+        patient_id=patient_id,
+        event_date=event_date,
+        event_time=(data.get('time') or '').strip() or None,
+        title=(data.get('title') or 'Appointment').strip(),
+        notes=(data.get('notes') or '').strip(),
+        event_type='appointment',
+    )
+    if not event:
+        return jsonify({'error': 'Could not create appointment'}), 500
+    return jsonify({'ok': True, 'event': event})
+
+
+@app.route('/api/provider/appointments/<appt_id>', methods=['PATCH'])
+def api_provider_appointments_update(appt_id):
+    """Update a scheduled appointment."""
+    user, err = _api_user('provider')
+    if err: return err
+    data = request.get_json() or {}
+    event_date = (data.get('date') or '').strip()
+    if not event_date:
+        return jsonify({'error': 'date is required'}), 400
+    ok = db.update_calendar_appointment(
+        appt_id=appt_id,
+        provider_id=user['id'],
+        event_date=event_date,
+        event_time=(data.get('time') or '').strip() or None,
+        title=(data.get('title') or 'Appointment').strip(),
+        notes=(data.get('notes') or '').strip(),
+    )
+    return jsonify({'ok': ok})
+
+
+@app.route('/api/provider/appointments/<appt_id>', methods=['DELETE'])
+def api_provider_appointments_delete(appt_id):
+    """Delete a scheduled appointment."""
+    user, err = _api_user('provider')
+    if err: return err
+    ok = db.delete_calendar_appointment(appt_id, user['id'])
+    return jsonify({'ok': ok})
+
+# ── end cross-patient appointment manager API ─────────────────────────────────
+
 # ── end calendar API ──────────────────────────────────────────────────────────
 
 

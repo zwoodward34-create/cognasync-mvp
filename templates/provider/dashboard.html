@@ -1806,6 +1806,580 @@
     .pd-stat-card { padding: 12px 16px; }
     .pd-stat-card-val { font-size: 1.5rem; }
   }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     APPOINTMENT MANAGER MODAL
+     ══════════════════════════════════════════════════════════════════════ */
+  .apmgr-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 500;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px 16px;
+    overflow-y: auto;
+  }
+  .apmgr-overlay.open { display: flex; }
+  .apmgr-panel {
+    background: var(--surface);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 1040px;
+    max-height: calc(100vh - 48px);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.18);
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* Topbar */
+  .apmgr-topbar {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    padding: 0 20px;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface);
+    flex-shrink: 0;
+    min-height: 54px;
+  }
+  .apmgr-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+    color: var(--text);
+    margin-right: 24px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .apmgr-tabs {
+    display: flex;
+    gap: 0;
+    flex: 1;
+  }
+  .apmgr-tab {
+    font-size: 0.82rem;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    padding: 0 18px;
+    height: 54px;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .apmgr-tab:hover { color: var(--text); }
+  .apmgr-tab.active { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .apmgr-topbar-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+    margin-left: auto;
+  }
+  .apmgr-new-btn {
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    padding: 6px 14px;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.12s;
+    white-space: nowrap;
+  }
+  .apmgr-new-btn:hover { opacity: 0.88; }
+  .apmgr-close-btn {
+    background: none;
+    border: none;
+    font-size: 1rem;
+    color: var(--text-muted);
+    cursor: pointer;
+    padding: 6px 8px;
+    border-radius: 4px;
+    font-family: 'DM Sans', sans-serif;
+    line-height: 1;
+    transition: background 0.1s, color 0.1s;
+  }
+  .apmgr-close-btn:hover { background: var(--bg); color: var(--text); }
+
+  /* Views container */
+  .apmgr-body {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+  }
+  .apmgr-view { flex: 1; }
+
+  /* ── Calendar view ── */
+  .apmgr-cal-wrap {
+    display: grid;
+    grid-template-columns: 1fr 300px;
+    min-height: 500px;
+  }
+  .apmgr-cal-main {
+    padding: 20px 24px;
+    border-right: 1px solid var(--border);
+  }
+  .apmgr-cal-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .apmgr-cal-month-label {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+  }
+  .apmgr-cal-nav-btn {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    cursor: pointer;
+    padding: 4px 10px;
+    font-size: 0.9rem;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    transition: border-color 0.1s, color 0.1s;
+  }
+  .apmgr-cal-nav-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .apmgr-cal-today-btn {
+    font-size: 0.72rem;
+    font-weight: 600;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 5px;
+    padding: 4px 10px;
+    cursor: pointer;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+    transition: border-color 0.1s, color 0.1s;
+  }
+  .apmgr-cal-today-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .apmgr-grid {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    gap: 2px;
+  }
+  .apmgr-grid-hdr {
+    text-align: center;
+    font-size: 0.6rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    padding: 4px 0 6px;
+  }
+  .apmgr-day {
+    min-height: 72px;
+    border-radius: 6px;
+    padding: 4px 5px;
+    cursor: default;
+    background: transparent;
+    position: relative;
+    border: 1px solid transparent;
+    transition: background 0.1s, border-color 0.1s;
+  }
+  .apmgr-day.has-events { cursor: pointer; }
+  .apmgr-day.has-events:hover { background: var(--bg); border-color: var(--border); }
+  .apmgr-day.other-month { opacity: 0.3; }
+  .apmgr-day.is-today { background: #f0f9f5; border-color: #c3e8d8; }
+  .apmgr-day.selected { background: #e4f5ed; border-color: var(--accent); }
+  .apmgr-day-num {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    font-weight: 500;
+    line-height: 1.4;
+  }
+  .apmgr-day.is-today .apmgr-day-num { color: var(--accent); font-weight: 700; }
+  .apmgr-day-events {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    margin-top: 3px;
+  }
+  .apmgr-day-pill {
+    font-size: 0.58rem;
+    font-weight: 600;
+    padding: 1px 5px;
+    border-radius: 3px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    cursor: pointer;
+    max-width: 100%;
+  }
+  .apmgr-day-pill.status-scheduled { background: #dbeafe; color: #1e40af; }
+  .apmgr-day-pill.status-active    { background: #dcfce7; color: #166534; }
+  .apmgr-day-pill.status-completed { background: #f3f4f6; color: #6b7280; }
+  .apmgr-day-overflow {
+    font-size: 0.55rem;
+    color: var(--text-muted);
+    margin-top: 1px;
+    font-weight: 600;
+  }
+
+  /* Day detail sidebar */
+  .apmgr-day-detail {
+    padding: 20px 18px;
+    overflow-y: auto;
+  }
+  .apmgr-day-detail-date {
+    font-size: 0.65rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  .apmgr-detail-card {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 11px 13px;
+    margin-bottom: 8px;
+    position: relative;
+  }
+  .apmgr-detail-card.status-scheduled { border-left: 3px solid #3b82f6; }
+  .apmgr-detail-card.status-active    { border-left: 3px solid #22c55e; }
+  .apmgr-detail-card.status-completed { border-left: 3px solid #9ca3af; }
+  .apmgr-detail-card-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 2px;
+  }
+  .apmgr-detail-card-type {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+  }
+  .apmgr-detail-card-time {
+    font-size: 0.7rem;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .apmgr-detail-card-notes {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-top: 5px;
+    line-height: 1.4;
+    font-style: italic;
+  }
+  .apmgr-detail-card-actions {
+    display: flex;
+    gap: 5px;
+    margin-top: 8px;
+  }
+  .apmgr-detail-action-btn {
+    font-size: 0.68rem;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    padding: 3px 9px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color 0.1s, color 0.1s;
+  }
+  .apmgr-detail-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .apmgr-detail-action-btn.del:hover { border-color: #c0392b; color: #c0392b; }
+  .apmgr-detail-empty {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: 32px 16px;
+  }
+  .apmgr-detail-add-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--accent);
+    background: none;
+    border: 1px dashed var(--accent);
+    border-radius: 6px;
+    padding: 8px 14px;
+    cursor: pointer;
+    width: 100%;
+    margin-top: 10px;
+    font-family: 'DM Sans', sans-serif;
+    transition: background 0.1s;
+  }
+  .apmgr-detail-add-btn:hover { background: #f0f9f5; }
+
+  /* ── Pipeline view ── */
+  .apmgr-pipeline-wrap {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 0;
+    min-height: 500px;
+    overflow-x: auto;
+  }
+  .apmgr-pipe-col {
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+  }
+  .apmgr-pipe-col:last-child { border-right: none; }
+  .apmgr-pipe-col-hdr {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg);
+    flex-shrink: 0;
+    position: sticky;
+    top: 0;
+  }
+  .apmgr-pipe-col-hdr-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .apmgr-pipe-col-hdr-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    flex: 1;
+  }
+  .apmgr-pipe-count {
+    font-size: 0.65rem;
+    font-weight: 700;
+    padding: 1px 6px;
+    border-radius: 10px;
+    background: var(--border);
+    color: var(--text-muted);
+  }
+  .apmgr-pipe-col-body {
+    flex: 1;
+    padding: 12px;
+    overflow-y: auto;
+  }
+  .apmgr-pipe-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    margin-bottom: 8px;
+    cursor: pointer;
+    transition: border-color 0.12s, box-shadow 0.12s;
+  }
+  .apmgr-pipe-card:hover { border-color: var(--accent); box-shadow: 0 2px 8px rgba(15,110,86,0.07); }
+  .apmgr-pipe-card.status-active { border-left: 3px solid #22c55e; background: #f8fffe; }
+  .apmgr-pipe-card-top {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 6px;
+  }
+  .apmgr-pipe-avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--accent);
+    color: #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'DM Serif Display', serif;
+    font-size: 0.78rem;
+    flex-shrink: 0;
+    opacity: 0.85;
+  }
+  .apmgr-pipe-card.status-active .apmgr-pipe-avatar { background: #22c55e; }
+  .apmgr-pipe-card.status-completed .apmgr-pipe-avatar { background: #9ca3af; }
+  .apmgr-pipe-card-name {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .apmgr-pipe-card-type {
+    font-size: 0.65rem;
+    font-weight: 600;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--bg);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .apmgr-pipe-card-date {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+  }
+  .apmgr-pipe-card-notes {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    margin-bottom: 8px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .apmgr-pipe-card-actions {
+    display: flex;
+    gap: 5px;
+  }
+  .apmgr-pipe-action-btn {
+    font-size: 0.65rem;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    padding: 3px 8px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: border-color 0.1s, color 0.1s;
+  }
+  .apmgr-pipe-action-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .apmgr-pipe-action-btn.del:hover { border-color: #c0392b; color: #c0392b; }
+  .apmgr-pipe-action-btn.primary {
+    background: var(--accent); color: #fff; border-color: var(--accent);
+  }
+  .apmgr-pipe-action-btn.primary:hover { opacity: 0.88; color: #fff; border-color: var(--accent); }
+  .apmgr-pipe-empty {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: 28px 12px;
+  }
+
+  /* ── New / Edit appointment form ── */
+  .apmgr-form-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(255,255,255,0.96);
+    display: none;
+    flex-direction: column;
+    z-index: 10;
+    border-radius: 0 0 12px 12px;
+  }
+  .apmgr-form-overlay.open { display: flex; }
+  .apmgr-form-hdr {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 24px 14px;
+    border-bottom: 1px solid var(--border);
+    flex-shrink: 0;
+  }
+  .apmgr-form-title {
+    font-family: 'DM Serif Display', serif;
+    font-size: 1.1rem;
+    color: var(--text);
+  }
+  .apmgr-form-body {
+    flex: 1;
+    overflow-y: auto;
+    padding: 22px 24px 28px;
+    max-width: 520px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  .apmgr-form-group {
+    margin-bottom: 16px;
+  }
+  .apmgr-form-label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+  }
+  .apmgr-form-control {
+    width: 100%;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 8px 11px;
+    font-size: 0.85rem;
+    font-family: 'DM Sans', sans-serif;
+    color: var(--text);
+    background: var(--surface);
+    outline: none;
+    box-sizing: border-box;
+  }
+  .apmgr-form-control:focus { border-color: var(--accent); }
+  .apmgr-form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+  .apmgr-form-actions {
+    display: flex;
+    gap: 8px;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+  .apmgr-form-save-btn {
+    font-size: 0.82rem;
+    font-weight: 600;
+    font-family: 'DM Sans', sans-serif;
+    padding: 8px 20px;
+    border-radius: 6px;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    cursor: pointer;
+    transition: opacity 0.12s;
+  }
+  .apmgr-form-save-btn:hover { opacity: 0.88; }
+  .apmgr-form-save-btn:disabled { opacity: 0.5; cursor: default; }
+  .apmgr-form-cancel-btn {
+    font-size: 0.82rem;
+    font-weight: 500;
+    font-family: 'DM Sans', sans-serif;
+    padding: 7px 16px;
+    border-radius: 6px;
+    background: none;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    cursor: pointer;
+  }
+  .apmgr-form-cancel-btn:hover { border-color: var(--text-muted); color: var(--text); }
+  .apmgr-form-err {
+    font-size: 0.75rem;
+    color: #c0392b;
+    margin-top: 10px;
+  }
+
+  @media (max-width: 760px) {
+    .apmgr-panel { max-height: 100vh; border-radius: 0; }
+    .apmgr-overlay { padding: 0; }
+    .apmgr-cal-wrap { grid-template-columns: 1fr; }
+    .apmgr-day-detail { border-top: 1px solid var(--border); }
+    .apmgr-pipeline-wrap { grid-template-columns: 1fr; }
+    .apmgr-pipe-col { border-right: none; border-bottom: 1px solid var(--border); max-height: 280px; }
+    .apmgr-form-row { grid-template-columns: 1fr; }
+  }
 </style>
 {% endblock %}
 
@@ -2132,6 +2706,7 @@
       <div class="pd-sidebar-card">
         <div class="pd-sidebar-card-hdr">
           <span>Today's Schedule</span>
+          <a href="#" onclick="apptMgr.open(); return false;">Manage →</a>
         </div>
         {% if not today_check_ins and not active_now %}
         <div class="pd-sidebar-empty">No patient activity logged today.</div>
@@ -3595,4 +4170,454 @@ updateInboundBadge();
     </div>
   </div>
 </div>
+
+<!-- ── Appointment Manager Modal ───────────────────────────────────────────── -->
+<div class="apmgr-overlay" id="apmgr-overlay" onclick="if(event.target===this)apptMgr.close()">
+  <div class="apmgr-panel">
+
+    <!-- Topbar -->
+    <div class="apmgr-topbar">
+      <div class="apmgr-title">Appointments</div>
+      <div class="apmgr-tabs">
+        <button class="apmgr-tab active" id="apmgr-tab-cal" onclick="apptMgr.setView('calendar')">Calendar</button>
+        <button class="apmgr-tab" id="apmgr-tab-pipeline" onclick="apptMgr.setView('pipeline')">Pipeline</button>
+      </div>
+      <div class="apmgr-topbar-actions">
+        <button class="apmgr-new-btn" onclick="apptMgr.openForm()">+ New Appointment</button>
+        <button class="apmgr-close-btn" onclick="apptMgr.close()">✕</button>
+      </div>
+    </div>
+
+    <!-- Body -->
+    <div class="apmgr-body" id="apmgr-body">
+
+      <!-- Calendar view -->
+      <div id="apmgr-cal-view" class="apmgr-view">
+        <div class="apmgr-cal-wrap">
+          <div class="apmgr-cal-main">
+            <div class="apmgr-cal-nav">
+              <div class="apmgr-cal-month-label" id="apmgr-cal-month-label"></div>
+              <button class="apmgr-cal-nav-btn" onclick="apptMgr.prevMonth()">‹</button>
+              <button class="apmgr-cal-nav-btn" onclick="apptMgr.nextMonth()">›</button>
+              <button class="apmgr-cal-today-btn" onclick="apptMgr.goToday()">Today</button>
+            </div>
+            <div class="apmgr-grid" id="apmgr-cal-grid"></div>
+          </div>
+          <div class="apmgr-day-detail" id="apmgr-day-detail">
+            <div style="font-size:0.82rem;color:var(--text-muted);font-style:italic;text-align:center;padding:40px 16px;">
+              Click a date to see appointments.
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Pipeline view -->
+      <div id="apmgr-pipeline-view" class="apmgr-view" style="display:none">
+        <div class="apmgr-pipeline-wrap">
+          <div class="apmgr-pipe-col">
+            <div class="apmgr-pipe-col-hdr">
+              <div class="apmgr-pipe-col-hdr-dot" style="background:#3b82f6;"></div>
+              <div class="apmgr-pipe-col-hdr-label">Scheduled</div>
+              <span class="apmgr-pipe-count" id="apmgr-count-scheduled">0</span>
+            </div>
+            <div class="apmgr-pipe-col-body" id="apmgr-col-scheduled"></div>
+          </div>
+          <div class="apmgr-pipe-col">
+            <div class="apmgr-pipe-col-hdr">
+              <div class="apmgr-pipe-col-hdr-dot" style="background:#22c55e;"></div>
+              <div class="apmgr-pipe-col-hdr-label">Active</div>
+              <span class="apmgr-pipe-count" id="apmgr-count-active">0</span>
+            </div>
+            <div class="apmgr-pipe-col-body" id="apmgr-col-active"></div>
+          </div>
+          <div class="apmgr-pipe-col">
+            <div class="apmgr-pipe-col-hdr">
+              <div class="apmgr-pipe-col-hdr-dot" style="background:#9ca3af;"></div>
+              <div class="apmgr-pipe-col-hdr-label">Completed</div>
+              <span class="apmgr-pipe-count" id="apmgr-count-completed">0</span>
+            </div>
+            <div class="apmgr-pipe-col-body" id="apmgr-col-completed"></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- New / Edit form overlay (positioned inside panel) -->
+    <div class="apmgr-form-overlay" id="apmgr-form-overlay">
+      <div class="apmgr-form-hdr">
+        <div class="apmgr-form-title" id="apmgr-form-title">New Appointment</div>
+        <button class="apmgr-close-btn" onclick="apptMgr.closeForm()">✕</button>
+      </div>
+      <div class="apmgr-form-body">
+        <input type="hidden" id="apmgr-edit-id">
+        <input type="hidden" id="apmgr-edit-patient-id">
+        <div class="apmgr-form-group" id="apmgr-patient-group">
+          <label class="apmgr-form-label" for="apmgr-patient-sel">Patient</label>
+          <select id="apmgr-patient-sel" class="apmgr-form-control"></select>
+        </div>
+        <div class="apmgr-form-row">
+          <div class="apmgr-form-group">
+            <label class="apmgr-form-label" for="apmgr-date">Date</label>
+            <input id="apmgr-date" type="date" class="apmgr-form-control">
+          </div>
+          <div class="apmgr-form-group">
+            <label class="apmgr-form-label" for="apmgr-time">Time (optional)</label>
+            <input id="apmgr-time" type="time" class="apmgr-form-control">
+          </div>
+        </div>
+        <div class="apmgr-form-group">
+          <label class="apmgr-form-label" for="apmgr-appt-title">Appointment Type / Title</label>
+          <input id="apmgr-appt-title" type="text" class="apmgr-form-control"
+                 placeholder="e.g. Therapy, Med Check, Follow-up…">
+        </div>
+        <div class="apmgr-form-group">
+          <label class="apmgr-form-label" for="apmgr-notes">Notes (optional)</label>
+          <textarea id="apmgr-notes" class="apmgr-form-control" rows="3"
+                    placeholder="Preparation notes or agenda items…" style="resize:vertical;"></textarea>
+        </div>
+        <div id="apmgr-form-err" class="apmgr-form-err"></div>
+        <div class="apmgr-form-actions">
+          <button class="apmgr-form-cancel-btn" onclick="apptMgr.closeForm()">Cancel</button>
+          <button class="apmgr-form-save-btn" id="apmgr-form-save-btn" onclick="apptMgr.saveForm()">Save Appointment</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+// ══════════════════════════════════════════════════════════════════════════════
+// APPOINTMENT MANAGER
+// ══════════════════════════════════════════════════════════════════════════════
+const apptMgr = (() => {
+  let _view      = 'calendar';
+  let _year      = new Date().getFullYear();
+  let _month     = new Date().getMonth();   // 0-based
+  let _allEvents = [];
+  let _selectedDay = null;
+  let _loading   = false;
+
+  function _esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
+
+  function _patientOptions(selectedId) {
+    const opts = Object.entries(_PATIENTS || {}).map(([pid, pt]) =>
+      `<option value="${_esc(pid)}" ${pid === selectedId ? 'selected' : ''}>${_esc(pt.name)}</option>`
+    ).join('');
+    return opts || '<option value="">No patients on roster</option>';
+  }
+
+  function _isoDate(d) { return d.toISOString().slice(0, 10); }
+
+  function _fmt(isoStr) {
+    if (!isoStr) return '';
+    try {
+      const d = new Date(isoStr.length <= 10 ? isoStr + 'T12:00:00' : isoStr);
+      return d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    } catch(_e) { return isoStr.slice(0, 10); }
+  }
+
+  function _fmtTime(isoStr) {
+    if (!isoStr || isoStr.length <= 10) return '';
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+    } catch(_e) { return ''; }
+  }
+
+  async function _load() {
+    if (_loading) return;
+    _loading = true;
+    try {
+      const from = new Date(_year, _month - 1, 1);
+      const to   = new Date(_year, _month + 2, 0);
+      const res  = await fetch(
+        `/api/provider/appointments?from=${_isoDate(from)}&to=${_isoDate(to)}`,
+        { credentials: 'same-origin' }
+      );
+      if (res.ok) _allEvents = await res.json();
+    } catch(_e) {}
+    _loading = false;
+  }
+
+  function _renderCal() {
+    const label = document.getElementById('apmgr-cal-month-label');
+    if (label) label.textContent = new Date(_year, _month, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    const grid = document.getElementById('apmgr-cal-grid');
+    if (!grid) return;
+
+    const today      = _isoDate(new Date());
+    const firstDay   = new Date(_year, _month, 1).getDay();
+    const daysInMonth = new Date(_year, _month + 1, 0).getDate();
+    const daysInPrev  = new Date(_year, _month, 0).getDate();
+
+    const evMap = {};
+    _allEvents.forEach(e => {
+      const d = (e.started_at || '').slice(0, 10);
+      if (!evMap[d]) evMap[d] = [];
+      evMap[d].push(e);
+    });
+
+    const DAYS = ['Su','Mo','Tu','We','Th','Fr','Sa'];
+    let html = DAYS.map(d => `<div class="apmgr-grid-hdr">${d}</div>`).join('');
+
+    const _cell = (dateStr, num, other) => {
+      const events = evMap[dateStr] || [];
+      let cls = 'apmgr-day';
+      if (other)             cls += ' other-month';
+      if (dateStr === today) cls += ' is-today';
+      if (dateStr === _selectedDay) cls += ' selected';
+      if (events.length)     cls += ' has-events';
+      const pills = events.slice(0, 3).map(e =>
+        `<div class="apmgr-day-pill status-${e.status||'scheduled'}" title="${_esc(e.patient_name)}: ${_esc(e.appointment_type||'Appointment')}">${_esc((e.patient_name||'').split(' ')[0])}</div>`
+      ).join('');
+      const overflow = events.length > 3 ? `<div class="apmgr-day-overflow">+${events.length-3} more</div>` : '';
+      return `<div class="${cls}" onclick="apptMgr.selectDay('${dateStr}')">
+        <div class="apmgr-day-num">${num}</div>
+        <div class="apmgr-day-events">${pills}${overflow}</div>
+      </div>`;
+    };
+
+    for (let i = 0; i < firstDay; i++) {
+      const d = daysInPrev - firstDay + 1 + i;
+      html += _cell(_isoDate(new Date(_year, _month - 1, d)), d, true);
+    }
+    for (let d = 1; d <= daysInMonth; d++) {
+      html += _cell(_isoDate(new Date(_year, _month, d)), d, false);
+    }
+    const trailing = (firstDay + daysInMonth) % 7;
+    if (trailing) for (let d = 1; d <= 7 - trailing; d++) {
+      html += _cell(_isoDate(new Date(_year, _month + 1, d)), d, true);
+    }
+    grid.innerHTML = html;
+  }
+
+  function _renderDayDetail(dateStr) {
+    const panel = document.getElementById('apmgr-day-detail');
+    if (!panel) return;
+    const events = _allEvents.filter(e => (e.started_at||'').slice(0,10) === dateStr);
+    const label  = new Date(dateStr + 'T12:00:00').toLocaleDateString('en-US', { weekday:'long', month:'long', day:'numeric' });
+    let html = `<div class="apmgr-day-detail-date">${label}</div>`;
+    if (!events.length) {
+      html += `<div style="font-size:0.8rem;color:var(--text-muted);font-style:italic;padding:12px 0;">No appointments scheduled.</div>`;
+    } else {
+      events.forEach(e => {
+        const t = _fmtTime(e.started_at);
+        const isScheduled = e.status === 'scheduled';
+        const eJson = _esc(JSON.stringify(e));
+        html += `<div class="apmgr-detail-card status-${e.status||'scheduled'}">
+          <div class="apmgr-detail-card-name">${_esc(e.patient_name||'Unknown')}</div>
+          <div class="apmgr-detail-card-type">${_esc(e.appointment_type||'Appointment')}</div>
+          ${t ? `<div class="apmgr-detail-card-time">🕐 ${t}</div>` : ''}
+          ${e.next_appointment_notes ? `<div class="apmgr-detail-card-notes">"${_esc(e.next_appointment_notes)}"</div>` : ''}
+          <div class="apmgr-detail-card-actions">
+            ${isScheduled
+              ? `<button class="apmgr-detail-action-btn" onclick='apptMgr.openForm(${JSON.stringify(e)})'>Edit</button>
+                 <button class="apmgr-detail-action-btn del" onclick="apptMgr.deleteAppt('${e.id}','${_esc(e.patient_name||'')}')">Delete</button>`
+              : `<a href="/provider/patient/${e.patient_id}" class="apmgr-detail-action-btn" style="text-decoration:none;">View Patient →</a>`
+            }
+          </div>
+        </div>`;
+      });
+    }
+    html += `<button class="apmgr-detail-add-btn" onclick="apptMgr.openForm(null,'${dateStr}')">+ Add Appointment on This Day</button>`;
+    panel.innerHTML = html;
+  }
+
+  function _renderPipeline() {
+    const groups = { scheduled:[], active:[], completed:[] };
+    _allEvents.forEach(e => {
+      const st = e.status || 'scheduled';
+      if (groups[st]) groups[st].push(e);
+    });
+    groups.scheduled.sort((a,b) => (a.started_at||'').localeCompare(b.started_at||''));
+    groups.completed.sort((a,b) => (b.started_at||'').localeCompare(a.started_at||''));
+
+    ['scheduled','active','completed'].forEach(status => {
+      const el = document.getElementById(`apmgr-col-${status}`);
+      const ct = document.getElementById(`apmgr-count-${status}`);
+      if (ct) ct.textContent = groups[status].length;
+      if (!el) return;
+      if (!groups[status].length) {
+        el.innerHTML = `<div class="apmgr-pipe-empty">No ${status} appointments.</div>`;
+        return;
+      }
+      el.innerHTML = groups[status].map(e => {
+        const t = _fmtTime(e.started_at);
+        const isScheduled = status === 'scheduled';
+        const isActive    = status === 'active';
+        const patInit = (e.patient_name||'?')[0].toUpperCase();
+        return `<div class="apmgr-pipe-card status-${status}">
+          <div class="apmgr-pipe-card-top">
+            <div class="apmgr-pipe-avatar">${_esc(patInit)}</div>
+            <div class="apmgr-pipe-card-name" title="${_esc(e.patient_name||'')}">${_esc(e.patient_name||'Unknown')}</div>
+            <span class="apmgr-pipe-card-type">${_esc(e.appointment_type||'Appt')}</span>
+          </div>
+          <div class="apmgr-pipe-card-date">📅 ${_fmt(e.started_at)}${t ? ' · '+t : ''}</div>
+          ${e.next_appointment_notes ? `<div class="apmgr-pipe-card-notes">${_esc(e.next_appointment_notes)}</div>` : ''}
+          <div class="apmgr-pipe-card-actions">
+            ${isScheduled
+              ? `<button class="apmgr-pipe-action-btn" onclick='apptMgr.openForm(${JSON.stringify(e)})'>Edit</button>
+                 <button class="apmgr-pipe-action-btn del" onclick="apptMgr.deleteAppt('${e.id}','${_esc(e.patient_name||'')}')">Delete</button>`
+              : isActive
+              ? `<a href="/provider/patient/${e.patient_id}" class="apmgr-pipe-action-btn primary" style="text-decoration:none;">Continue Session →</a>`
+              : `<a href="/provider/patient/${e.patient_id}" class="apmgr-pipe-action-btn" style="text-decoration:none;">View Patient</a>`
+            }
+          </div>
+        </div>`;
+      }).join('');
+    });
+  }
+
+  function _render() {
+    if (_view === 'calendar') _renderCal();
+    else _renderPipeline();
+  }
+
+  // ── Public API ────────────────────────────────────────────────────────────
+  async function open() {
+    document.getElementById('apmgr-overlay').classList.add('open');
+    document.body.style.overflow = 'hidden';
+    await _load();
+    _render();
+  }
+
+  function close() {
+    document.getElementById('apmgr-overlay').classList.remove('open');
+    document.body.style.overflow = '';
+    closeForm();
+  }
+
+  function setView(v) {
+    _view = v;
+    document.getElementById('apmgr-cal-view').style.display      = v === 'calendar' ? '' : 'none';
+    document.getElementById('apmgr-pipeline-view').style.display  = v === 'pipeline' ? '' : 'none';
+    document.getElementById('apmgr-tab-cal').classList.toggle('active', v === 'calendar');
+    document.getElementById('apmgr-tab-pipeline').classList.toggle('active', v === 'pipeline');
+    _render();
+  }
+
+  function selectDay(dateStr) {
+    _selectedDay = dateStr;
+    _renderCal();
+    _renderDayDetail(dateStr);
+  }
+
+  function prevMonth() {
+    if (_month === 0) { _year--; _month = 11; } else { _month--; }
+    _selectedDay = null;
+    _load().then(_render);
+  }
+
+  function nextMonth() {
+    if (_month === 11) { _year++; _month = 0; } else { _month++; }
+    _selectedDay = null;
+    _load().then(_render);
+  }
+
+  function goToday() {
+    const n = new Date();
+    _year = n.getFullYear(); _month = n.getMonth();
+    _selectedDay = null;
+    _load().then(_render);
+  }
+
+  function openForm(event, prefillDate) {
+    const overlay = document.getElementById('apmgr-form-overlay');
+    const titleEl = document.getElementById('apmgr-form-title');
+    const errEl   = document.getElementById('apmgr-form-err');
+    const savBtn  = document.getElementById('apmgr-form-save-btn');
+    const patGrp  = document.getElementById('apmgr-patient-group');
+    errEl.textContent = ''; savBtn.disabled = false;
+    savBtn.textContent = 'Save Appointment';
+    document.getElementById('apmgr-patient-sel').innerHTML = _patientOptions(event ? event.patient_id : '');
+
+    if (event && event.id) {
+      titleEl.textContent = 'Edit Appointment';
+      document.getElementById('apmgr-edit-id').value = event.id;
+      document.getElementById('apmgr-edit-patient-id').value = event.patient_id || '';
+      patGrp.style.display = 'none';
+      document.getElementById('apmgr-date').value  = (event.started_at||'').slice(0,10);
+      document.getElementById('apmgr-time').value  = event.started_at && event.started_at.length > 10 ? event.started_at.slice(11,16) : '';
+      document.getElementById('apmgr-appt-title').value = event.appointment_type || '';
+      document.getElementById('apmgr-notes').value = event.next_appointment_notes || '';
+    } else {
+      titleEl.textContent = 'New Appointment';
+      document.getElementById('apmgr-edit-id').value = '';
+      document.getElementById('apmgr-edit-patient-id').value = '';
+      patGrp.style.display = '';
+      document.getElementById('apmgr-date').value  = prefillDate || _isoDate(new Date());
+      document.getElementById('apmgr-time').value  = '';
+      document.getElementById('apmgr-appt-title').value = '';
+      document.getElementById('apmgr-notes').value = '';
+    }
+    overlay.classList.add('open');
+  }
+
+  function closeForm() {
+    document.getElementById('apmgr-form-overlay').classList.remove('open');
+  }
+
+  async function saveForm() {
+    const editId    = document.getElementById('apmgr-edit-id').value.trim();
+    const patientId = editId
+      ? document.getElementById('apmgr-edit-patient-id').value.trim()
+      : document.getElementById('apmgr-patient-sel').value.trim();
+    const date  = document.getElementById('apmgr-date').value.trim();
+    const time  = document.getElementById('apmgr-time').value.trim();
+    const title = document.getElementById('apmgr-appt-title').value.trim();
+    const notes = document.getElementById('apmgr-notes').value.trim();
+    const errEl = document.getElementById('apmgr-form-err');
+    const savBtn = document.getElementById('apmgr-form-save-btn');
+    errEl.textContent = '';
+    if (!patientId) { errEl.textContent = 'Please select a patient.'; return; }
+    if (!date)      { errEl.textContent = 'Date is required.'; return; }
+    savBtn.disabled = true; savBtn.textContent = editId ? 'Saving…' : 'Creating…';
+    try {
+      const res = editId
+        ? await fetch(`/api/provider/appointments/${editId}`, {
+            method:'PATCH', credentials:'same-origin',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ date, time: time||null, title: title||'Appointment', notes }),
+          })
+        : await fetch('/api/provider/appointments', {
+            method:'POST', credentials:'same-origin',
+            headers:{'Content-Type':'application/json'},
+            body: JSON.stringify({ patient_id: patientId, date, time: time||null, title: title||'Appointment', notes }),
+          });
+      const data = res.ok ? await res.json() : null;
+      if (data && data.ok !== false) {
+        closeForm();
+        await _load();
+        _render();
+        if (_selectedDay) _renderDayDetail(_selectedDay);
+      } else {
+        errEl.textContent = (data && data.error) || 'Could not save — try again.';
+        savBtn.disabled = false; savBtn.textContent = 'Save Appointment';
+      }
+    } catch(_e) {
+      errEl.textContent = 'Network error — try again.';
+      savBtn.disabled = false; savBtn.textContent = 'Save Appointment';
+    }
+  }
+
+  async function deleteAppt(id, patientName) {
+    if (!confirm(`Remove appointment for ${patientName || 'this patient'}?`)) return;
+    try {
+      const res = await fetch(`/api/provider/appointments/${id}`, {
+        method:'DELETE', credentials:'same-origin',
+      });
+      if (res.ok) {
+        _allEvents = _allEvents.filter(e => e.id !== id);
+        _render();
+        if (_selectedDay) _renderDayDetail(_selectedDay);
+      }
+    } catch(_e) {}
+  }
+
+  return { open, close, setView, selectDay, prevMonth, nextMonth, goToday, openForm, closeForm, saveForm, deleteAppt };
+})();
+</script>
+
 {% endblock %}

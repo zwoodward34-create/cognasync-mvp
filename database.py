@@ -3097,6 +3097,33 @@ def delete_calendar_appointment(appt_id: str, provider_id: str) -> bool:
         return False
 
 
+def get_all_provider_appointments(provider_id: str, from_date: str = None, to_date: str = None) -> list:
+    """Return all appointments across all patients for a provider, enriched with patient names."""
+    try:
+        q = supabase_admin.table('provider_appointments').select(
+            'id, patient_id, started_at, completed_at, status, appointment_type, next_appointment_notes, notes'
+        ).eq('provider_id', str(provider_id))
+        if from_date:
+            q = q.gte('started_at', from_date)
+        if to_date:
+            q = q.lte('started_at', to_date + 'T23:59:59')
+        resp = q.order('started_at', desc=False).execute()
+        rows = resp.data or []
+        # Enrich with patient names in one batch query
+        patient_ids = list({r['patient_id'] for r in rows if r.get('patient_id')})
+        names = {}
+        if patient_ids:
+            nr = supabase_admin.table('profiles').select('id, full_name').in_(
+                'id', patient_ids).execute()
+            names = {p['id']: p.get('full_name', 'Unknown') for p in (nr.data or [])}
+        for r in rows:
+            r['patient_name'] = names.get(str(r.get('patient_id', '')), 'Unknown')
+        return rows
+    except Exception as e:
+        print(f"[db] get_all_provider_appointments error: {e}", flush=True)
+        return []
+
+
 def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
     """Return a structured between-session brief for a patient.
 
