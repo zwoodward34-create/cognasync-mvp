@@ -4297,33 +4297,33 @@ def _handle_sms_crisis(patient_id: str, patient_name: str,
     # 3. Resolve any open session
     db.resolve_sms_session(patient_id)
 
-    # 4. Alert provider via SMS
+    # 4. Alert provider via SMS + insert care_flags row (Clinical Alerts)
     try:
         provider = db.get_provider_for_patient(patient_id)
-        if provider and provider.get('phone_number'):
-            result = _sms.send_provider_crisis_alert(
-                provider['phone_number'], patient_name)
-            if event_id and result.get('ok'):
-                db.mark_provider_notified(event_id,
-                                          sms_sid=result.get('sid'))
-    except Exception as e:
-        app.logger.error(f'[sms_inbound] provider alert error: {e}')
+        if provider:
+            # SMS the provider
+            if provider.get('phone_number'):
+                result = _sms.send_provider_crisis_alert(
+                    provider['phone_number'], patient_name)
+                if event_id and result.get('ok'):
+                    db.mark_provider_notified(event_id, sms_sid=result.get('sid'))
 
-    # 5. Insert hub flag so the dashboard and patient hub surface a 🔴 flag
-    try:
-        db.supabase_admin.table('patient_flags').insert({
-            'patient_id':  str(patient_id),
-            'flag_type':   'sms_crisis',
-            'severity':    'urgent',
-            'source':      source,
-            'created_at':  'now()',
-            'description': (
-                f'Patient reached out via SMS ({source.replace("_", " ")}) '
-                f'— immediate check-in recommended.'
-            ),
-        }).execute()
+            # Insert into care_flags (surfaces as "Clinical Alerts" on the hub)
+            # flag_type='concern', author = patient's provider, body = crisis notice
+            source_label = source.replace('_', ' ')  # 'keyword' or 'help branch'
+            flag_body = (
+                f'🔴 SMS crisis signal ({source_label}) — {patient_name} reached out '
+                f'via SMS and may need immediate support. Please check in directly.'
+            )
+            db.supabase_admin.table('care_flags').insert({
+                'patient_id':         str(patient_id),
+                'author_provider_id': str(provider['id']),
+                'flag_type':          'concern',
+                'body':               flag_body,
+                'visibility':         'care_team',
+            }).execute()
     except Exception as e:
-        app.logger.error(f'[sms_inbound] hub flag insert error: {e}')
+        app.logger.error(f'[sms_inbound] provider alert/flag error: {e}')
 
 
 @app.route('/api/internal/send-appointment-sms', methods=['POST', 'GET'])
