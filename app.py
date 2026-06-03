@@ -672,7 +672,7 @@ def provider_dashboard():
         return redir
     patients = db.get_provider_patients_with_stats(user['id'])
 
-    # Attach Mode D flags (substance + safety) to each patient record
+    # Attach Mode D flags (substance + safety + engagement) to each patient record
     for p in patients:
         pid = p.get('id') or p.get('user_id') or p.get('patient_id', '')
         if pid:
@@ -680,9 +680,10 @@ def provider_dashboard():
                 flags = db.get_patient_flags(pid, days=30)
                 p['flags'] = flags
             except Exception:
-                p['flags'] = {'substance': None, 'safety': None}
+                app.logger.exception(f"get_patient_flags failed for pid={pid}")
+                p['flags'] = {'engagement': None, 'substance': None, 'safety': None}
         else:
-            p['flags'] = {'substance': None, 'safety': None}
+            p['flags'] = {'engagement': None, 'substance': None, 'safety': None}
 
     return render_template('provider/dashboard.html', user=user, patients=patients,
                            today_str=date.today().isoformat())
