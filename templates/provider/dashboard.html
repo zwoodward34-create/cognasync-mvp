@@ -2720,10 +2720,17 @@
             <span class="pd-flag-indicator" title="{{ p.flag_count }} care flag{{ 's' if p.flag_count != 1 }}">{{ p.flag_count }}🚩</span>
             {% endif %}
             {% if p.flags and p.flags.engagement %}
-              {% if p.flags.engagement.extended_no_response %}
-              <span class="pd-urgency-badge pd-urgency-0" title="{{ p.flags.engagement.max_prompt_gap }}-day non-response streak">🔴 No Response</span>
-              {% elif p.flags.engagement.insufficient_data %}
-              <span class="pd-urgency-badge pd-urgency-2" title="SMS response rate {{ (p.flags.engagement.overall_sms_rate * 100) | round(0) | int }}%">🟡 Low Engagement</span>
+              {% set eng = p.flags.engagement %}
+              {% if eng.never_responded %}
+              <span class="pd-urgency-badge pd-urgency-0" title="Prompts sent but never answered">🔴 Never Responded</span>
+              {% elif eng.complete_absence %}
+              <span class="pd-urgency-badge pd-urgency-0" title="{{ eng.max_complete_absence_gap }}-day combined silence (no check-in + no prompt response)">🔴 Complete Silence</span>
+              {% elif eng.extended_no_response %}
+              <span class="pd-urgency-badge pd-urgency-0" title="{{ eng.max_prompt_gap }}-day non-response streak">🔴 No Response</span>
+              {% elif eng.sms_divergent and eng.sms_divergent_detail %}
+              <span class="pd-urgency-badge pd-urgency-2" title="{{ eng.sms_divergent_detail.high_label }} {{ eng.sms_divergent_detail.high_rate }}% vs {{ eng.sms_divergent_detail.low_label }} {{ eng.sms_divergent_detail.low_rate }}%">🟡 Selective Engagement</span>
+              {% elif eng.insufficient_data %}
+              <span class="pd-urgency-badge pd-urgency-2" title="SMS response rate {{ (eng.overall_sms_rate * 100) | round(0) | int }}%">🟡 Low Engagement</span>
               {% endif %}
             {% endif %}
             {% if p.flags and p.flags.safety and p.flags.safety.signals_found %}
@@ -3141,15 +3148,27 @@ function openHub(pid) {
   // Risk badge
   const badge = document.getElementById('hub2-risk-badge');
   const flags = pt.modeDFlags || {};
+  const eng   = (flags.engagement) || null;
   if (pt.modeDFlags && flags.safety && flags.safety.signals_found) {
     badge.textContent = '⚠ Safety Flag'; badge.className = 'hub2-risk-badge hub2-risk-badge--crisis';
-  } else if (flags.engagement && flags.engagement.extended_no_response) {
-    const gap = flags.engagement.max_prompt_gap || '';
+  } else if (eng && eng.never_responded) {
+    badge.textContent = '⚠ Never Responded';
+    badge.className = 'hub2-risk-badge hub2-risk-badge--crisis';
+  } else if (eng && eng.complete_absence) {
+    const gap = eng.max_complete_absence_gap || '';
+    badge.textContent = '⚠ Complete Silence' + (gap ? ' · ' + gap + 'd' : '');
+    badge.className = 'hub2-risk-badge hub2-risk-badge--crisis';
+  } else if (eng && eng.extended_no_response) {
+    const gap = eng.max_prompt_gap || '';
     badge.textContent = '⚠ No Response' + (gap ? ' · ' + gap + 'd' : '');
     badge.className = 'hub2-risk-badge hub2-risk-badge--crisis';
-  } else if (flags.engagement && flags.engagement.insufficient_data) {
-    const pct = flags.engagement.overall_sms_rate != null
-      ? Math.round(flags.engagement.overall_sms_rate * 100) + '%' : '';
+  } else if (eng && eng.sms_divergent && eng.sms_divergent_detail) {
+    const d = eng.sms_divergent_detail;
+    badge.textContent = '⚠ Selective · ' + d.high_label + ' ' + d.high_rate + '% / ' + d.low_label + ' ' + d.low_rate + '%';
+    badge.className = 'hub2-risk-badge hub2-risk-badge--safety';
+  } else if (eng && eng.insufficient_data) {
+    const pct = eng.overall_sms_rate != null
+      ? Math.round(eng.overall_sms_rate * 100) + '%' : '';
     badge.textContent = '⚠ Low Engagement' + (pct ? ' · ' + pct : '');
     badge.className = 'hub2-risk-badge hub2-risk-badge--safety';
   } else if (pt.moodRecent !== null && pt.moodRecent < 4) {
@@ -3751,25 +3770,45 @@ function renderBriefBody(d, patientId) {
       </div>`;
     }
     if (engagementFlag) {
-      const isRed  = engagementFlag.extended_no_response;
+      const ef         = engagementFlag;
+      const pct        = ef.overall_sms_rate != null ? Math.round(ef.overall_sms_rate * 100) + '%' : '—';
+      const promptGap  = ef.max_prompt_gap || 0;
+      const absGap     = ef.max_complete_absence_gap || 0;
+
+      // Determine severity tier for colour theming
+      const isRed = ef.never_responded || ef.complete_absence || ef.extended_no_response;
       const bg     = isRed ? '#fdecea' : '#fff8e1';
       const border = isRed ? '#f5c6cb' : '#ffe082';
       const txtClr = isRed ? '#721c24' : '#5d4037';
       const lblClr = isRed ? '#c0392b' : '#e65100';
-      const icon   = isRed ? '🔴' : '🟡';
-      const label  = isRed ? 'Non-Response Streak' : 'Low Engagement';
-      const gap    = engagementFlag.max_prompt_gap || 0;
-      const pct    = engagementFlag.overall_sms_rate != null
-        ? Math.round(engagementFlag.overall_sms_rate * 100) + '%' : '—';
+
+      let icon, label, detail;
+      if (ef.never_responded) {
+        icon   = '🔴';
+        label  = 'Never Responded';
+        detail = `Prompts have been sent but this patient has not responded to any of them.`;
+      } else if (ef.complete_absence) {
+        icon   = '🔴';
+        label  = 'Complete Silence';
+        detail = `No check-ins logged <em>and</em> no SMS prompts answered for <strong>${absGap} consecutive days</strong> — the system reached out and received no response via any channel.`;
+      } else if (ef.extended_no_response) {
+        icon   = '🔴';
+        label  = 'Non-Response Streak';
+        detail = `Patient did not respond to any SMS prompt for <strong>${promptGap} consecutive days</strong>.`;
+      } else if (ef.sms_divergent && ef.sms_divergent_detail) {
+        const d = ef.sms_divergent_detail;
+        icon   = '🟡';
+        label  = 'Selective Engagement';
+        detail = `Response rates differ significantly across channels: <strong>${d.high_label}</strong> at ${d.high_rate}% vs <strong>${d.low_label}</strong> at ${d.low_rate}%.`;
+      } else {
+        icon   = '🟡';
+        label  = 'Low Engagement';
+        detail = `Overall SMS response rate is <strong>${pct}</strong> over the past 14 days — below the 40% threshold.`;
+      }
+
       html += `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 14px;">
         <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:${lblClr};margin-bottom:5px;">${icon} ${label}</div>
-        <div style="font-size:0.8rem;color:${txtClr};line-height:1.55;">
-          ${isRed
-            ? `Patient did not respond to any SMS prompt for <strong>${gap} consecutive days</strong>.`
-            : `Overall SMS response rate is <strong>${pct}</strong> over the past 14 days — below the 40% threshold.`
-          }
-          Clinical check-in recommended.
-        </div>
+        <div style="font-size:0.8rem;color:${txtClr};line-height:1.55;">${detail} Clinical check-in recommended.</div>
       </div>`;
     }
     html += `</div>`;

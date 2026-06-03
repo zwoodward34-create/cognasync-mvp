@@ -2868,27 +2868,49 @@ def _get_engagement_flags(patient_id, days=14):
     Uses a shorter window (14 days) than the full summary so the badge
     reflects recent non-response rather than historical patterns.
 
-    Returns:
-        {extended_no_response: bool, insufficient_data: bool,
-         max_prompt_gap: int, overall_sms_rate: float}
-        or None when no prompts have been sent yet.
+    Returns a dict when any flag is active, or None when no prompts have
+    been sent yet (patient has never been prompted).
+
+    Keys returned:
+        extended_no_response  bool   — 5+ consecutive unanswered-prompt days
+        insufficient_data     bool   — overall SMS rate < 40%
+        never_responded       bool   — ≥3 prompts sent, zero answered
+        complete_absence      bool   — 5+ days of overlapping calendar+prompt silence
+        sms_divergent         bool   — selective channel non-response
+        sms_divergent_detail  dict|None — {high_label, high_rate, low_label, low_rate}
+        max_prompt_gap        int
+        max_complete_absence_gap int
+        overall_sms_rate      float
     """
     try:
         stats = compute_engagement_stats(patient_id, days=days)
         if not stats:
             return None
-        sms_sent = stats.get('sms_sent', 0)
-        if sms_sent == 0:
+        all_sms_sent = sum(
+            fs['sent'] for fs in (stats.get('sms_by_flow') or {}).values()
+        )
+        if all_sms_sent == 0:
             return None
-        extended   = bool(stats.get('extended_no_response', False))
-        low_rate   = bool(stats.get('insufficient_data', False))
-        if not extended and not low_rate:
+
+        extended         = bool(stats.get('extended_no_response', False))
+        low_rate         = bool(stats.get('insufficient_data', False))
+        never_responded  = bool(stats.get('never_responded', False))
+        complete_absence = bool(stats.get('complete_absence', False))
+        divergent        = bool(stats.get('sms_divergent', False))
+
+        if not any([extended, low_rate, never_responded, complete_absence, divergent]):
             return None
+
         return {
-            'extended_no_response': extended,
-            'insufficient_data':    low_rate,
-            'max_prompt_gap':       stats.get('max_prompt_gap', 0),
-            'overall_sms_rate':     stats.get('overall_sms_rate', 1.0),
+            'extended_no_response':    extended,
+            'insufficient_data':       low_rate,
+            'never_responded':         never_responded,
+            'complete_absence':        complete_absence,
+            'sms_divergent':           divergent,
+            'sms_divergent_detail':    stats.get('sms_divergent_detail'),
+            'max_prompt_gap':          stats.get('max_prompt_gap', 0),
+            'max_complete_absence_gap': stats.get('max_complete_absence_gap', 0),
+            'overall_sms_rate':        stats.get('overall_sms_rate', 1.0),
         }
     except Exception as e:
         print(f"Error computing engagement flags for {patient_id}: {e}")
@@ -6995,30 +7017,119 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
             and overall_sms_rate < 0.40
         )
 
+        # ── Never-responded flag ──────────────────────────────────────────────
+        # True when ≥3 prompts have been sent but zero have ever been answered.
+        # Distinct from insufficient_data (which is <40% — some responses exist).
+        # Signals a patient who enrolled but has never engaged with any SMS flow.
+        never_responded = (
+            all_sms_sent >= 3
+            and all_sms_responded == 0
+        )
+
+        # ── Complete-absence flag ─────────────────────────────────────────────
+        # Identifies days where BOTH conditions are true simultaneously:
+        #   (a) a prompt was sent but went unanswered, AND
+        #   (b) no check-in was logged.
+        # This is stronger than either signal alone — the system reached out
+        # and there was no response via any channel. Runs of ≥5 such days
+        # are surfaced as a combined signal for providers.
+        silent_day_set = set(all_dates) - active_day_set   # calendar days with no check-in
+        completely_absent_days = sorted(
+            silent_day_set & unanswered_prompt_date_set
+        )
+
+        complete_absence          = False
+        complete_absence_segments = []
+        max_complete_absence_gap  = 0
+
+        if completely_absent_days:
+            ca_run_start = None
+            ca_run_len   = 0
+            # Walk the full date list so consecutive gaps are detected correctly
+            for d in all_dates:
+                if d in set(completely_absent_days):
+                    if ca_run_start is None:
+                        ca_run_start = d
+                    ca_run_len += 1
+                else:
+                    if ca_run_len > 0:
+                        if ca_run_len > max_complete_absence_gap:
+                            max_complete_absence_gap = ca_run_len
+                        if ca_run_len >= 5:
+                            ca_run_end = (
+                                _date.fromisoformat(ca_run_start)
+                                + _td(days=ca_run_len - 1)
+                            ).isoformat()
+                            complete_absence_segments.append({
+                                'start': ca_run_start,
+                                'end':   ca_run_end,
+                                'days':  ca_run_len,
+                            })
+                    ca_run_start = None
+                    ca_run_len   = 0
+            # Trailing run
+            if ca_run_len > 0:
+                if ca_run_len > max_complete_absence_gap:
+                    max_complete_absence_gap = ca_run_len
+                if ca_run_len >= 5:
+                    ca_run_end = (
+                        _date.fromisoformat(ca_run_start)
+                        + _td(days=ca_run_len - 1)
+                    ).isoformat()
+                    complete_absence_segments.append({
+                        'start': ca_run_start,
+                        'end':   ca_run_end,
+                        'days':  ca_run_len,
+                    })
+            complete_absence = len(complete_absence_segments) > 0
+
+        # ── Selective-divergence detail ───────────────────────────────────────
+        # Pre-compute the high/low channel labels and rates for dashboard display,
+        # avoiding repeated iteration in the template and _get_engagement_flags.
+        sms_divergent_detail: dict | None = None
+        if sms_divergent:
+            eligible_flows = [
+                (ft, fs) for ft, fs in sms_by_flow.items() if fs['sent'] >= 2
+            ]
+            eligible_flows.sort(key=lambda x: x[1]['response_rate'], reverse=True)
+            high_ft, high_fs = eligible_flows[0]
+            low_ft,  low_fs  = eligible_flows[-1]
+            sms_divergent_detail = {
+                'high_label': high_fs['label'],
+                'high_rate':  round(high_fs['response_rate'] * 100),
+                'low_label':  low_fs['label'],
+                'low_rate':   round(low_fs['response_rate'] * 100),
+            }
+
         # ── Clean up zero-count keys ──────────────────────────────────────────
         source_breakdown = {k: v for k, v in source_counts.items() if v > 0}
         type_breakdown   = {k: v for k, v in type_counts.items() if v > 0}
 
         return {
-            'period_days':              period_days,
-            'active_days':              active_days,
-            'participation_rate':       participation_rate,      # 0.0–1.0
-            'max_consecutive_gap':      max_consecutive_gap,     # calendar-day gap
-            'gap_segments':             gap_segments,            # [{start, end, days}] ≥3d
-            'last_checkin_date':        last_checkin_date,
-            'days_since_last':          days_since_last,
-            'sms_prompts_sent':         sms_prompts_sent,        # short/full/voice only
-            'sms_responses':            sms_responses,
-            'sms_response_rate':        sms_response_rate,       # None if no prompts
-            'sms_by_flow':              sms_by_flow,             # per-feature breakdown + unanswered_dates
-            'sms_divergent':            sms_divergent,           # True if selective non-response
-            'max_prompt_gap':           max_prompt_gap,          # longest consecutive unanswered-prompt days
-            'prompt_gap_segments':      prompt_gap_segs,         # [{start, end, days}] ≥5d prompt streaks
-            'extended_no_response':     extended_no_response,    # True if max_prompt_gap ≥ 5
-            'overall_sms_rate':         overall_sms_rate,        # rate across all flow types
-            'insufficient_data':        insufficient_data,       # True if overall rate < 40%
-            'source_breakdown':         source_breakdown,
-            'type_breakdown':           type_breakdown,
+            'period_days':                period_days,
+            'active_days':                active_days,
+            'participation_rate':         participation_rate,        # 0.0–1.0
+            'max_consecutive_gap':        max_consecutive_gap,       # calendar-day gap
+            'gap_segments':               gap_segments,              # [{start, end, days}] ≥3d
+            'last_checkin_date':          last_checkin_date,
+            'days_since_last':            days_since_last,
+            'sms_prompts_sent':           sms_prompts_sent,          # short/full/voice only
+            'sms_responses':              sms_responses,
+            'sms_response_rate':          sms_response_rate,         # None if no prompts
+            'sms_by_flow':                sms_by_flow,               # per-feature breakdown + unanswered_dates
+            'sms_divergent':              sms_divergent,             # True if selective non-response
+            'sms_divergent_detail':       sms_divergent_detail,      # {high_label, high_rate, low_label, low_rate} or None
+            'max_prompt_gap':             max_prompt_gap,            # longest consecutive unanswered-prompt days
+            'prompt_gap_segments':        prompt_gap_segs,           # [{start, end, days}] ≥5d prompt streaks
+            'extended_no_response':       extended_no_response,      # True if max_prompt_gap ≥ 5
+            'overall_sms_rate':           overall_sms_rate,          # rate across all flow types
+            'insufficient_data':          insufficient_data,         # True if overall rate < 40%
+            'never_responded':            never_responded,           # True if ≥3 prompts sent, 0 answered
+            'complete_absence':           complete_absence,          # True if ≥5-day overlap of calendar gap + unanswered prompts
+            'complete_absence_segments':  complete_absence_segments, # [{start, end, days}]
+            'max_complete_absence_gap':   max_complete_absence_gap,
+            'source_breakdown':           source_breakdown,
+            'type_breakdown':             type_breakdown,
         }
 
     except Exception as e:
