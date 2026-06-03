@@ -2584,7 +2584,7 @@
   {% for p in patients %}
     {% set has_crisis = p.suicide_risk %}
     {% set mood_low   = p.mood_avg_30d is not none and p.mood_avg_30d < 5 %}
-    {% set has_alert  = has_crisis or mood_low or (p.urgency_tier is not none and p.urgency_tier <= 1) or (p.flags and ((p.flags.safety and p.flags.safety.signals_found) or (p.flags.engagement and p.flags.engagement.extended_no_response))) %}
+    {% set has_alert  = has_crisis or mood_low or (p.urgency_tier is not none and p.urgency_tier <= 1) or (p.flags and ((p.flags.safety and p.flags.safety.signals_found) or (p.flags.engagement and (p.flags.engagement.extended_no_response or p.flags.engagement.never_responded or p.flags.engagement.complete_absence or p.flags.engagement.sms_divergent)))) %}
     {% if has_alert %}{% set _ = alert_patients.append(p) %}{% else %}{% set _ = normal_patients.append(p) %}{% endif %}
   {% endfor %}
   {% set today_check_ins = patients | selectattr('days_since_checkin', 'equalto', 0) | list %}
