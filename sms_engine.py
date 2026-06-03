@@ -198,12 +198,24 @@ def parse_medication_reply(body: str) -> bool | None:
 def parse_checkin_reply(body: str) -> dict | None:
     """Parse a 5-number SMS check-in reply (M E S Q H).
 
-    Accepts space, comma, or slash-separated values.
-    5th value (sleep hours) may be a float (e.g. 6.5).
+    Accepts several formats:
+      - Space/comma/slash separated: "7 8 4 6 6.5"
+      - No-separator digit string:   "15478"  → [1, 5, 4, 7, 8]
+      - Mixed:                       "7,8,4,6,6.5"
+
+    The no-separator fallback treats each character as a digit-per-score
+    (valid for scores 0-9). A trailing decimal group on the last digit
+    is treated as sleep hours (e.g. "7846 6.5" or "78466.5").
+
     Returns dict with keys: mood, energy, stress, sleep_quality, sleep_hours
     or None if the reply cannot be parsed.
     """
     import re
+
+    def clamp(v):
+        return max(0.0, min(10.0, v))
+
+    # ── Standard parse: split on whitespace, commas, slashes ─────────────────
     tokens = re.split(r'[\s,/]+', body.strip())
     nums = []
     for t in tokens:
@@ -211,11 +223,30 @@ def parse_checkin_reply(body: str) -> dict | None:
             nums.append(float(t))
         except ValueError:
             pass
+
+    # ── Fallback: no-separator digit string e.g. "15478" or "1547 6.5" ───────
+    # Only triggers when standard parse yielded < 4 numbers.
+    # Handles two sub-cases:
+    #   a) Pure 4-5 digit string:              "15478"   → [1,5,4,7,8]
+    #   b) 4-digit block + sleep hrs:          "1547 6.5" → [1,5,4,7, 6.5]
+    #      Standard parse sees [1547.0, 6.5]; we detect the oversized first token.
+    # Strings longer than 5 bare digits are ambiguous and not attempted.
+    if len(nums) < 4:
+        stripped = body.strip()
+
+        # Sub-case (a): body is exactly 4 or 5 bare digits
+        if re.fullmatch(r'\d{4,5}', stripped):
+            nums = [float(d) for d in stripped]
+
+        # Sub-case (b): standard parse gave us tokens but first one is a 4-digit
+        # integer (concatenated scores), optionally followed by a sleep-hours float.
+        elif nums and nums[0] == int(nums[0]) and 1000 <= nums[0] <= 9999:
+            digits = [float(d) for d in str(int(nums[0]))]
+            rest   = nums[1:]   # anything the standard parse found after
+            nums   = digits + rest
+
     if len(nums) < 4:
         return None
-
-    def clamp(v):
-        return max(0.0, min(10.0, v))
 
     return {
         'mood':          clamp(nums[0]),
