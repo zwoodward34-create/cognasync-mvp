@@ -262,8 +262,9 @@ def parse_checkin_reply(body: str) -> dict | None:
 MSG_CHECKIN_PROMPT = (
     "CognaSync: Check-in\n"
     "Mood · Energy · Stress · Sleep quality · Sleep hrs\n"
+    "Use spaces or commas between numbers.\n"
     "Reply: 7 8 4 6 6.5 or SKIP"
-)  # 84 chars
+)  # 111 chars
 
 MSG_CHECKIN_CONFIRM = (
     "✓ Logged — Mood {mood} · Energy {energy} · "
@@ -271,10 +272,10 @@ MSG_CHECKIN_CONFIRM = (
 )
 
 MSG_CHECKIN_PARSE_FAIL = (
-    "Didn't catch that. Reply with 5 numbers:\n"
-    "1 Mood · 2 Energy · 3 Stress · 4 Sleep quality · 5 Sleep hrs\n"
+    "Didn't catch that. Reply with 5 numbers separated by spaces or commas:\n"
+    "Mood · Energy · Stress · Sleep quality · Sleep hrs\n"
     "Example: 7 8 4 6 6.5 or SKIP"
-)  # 132 chars
+)  # 152 chars
 
 MSG_ENROLLMENT = (
     "CognaSync: You'll get a check-in text 3x/week. Reply with 5 numbers:\n"
@@ -283,7 +284,7 @@ MSG_ENROLLMENT = (
     "3 Stress (0=calm, 10=severe)\n"
     "4 Sleep quality (0=poor, 10=great)\n"
     "5 Sleep hours (e.g. 6.5)\n"
-    "Example: 7 8 4 6 6.5 · Reply SKIP to skip."
+    "Separate with spaces or commas. Example: 7 8 4 6 6.5"
 )
 
 MSG_HELP_BRANCH = (
