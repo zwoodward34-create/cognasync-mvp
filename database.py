@@ -2889,8 +2889,32 @@ def _get_engagement_flags(patient_id, days=14):
         all_sms_sent = sum(
             fs['sent'] for fs in (stats.get('sms_by_flow') or {}).values()
         )
+
+        # Check-in gap fallback — fires even when no SMS prompts have been sent.
+        # A patient who hasn't checked in for 7+ days (or never) in a 7+ day
+        # window is worth surfacing regardless of whether SMS is active.
+        days_since_last = stats.get('days_since_last')
+        period_days     = stats.get('period_days', 0)
+        no_checkins     = (period_days >= 7
+                           and (days_since_last is None or days_since_last >= 7))
+
         if all_sms_sent == 0:
-            return None
+            if not no_checkins:
+                return None
+            return {
+                'extended_no_response':     False,
+                'insufficient_data':        False,
+                'never_responded':          False,
+                'complete_absence':         False,
+                'sms_divergent':            False,
+                'sms_divergent_detail':     None,
+                'max_prompt_gap':           0,
+                'max_complete_absence_gap': 0,
+                'overall_sms_rate':         None,
+                'no_checkins':              True,
+                'days_since_last':          days_since_last,
+                'max_consecutive_gap':      stats.get('max_consecutive_gap', 0),
+            }
 
         extended         = bool(stats.get('extended_no_response', False))
         low_rate         = bool(stats.get('insufficient_data', False))
@@ -2898,7 +2922,7 @@ def _get_engagement_flags(patient_id, days=14):
         complete_absence = bool(stats.get('complete_absence', False))
         divergent        = bool(stats.get('sms_divergent', False))
 
-        if not any([extended, low_rate, never_responded, complete_absence, divergent]):
+        if not any([extended, low_rate, never_responded, complete_absence, divergent, no_checkins]):
             return None
 
         return {
@@ -2911,6 +2935,9 @@ def _get_engagement_flags(patient_id, days=14):
             'max_prompt_gap':          stats.get('max_prompt_gap', 0),
             'max_complete_absence_gap': stats.get('max_complete_absence_gap', 0),
             'overall_sms_rate':        stats.get('overall_sms_rate', 1.0),
+            'no_checkins':             no_checkins,
+            'days_since_last':         days_since_last,
+            'max_consecutive_gap':     stats.get('max_consecutive_gap', 0),
         }
     except Exception as e:
         print(f"Error computing engagement flags for {patient_id}: {e}")

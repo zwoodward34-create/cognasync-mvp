@@ -2731,6 +2731,8 @@
               <span class="pd-urgency-badge pd-urgency-2" title="{{ eng.sms_divergent_detail.high_label }} {{ eng.sms_divergent_detail.high_rate }}% vs {{ eng.sms_divergent_detail.low_label }} {{ eng.sms_divergent_detail.low_rate }}%">🟡 Selective Engagement</span>
               {% elif eng.insufficient_data %}
               <span class="pd-urgency-badge pd-urgency-2" title="SMS response rate {{ (eng.overall_sms_rate * 100) | round(0) | int }}%">🟡 Low Engagement</span>
+              {% elif eng.no_checkins %}
+              <span class="pd-urgency-badge pd-urgency-1" title="{{ eng.days_since_last ~ ' days since last check-in' if eng.days_since_last is not none else 'No check-ins recorded' }}">🟡 No Check-ins</span>
               {% endif %}
             {% endif %}
             {% if p.flags and p.flags.safety and p.flags.safety.signals_found %}
@@ -3170,6 +3172,10 @@ function openHub(pid) {
     const pct = eng.overall_sms_rate != null
       ? Math.round(eng.overall_sms_rate * 100) + '%' : '';
     badge.textContent = '⚠ Low Engagement' + (pct ? ' · ' + pct : '');
+    badge.className = 'hub2-risk-badge hub2-risk-badge--safety';
+  } else if (eng && eng.no_checkins) {
+    const d = eng.days_since_last != null ? eng.days_since_last + 'd ago' : 'never';
+    badge.textContent = '⚠ No Check-ins · ' + d;
     badge.className = 'hub2-risk-badge hub2-risk-badge--safety';
   } else if (pt.moodRecent !== null && pt.moodRecent < 4) {
     badge.textContent = '● Low Mood'; badge.className = 'hub2-risk-badge hub2-risk-badge--watch';
@@ -3800,6 +3806,11 @@ function renderBriefBody(d, patientId) {
         icon   = '🟡';
         label  = 'Selective Engagement';
         detail = `Response rates differ significantly across channels: <strong>${d.high_label}</strong> at ${d.high_rate}% vs <strong>${d.low_label}</strong> at ${d.low_rate}%.`;
+      } else if (ef.no_checkins) {
+        icon   = '🟡';
+        label  = 'No Check-ins';
+        const dAgo = ef.days_since_last != null ? ef.days_since_last + ' days ago' : 'never';
+        detail = `No check-ins recorded in the past 7 days. Last check-in: <strong>${dAgo}</strong>.`;
       } else {
         icon   = '🟡';
         label  = 'Low Engagement';
