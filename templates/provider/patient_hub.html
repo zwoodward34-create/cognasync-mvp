@@ -922,6 +922,36 @@
   .ch-tl-dot--session { background: var(--accent); width: 11px; height: 11px; border: 2px solid var(--surface); box-shadow: 0 0 0 1.5px var(--accent); }
   .ch-tl-dot--crisis  { background: #c0392b; width: 11px; height: 11px; }
   .ch-tl-dot--flag    { background: #e8a000; }
+  .ch-tl-dot { cursor: pointer; }
+
+  /* Timeline dot tooltip */
+  .ch-tl-tooltip {
+    position: fixed;
+    background: #1e293b;
+    color: #fff;
+    font-size: 0.74rem;
+    font-family: 'DM Sans', sans-serif;
+    line-height: 1.5;
+    padding: 6px 11px;
+    border-radius: 7px;
+    pointer-events: none;
+    z-index: 2000;
+    white-space: nowrap;
+    opacity: 0;
+    transition: opacity 0.12s;
+    box-shadow: 0 3px 12px rgba(0,0,0,0.22);
+    transform: translateX(-50%) translateY(-100%) translateY(-8px);
+  }
+  .ch-tl-tooltip.ch-tl-tooltip--visible { opacity: 1; }
+  .ch-tl-tooltip::after {
+    content: '';
+    position: absolute;
+    top: 100%;
+    left: 50%;
+    transform: translateX(-50%);
+    border: 5px solid transparent;
+    border-top-color: #1e293b;
+  }
 
   /* ── Two-column body ── */
   .ch-body-grid {
@@ -1390,6 +1420,8 @@
       <div class="ch-tl-dots" id="ch-tl-dots"></div>
     </div>
   </div>
+  <!-- Timeline tooltip (shared, repositioned on click) -->
+  <div id="ch-tl-tooltip" class="ch-tl-tooltip"></div>
 
   <!-- ── Two-column body ──────────────────────────────────────────────────── -->
   <div class="ch-body-grid">
@@ -2857,17 +2889,62 @@ function buildTimeline(span) {
     if (!d) return;
     var p = pct(d).toFixed(1);
     if (parseFloat(p) < 0) return;
-    dots += '<div class="ch-tl-dot ch-tl-dot--checkin" style="left:' + p + '%" title="Check-in: ' + d.slice(0,10) + '"></div>';
+    var dateLabel = d.slice(0,10);
+    dots += '<div class="ch-tl-dot ch-tl-dot--checkin" style="left:' + p + '%" data-date="' + dateLabel + '" data-type="Check-in" title="Check-in: ' + dateLabel + '"></div>';
   });
   if (CH_APPOINTMENTS) CH_APPOINTMENTS.forEach(function(a) {
     var d = a.completed_at || a.started_at;
     if (!d) return;
     var p = pct(d).toFixed(1);
     if (parseFloat(p) < 0) return;
-    dots += '<div class="ch-tl-dot ch-tl-dot--session" style="left:' + p + '%" title="Session: ' + d.slice(0,10) + '"></div>';
+    var dateLabel = d.slice(0,10);
+    dots += '<div class="ch-tl-dot ch-tl-dot--session" style="left:' + p + '%" data-date="' + dateLabel + '" data-type="Session" title="Session: ' + dateLabel + '"></div>';
   });
   dotsEl.innerHTML = dots;
+
+  // Wire click-to-tooltip on each dot
+  dotsEl.querySelectorAll('.ch-tl-dot').forEach(function(dot) {
+    dot.addEventListener('click', function(e) {
+      e.stopPropagation();
+      _showTlTooltip(dot);
+    });
+  });
 }
+
+// Show the timeline tooltip positioned above the dot
+function _showTlTooltip(dotEl) {
+  var tip = document.getElementById('ch-tl-tooltip');
+  if (!tip) return;
+  var dateStr  = dotEl.getAttribute('data-date') || '';
+  var typeStr  = dotEl.getAttribute('data-type') || '';
+  var formatted = dateStr;
+  try {
+    var d = new Date(dateStr + 'T12:00:00');
+    formatted = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  } catch(_e) {}
+  tip.innerHTML = '<strong>' + typeStr + '</strong> &middot; ' + formatted;
+
+  // Temporarily make visible to measure width
+  tip.classList.add('ch-tl-tooltip--visible');
+  var dotRect = dotEl.getBoundingClientRect();
+  var dotCx   = dotRect.left + dotRect.width  / 2;
+  var dotTop  = dotRect.top;
+
+  // Position: centered above dot, clamped to viewport
+  var tipW = tip.offsetWidth;
+  var left = dotCx - tipW / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - tipW - 8));
+  tip.style.left = left + 'px';
+  tip.style.top  = (dotTop + window.scrollY) + 'px';
+  // Override transform to not use translateX(-50%) since we already computed center
+  tip.style.transform = 'translateY(-100%) translateY(-8px)';
+}
+
+// Dismiss tooltip on any click outside a dot
+document.addEventListener('click', function() {
+  var tip = document.getElementById('ch-tl-tooltip');
+  if (tip) tip.classList.remove('ch-tl-tooltip--visible');
+});
 
 // Filter button wiring
 (function() {

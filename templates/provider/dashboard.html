@@ -1831,6 +1831,97 @@
   }
   .pd-sched-pill--active { background: #e6f4ea; color: #1a7f3c; }
 
+  /* ── Today's Schedule — vertical timeline ── */
+  .pd-vtl-wrap {
+    padding: 10px 14px 14px;
+    position: relative;
+  }
+  .pd-vtl-spine {
+    position: absolute;
+    left: 28px;
+    top: 14px;
+    bottom: 14px;
+    width: 2px;
+    background: var(--border);
+    border-radius: 2px;
+  }
+  .pd-vtl-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 7px 0;
+    cursor: pointer;
+    position: relative;
+    z-index: 1;
+    transition: none;
+  }
+  .pd-vtl-item:hover .pd-vtl-name { color: var(--accent); }
+  .pd-vtl-time {
+    width: 32px;
+    text-align: right;
+    font-size: 0.58rem;
+    font-weight: 700;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+    flex-shrink: 0;
+    padding-top: 3px;
+    line-height: 1.2;
+  }
+  .pd-vtl-node {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    margin-top: 2px;
+    position: relative;
+    z-index: 2;
+  }
+  .pd-vtl-node--active {
+    background: var(--accent);
+    box-shadow: 0 0 0 3px rgba(26,127,60,0.18);
+  }
+  .pd-vtl-node--active::after {
+    content: '';
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    border: 2px solid var(--accent);
+    opacity: 0.45;
+    animation: pd-pulse 1.8s ease-in-out infinite;
+  }
+  @keyframes pd-pulse {
+    0%, 100% { transform: scale(1); opacity: 0.45; }
+    50% { transform: scale(1.4); opacity: 0.1; }
+  }
+  .pd-vtl-node--checkin { background: #2563eb; }
+  .pd-vtl-node--appt    { background: #94a3b8; }
+  .pd-vtl-body { flex: 1; min-width: 0; }
+  .pd-vtl-name {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.1s;
+  }
+  .pd-vtl-sub {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    margin-top: 1px;
+  }
+  .pd-vtl-pill {
+    font-size: 0.58rem;
+    font-weight: 700;
+    padding: 2px 6px;
+    border-radius: 8px;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .pd-vtl-pill--live    { background: #e6f4ea; color: #1a7f3c; }
+  .pd-vtl-pill--in      { background: #eff6ff; color: #1d4ed8; }
+  .pd-vtl-pill--sched   { background: #f8fafc; color: #64748b; border: 1px solid var(--border); }
+
   /* Clinical alert items */
   .pd-alert-item {
     padding: 11px 14px;
@@ -2011,21 +2102,23 @@
   /* Views container */
   .apmgr-body {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     display: flex;
     flex-direction: column;
   }
-  .apmgr-view { flex: 1; }
+  .apmgr-view { flex: 1; min-height: 0; }
 
   /* ── Calendar view ── */
   .apmgr-cal-wrap {
     display: grid;
     grid-template-columns: 1fr 300px;
-    min-height: 500px;
+    min-height: 0;
   }
   .apmgr-cal-main {
     padding: 20px 24px;
     border-right: 1px solid var(--border);
+    overflow-y: auto;
   }
   .apmgr-cal-nav {
     display: flex;
@@ -2803,37 +2896,15 @@
     <!-- Right sidebar: Today's Schedule + Clinical Alerts -->
     <div class="pd-right-sidebar" id="pd-right-sidebar">
 
-      <!-- Today's Schedule -->
+      <!-- Today's Schedule (vertical timeline, JS-rendered) -->
       <div class="pd-sidebar-card">
         <div class="pd-sidebar-card-hdr">
           <span>Today's Schedule</span>
           <a href="#" onclick="apptMgr.open(); return false;">Manage →</a>
         </div>
-        {% if not today_check_ins and not active_now %}
-        <div class="pd-sidebar-empty">No patient activity logged today.</div>
-        {% else %}
-          {% for p in active_now %}
-          <div class="pd-sched-item" onclick="openHub('{{ p.patient_id }}')">
-            <div class="pd-sched-avatar">{{ p.full_name[0] | upper }}</div>
-            <div class="pd-sched-info">
-              <div class="pd-sched-name">{{ p.full_name }}</div>
-              <div class="pd-sched-sub">Active session</div>
-            </div>
-            <span class="pd-sched-pill pd-sched-pill--active">● Live</span>
-          </div>
-          {% endfor %}
-          {% for p in today_check_ins %}
-          {% if p.last_appointment_status != 'active' %}
-          <div class="pd-sched-item" onclick="openHub('{{ p.patient_id }}')">
-            <div class="pd-sched-avatar pd-sched-avatar--ci">{{ p.full_name[0] | upper }}</div>
-            <div class="pd-sched-info">
-              <div class="pd-sched-name">{{ p.full_name }}</div>
-              <div class="pd-sched-sub">Checked in today</div>
-            </div>
-          </div>
-          {% endif %}
-          {% endfor %}
-        {% endif %}
+        <div id="pd-today-timeline">
+          <div class="pd-sidebar-empty">Loading schedule…</div>
+        </div>
       </div>
 
       <!-- Clinical Alerts -->
@@ -5082,6 +5153,123 @@ const apptMgr = (() => {
   }
 
   return { open, close, setView, selectDay, prevMonth, nextMonth, goToday, openForm, closeForm, saveForm, deleteAppt };
+})();
+
+// ══════════════════════════════════════════════════════════════════════════════
+// TODAY'S SCHEDULE — vertical timeline
+// ══════════════════════════════════════════════════════════════════════════════
+(function() {
+  function _escH(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  }
+
+  function _fmtTime(isoStr) {
+    if (!isoStr || isoStr.length <= 10) return '';
+    try {
+      const d = new Date(isoStr);
+      return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })
+               .replace(':00', '').toLowerCase();
+    } catch(_e) { return ''; }
+  }
+
+  async function buildTodayTimeline() {
+    const container = document.getElementById('pd-today-timeline');
+    if (!container) return;
+
+    const todayStr = new Date().toISOString().slice(0, 10);
+    let scheduledAppts = [];
+    try {
+      const res = await fetch(
+        `/api/provider/appointments?from=${todayStr}&to=${todayStr}`,
+        { credentials: 'same-origin' }
+      );
+      if (res.ok) scheduledAppts = await res.json();
+    } catch(_e) {}
+
+    // Build items list
+    const items = [];
+    const seenPids = new Set();
+
+    // 1. Scheduled appointments from API (includes active sessions)
+    scheduledAppts.forEach(e => {
+      const pid = e.patient_id || null;
+      if (pid) seenPids.add(pid);
+      items.push({
+        type:   e.status === 'active' ? 'active' : 'appt',
+        time:   _fmtTime(e.started_at),
+        sort:   e.started_at || (todayStr + 'T08:00:00'),
+        name:   e.patient_name || (pid && _PATIENTS[pid] ? _PATIENTS[pid].name : ''),
+        label:  e.appointment_type || 'Appointment',
+        pid:    pid,
+        status: e.status || 'scheduled',
+      });
+    });
+
+    // 2. Patients with active sessions not already in the list
+    Object.entries(_PATIENTS || {}).forEach(([pid, pt]) => {
+      if (seenPids.has(pid)) return;
+      if (pt.lastApptStatus === 'active') {
+        seenPids.add(pid);
+        items.push({ type: 'active', time: '', sort: todayStr + 'T00:00:00', name: pt.name, label: 'Active session', pid });
+      }
+    });
+
+    // 3. Patients who checked in today but have no appointment record
+    Object.entries(_PATIENTS || {}).forEach(([pid, pt]) => {
+      if (seenPids.has(pid)) return;
+      if (pt.daysSinceCheckin === 0) {
+        seenPids.add(pid);
+        items.push({ type: 'checkin', time: '', sort: todayStr + 'T23:59:00', name: pt.name, label: 'Checked in today', pid });
+      }
+    });
+
+    if (!items.length) {
+      container.innerHTML = '<div class="pd-sidebar-empty">No patient activity today.</div>';
+      return;
+    }
+
+    // Sort: active first, then by time, then check-ins at end
+    items.sort((a, b) => {
+      if (a.type === 'active' && b.type !== 'active') return -1;
+      if (a.type !== 'active' && b.type === 'active') return 1;
+      if (a.type === 'checkin' && b.type !== 'checkin') return 1;
+      if (a.type !== 'checkin' && b.type === 'checkin') return -1;
+      return a.sort.localeCompare(b.sort);
+    });
+
+    let html = '<div class="pd-vtl-wrap"><div class="pd-vtl-spine"></div>';
+    items.forEach(item => {
+      const hubUrl = item.pid && _PATIENTS[item.pid] ? _PATIENTS[item.pid].hubUrl : null;
+      const onclick = hubUrl ? `onclick="window.location.href='${hubUrl}'"` : '';
+
+      let nodeClass = 'pd-vtl-node--appt';
+      let pillHtml  = `<span class="pd-vtl-pill pd-vtl-pill--sched">${_escH(item.status || 'sched')}</span>`;
+
+      if (item.type === 'active') {
+        nodeClass = 'pd-vtl-node--active';
+        pillHtml  = '<span class="pd-vtl-pill pd-vtl-pill--live">● Live</span>';
+      } else if (item.type === 'checkin') {
+        nodeClass = 'pd-vtl-node--checkin';
+        pillHtml  = '<span class="pd-vtl-pill pd-vtl-pill--in">✓ In</span>';
+      }
+
+      html += `
+        <div class="pd-vtl-item" ${onclick}>
+          <div class="pd-vtl-time">${_escH(item.time)}</div>
+          <div class="pd-vtl-node ${nodeClass}"></div>
+          <div class="pd-vtl-body">
+            <div class="pd-vtl-name">${_escH(item.name)}</div>
+            <div class="pd-vtl-sub">${_escH(item.label)}</div>
+          </div>
+          ${pillHtml}
+        </div>`;
+    });
+    html += '</div>';
+    container.innerHTML = html;
+  }
+
+  // Build on page load
+  buildTodayTimeline();
 })();
 </script>
 
