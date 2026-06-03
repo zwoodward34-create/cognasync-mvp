@@ -2491,7 +2491,7 @@
   {% for p in patients %}
     {% set has_crisis = p.suicide_risk %}
     {% set mood_low   = p.mood_avg_30d is not none and p.mood_avg_30d < 5 %}
-    {% set has_alert  = has_crisis or mood_low or (p.urgency_tier is not none and p.urgency_tier <= 1) or (p.flags and ((p.flags.safety and p.flags.safety.signals_found) or (p.flags.substance and p.flags.substance.alert_level == 'concern'))) %}
+    {% set has_alert  = has_crisis or mood_low or (p.urgency_tier is not none and p.urgency_tier <= 1) or (p.flags and ((p.flags.safety and p.flags.safety.signals_found) or (p.flags.engagement and p.flags.engagement.extended_no_response))) %}
     {% if has_alert %}{% set _ = alert_patients.append(p) %}{% else %}{% set _ = normal_patients.append(p) %}{% endif %}
   {% endfor %}
   {% set today_check_ins = patients | selectattr('days_since_checkin', 'equalto', 0) | list %}
@@ -2608,7 +2608,7 @@
            data-patient-id="{{ p.patient_id }}"
            data-name="{{ p.full_name | lower }}"
            data-state="alert"
-           onclick="openHub('{{ p.patient_id }}')"
+           onclick="window.location.href='{{ url_for('provider_patient_hub', patient_id=p.patient_id) }}'"
            style="cursor:pointer;">
 
         <div class="pd-row-avatar">{{ p.full_name[0] | upper }}</div>
@@ -2626,10 +2626,12 @@
             {% if p.flag_count and p.flag_count > 0 %}
             <span class="pd-flag-indicator" title="{{ p.flag_count }} care flag{{ 's' if p.flag_count != 1 }}">{{ p.flag_count }}🚩</span>
             {% endif %}
-            {% if p.flags and p.flags.substance and p.flags.substance.alert_level %}
-            <span class="pd-urgency-badge {{ 'pd-urgency-0' if p.flags.substance.alert_level == 'concern' else 'pd-urgency-2' }}">
-              {{ '🔴' if p.flags.substance.alert_level == 'concern' else '🟡' }} Substance
-            </span>
+            {% if p.flags and p.flags.engagement %}
+              {% if p.flags.engagement.extended_no_response %}
+              <span class="pd-urgency-badge pd-urgency-0" title="{{ p.flags.engagement.max_prompt_gap }}-day non-response streak">🔴 No Response</span>
+              {% elif p.flags.engagement.insufficient_data %}
+              <span class="pd-urgency-badge pd-urgency-2" title="SMS response rate {{ (p.flags.engagement.overall_sms_rate * 100) | round(0) | int }}%">🟡 Low Engagement</span>
+              {% endif %}
             {% endif %}
             {% if p.flags and p.flags.safety and p.flags.safety.signals_found %}
             <span class="pd-urgency-badge pd-urgency-0" title="Safety signal detected — see brief">🔴 Safety</span>
@@ -2713,7 +2715,7 @@
            data-patient-id="{{ p.patient_id }}"
            data-name="{{ p.full_name | lower }}"
            data-state="{% if inactive %}inactive{% else %}recent{% endif %}"
-           onclick="openHub('{{ p.patient_id }}')"
+           onclick="window.location.href='{{ url_for('provider_patient_hub', patient_id=p.patient_id) }}'"
            style="cursor:pointer;">
 
         <div class="pd-row-avatar">{{ p.full_name[0] | upper }}</div>
@@ -3070,8 +3072,15 @@ function openHub(pid) {
   const flags = pt.modeDFlags || {};
   if (pt.modeDFlags && flags.safety && flags.safety.signals_found) {
     badge.textContent = '⚠ Safety Flag'; badge.className = 'hub2-risk-badge hub2-risk-badge--crisis';
-  } else if (flags.substance && flags.substance.alert_level === 'concern') {
-    badge.textContent = '⚠ Substance'; badge.className = 'hub2-risk-badge hub2-risk-badge--safety';
+  } else if (flags.engagement && flags.engagement.extended_no_response) {
+    const gap = flags.engagement.max_prompt_gap || '';
+    badge.textContent = '⚠ No Response' + (gap ? ' · ' + gap + 'd' : '');
+    badge.className = 'hub2-risk-badge hub2-risk-badge--crisis';
+  } else if (flags.engagement && flags.engagement.insufficient_data) {
+    const pct = flags.engagement.overall_sms_rate != null
+      ? Math.round(flags.engagement.overall_sms_rate * 100) + '%' : '';
+    badge.textContent = '⚠ Low Engagement' + (pct ? ' · ' + pct : '');
+    badge.className = 'hub2-risk-badge hub2-risk-badge--safety';
   } else if (pt.moodRecent !== null && pt.moodRecent < 4) {
     badge.textContent = '● Low Mood'; badge.className = 'hub2-risk-badge hub2-risk-badge--watch';
   } else if (pt.moodRecent !== null && pt.moodRecent >= 7) {
@@ -3650,12 +3659,12 @@ function renderBriefBody(d, patientId) {
     html += `<div class="pd-brief-crisis-bar">⚠ Active crisis flag — review before appointment</div>`;
   }
 
-  // Mode D: AI-detected substance and safety signals
-  const mdf = _modeDFlags[patientId] || {};
-  const substanceFlag = mdf.substance || null;
-  const safetyFlag    = mdf.safety    || null;
+  // Mode D: safety signals + engagement/non-response flags
+  const mdf            = _modeDFlags[patientId] || {};
+  const safetyFlag     = mdf.safety     || null;
+  const engagementFlag = mdf.engagement || null;
 
-  if ((substanceFlag && substanceFlag.alert_level) || (safetyFlag && safetyFlag.signals_found)) {
+  if ((safetyFlag && safetyFlag.signals_found) || engagementFlag) {
     html += `<div style="margin-bottom:14px;">`;
     if (safetyFlag && safetyFlag.signals_found) {
       const sigCount = safetyFlag.signal_count || 0;
@@ -3670,23 +3679,25 @@ function renderBriefBody(d, patientId) {
         <div style="font-size:0.72rem;color:#a52834;margin-top:5px;font-style:italic;">Clinical safety assessment recommended. Not shown to patient.</div>
       </div>`;
     }
-    if (substanceFlag && substanceFlag.alert_level) {
-      const isRed  = substanceFlag.alert_level === 'concern';
+    if (engagementFlag) {
+      const isRed  = engagementFlag.extended_no_response;
       const bg     = isRed ? '#fdecea' : '#fff8e1';
       const border = isRed ? '#f5c6cb' : '#ffe082';
       const txtClr = isRed ? '#721c24' : '#5d4037';
       const lblClr = isRed ? '#c0392b' : '#e65100';
       const icon   = isRed ? '🔴' : '🟡';
-      const label  = isRed ? 'Substance Use — Concern' : 'Substance Use — Watch';
-      const ddays  = substanceFlag.drinking_days || 0;
-      const tdays  = substanceFlag.total_days || '?';
-      const avgU   = substanceFlag.avg_units_per_drinking_day != null ? substanceFlag.avg_units_per_drinking_day.toFixed(1) : '—';
-      const jFlags = (substanceFlag.journal_flags || []).length;
+      const label  = isRed ? 'Non-Response Streak' : 'Low Engagement';
+      const gap    = engagementFlag.max_prompt_gap || 0;
+      const pct    = engagementFlag.overall_sms_rate != null
+        ? Math.round(engagementFlag.overall_sms_rate * 100) + '%' : '—';
       html += `<div style="background:${bg};border:1px solid ${border};border-radius:8px;padding:12px 14px;">
         <div style="font-size:0.65rem;font-weight:700;text-transform:uppercase;letter-spacing:0.07em;color:${lblClr};margin-bottom:5px;">${icon} ${label}</div>
         <div style="font-size:0.8rem;color:${txtClr};line-height:1.55;">
-          Alcohol logged on <strong>${ddays}</strong> of ${tdays} tracked days (avg <strong>${avgU} units</strong>/drinking day).
-          ${jFlags > 0 ? `<strong>${jFlags}</strong> journal entr${jFlags === 1 ? 'y' : 'ies'} flagged language patterns.` : ''}
+          ${isRed
+            ? `Patient did not respond to any SMS prompt for <strong>${gap} consecutive days</strong>.`
+            : `Overall SMS response rate is <strong>${pct}</strong> over the past 14 days — below the 40% threshold.`
+          }
+          Clinical check-in recommended.
         </div>
       </div>`;
     }

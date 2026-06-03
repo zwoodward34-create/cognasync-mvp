@@ -2862,14 +2862,51 @@ def check_safety_signals(patient_id, days=60):
         return {'signals_found': False, 'alert_level': None}
 
 
+def _get_engagement_flags(patient_id, days=14):
+    """Return a compact engagement-flag dict for the provider dashboard badge.
+
+    Uses a shorter window (14 days) than the full summary so the badge
+    reflects recent non-response rather than historical patterns.
+
+    Returns:
+        {extended_no_response: bool, insufficient_data: bool,
+         max_prompt_gap: int, overall_sms_rate: float}
+        or None when no prompts have been sent yet.
+    """
+    try:
+        stats = compute_engagement_stats(patient_id, days=days)
+        if not stats:
+            return None
+        sms_sent = stats.get('sms_sent', 0)
+        if sms_sent == 0:
+            return None
+        extended   = bool(stats.get('extended_no_response', False))
+        low_rate   = bool(stats.get('insufficient_data', False))
+        if not extended and not low_rate:
+            return None
+        return {
+            'extended_no_response': extended,
+            'insufficient_data':    low_rate,
+            'max_prompt_gap':       stats.get('max_prompt_gap', 0),
+            'overall_sms_rate':     stats.get('overall_sms_rate', 1.0),
+        }
+    except Exception as e:
+        print(f"Error computing engagement flags for {patient_id}: {e}")
+        return None
+
+
 def get_patient_flags(patient_id, days=30):
     """Aggregate all active Mode D flags for a patient.
 
-    Returns dict: {substance: {...}|None, safety: {...}|None, sms_crisis: [...]}
+    Returns dict: {engagement: {...}|None, safety: {...}|None, sms_crisis: [...]}
     Used by provider dashboard route and Mode C summary generation.
+
+    Note: substance patterns are still computed and passed to Mode C summaries
+    via generate_appointment_summary(), but are no longer shown as a dashboard
+    badge (replaced by the non-response engagement badge).
     """
     return {
-        'substance':  check_substance_patterns(patient_id, days=days),
+        'engagement': _get_engagement_flags(patient_id, days=14),
         'safety':     check_safety_signals(patient_id, days=days),
         'sms_crisis': get_sms_crisis_events(patient_id, limit=5),
     }

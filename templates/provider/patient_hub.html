@@ -886,6 +886,17 @@
   }
   .ch-timeline-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; flex-wrap: wrap; gap: 8px; }
   .ch-timeline-title { font-size: 0.72rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.07em; color: var(--text-muted); }
+  .ch-tl-filter-btns { display: flex; gap: 4px; }
+  .ch-tl-filter-btn {
+    background: none; border: 1px solid var(--border); border-radius: 5px;
+    padding: 2px 8px; font-size: 0.65rem; font-weight: 600; color: var(--text-muted);
+    cursor: pointer; transition: all 0.15s; letter-spacing: 0.03em;
+  }
+  .ch-tl-filter-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .ch-tl-filter-btn--active {
+    background: var(--accent); border-color: var(--accent);
+    color: #fff;
+  }
   .ch-tl-legend { display: flex; gap: 14px; flex-wrap: wrap; }
   .ch-tl-leg-item { display: flex; align-items: center; gap: 5px; font-size: 0.65rem; color: var(--text-muted); }
   .ch-tl-leg-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
@@ -1026,6 +1037,12 @@
   .ch-adh-cell--taken   { background: #22c55e; color: #fff; }
   .ch-adh-cell--missed  { background: #ef4444; color: #fff; }
   .ch-adh-cell--unknown { background: #e5e7eb; color: #9ca3af; }
+  .ch-adh-cell--future  { background: #f3f4f6; color: #d1d5db; border: 1px dashed #e5e7eb; }
+  .ch-adh-med-select {
+    font-size: 0.7rem; border: 1px solid var(--border); border-radius: 6px;
+    padding: 3px 8px; background: var(--bg); color: var(--text);
+    cursor: pointer; max-width: 180px;
+  }
   .ch-adh-legend { display: flex; gap: 12px; margin-bottom: 8px; flex-wrap: wrap; }
   .ch-adh-leg-item { display: flex; align-items: center; gap: 5px; font-size: 0.65rem; color: var(--text-muted); }
   .ch-adh-leg-cell { width: 10px; height: 10px; border-radius: 2px; flex-shrink: 0; }
@@ -1348,14 +1365,23 @@
   <!-- Toast -->
   <div id="hub-toast"></div>
 
-  <!-- ── Longitudinal Timeline (90 days) ──────────────────────────────────── -->
+  <!-- ── Longitudinal Timeline ─────────────────────────────────────────────── -->
   <div class="ch-timeline-card">
     <div class="ch-timeline-hdr">
-      <span class="ch-timeline-title">Longitudinal Timeline — last 90 days</span>
-      <div class="ch-tl-legend">
-        <div class="ch-tl-leg-item"><div class="ch-tl-leg-dot ch-tl-leg-dot--session"></div>Session</div>
-        <div class="ch-tl-leg-item"><div class="ch-tl-leg-dot ch-tl-leg-dot--checkin"></div>Check-in</div>
-        <div class="ch-tl-leg-item"><div class="ch-tl-leg-dot ch-tl-leg-dot--flag"></div>Flag</div>
+      <span class="ch-timeline-title" id="ch-timeline-title">Longitudinal Timeline — last 90 days</span>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+        <div class="ch-tl-filter-btns" id="ch-tl-filter-btns">
+          <button class="ch-tl-filter-btn" data-days="7">7d</button>
+          <button class="ch-tl-filter-btn" data-days="14">14d</button>
+          <button class="ch-tl-filter-btn" data-days="30">30d</button>
+          <button class="ch-tl-filter-btn" data-days="60">60d</button>
+          <button class="ch-tl-filter-btn ch-tl-filter-btn--active" data-days="90">90d</button>
+        </div>
+        <div class="ch-tl-legend">
+          <div class="ch-tl-leg-item"><div class="ch-tl-leg-dot ch-tl-leg-dot--session"></div>Session</div>
+          <div class="ch-tl-leg-item"><div class="ch-tl-leg-dot ch-tl-leg-dot--checkin"></div>Check-in</div>
+          <div class="ch-tl-leg-item"><div class="ch-tl-leg-dot ch-tl-leg-dot--flag"></div>Flag</div>
+        </div>
       </div>
     </div>
     <div class="ch-tl-months" id="ch-tl-months" style="position:relative;height:16px;margin-bottom:4px;"></div>
@@ -1473,7 +1499,12 @@
       </div>
 
       <div class="ch-data-panel" id="ch-panel-meds">
-        <div class="ch-adh-hdr">4-Week Medication Adherence</div>
+        <div class="ch-adh-hdr" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">
+          <span>4-Week Medication Adherence</span>
+          <select id="ch-adh-med-filter" class="ch-adh-med-select" onchange="buildAdherenceGrid()">
+            <option value="all">All medications</option>
+          </select>
+        </div>
         <div class="ch-adh-legend">
           <div class="ch-adh-leg-item"><div class="ch-adh-leg-cell ch-adh-leg-cell--taken"></div>Taken</div>
           <div class="ch-adh-leg-item"><div class="ch-adh-leg-cell ch-adh-leg-cell--missed"></div>Not taken</div>
@@ -2725,9 +2756,10 @@ async function loadHubFlags() {
 loadHubFlags();
 
 // ── ClaraMind hub data ────────────────────────────────────────────────────────
-const CH_CHECKINS = {{ checkins | tojson }};
-const CH_MED_EVENTS = {{ medication_events | tojson }};
+const CH_CHECKINS    = {{ checkins | tojson }};
+const CH_MED_EVENTS  = {{ medication_events | tojson }};
 const CH_APPOINTMENTS = {{ appointments | tojson }};
+const CH_MEDICATIONS = {{ medications | tojson }};
 
 // ── Tab switching ─────────────────────────────────────────────────────────────
 function switchTab(name) {
@@ -2787,15 +2819,18 @@ function saveCurrentNote() {
 }
 
 // ── Timeline builder ──────────────────────────────────────────────────────────
-(function buildTimeline() {
+function buildTimeline(span) {
+  span = span || 90;
   var dotsEl = document.getElementById('ch-tl-dots');
   var monthsEl = document.getElementById('ch-tl-months');
+  var titleEl = document.getElementById('ch-timeline-title');
   if (!dotsEl || !monthsEl) return;
 
   var now = new Date();
   var start = new Date(now);
-  start.setDate(start.getDate() - 89);
-  var span = 90;
+  start.setDate(start.getDate() - (span - 1));
+
+  if (titleEl) titleEl.textContent = 'Longitudinal Timeline — last ' + span + ' days';
 
   function pct(dateStr) {
     var d = new Date(dateStr);
@@ -2808,7 +2843,10 @@ function saveCurrentNote() {
   var monthNames = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
   var mHtml = '';
   while (cur <= now) {
-    mHtml += '<span class="ch-tl-month-lbl" style="position:absolute;left:' + pct(cur).toFixed(1) + '%;">' + monthNames[cur.getMonth()] + '</span>';
+    var p = pct(cur).toFixed(1);
+    if (parseFloat(p) <= 100) {
+      mHtml += '<span class="ch-tl-month-lbl" style="position:absolute;left:' + p + '%;">' + monthNames[cur.getMonth()] + '</span>';
+    }
     cur.setMonth(cur.getMonth() + 1);
   }
   monthsEl.innerHTML = mHtml;
@@ -2818,15 +2856,30 @@ function saveCurrentNote() {
     var d = c.checkin_date || c.created_at;
     if (!d) return;
     var p = pct(d).toFixed(1);
+    if (parseFloat(p) < 0) return;
     dots += '<div class="ch-tl-dot ch-tl-dot--checkin" style="left:' + p + '%" title="Check-in: ' + d.slice(0,10) + '"></div>';
   });
   if (CH_APPOINTMENTS) CH_APPOINTMENTS.forEach(function(a) {
     var d = a.completed_at || a.started_at;
     if (!d) return;
     var p = pct(d).toFixed(1);
+    if (parseFloat(p) < 0) return;
     dots += '<div class="ch-tl-dot ch-tl-dot--session" style="left:' + p + '%" title="Session: ' + d.slice(0,10) + '"></div>';
   });
   dotsEl.innerHTML = dots;
+}
+
+// Filter button wiring
+(function() {
+  buildTimeline(90);
+  var btns = document.querySelectorAll('.ch-tl-filter-btn');
+  btns.forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      btns.forEach(function(b) { b.classList.remove('ch-tl-filter-btn--active'); });
+      btn.classList.add('ch-tl-filter-btn--active');
+      buildTimeline(parseInt(btn.getAttribute('data-days'), 10));
+    });
+  });
 })();
 
 // ── Mood Chart ────────────────────────────────────────────────────────────────
@@ -2895,47 +2948,112 @@ function buildSleepChart() {
 
 // ── Medication Adherence Grid ─────────────────────────────────────────────────
 window._chAdhBuilt = false;
+
+// Populate medication filter dropdown once
+(function initMedFilter() {
+  var sel = document.getElementById('ch-adh-med-filter');
+  if (!sel || !CH_MEDICATIONS || !CH_MEDICATIONS.length) return;
+  CH_MEDICATIONS.forEach(function(m) {
+    var opt = document.createElement('option');
+    opt.value = m.id;
+    opt.textContent = m.name + (m.standard_dose ? ' ' + m.standard_dose + (m.dose_unit || '') : '');
+    sel.appendChild(opt);
+  });
+})();
+
 function buildAdherenceGrid() {
-  var grid = document.getElementById('ch-adh-grid');
+  var grid  = document.getElementById('ch-adh-grid');
   var pctEl = document.getElementById('ch-adh-pct');
+  var sel   = document.getElementById('ch-adh-med-filter');
   if (!grid) return;
+
+  var filterMedId = sel ? sel.value : 'all';
+
   if (!CH_MED_EVENTS || !CH_MED_EVENTS.length) {
     grid.innerHTML = '<p style="font-size:0.8rem;color:var(--text-muted);">No medication events logged.</p>';
+    if (pctEl) pctEl.textContent = '';
     window._chAdhBuilt = true; return;
   }
+
+  // ── Build a 4-week calendar grid anchored to Sunday ──────────────────────
+  // Find the Sunday of the current week, then go back 3 more weeks.
   var today = new Date();
+  // today.getDay(): 0=Sun, 1=Mon, ..., 6=Sat
+  var daysSinceSunday = today.getDay(); // 0 for Sunday
+  var calStart = new Date(today);
+  calStart.setDate(today.getDate() - daysSinceSunday - 21); // 4 Sundays back
+  // Build exactly 28 days (4 × 7), starting on Sunday
   var days = [];
-  for (var i = 27; i >= 0; i--) {
-    var d = new Date(today); d.setDate(d.getDate() - i);
-    days.push(d.toISOString().slice(0,10));
+  for (var i = 0; i < 28; i++) {
+    var d = new Date(calStart);
+    d.setDate(calStart.getDate() + i);
+    days.push(d.toISOString().slice(0, 10));
   }
-  var eventMap = {};
+
+  // ── Build event map for the selected medication ───────────────────────────
+  // Normalise both schema variants:
+  //   Variant A (SMS path): { taken: true/false, date: 'YYYY-MM-DD', medication_id: uuid }
+  //   Variant B (log path): { status: 'TAKEN'|'MISSED', event_date: 'YYYY-MM-DD', medication_id: uuid }
+  var eventMap = {}; // date → { taken: count, missed: count }
   CH_MED_EVENTS.forEach(function(e) {
-    var d = (e.event_date || '').slice(0,10);
-    if (!eventMap[d]) eventMap[d] = { taken: 0, missed: 0 };
-    if (e.taken) eventMap[d].taken++; else eventMap[d].missed++;
+    // Filter by medication if one is selected
+    if (filterMedId !== 'all' && e.medication_id !== filterMedId) return;
+    var dateStr = (e.event_date || e.date || '').slice(0, 10);
+    if (!dateStr) return;
+    if (!eventMap[dateStr]) eventMap[dateStr] = { taken: 0, missed: 0 };
+    // Determine taken status — handle both boolean and string schema
+    var isTaken = (e.taken === true) || (e.taken === 'true') || (e.status === 'TAKEN');
+    if (isTaken) eventMap[dateStr].taken++;
+    else         eventMap[dateStr].missed++;
   });
-  var dayHdr = '<div class="ch-adh-days-hdr">' + ['Su','Mo','Tu','We','Th','Fr','Sa'].map(function(d){ return '<span>' + d + '</span>'; }).join('') + '</div>';
+
+  // ── Render ────────────────────────────────────────────────────────────────
+  var dayHdr = '<div class="ch-adh-days-hdr">'
+    + ['Su','Mo','Tu','We','Th','Fr','Sa'].map(function(l){ return '<span>' + l + '</span>'; }).join('')
+    + '</div>';
+
   var takenTotal = 0, missedTotal = 0;
   var weeksHtml = '';
+  var todayStr = today.toISOString().slice(0, 10);
+
   for (var w = 0; w < 4; w++) {
-    var week = days.slice(w*7, w*7+7);
+    var week = days.slice(w * 7, w * 7 + 7);
     weeksHtml += '<div class="ch-adh-week">';
     week.forEach(function(day) {
-      var ev = eventMap[day];
-      var cls = 'ch-adh-cell--unknown';
-      if (ev) {
-        if (ev.taken > 0) { cls = 'ch-adh-cell--taken'; takenTotal++; }
-        else if (ev.missed > 0) { cls = 'ch-adh-cell--missed'; missedTotal++; }
+      var isFuture = day > todayStr;
+      var cls = isFuture ? 'ch-adh-cell--future' : 'ch-adh-cell--unknown';
+      var title = day;
+      if (!isFuture) {
+        var ev = eventMap[day];
+        if (ev) {
+          if (ev.taken > 0) {
+            cls = 'ch-adh-cell--taken'; takenTotal++;
+            title = day + ' — taken';
+          } else if (ev.missed > 0) {
+            cls = 'ch-adh-cell--missed'; missedTotal++;
+            title = day + ' — not taken';
+          }
+        }
       }
       var dayNum = parseInt(day.slice(8), 10);
-      weeksHtml += '<div class="ch-adh-cell ' + cls + '" title="' + day + '">' + dayNum + '</div>';
+      weeksHtml += '<div class="ch-adh-cell ' + cls + '" title="' + title + '">' + dayNum + '</div>';
     });
     weeksHtml += '</div>';
   }
+
   grid.innerHTML = dayHdr + '<div class="ch-adh-weeks">' + weeksHtml + '</div>';
+
   var total = takenTotal + missedTotal;
-  if (pctEl && total > 0) pctEl.textContent = Math.round(takenTotal/total*100) + '% adherence (' + takenTotal + '/' + total + ' logged days)';
+  if (pctEl) {
+    if (total > 0) {
+      pctEl.textContent = Math.round(takenTotal / total * 100) + '% adherence ('
+        + takenTotal + '/' + total + ' logged days)';
+    } else {
+      pctEl.textContent = filterMedId === 'all'
+        ? 'No events logged in this window.'
+        : 'No events logged for this medication.';
+    }
+  }
   window._chAdhBuilt = true;
 }
 
