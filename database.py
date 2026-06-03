@@ -2865,12 +2865,13 @@ def check_safety_signals(patient_id, days=60):
 def get_patient_flags(patient_id, days=30):
     """Aggregate all active Mode D flags for a patient.
 
-    Returns dict: {substance: {...}|None, safety: {...}|None}
+    Returns dict: {substance: {...}|None, safety: {...}|None, sms_crisis: [...]}
     Used by provider dashboard route and Mode C summary generation.
     """
     return {
-        'substance': check_substance_patterns(patient_id, days=days),
-        'safety':    check_safety_signals(patient_id, days=days),
+        'substance':  check_substance_patterns(patient_id, days=days),
+        'safety':     check_safety_signals(patient_id, days=days),
+        'sms_crisis': get_sms_crisis_events(patient_id, limit=5),
     }
 
 
@@ -6985,4 +6986,121 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
 
     except Exception as e:
         print(f'compute_engagement_stats error: {e}')
+        return None
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# SMS SESSION + CRISIS HELPERS
+# ═══════════════════════════════════════════════════════════════════════════
+
+def get_sms_session(patient_id: str) -> dict | None:
+    """Return the most recent unresolved SMS session for a patient, or None."""
+    try:
+        res = supabase_admin.table('sms_checkin_sessions') \
+            .select('*') \
+            .eq('patient_id', str(patient_id)) \
+            .is_('resolved_at', 'null') \
+            .order('sent_at', desc=True) \
+            .limit(1) \
+            .execute()
+        return res.data[0] if res.data else None
+    except Exception as e:
+        print(f'[db] get_sms_session error: {e}')
+        return None
+
+
+def set_sms_session(patient_id: str, session_type: str,
+                    suspended_session_type: str | None = None) -> dict | None:
+    """Resolve any existing open session then open a new one. Returns new row."""
+    try:
+        resolve_sms_session(patient_id)
+        row = {
+            'patient_id':   str(patient_id),
+            'session_type': session_type,
+        }
+        if suspended_session_type:
+            row['suspended_session_type'] = suspended_session_type
+        res = supabase_admin.table('sms_checkin_sessions').insert(row).execute()
+        return res.data[0] if res.data else None
+    except Exception as e:
+        print(f'[db] set_sms_session error: {e}')
+        return None
+
+
+def resolve_sms_session(patient_id: str) -> None:
+    """Mark all open sessions for a patient as resolved."""
+    try:
+        supabase_admin.table('sms_checkin_sessions') \
+            .update({'resolved_at': datetime.utcnow().isoformat()}) \
+            .eq('patient_id', str(patient_id)) \
+            .is_('resolved_at', 'null') \
+            .execute()
+    except Exception as e:
+        print(f'[db] resolve_sms_session error: {e}')
+
+
+def log_sms_crisis(patient_id: str, source: str) -> str | None:
+    """Insert a crisis event row. source = 'keyword' | 'help_branch'.
+    Returns the new row id, or None on error."""
+    try:
+        res = supabase_admin.table('sms_crisis_events').insert({
+            'patient_id': str(patient_id),
+            'source':     source,
+        }).execute()
+        return res.data[0]['id'] if res.data else None
+    except Exception as e:
+        print(f'[db] log_sms_crisis error: {e}')
+        return None
+
+
+def mark_provider_notified(crisis_event_id: str, sms_sid: str | None = None) -> None:
+    """Stamp provider_notified_at on a crisis event after the alert SMS is sent."""
+    try:
+        update = {'provider_notified_at': datetime.utcnow().isoformat()}
+        if sms_sid:
+            update['provider_sms_sid'] = sms_sid
+        supabase_admin.table('sms_crisis_events') \
+            .update(update) \
+            .eq('id', str(crisis_event_id)) \
+            .execute()
+    except Exception as e:
+        print(f'[db] mark_provider_notified error: {e}')
+
+
+def get_sms_crisis_events(patient_id: str, limit: int = 10) -> list:
+    """Return recent crisis events for a patient (for hub flags display)."""
+    try:
+        res = supabase_admin.table('sms_crisis_events') \
+            .select('*') \
+            .eq('patient_id', str(patient_id)) \
+            .order('triggered_at', desc=True) \
+            .limit(limit) \
+            .execute()
+        return res.data or []
+    except Exception as e:
+        print(f'[db] get_sms_crisis_events error: {e}')
+        return []
+
+
+def get_provider_for_patient(patient_id: str) -> dict | None:
+    """Return provider profile (id, phone_number, full_name) for a patient,
+    or None if no active provider relationship exists."""
+    try:
+        rel = supabase_admin.table('provider_patient_relationships') \
+            .select('provider_id') \
+            .eq('patient_id', str(patient_id)) \
+            .eq('status', 'active') \
+            .limit(1) \
+            .execute()
+        if not rel.data:
+            return None
+        provider_id = rel.data[0]['provider_id']
+        prof = supabase_admin.table('profiles') \
+            .select('id, full_name, phone_number') \
+            .eq('id', str(provider_id)) \
+            .single() \
+            .execute()
+        return prof.data or None
+    except Exception as e:
+        print(f'[db] get_provider_for_patient error: {e}')
         return None

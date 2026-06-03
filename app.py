@@ -4131,19 +4131,59 @@ def api_voice_submit(token_str):
 
 @app.route('/api/sms/inbound', methods=['POST'])
 def api_sms_inbound():
-    """Twilio inbound SMS webhook. Handles medication Y/N replies."""
-    from_number = request.form.get('From', '')
+    """Twilio inbound SMS webhook — full 8-priority routing table.
+
+    Priority order (see CLAUDE.md / sms-checkin-design.md):
+      1. Crisis keywords     → patient crisis resources + provider alert
+      2. CRISIS (branch)     → patient crisis resources + provider alert
+      3. Y / N               → medication adherence (if med session pending)
+      4. SYSTEM (branch)     → labeled check-in guide
+      5. ≥4 numbers          → parse as M·E·S·Q·H check-in
+      6. SKIP                → log skip, resolve session
+      7. HELP or ?           → open help branch, suspend current session
+      8. Unrecognised        → context-aware hint or silent ignore
+    """
+    from_number = request.form.get('From', '').strip()
     body        = request.form.get('Body', '').strip()
 
-    taken = _sms.parse_medication_reply(body)
-    if taken is not None and from_number:
-        # Find patient by phone number
-        try:
-            prof_res = db.supabase_admin.table('profiles').select(
-                'id').eq('phone_number', from_number).limit(1).execute()
-            if prof_res.data:
-                patient_id = prof_res.data[0]['id']
-                # Update most recent medication SMS log
+    if not from_number or not body:
+        return _twiml_empty()
+
+    # ── Resolve patient from phone number ─────────────────────────────────────
+    try:
+        prof_res = db.supabase_admin.table('profiles').select(
+            'id, full_name').eq('phone_number', from_number).limit(1).execute()
+        if not prof_res.data:
+            return _twiml_empty()
+        patient_id   = prof_res.data[0]['id']
+        patient_name = prof_res.data[0].get('full_name', 'Your patient')
+    except Exception as e:
+        app.logger.error(f'[sms_inbound] profile lookup error: {e}')
+        return _twiml_empty()
+
+    cleaned = body.strip()
+    upper   = cleaned.upper()
+
+    # ── Priority 1: Crisis keywords (free text) ───────────────────────────────
+    if _sms.detect_crisis_keywords(cleaned):
+        _handle_sms_crisis(patient_id, patient_name, from_number, source='keyword')
+        return _twiml_empty()
+
+    # ── Priority 2: CRISIS (explicit branch reply) ────────────────────────────
+    if upper == 'CRISIS':
+        session = db.get_sms_session(patient_id)
+        if session and session['session_type'] == 'help_pending':
+            _handle_sms_crisis(patient_id, patient_name, from_number, source='help_branch')
+            db.resolve_sms_session(patient_id)
+            # Discard any suspended session — patient needs space, not a re-prompt
+        return _twiml_empty()
+
+    # ── Priority 3: Y / N medication reply ───────────────────────────────────
+    taken = _sms.parse_medication_reply(cleaned)
+    if taken is not None:
+        session = db.get_sms_session(patient_id)
+        if session and session['session_type'] == 'med_pending':
+            try:
                 log_res = db.supabase_admin.table('medication_sms_logs').select(
                     'id').eq('patient_id', patient_id).is_(
                     'replied_at', 'null').order('sent_at', desc=True).limit(1).execute()
@@ -4151,16 +4191,139 @@ def api_sms_inbound():
                     db.supabase_admin.table('medication_sms_logs').update({
                         'replied_at': 'now()',
                         'taken':      taken,
-                        'raw_reply':  body[:200],
+                        'raw_reply':  cleaned[:200],
                     }).eq('id', log_res.data[0]['id']).execute()
-        except Exception as e:
-            app.logger.error(f'[sms_inbound] Error processing reply: {e}')
+                db.resolve_sms_session(patient_id)
+            except Exception as e:
+                app.logger.error(f'[sms_inbound] med reply error: {e}')
+        return _twiml_empty()
 
-    # Always return empty TwiML
+    # ── Priority 4: SYSTEM (help branch — wants check-in guide) ──────────────
+    if upper == 'SYSTEM':
+        session = db.get_sms_session(patient_id)
+        if session and session['session_type'] == 'help_pending':
+            _sms.send_checkin_guide_sms(from_number)
+            # Restore suspended session if there was one
+            suspended = session.get('suspended_session_type')
+            db.resolve_sms_session(patient_id)
+            if suspended:
+                db.set_sms_session(patient_id, suspended)
+        return _twiml_empty()
+
+    # ── Priority 5: ≥4 numbers — check-in reply ───────────────────────────────
+    parsed = _sms.parse_checkin_reply(cleaned)
+    if parsed is not None:
+        session = db.get_sms_session(patient_id)
+        if session and session['session_type'] == 'checkin_pending':
+            try:
+                sleep_hrs = parsed.get('sleep_hours')
+                ext = {
+                    'energy':               parsed['energy'],
+                    'sleep_quality':        parsed['sleep_quality'],
+                    'dissociation':         0,
+                    'dissociation_source':  'sms_default',
+                    'checkin_source':       'sms',
+                }
+                db.create_checkin(
+                    user_id      = patient_id,
+                    mood_score   = parsed['mood'],
+                    stress_score = parsed['stress'],
+                    sleep_hours  = sleep_hrs,
+                    notes        = None,
+                    checkin_type = 'sms',
+                    extended_data= ext,
+                )
+                db.resolve_sms_session(patient_id)
+                mood_int  = int(round(parsed['mood']))
+                energy_int= int(round(parsed['energy']))
+                stress_int= int(round(parsed['stress']))
+                sleep_disp= (f'{sleep_hrs:.1f}' if sleep_hrs is not None
+                             else '—').rstrip('0').rstrip('.')
+                confirm = (
+                    f"✓ Logged — Mood {mood_int} · Energy {energy_int} · "
+                    f"Stress {stress_int} · Sleep {sleep_disp}hrs. Have a good day."
+                )
+                _sms.send_sms(from_number, confirm)
+            except Exception as e:
+                app.logger.error(f'[sms_inbound] checkin write error: {e}')
+        return _twiml_empty()
+
+    # ── Priority 6: SKIP ──────────────────────────────────────────────────────
+    if upper == 'SKIP':
+        db.resolve_sms_session(patient_id)
+        return _twiml_empty()
+
+    # ── Priority 7: HELP or ? ─────────────────────────────────────────────────
+    if upper in ('HELP', '?', 'HELP?'):
+        current = db.get_sms_session(patient_id)
+        suspended = current['session_type'] if current else None
+        db.set_sms_session(patient_id, 'help_pending',
+                           suspended_session_type=suspended)
+        _sms.send_help_branch_sms(from_number)
+        return _twiml_empty()
+
+    # ── Priority 8: Unrecognised — context-aware hint ─────────────────────────
+    session = db.get_sms_session(patient_id)
+    if session:
+        stype = session['session_type']
+        if stype == 'checkin_pending':
+            _sms.send_sms(from_number, _sms.MSG_CHECKIN_PARSE_FAIL)
+        elif stype == 'med_pending':
+            _sms.send_sms(from_number, 'Reply Y if taken, N if skipped.')
+        elif stype == 'help_pending':
+            _sms.send_sms(from_number, 'Reply CRISIS if you need support, or SYSTEM for check-in help.')
+    # No active session → ignore silently
+
+    return _twiml_empty()
+
+
+def _twiml_empty():
+    """Return an empty TwiML response (no outbound message via Twilio Studio)."""
     return app.response_class(
         '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
         mimetype='text/xml',
     )
+
+
+def _handle_sms_crisis(patient_id: str, patient_name: str,
+                        from_number: str, source: str) -> None:
+    """Shared crisis handler: send patient resources, log event, alert provider."""
+    # 1. Send patient crisis resources immediately
+    _sms.send_crisis_sms_to_patient(from_number)
+
+    # 2. Log the event (no patient text stored)
+    event_id = db.log_sms_crisis(patient_id, source=source)
+
+    # 3. Resolve any open session
+    db.resolve_sms_session(patient_id)
+
+    # 4. Alert provider via SMS
+    try:
+        provider = db.get_provider_for_patient(patient_id)
+        if provider and provider.get('phone_number'):
+            result = _sms.send_provider_crisis_alert(
+                provider['phone_number'], patient_name)
+            if event_id and result.get('ok'):
+                db.mark_provider_notified(event_id,
+                                          sms_sid=result.get('sid'))
+    except Exception as e:
+        app.logger.error(f'[sms_inbound] provider alert error: {e}')
+
+    # 5. Insert hub flag so the dashboard and patient hub surface a 🔴 flag
+    try:
+        db.supabase_admin.table('patient_flags').insert({
+            'patient_id':  str(patient_id),
+            'flag_type':   'sms_crisis',
+            'severity':    'urgent',
+            'source':      source,
+            'created_at':  'now()',
+            'description': (
+                f'Patient reached out via SMS ({source.replace("_", " ")}) '
+                f'— immediate check-in recommended.'
+            ),
+        }).execute()
+    except Exception as e:
+        app.logger.error(f'[sms_inbound] hub flag insert error: {e}')
 
 
 @app.route('/api/internal/send-appointment-sms', methods=['POST', 'GET'])

@@ -169,6 +169,22 @@ def send_medication_sms(
 
 # ── Reply parsing ─────────────────────────────────────────────────────────────
 
+# Crisis keywords — any match halts normal processing (patient-facing channel).
+# Aligned with CLAUDE.md §10 Detection list.
+_CRISIS_KEYWORDS = (
+    'suicide', 'suicidal', 'kill myself', 'end my life', 'ending my life',
+    "don't want to live", "dont want to live", "don't want to be alive",
+    "dont want to be alive", 'want to die', 'better off dead',
+    'self-harm', 'self harm', 'hurt myself', 'cut myself',
+)
+
+
+def detect_crisis_keywords(body: str) -> bool:
+    """Return True if body contains any crisis signal phrase."""
+    lower = body.lower()
+    return any(kw in lower for kw in _CRISIS_KEYWORDS)
+
+
 def parse_medication_reply(body: str) -> bool | None:
     """Return True (taken), False (skipped), or None (unrecognised)."""
     cleaned = body.strip().lower()
@@ -177,3 +193,126 @@ def parse_medication_reply(body: str) -> bool | None:
     if cleaned in ('n', 'no', '0', 'skip', 'skipped', 'nope', 'not yet'):
         return False
     return None
+
+
+def parse_checkin_reply(body: str) -> dict | None:
+    """Parse a 5-number SMS check-in reply (M E S Q H).
+
+    Accepts space, comma, or slash-separated values.
+    5th value (sleep hours) may be a float (e.g. 6.5).
+    Returns dict with keys: mood, energy, stress, sleep_quality, sleep_hours
+    or None if the reply cannot be parsed.
+    """
+    import re
+    tokens = re.split(r'[\s,/]+', body.strip())
+    nums = []
+    for t in tokens:
+        try:
+            nums.append(float(t))
+        except ValueError:
+            pass
+    if len(nums) < 4:
+        return None
+
+    def clamp(v):
+        return max(0.0, min(10.0, v))
+
+    return {
+        'mood':          clamp(nums[0]),
+        'energy':        clamp(nums[1]),
+        'stress':        clamp(nums[2]),
+        'sleep_quality': clamp(nums[3]),
+        'sleep_hours':   nums[4] if len(nums) >= 5 else None,
+    }
+
+
+# ── SMS message templates ─────────────────────────────────────────────────────
+
+MSG_CHECKIN_PROMPT = (
+    "CognaSync: Check-in\n"
+    "Mood · Energy · Stress · Sleep quality · Sleep hrs\n"
+    "Reply: 7 8 4 6 6.5 or SKIP"
+)  # 84 chars
+
+MSG_CHECKIN_CONFIRM = (
+    "✓ Logged — Mood {mood} · Energy {energy} · "
+    "Stress {stress} · Sleep {sleep_hours}hrs. Have a good day."
+)
+
+MSG_CHECKIN_PARSE_FAIL = (
+    "Didn't catch that. Reply with 5 numbers:\n"
+    "1 Mood · 2 Energy · 3 Stress · 4 Sleep quality · 5 Sleep hrs\n"
+    "Example: 7 8 4 6 6.5 or SKIP"
+)  # 132 chars
+
+MSG_ENROLLMENT = (
+    "CognaSync: You'll get a check-in text 3x/week. Reply with 5 numbers:\n"
+    "1 Mood (0=low, 10=best)\n"
+    "2 Energy (0=none, 10=high)\n"
+    "3 Stress (0=calm, 10=severe)\n"
+    "4 Sleep quality (0=poor, 10=great)\n"
+    "5 Sleep hours (e.g. 6.5)\n"
+    "Example: 7 8 4 6 6.5 · Reply SKIP to skip."
+)
+
+MSG_HELP_BRANCH = (
+    "CognaSync: Are you reaching out because you're in crisis or need "
+    "emotional support — or do you need help with how to use this system?\n"
+    "Reply CRISIS or SYSTEM"
+)  # 156 chars
+
+MSG_CRISIS_PATIENT = (
+    "You're not alone. Please reach out now:\n"
+    "\U0001f4de 988 — call or text\n"
+    "\U0001f4ac Text HOME to 741741\n"
+    "\U0001f6a8 Emergency — call 911\n"
+    "Your provider has also been notified."
+)
+
+MSG_SYSTEM_GUIDE = (
+    "Check-in guide:\n"
+    "1 Mood (0=low, 10=best)\n"
+    "2 Energy (0=none, 10=high)\n"
+    "3 Stress (0=calm, 10=severe)\n"
+    "4 Sleep quality (0=poor, 10=great)\n"
+    "5 Sleep hours (e.g. 6.5)\n"
+    "Example: 7 8 4 6 6.5"
+)  # 155 chars
+
+MSG_PROVIDER_CRISIS_ALERT = (
+    "CognaSync ALERT: {patient_name} may be in crisis — they reached out "
+    "via SMS. Please check in with them directly."
+)
+
+
+# ── Composed sends ─────────────────────────────────────────────────────────────
+
+def send_crisis_sms_to_patient(to_number: str) -> dict:
+    """Send the patient-facing crisis resources message."""
+    return send_sms(to_number, MSG_CRISIS_PATIENT)
+
+
+def send_help_branch_sms(to_number: str) -> dict:
+    """Send the CRISIS/SYSTEM branch prompt."""
+    return send_sms(to_number, MSG_HELP_BRANCH)
+
+
+def send_checkin_guide_sms(to_number: str) -> dict:
+    """Send the full labeled check-in guide (system help response)."""
+    return send_sms(to_number, MSG_SYSTEM_GUIDE)
+
+
+def send_provider_crisis_alert(provider_number: str, patient_name: str) -> dict:
+    """SMS the provider immediately when a patient crisis signal is received."""
+    body = MSG_PROVIDER_CRISIS_ALERT.format(patient_name=patient_name)
+    return send_sms(provider_number, body)
+
+
+def send_daily_checkin_prompt(to_number: str) -> dict:
+    """Send the short recurring check-in prompt (3x/week)."""
+    return send_sms(to_number, MSG_CHECKIN_PROMPT)
+
+
+def send_enrollment_guide(to_number: str) -> dict:
+    """Send the one-time labeled enrollment message."""
+    return send_sms(to_number, MSG_ENROLLMENT)
