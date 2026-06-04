@@ -1094,6 +1094,8 @@ def provider_summary_print(patient_id):
             )
 
             try:
+                focus_config = db.get_provider_focus_config(user['id'], patient_id)
+
                 if provider_type == 'psychiatrist':
                     result = claude_api.generate_psychiatry_summary(
                         checkins, journals,
@@ -1107,6 +1109,7 @@ def provider_summary_print(patient_id):
                         raw_voice_transcripts=raw_voice_transcripts,
                         patient_name=patient.get('full_name'),
                         engagement_data=engagement_data,
+                        focus_config=focus_config,
                     )
                     chart_data = result.get('chart_data')
                 elif provider_type in ('therapist', 'counselor'):
@@ -1120,6 +1123,7 @@ def provider_summary_print(patient_id):
                         session_context=session_context or [],
                         raw_voice_transcripts=raw_voice_transcripts,
                         engagement_data=engagement_data,
+                        focus_config=focus_config,
                     )
                 else:
                     lexical_data    = db.compute_lexical_diversity(patient_id, days=max(days, 30))
@@ -1140,6 +1144,7 @@ def provider_summary_print(patient_id):
                         session_context=session_context or [],
                         raw_voice_transcripts=raw_voice_transcripts,
                         engagement_data=engagement_data,
+                        focus_config=focus_config,
                     )
                 summary_text = result['text']
             except RuntimeError as e:
@@ -2247,6 +2252,8 @@ def api_provider_therapy_summary(patient_id):
     behavioral = db.get_behavioral_data(patient_id, days=days) if perms.get('advanced_data', True) else {}
     engagement = db.compute_engagement_stats(patient_id, days=days)
 
+    focus_config = db.get_provider_focus_config(user['id'], patient_id)
+
     try:
         result = claude_api.generate_therapy_summary(
             checkin_data=checkins,
@@ -2254,11 +2261,92 @@ def api_provider_therapy_summary(patient_id):
             behavioral_data=behavioral,
             days=days,
             engagement_data=engagement,
+            focus_config=focus_config,
         )
         return jsonify(result), 200
     except RuntimeError as e:
         app.logger.error(f"Therapy summary failed for patient {patient_id}: {e}")
         return jsonify({'error': 'Summary generation failed — please try again.'}), 500
+
+
+# ── Provider Focus Config API ─────────────────────────────────────────────────
+
+@app.route('/api/provider/patient/<patient_id>/focus-config', methods=['GET'])
+def api_get_focus_config(patient_id):
+    """Return the calling provider's active focus config for this patient, if any.
+
+    Also returns all active focus configs across the care team (for the care team tab).
+    Response: {
+        'my_config':    dict | null,
+        'team_configs': list            # all active configs for this patient
+    }
+    """
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+
+    my_config    = db.get_provider_focus_config(user['id'], patient_id)
+    team_configs = db.get_all_focus_configs_for_patient(patient_id)
+    return jsonify({'my_config': my_config, 'team_configs': team_configs}), 200
+
+
+@app.route('/api/provider/patient/<patient_id>/focus-config', methods=['POST'])
+def api_set_focus_config(patient_id):
+    """Create or replace the calling provider's focus config for this patient.
+
+    Body: {
+        'focus_domains': ['suicidality', 'sleep', 'mood'],  # required, non-empty list
+        'notes':         'Starting escitalopram — watch for side effects',  # optional
+        'weeks':         4   # optional, default 4 (1–12)
+    }
+    """
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+
+    body = request.get_json(silent=True) or {}
+    focus_domains = body.get('focus_domains')
+    if not focus_domains or not isinstance(focus_domains, list) or len(focus_domains) == 0:
+        return jsonify({'error': 'focus_domains must be a non-empty list'}), 400
+
+    # Sanitise: strings only, max 10 domains, max 80 chars each
+    focus_domains = [str(d)[:80] for d in focus_domains if str(d).strip()][:10]
+    if not focus_domains:
+        return jsonify({'error': 'focus_domains must contain at least one non-empty string'}), 400
+
+    notes   = str(body.get('notes', '') or '')[:500] or None
+    weeks   = max(1, min(int(body.get('weeks', 4)), 12))
+    role    = user.get('provider_type') or 'provider'
+
+    config = db.set_provider_focus_config(
+        provider_id=user['id'],
+        patient_id=patient_id,
+        focus_domains=focus_domains,
+        notes=notes,
+        set_by_role=role,
+        weeks=weeks,
+    )
+    if not config:
+        return jsonify({'error': 'Failed to save focus config — please try again.'}), 500
+
+    return jsonify({'ok': True, 'config': config}), 200
+
+
+@app.route('/api/provider/patient/<patient_id>/focus-config', methods=['DELETE'])
+def api_clear_focus_config(patient_id):
+    """Delete the calling provider's focus config for this patient."""
+    user, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+
+    ok = db.clear_provider_focus_config(user['id'], patient_id)
+    return jsonify({'ok': ok}), 200 if ok else 500
 
 
 # ── Care Flags API ────────────────────────────────────────────────────────────
@@ -2784,6 +2872,8 @@ def api_provider_generate_summary(patient_id):
             period_start=period_start, period_end=period_end,
         )
 
+        focus_config = db.get_provider_focus_config(user['id'], patient_id)
+
         if provider_type in ('therapist', 'counselor'):
             result = claude_api.generate_therapy_summary(
                 checkins, journals,
@@ -2796,6 +2886,7 @@ def api_provider_generate_summary(patient_id):
                 session_context=session_context or [],
                 raw_voice_transcripts=raw_voice_transcripts or [],
                 engagement_data=engagement_data,
+                focus_config=focus_config,
             )
         elif provider_type == 'psychiatrist':
             _pt_profile = db.supabase_admin.table('profiles').select('full_name').eq('id', patient_id).limit(1).execute()
@@ -2813,6 +2904,7 @@ def api_provider_generate_summary(patient_id):
                 raw_voice_transcripts=raw_voice_transcripts or [],
                 patient_name=_pt_name,
                 engagement_data=engagement_data,
+                focus_config=focus_config,
             )
         else:
             # unknown / None — fall back to Mode C provider brief
@@ -2834,6 +2926,7 @@ def api_provider_generate_summary(patient_id):
                 session_context=session_context or [],
                 raw_voice_transcripts=raw_voice_transcripts or [],
                 engagement_data=engagement_data,
+                focus_config=focus_config,
             )
     except RuntimeError as e:
         return jsonify({'error': str(e)}), 503

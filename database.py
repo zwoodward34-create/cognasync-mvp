@@ -7701,3 +7701,91 @@ def get_provider_for_patient(patient_id: str) -> dict | None:
     except Exception as e:
         print(f'[db] get_provider_for_patient error: {e}')
         return None
+
+
+# ── Provider Focus Config ─────────────────────────────────────────────────────
+
+def set_provider_focus_config(provider_id: str, patient_id: str,
+                               focus_domains: list,
+                               notes: str | None = None,
+                               set_by_role: str | None = None,
+                               weeks: int = 4) -> dict | None:
+    """Create or replace the focus config for this provider-patient pair.
+
+    Uses upsert on the UNIQUE(provider_id, patient_id) constraint so calling
+    this a second time replaces rather than duplicates the record.
+    expires_at is set to `weeks` weeks from now (default 4).
+    """
+    from datetime import timezone
+    expires_at = (datetime.now(timezone.utc) + timedelta(weeks=weeks)).isoformat()
+    data = {
+        'provider_id':    str(provider_id),
+        'patient_id':     str(patient_id),
+        'focus_domains':  focus_domains,
+        'notes':          notes,
+        'set_by_role':    set_by_role,
+        'expires_at':     expires_at,
+    }
+    try:
+        res = supabase_admin.table('provider_focus_configs').upsert(
+            data, on_conflict='provider_id,patient_id'
+        ).execute()
+        return res.data[0] if res.data else None
+    except Exception as e:
+        print(f'[db] set_provider_focus_config error: {e}')
+        return None
+
+
+def get_provider_focus_config(provider_id: str, patient_id: str) -> dict | None:
+    """Return the active focus config for this provider-patient pair, or None.
+
+    Returns None if no config exists or if it has expired.
+    """
+    from datetime import timezone
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        res = supabase_admin.table('provider_focus_configs') \
+            .select('*') \
+            .eq('provider_id', str(provider_id)) \
+            .eq('patient_id',  str(patient_id)) \
+            .gt('expires_at', now) \
+            .limit(1) \
+            .execute()
+        return res.data[0] if res.data else None
+    except Exception as e:
+        print(f'[db] get_provider_focus_config error: {e}')
+        return None
+
+
+def get_all_focus_configs_for_patient(patient_id: str) -> list:
+    """Return all active focus configs for a patient across the whole care team.
+
+    Used by the care team tab to show each provider's current monitoring intent.
+    Each row includes provider name and role via a join on profiles.
+    """
+    from datetime import timezone
+    now = datetime.now(timezone.utc).isoformat()
+    try:
+        res = supabase_admin.table('provider_focus_configs') \
+            .select('*, profiles!provider_focus_configs_provider_id_fkey(full_name, provider_type)') \
+            .eq('patient_id', str(patient_id)) \
+            .gt('expires_at', now) \
+            .execute()
+        return res.data or []
+    except Exception as e:
+        print(f'[db] get_all_focus_configs_for_patient error: {e}')
+        return []
+
+
+def clear_provider_focus_config(provider_id: str, patient_id: str) -> bool:
+    """Delete the focus config for this provider-patient pair (manual clear)."""
+    try:
+        supabase_admin.table('provider_focus_configs') \
+            .delete() \
+            .eq('provider_id', str(provider_id)) \
+            .eq('patient_id',  str(patient_id)) \
+            .execute()
+        return True
+    except Exception as e:
+        print(f'[db] clear_provider_focus_config error: {e}')
+        return False

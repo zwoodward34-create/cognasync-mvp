@@ -739,7 +739,8 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                                  session_context=None,
                                  raw_voice_transcripts=None,
                                  patient_name=None,
-                                 engagement_data=None):
+                                 engagement_data=None,
+                                 focus_config=None):
     """Mode C (Psychiatrist) — medication-first, quantitative-primary brief.
 
     Returns {'status', 'text', 'raw', 'chart_data'} where chart_data contains
@@ -1263,7 +1264,33 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         f"{voice_block}"
     )
 
-    psych_system = _PSYCHIATRY_SYSTEM + psych_system_addon
+    # ── Provider focus config — domain-weighting addon ────────────────────────
+    focus_addon = ''
+    if focus_config and focus_config.get('focus_domains'):
+        domains      = focus_config['focus_domains']
+        fc_notes     = focus_config.get('notes', '')
+        fc_created   = (focus_config.get('created_at') or '')[:10]
+        fc_expires   = (focus_config.get('expires_at')  or '')[:10]
+        fc_role      = focus_config.get('set_by_role') or 'provider'
+        focus_addon  = (
+            f"\n\nPROVIDER FOCUS CONFIGURATION (set {fc_created} by {fc_role}, "
+            f"active until {fc_expires}):\n"
+            f"The treating provider has flagged these domains for enhanced monitoring: "
+            f"{', '.join(domains)}.\n"
+            + (f"Provider notes: {fc_notes}\n" if fc_notes else "")
+            + "Apply the following emphasis rules:\n"
+            "- In ## Flags, lower the threshold for these domains: surface at 🟡 Watch "
+            "anything that would normally be informational-only. If a domain shows any "
+            "notable deviation, flag it even if it does not cross a hard threshold.\n"
+            "- In ## Suggested Discussion Topics, include at least one topic anchored "
+            "to these domains, citing a specific data point.\n"
+            "- In ## Medication (or the most relevant quantitative section), lead with "
+            "data for the focus domains before other metrics.\n"
+            "- Append '(Enhanced monitoring per provider configuration)' as the last "
+            "line of the ## Flags section so the reader understands the emphasis.\n"
+        )
+
+    psych_system = _PSYCHIATRY_SYSTEM + psych_system_addon + focus_addon
     raw   = _call_claude(psych_system, user_content, max_tokens=2000)
     clean = _sanitize_output(raw)
     if clean is None:
@@ -1286,7 +1313,8 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                                   readability_data=None,
                                   session_context=None,
                                   raw_voice_transcripts=None,
-                                  engagement_data=None):
+                                  engagement_data=None,
+                                  focus_config=None):
     """Synthesize check-in and journal data into a pre-appointment summary.
 
     audience='patient'  → humanized, conversational (Mode B)
@@ -2255,6 +2283,29 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         f"{what_worked_section}"
     )
 
+    # ── Provider focus config — domain-weighting addon (provider audience only) ─
+    if audience == 'provider' and focus_config and focus_config.get('focus_domains'):
+        domains    = focus_config['focus_domains']
+        fc_notes   = focus_config.get('notes', '')
+        fc_created = (focus_config.get('created_at') or '')[:10]
+        fc_expires = (focus_config.get('expires_at')  or '')[:10]
+        fc_role    = focus_config.get('set_by_role') or 'provider'
+        summary_system += (
+            f"\n\nPROVIDER FOCUS CONFIGURATION (set {fc_created} by {fc_role}, "
+            f"active until {fc_expires}):\n"
+            f"The treating provider has flagged these domains for enhanced monitoring: "
+            f"{', '.join(domains)}.\n"
+            + (f"Provider notes: {fc_notes}\n" if fc_notes else "")
+            + "Apply the following emphasis rules:\n"
+            "- In the Flags section, lower the threshold for these domains: surface at Watch "
+            "level anything that would normally be informational-only.\n"
+            "- In Suggested Discussion Topics, include at least one topic anchored to these "
+            "domains, citing a specific data point.\n"
+            "- In the Quantitative Summary, lead with data for the focus domains.\n"
+            "- Append '(Enhanced monitoring per provider configuration)' as the last line "
+            "of the Flags section.\n"
+        )
+
     raw = _call_claude(summary_system, user_content, max_tokens=900)   # spec §15: 900 for Mode B/C
     clean = _sanitize_output(raw)
     if clean is None:
@@ -2271,7 +2322,8 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
                               safety_flags=None, substance_flags=None,
                               session_context=None,
                               raw_voice_transcripts=None,
-                              engagement_data=None):
+                              engagement_data=None,
+                              focus_config=None):
     """Therapy-weighted Mode C summary for therapists and counselors.
 
     Leads with journal themes and behavioral patterns (social quality, coping,
@@ -2800,6 +2852,30 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         f"{therapy_session_section}"
         f"{therapy_voice_block}"
     )
+
+    # ── Provider focus config — domain-weighting addon ────────────────────────
+    if focus_config and focus_config.get('focus_domains'):
+        domains    = focus_config['focus_domains']
+        fc_notes   = focus_config.get('notes', '')
+        fc_created = (focus_config.get('created_at') or '')[:10]
+        fc_expires = (focus_config.get('expires_at')  or '')[:10]
+        fc_role    = focus_config.get('set_by_role') or 'provider'
+        summary_system += (
+            f"\n\nPROVIDER FOCUS CONFIGURATION (set {fc_created} by {fc_role}, "
+            f"active until {fc_expires}):\n"
+            f"The treating provider has flagged these domains for enhanced monitoring: "
+            f"{', '.join(domains)}.\n"
+            + (f"Provider notes: {fc_notes}\n" if fc_notes else "")
+            + "Apply the following emphasis rules:\n"
+            "- In **Flags**, lower the threshold for these domains: surface at Watch level "
+            "anything that would normally be informational-only.\n"
+            "- In **Suggested Discussion Topics**, include at least one topic anchored "
+            "to these domains, citing a specific data point.\n"
+            "- In **Behavioral Patterns** (or the most relevant section), lead with data "
+            "for the focus domains before other metrics.\n"
+            "- Append '(Enhanced monitoring per provider configuration)' as the last line "
+            "of the **Flags** section.\n"
+        )
 
     raw = _call_claude(summary_system, user_content, max_tokens=900)   # spec §15: 900 for Mode B/C
     clean = _sanitize_output(raw)
