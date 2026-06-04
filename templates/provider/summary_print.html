@@ -274,6 +274,22 @@
     .md-table th, .md-table td { border: 1px solid #d1d5db; padding: 4px 8px; text-align: left; }
     .md-table thead { background: #f3f4f6; font-weight: 600; }
 
+    /* ── Flags block — visually distinct from regular sections ── */
+    .summary-body h2.flags-header {
+      color: #b91c1c;
+      border-bottom-color: #fca5a5;
+    }
+
+    /* ── Session intelligence compact entries ── */
+    .summary-body p.session-entry {
+      background: #f9fafb;
+      border-left: 3px solid var(--border);
+      padding: 6px 10px;
+      margin-bottom: 8px;
+      font-size: 10.5pt;
+      line-height: 1.6;
+    }
+
     /* ── Print styles ── */
     @media print {
       .period-selector { display: none !important; }
@@ -481,7 +497,12 @@ function changePeriod(days) {
 
       // Heading
       const hm = line.match(/^(#{1,3})\s+(.+)/);
-      if (hm) { out.push(`<h2>${hm[2].trim()}</h2>`); i++; continue; }
+      if (hm) {
+        const headText = hm[2].trim();
+        const isFlagsHead = /flag/i.test(headText);
+        out.push(`<h2${isFlagsHead ? ' class="flags-header"' : ''}>${headText}</h2>`);
+        i++; continue;
+      }
 
       // List item
       if (/^[-•]\s+/.test(line)) {
@@ -496,6 +517,14 @@ function changePeriod(days) {
 
       // Blank line
       if (!line.trim()) { out.push(''); i++; continue; }
+
+      // Session entry: bold line starting with a date or "20XX-"
+      if (/^\*\*\d{4}-/.test(line)) {
+        // Flush current paragraph, emit as session entry, open new paragraph
+        const content = line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+        out.push('</p><p class="session-entry">' + content + '</p><p>');
+        i++; continue;
+      }
 
       // Normal paragraph line
       out.push(line.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>'));
