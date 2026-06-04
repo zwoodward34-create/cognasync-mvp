@@ -614,7 +614,9 @@ _PSYCHIATRY_SYSTEM = (
     "- Stim Load: avg X/10 | days ≥7: N | days ≥9: N\n"
     "- Caffeine: range and avg on logged days if available\n"
     "- If fatigue, crash, or irritability symptoms are logged on high-stim-load days, note the co-occurrence "
-    "with specific date and values. Do not infer cause.\n"
+    "with specific date and values. Do not infer cause. "
+    "Only cite days where the symptom was explicitly logged — do not speculate about days where it may have "
+    "occurred but was not recorded.\n"
     "- Do NOT advise changes. Do NOT comment on whether regimen is adequate.\n\n"
     "## Core Stability Metrics\n"
     "Present as a compact 4-row table. Include exactly:\n"
@@ -804,7 +806,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
             'sleep_hours':      sleep,
             'stability_score':  scores.get('stability_score'),
             'crash_risk':       scores.get('crash_risk'),
-            'ns_load':          scores.get('nervous_system_load'),
+            'nervous_system_load': scores.get('nervous_system_load'),
             'sleep_disruption': scores.get('sleep_disruption'),
             'stim_load':        stim,
             'mood_distortion':  scores.get('mood_distortion'),
@@ -845,7 +847,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
     sd_vals    = [v for v in chart_data.get('sleep_disruption', []) if v is not None]
 
     # Nervous System Load per check-in row (already computed by _compute_checkin_scores)
-    ns_load_vals = [float(r['ns_load']) for r in checkin_rows if r.get('ns_load') is not None]
+    ns_load_vals = [float(r['nervous_system_load']) for r in checkin_rows if r.get('nervous_system_load') is not None]
 
     # Mood Distortion: avg |reported mood - stability_score| across paired days
     distortion_vals = []
