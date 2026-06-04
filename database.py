@@ -5620,6 +5620,428 @@ def store_session_features(
         return False
 
 
+# ═══════════════════════════════════════════════════════════════════════════
+# VOICE BASELINE — Three-phase individual baseline lifecycle
+#
+# Phase 1 (anchor): patient's first recording in a calm, regulated state.
+# Phase 2 (training): next 5 qualifying recordings spread over >= 14 days.
+# Phase 3 (standard): all subsequent recordings, compared against baseline.
+#
+# See voice_baseline_schema.sql for the voice_baselines table definition and
+# the voice_recording_role column on clinical_sessions.
+# ═══════════════════════════════════════════════════════════════════════════
+
+import math as _math
+
+_BASELINE_TRAINING_MIN      = 5
+_BASELINE_TRAINING_MIN_DAYS = 14
+_BASELINE_QUALITY_GATE      = {'good', 'fair'}
+_PHASE2_GATES = {
+    'articulation_rate_sps': 0.35,
+    'f0_cv':                 0.45,
+    'pause_ratio':           0.55,
+}
+_DEVIATION_Z_THRESHOLD   = 1.5
+_DEVIATION_PCT_THRESHOLD = 0.20
+_BASELINE_STALE_DAYS     = 180
+
+
+def get_voice_baseline(patient_id: str) -> dict | None:
+    """Return the active voice_baselines row for this patient, or None."""
+    try:
+        result = supabase_admin.table('voice_baselines') \
+            .select('*') \
+            .eq('patient_id', patient_id) \
+            .in_('status', ['establishing', 'established', 'stale']) \
+            .limit(1) \
+            .execute()
+        return result.data[0] if result.data else None
+    except Exception as e:
+        print(f"Error in get_voice_baseline: {e}")
+        return None
+
+
+def determine_voice_recording_role(patient_id: str) -> str:
+    """
+    Determine the voice_recording_role for a new voice memo from this patient.
+    Phase 1 (anchor): no baseline exists.
+    Phase 2 (baseline training): baseline is 'establishing'.
+    Phase 3 (standard): baseline is 'established' or 'stale'.
+    """
+    baseline = get_voice_baseline(patient_id)
+    if baseline is None:
+        return 'voice_memo_anchor'
+    if baseline['status'] == 'establishing':
+        return 'voice_memo_baseline'
+    return 'voice_memo_standard'
+
+
+def create_voice_baseline_from_anchor(
+    patient_id: str,
+    session_id: str,
+    recorded_at: str,
+    acoustic_features: dict,
+) -> str | None:
+    """
+    Phase 1: create the voice_baselines row from an anchor recording.
+    Cross-references check-in Stability Score to verify the patient's state.
+    Returns new baseline UUID or None on failure.
+    """
+    try:
+        stability_score, state_verified = _verify_anchor_state(patient_id, recorded_at)
+        m = acoustic_features.get('measured') or {}
+        row = {
+            'patient_id':             patient_id,
+            'status':                 'establishing',
+            'anchor_session_id':      session_id,
+            'anchor_recorded_at':     recorded_at,
+            'anchor_stability_score': stability_score,
+            'anchor_state_verified':  state_verified,
+            'training_recordings_count': 0,
+            'articulation_rate_mean': m.get('articulation_rate_sps'),
+            'articulation_rate_sd':   0.0,
+            'f0_cv_mean':             m.get('f0_cv'),
+            'f0_cv_sd':               0.0,
+            'pause_ratio_mean':       m.get('pause_ratio'),
+            'pause_ratio_sd':         0.0,
+            'f0_mean_hz_mean':        m.get('f0_mean_hz'),
+            'f0_mean_hz_sd':          0.0,
+            'rms_mean_mean':          m.get('rms_mean'),
+            'rms_mean_sd':            0.0,
+            'rms_cv_mean':            m.get('rms_cv'),
+            'rms_cv_sd':              0.0,
+            'hnr_db_mean':            m.get('hnr_db'),
+            'hnr_db_sd':              0.0 if m.get('hnr_db') is not None else None,
+            'jitter_local_mean':      m.get('jitter_local'),
+            'jitter_local_sd':        0.0 if m.get('jitter_local') is not None else None,
+            'shimmer_local_mean':     m.get('shimmer_local'),
+            'shimmer_local_sd':       0.0 if m.get('shimmer_local') is not None else None,
+        }
+        result = supabase_admin.table('voice_baselines').insert(row).execute()
+        if result.data:
+            _tag_session_voice_role(session_id, 'voice_memo_anchor')
+            return str(result.data[0]['id'])
+        return None
+    except Exception as e:
+        print(f"Error in create_voice_baseline_from_anchor: {e}")
+        return None
+
+
+def _verify_anchor_state(patient_id: str, recorded_at: str) -> tuple:
+    """
+    Look up Stability Score on the anchor recording date.
+    Returns (stability_score, verified). verified=True if score >= 7.0.
+    """
+    try:
+        recording_date = recorded_at[:10]
+        result = supabase_admin.table('checkins') \
+            .select('stability_score') \
+            .eq('user_id', patient_id) \
+            .eq('check_in_date', recording_date) \
+            .limit(1) \
+            .execute()
+        if not result.data:
+            return None, False
+        score = result.data[0].get('stability_score')
+        if score is None:
+            return None, False
+        return float(score), float(score) >= 7.0
+    except Exception as e:
+        print(f"Error in _verify_anchor_state: {e}")
+        return None, False
+
+
+def add_baseline_training_recording(
+    patient_id: str,
+    session_id: str,
+    recorded_at: str,
+    acoustic_features: dict,
+) -> tuple:
+    """
+    Phase 2: attempt to add this recording to the training window.
+    Applies quality gate and anchor-deviation gate before accepting.
+    Returns (voice_recording_role, promoted_to_established).
+    """
+    baseline = get_voice_baseline(patient_id)
+    if baseline is None or baseline['status'] != 'establishing':
+        return 'voice_memo_standard', False
+
+    quality = acoustic_features.get('quality', 'poor')
+    if quality not in _BASELINE_QUALITY_GATE:
+        _tag_session_voice_role(session_id, 'voice_memo_excluded')
+        return 'voice_memo_excluded', False
+
+    if not _passes_anchor_deviation_gate(acoustic_features, baseline):
+        _tag_session_voice_role(session_id, 'voice_memo_excluded')
+        return 'voice_memo_excluded', False
+
+    n = baseline['training_recordings_count'] + 2   # +1 anchor, +1 this
+    updates = _welford_update_baseline(baseline, acoustic_features.get('measured') or {}, n)
+
+    anchor_dt   = _parse_baseline_dt(baseline.get('anchor_recorded_at'))
+    recorded_dt = _parse_baseline_dt(recorded_at)
+    span_days   = (recorded_dt - anchor_dt).days if anchor_dt and recorded_dt else 0
+
+    new_count = baseline['training_recordings_count'] + 1
+    promoted  = new_count >= _BASELINE_TRAINING_MIN and span_days >= _BASELINE_TRAINING_MIN_DAYS
+    updates.update({
+        'training_recordings_count': new_count,
+        'training_span_days':        span_days,
+        'last_baseline_at':          recorded_at,
+        'status':                    'established' if promoted else 'establishing',
+    })
+
+    try:
+        supabase_admin.table('voice_baselines') \
+            .update(updates) \
+            .eq('id', baseline['id']) \
+            .execute()
+        _tag_session_voice_role(session_id, 'voice_memo_baseline')
+        return 'voice_memo_baseline', promoted
+    except Exception as e:
+        print(f"Error in add_baseline_training_recording: {e}")
+        return 'voice_memo_excluded', False
+
+
+def _passes_anchor_deviation_gate(acoustic_features: dict, baseline: dict) -> bool:
+    """Returns True if key features are within gate thresholds of the anchor mean."""
+    m = acoustic_features.get('measured') or {}
+    for feat_key, (bl_key, threshold) in {
+        'articulation_rate_sps': ('articulation_rate_mean', _PHASE2_GATES['articulation_rate_sps']),
+        'f0_cv':                 ('f0_cv_mean',             _PHASE2_GATES['f0_cv']),
+        'pause_ratio':           ('pause_ratio_mean',       _PHASE2_GATES['pause_ratio']),
+    }.items():
+        current = m.get(feat_key)
+        bl_val  = baseline.get(bl_key)
+        if current is None or bl_val is None or bl_val == 0:
+            continue
+        if abs(current - bl_val) / abs(bl_val) > threshold:
+            return False
+    return True
+
+
+def _welford_update_baseline(baseline: dict, measured: dict, n: int) -> dict:
+    """Update baseline means and SDs using Welford's online algorithm."""
+    feature_pairs = [
+        ('articulation_rate_sps', 'articulation_rate_mean', 'articulation_rate_sd'),
+        ('f0_cv',                 'f0_cv_mean',             'f0_cv_sd'),
+        ('pause_ratio',           'pause_ratio_mean',       'pause_ratio_sd'),
+        ('f0_mean_hz',            'f0_mean_hz_mean',        'f0_mean_hz_sd'),
+        ('rms_mean',              'rms_mean_mean',          'rms_mean_sd'),
+        ('rms_cv',                'rms_cv_mean',            'rms_cv_sd'),
+        ('hnr_db',                'hnr_db_mean',            'hnr_db_sd'),
+        ('jitter_local',          'jitter_local_mean',      'jitter_local_sd'),
+        ('shimmer_local',         'shimmer_local_mean',     'shimmer_local_sd'),
+    ]
+    updates = {}
+    for meas_key, mean_key, sd_key in feature_pairs:
+        new_val  = measured.get(meas_key)
+        old_mean = baseline.get(mean_key)
+        old_sd   = baseline.get(sd_key) or 0.0
+        if new_val is None or old_mean is None:
+            continue
+        new_mean = old_mean + (new_val - old_mean) / n
+        M2_old   = (old_sd ** 2) * max(n - 2, 0)
+        M2_new   = M2_old + (new_val - old_mean) * (new_val - new_mean)
+        new_sd   = _math.sqrt(M2_new / (n - 1)) if n > 1 else 0.0
+        updates[mean_key] = round(new_mean, 6)
+        updates[sd_key]   = round(new_sd,   6)
+    return updates
+
+
+def compute_baseline_deviation(acoustic_features: dict, baseline: dict) -> str | None:
+    """
+    Phase 3: compute the baseline_deviation string for a standard recording.
+    Returns None if no features exceed both z-score and percent thresholds.
+    Language follows CLAUDE.md §24 — factual, no clinical interpretation.
+    """
+    if baseline is None or baseline.get('status') not in ('established', 'stale'):
+        return None
+
+    m = acoustic_features.get('measured') or {}
+    feature_defs = [
+        ('articulation_rate_sps', 'articulation_rate_mean', 'articulation_rate_sd',
+         'Articulation rate', 'slower than', 'faster than'),
+        ('f0_cv', 'f0_cv_mean', 'f0_cv_sd',
+         'Pitch variability', 'lower than', 'higher than'),
+        ('pause_ratio', 'pause_ratio_mean', 'pause_ratio_sd',
+         'Pause ratio', 'below', 'above'),
+        ('f0_mean_hz', 'f0_mean_hz_mean', 'f0_mean_hz_sd',
+         'Mean pitch', 'lower than', 'higher than'),
+        ('hnr_db', 'hnr_db_mean', 'hnr_db_sd',
+         'Harmonic quality (HNR)', 'reduced from', 'elevated above'),
+    ]
+    parts = []
+    for meas_key, mean_key, sd_key, label, dir_down, dir_up in feature_defs:
+        current = m.get(meas_key)
+        bl_mean = baseline.get(mean_key)
+        bl_sd   = baseline.get(sd_key)
+        if current is None or bl_mean is None or bl_mean == 0:
+            continue
+        pct_dev = (current - bl_mean) / abs(bl_mean)
+        z_score = (current - bl_mean) / bl_sd if bl_sd and bl_sd > 0 else 0.0
+        if abs(z_score) >= _DEVIATION_Z_THRESHOLD and abs(pct_dev) >= _DEVIATION_PCT_THRESHOLD:
+            direction = dir_down if current < bl_mean else dir_up
+            parts.append(
+                f'{label} {abs(pct_dev):.0%} {direction} baseline '
+                f'({abs(z_score):.1f} SD from baseline mean)'
+            )
+    if not parts:
+        return None
+    total = (baseline.get('training_recordings_count') or 0) + 1
+    return '; '.join(parts) + f'. Based on {total} baseline recordings.'
+
+
+def flag_baseline_stale(patient_id: str, reason: str,
+                         medication_event_id: str | None = None) -> bool:
+    """Flag the active baseline as stale. Preserves historical data."""
+    try:
+        payload = {
+            'status':           'stale',
+            'stale_reason':     reason,
+            'stale_flagged_at': datetime.utcnow().isoformat(),
+        }
+        if medication_event_id:
+            payload['stale_medication_event_id'] = medication_event_id
+        supabase_admin.table('voice_baselines').update(payload) \
+            .eq('patient_id', patient_id) \
+            .in_('status', ['establishing', 'established']) \
+            .execute()
+        return True
+    except Exception as e:
+        print(f"Error in flag_baseline_stale: {e}")
+        return False
+
+
+def check_medication_event_for_baseline_impact(
+    patient_id: str, medication_event_id: str, event_type: str
+) -> None:
+    """
+    Call from medication event ingestion. Flags baseline stale on dose changes,
+    new medications, or discontinuations. Timing shifts alone do not trigger this.
+    """
+    if event_type in ('dose_change', 'new_medication', 'discontinued'):
+        baseline = get_voice_baseline(patient_id)
+        if baseline and baseline['status'] in ('establishing', 'established'):
+            flag_baseline_stale(patient_id, reason='medication_change',
+                                medication_event_id=medication_event_id)
+
+
+def get_voice_baseline_status_summary(patient_id: str) -> dict:
+    """Provider-facing summary of the patient's baseline status for the hub template."""
+    baseline = get_voice_baseline(patient_id)
+    if baseline is None:
+        return {
+            'has_baseline': False,
+            'status': 'none',
+            'anchor_verified': False,
+            'anchor_date': None,
+            'recordings_in_baseline': 0,
+            'training_progress': None,
+            'stale_reason': None,
+            'notice': (
+                'No voice baseline established. '
+                'Patient has not yet completed a Phase 1 anchor recording.'
+            ),
+        }
+
+    status    = baseline['status']
+    n_train   = baseline.get('training_recordings_count') or 0
+    span_days = baseline.get('training_span_days') or 0
+    anchor_date = (baseline.get('anchor_recorded_at') or '')[:10] or None
+
+    notice = None
+    if status == 'establishing':
+        notice = (
+            f'Voice baseline in progress: {n_train} of {_BASELINE_TRAINING_MIN} '
+            f'training recordings collected over {span_days} of {_BASELINE_TRAINING_MIN_DAYS} days. '
+            f'Acoustic comparisons will activate once the baseline is established.'
+        )
+    elif status == 'stale':
+        reason_map = {
+            'medication_change': 'a medication change',
+            'time_elapsed':      f'more than {_BASELINE_STALE_DAYS} days without re-baselining',
+            'manual_reset':      'a manual reset',
+        }
+        reason_text = reason_map.get(baseline.get('stale_reason'), 'an unknown reason')
+        notice = (
+            f'Voice baseline flagged as potentially outdated due to {reason_text}. '
+            f'Acoustic comparisons are paused until the patient submits a new anchor recording.'
+        )
+    elif not baseline.get('anchor_state_verified'):
+        notice = (
+            f'Note: anchor recording state is unverified — no check-in data was available '
+            f'for {anchor_date}. Acoustic comparisons are active but the anchor\'s '
+            f'regulated state is not confirmed by check-in data.'
+        )
+
+    return {
+        'has_baseline':           True,
+        'status':                 status,
+        'anchor_verified':        baseline.get('anchor_state_verified', False),
+        'anchor_date':            anchor_date,
+        'recordings_in_baseline': n_train + 1,
+        'training_progress': (
+            f'{n_train} of {_BASELINE_TRAINING_MIN} recordings '
+            f'({span_days} of {_BASELINE_TRAINING_MIN_DAYS} days)'
+        ),
+        'stale_reason': baseline.get('stale_reason'),
+        'notice':       notice,
+    }
+
+
+def _tag_session_voice_role(session_id: str, role: str) -> None:
+    """Update clinical_sessions.voice_recording_role for a voice memo session."""
+    try:
+        supabase_admin.table('clinical_sessions') \
+            .update({'voice_recording_role': role}) \
+            .eq('id', session_id) \
+            .execute()
+    except Exception as e:
+        print(f"Error tagging session voice role ({session_id} → {role}): {e}")
+
+
+def _parse_baseline_dt(value):
+    """Parse an ISO datetime string, returning None on failure."""
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
+    except (ValueError, AttributeError):
+        return None
+
+
+def get_patients_needing_anchor_recording() -> list:
+    """
+    Return active patients with no voice_baselines row at all.
+    Used by the SMS trigger to send the baseline anchor prompt on their
+    next scheduled voice SMS day.
+    Returns [{patient_id, phone}, ...]
+    """
+    try:
+        all_baselines = supabase_admin.table('voice_baselines').select('patient_id').execute()
+        has_baseline  = {r['patient_id'] for r in (all_baselines.data or [])}
+
+        result = supabase_admin.table('checkin_schedules') \
+            .select('patient_id, patient_profiles!inner(phone_number)') \
+            .execute()
+
+        patients = []
+        for row in (result.data or []):
+            pid = row['patient_id']
+            if pid in has_baseline:
+                continue
+            profile = row.get('patient_profiles') or {}
+            phone   = profile.get('phone_number')
+            if not phone:
+                continue
+            patients.append({'patient_id': pid, 'phone': phone})
+        return patients
+    except Exception as e:
+        print(f"Error in get_patients_needing_anchor_recording: {e}")
+        return []
+
+
 def get_clinical_sessions_for_period(
     patient_id: str,
     period_start: str | None = None,

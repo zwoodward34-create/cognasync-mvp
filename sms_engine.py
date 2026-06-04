@@ -51,6 +51,20 @@ DEFAULT_VOICE_PROMPTS = {
     ),
 }
 
+# ── Baseline anchor prompt ────────────────────────────────────────────────────
+# Sent to patients who have not yet completed a Phase 1 anchor recording.
+# Instructions are explicit: quiet environment, calm state, ~90 seconds, natural
+# speech — these conditions matter for baseline validity.
+BASELINE_ANCHOR_VOICE_PROMPT = (
+    "We'd like to record your voice baseline — a short reference recording we use "
+    "to personalize your acoustic tracking going forward.\n\n"
+    "When you're ready: find a quiet spot, take a moment to settle, then press "
+    "record and talk naturally for about 90 seconds. Tell us about something you've "
+    "enjoyed recently, or whatever's on your mind — there are no right answers. "
+    "Speak at your normal volume and pace. This recording works best when you're "
+    "feeling calm and relaxed."
+)
+
 
 # ── Core send ─────────────────────────────────────────────────────────────────
 

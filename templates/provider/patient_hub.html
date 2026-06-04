@@ -1600,6 +1600,23 @@
   </div>
 
   <!-- ── Voice Recording Data ───────────────────────────────────────────────── -->
+  {% if voice_baseline_status and voice_baseline_status.notice %}
+  <div style="margin:0 0 6px 0;padding:10px 14px;border-radius:7px;font-size:0.79rem;line-height:1.45;
+    {% if voice_baseline_status.status == 'none' %}background:#f0f4ff;border:1px solid #c7d4f7;color:#3a4a8a;
+    {% elif voice_baseline_status.status == 'establishing' %}background:#fffbea;border:1px solid #f5e07a;color:#7a6200;
+    {% elif voice_baseline_status.status == 'stale' %}background:#fff4ec;border:1px solid #f5c5a0;color:#8a4200;
+    {% else %}background:#f0f7f2;border:1px solid #b0d9bc;color:#1e5c2e;{% endif %}">
+    <span style="font-weight:600;">
+      {% if voice_baseline_status.status == 'none' %}🎙 Voice Baseline: Not Started
+      {% elif voice_baseline_status.status == 'establishing' %}🎙 Voice Baseline: In Progress
+      {% elif voice_baseline_status.status == 'stale' %}⚠ Voice Baseline: Outdated
+      {% else %}✓ Voice Baseline Active
+        {% if not voice_baseline_status.anchor_verified %} (anchor unverified){% endif %}
+      {% endif %}
+    </span>
+    — {{ voice_baseline_status.notice }}
+  </div>
+  {% endif %}
   <div class="hub-section collapsed" id="section-voice">
     <div class="hub-section-hdr" data-toggle="voice">
       <div class="hub-section-hdr-left">

@@ -972,6 +972,8 @@ def provider_patient_hub(patient_id):
             'date':       (recent_ci.get('checkin_date') or '')[:10],
         }
 
+    voice_baseline_status = db.get_voice_baseline_status_summary(patient_id)
+
     return render_template(
         'provider/patient_hub.html',
         user=user,
@@ -986,6 +988,7 @@ def provider_patient_hub(patient_id):
         care_team=care_team or {'active': [], 'pending': []},
         next_appt=next_appt,
         risk_snap=risk_snap,
+        voice_baseline_status=voice_baseline_status,
     )
 
 
@@ -4062,32 +4065,8 @@ def api_voice_submit(token_str):
                     'processing_status': 'processing',
                 }).eq('id', voice_note_id).execute()
 
-                # 2. Semantic extraction via Claude
-                population_flags = db.get_patient_population_flags(patient_id) or {}
-                extraction = extract_features(
-                    transcript_text=transcript_text,
-                    session_date=_session_date_snapshot,
-                    session_type='voice_note',
-                    population_flags=population_flags,
-                )
-
-                # 3. Acoustic extraction (non-fatal)
-                try:
-                    acoustic_result = _run_acoustic_extraction(
-                        file_bytes=_audio_bytes_snapshot,
-                        filename='voice_note.webm',
-                        session_id=str(voice_note_id),
-                        session_date=_session_date_snapshot,
-                    )
-                    if acoustic_result:
-                        scores = extraction.setdefault('scores', {})
-                        scores['acoustic_features'] = acoustic_result  # full dict: {vocabulary, raw, affect}
-                        if acoustic_result.get('affect'):
-                            scores['affect_dimensions'] = acoustic_result['affect']
-                except Exception as ae:
-                    app.logger.warning(f'[voice] Acoustic extraction skipped: {ae}')
-
-                # 4. Create clinical_sessions row so brief generation can find it
+                # 2. Create clinical_sessions row early so baseline lifecycle has
+                # a session_id to tag. transcript_raw filled in after transcription.
                 provider_id_for_session = tok.get('provider_id')
                 session_id = db.store_clinical_session(
                     provider_id=provider_id_for_session,
@@ -4097,6 +4076,40 @@ def api_voice_submit(token_str):
                     transcript_raw=transcript_text,
                     transcript_source='voice_note',
                 )
+
+                # 3. Acoustic extraction (non-fatal) + baseline lifecycle
+                acoustic_result = None
+                try:
+                    acoustic_result = _run_acoustic_extraction(
+                        file_bytes=_audio_bytes_snapshot,
+                        filename='voice_note.webm',
+                        session_id=str(session_id or voice_note_id),
+                        session_date=_session_date_snapshot,
+                    )
+                    if acoustic_result and session_id:
+                        # Determine baseline phase and run lifecycle
+                        from audio_engine import _run_baseline_lifecycle as _rbl
+                        voice_recording_role = db.determine_voice_recording_role(patient_id)
+                        _rbl(db, patient_id, session_id, _session_date_snapshot,
+                             acoustic_result, voice_recording_role)
+                except Exception as ae:
+                    app.logger.warning(f'[voice] Acoustic/baseline step skipped: {ae}')
+
+                # 4. Semantic extraction via Claude
+                population_flags = db.get_patient_population_flags(patient_id) or {}
+                extraction = extract_features(
+                    transcript_text=transcript_text,
+                    session_date=_session_date_snapshot,
+                    session_type='voice_note',
+                    population_flags=population_flags,
+                )
+
+                # Merge acoustic features into extraction scores
+                if acoustic_result:
+                    scores = extraction.setdefault('scores', {})
+                    scores['acoustic_features'] = acoustic_result
+                    if acoustic_result.get('affect'):
+                        scores['affect_dimensions'] = acoustic_result['affect']
 
                 if session_id:
                     db.store_session_features(
@@ -4973,14 +4986,22 @@ def internal_trigger_voice_sms():
     base_url = os.environ.get('APP_URL', '').rstrip('/')
     patients = db.get_patients_due_voice_sms()
 
+    # Patients with no baseline yet get the anchor prompt regardless of schedule
+    anchor_needed = {p['patient_id'] for p in db.get_patients_needing_anchor_recording()}
+
     triggered = 0
     skipped = 0
 
     for patient in patients:
+        needs_anchor = patient['patient_id'] in anchor_needed
+        voice_prompt = (
+            _sms.BASELINE_ANCHOR_VOICE_PROMPT if needs_anchor
+            else patient.get('voice_prompt', 'How have you been feeling this week?')
+        )
         token = db.create_sms_token(
             patient_id=patient['patient_id'],
             flow_type='voice',
-            metadata={'source': 'standalone_weekly'},
+            metadata={'source': 'standalone_weekly', 'is_baseline_anchor': needs_anchor},
             ttl_hours=48,
         )
         if not token:
@@ -4994,7 +5015,7 @@ def internal_trigger_voice_sms():
             to_phone=patient['phone'],
             parameters={
                 'provider_name': patient.get('provider_name', 'your provider'),
-                'voice_prompt':  patient.get('voice_prompt', 'How have you been feeling this week?'),
+                'voice_prompt':  voice_prompt,
                 'voice_link':    voice_link,
             },
         )

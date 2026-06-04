@@ -464,6 +464,62 @@ def _background_process_audio(
             pass
 
 
+def _run_baseline_lifecycle(db, patient_id, session_id, session_date,
+                             acoustic_result, voice_recording_role):
+    """
+    Branch on voice_recording_role to create, update, or compare against baseline.
+    Populates acoustic_result['vocabulary']['baseline_deviation'] for Phase 3.
+    Non-fatal — failures are logged but do not abort the pipeline.
+    """
+    raw_features = acoustic_result.get('raw') or {}
+    vocab        = acoustic_result.get('vocabulary') or {}
+    recorded_at  = f'{session_date}T00:00:00'
+
+    try:
+        if voice_recording_role == 'voice_memo_anchor':
+            quality = raw_features.get('quality', 'poor')
+            if quality in ('good', 'fair'):
+                db.create_voice_baseline_from_anchor(
+                    patient_id=patient_id,
+                    session_id=session_id,
+                    recorded_at=recorded_at,
+                    acoustic_features=raw_features,
+                )
+                logger.info("Voice baseline anchor created: patient=%s session=%s quality=%s",
+                            patient_id, session_id, quality)
+            else:
+                db._tag_session_voice_role(session_id, 'voice_memo_excluded')
+                logger.warning(
+                    "Anchor excluded — quality too low (%s): patient=%s session=%s",
+                    quality, patient_id, session_id,
+                )
+
+        elif voice_recording_role == 'voice_memo_baseline':
+            role, promoted = db.add_baseline_training_recording(
+                patient_id=patient_id,
+                session_id=session_id,
+                recorded_at=recorded_at,
+                acoustic_features=raw_features,
+            )
+            if promoted:
+                logger.info("Voice baseline ESTABLISHED: patient=%s", patient_id)
+            elif role == 'voice_memo_excluded':
+                logger.info("Phase 2 recording excluded: patient=%s session=%s", patient_id, session_id)
+
+        elif voice_recording_role == 'voice_memo_standard':
+            baseline = db.get_voice_baseline(patient_id)
+            if baseline and baseline.get('status') in ('established', 'stale'):
+                deviation = db.compute_baseline_deviation(raw_features, baseline)
+                if deviation:
+                    vocab['baseline_deviation'] = deviation
+                    acoustic_result['vocabulary'] = vocab
+                    logger.info("Baseline deviation computed: session=%s", session_id)
+            db._tag_session_voice_role(session_id, 'voice_memo_standard')
+
+    except Exception as e:
+        logger.warning("Baseline lifecycle error (non-fatal): session=%s error=%s", session_id, e)
+
+
 def _run_audio_pipeline(db, extract_features, session_id, patient_id,
                          file_bytes, filename, session_date, session_type):
     """Inner pipeline extracted so the outer function can wrap it with a safety net."""
@@ -474,6 +530,18 @@ def _run_audio_pipeline(db, extract_features, session_id, patient_id,
     # Result merged into extraction dict so store_session_features persists it.
     acoustic_result = _run_acoustic_extraction(file_bytes, filename,
                                                session_id, session_date)
+
+    # ── Baseline lifecycle (voice memos only) ──────────────────────────────
+    # Determines Phase 1/2/3, creates/updates baseline, and populates
+    # baseline_deviation in the acoustic vocabulary before the merge below.
+    # Clinical session uploads (provider-uploaded audio) skip this entirely.
+    if session_type == 'voice_note':
+        voice_recording_role = db.determine_voice_recording_role(patient_id)
+        if acoustic_result:
+            _run_baseline_lifecycle(db, patient_id, session_id, session_date,
+                                    acoustic_result, voice_recording_role)
+    else:
+        db._tag_session_voice_role(session_id, 'clinical_session')
 
     # ── Transcription ─────────────────────────────────────────────
     db.update_clinical_session_status(session_id, 'transcribing')
@@ -523,7 +591,8 @@ def _run_audio_pipeline(db, extract_features, session_id, patient_id,
                 extraction['scores']['speech_features'] = {
                     k: acoustic_vocab.get(k)
                     for k in ('speech_rate', 'prosody', 'pauses', 'speech_coherence',
-                              'arousal', 'vocal_affect', 'severity_note', 'confidence')
+                              'arousal', 'vocal_affect', 'severity_note', 'confidence',
+                              'baseline_deviation')
                 }
                 extraction['scores']['speech_features']['source'] = 'acoustic'
             logger.info(
