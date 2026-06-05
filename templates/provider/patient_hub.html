@@ -1197,6 +1197,65 @@
         </div>
       </label>
 
+      <!-- Monitoring Focus -->
+      <div style="border-top:1px solid var(--border);margin-top:4px;padding-top:14px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+          <div style="font-size:0.8rem;color:var(--text-muted);">Monitoring Focus</div>
+          <div id="hub-fc-controls" style="display:none;gap:6px;">
+            <button onclick="openHubFocusEditor()" style="font-size:11px;padding:2px 7px;border:1px solid var(--border-light);background:none;border-radius:4px;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--text-muted);">Edit</button>
+            <button onclick="clearHubFocusConfig()" style="font-size:11px;padding:2px 7px;border:1px solid var(--border-light);background:none;border-radius:4px;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--text-muted);">Clear</button>
+          </div>
+        </div>
+
+        <!-- Active chips -->
+        <div id="hub-fc-active" style="display:none;flex-wrap:wrap;gap:5px;margin-bottom:10px;"></div>
+
+        <!-- Empty / add prompt -->
+        <div id="hub-fc-empty">
+          <button onclick="openHubFocusEditor()"
+                  style="width:100%;text-align:left;background:none;border:1px dashed var(--border-light);
+                         border-radius:6px;padding:7px 10px;cursor:pointer;font-family:'DM Sans',sans-serif;
+                         font-size:12px;color:var(--text-muted);display:flex;align-items:center;gap:5px;">
+            <span style="opacity:.5;">＋</span> Set monitoring focus
+          </button>
+        </div>
+
+        <!-- Editor (inline, hidden until opened) -->
+        <div id="hub-fc-editor" style="display:none;">
+          <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:10px;" id="hub-fc-chip-grid">
+            {% set fc_domains = [
+              'Suicidality', 'Sleep', 'Mood', 'Anxiety / Stress',
+              'Medication response', 'Energy / Focus', 'Social functioning',
+              'Substance use', 'Side effects', 'Irritability',
+              'Motivation', 'Appetite / Nutrition'
+            ] %}
+            {% for d in fc_domains %}
+            <button class="hub-fc-chip" data-domain="{{ d }}" onclick="toggleHubFcChip(this)"
+                    style="font-size:11px;padding:3px 9px;border:1px solid var(--border-light);
+                           border-radius:10px;background:var(--surface);cursor:pointer;
+                           font-family:'DM Sans',sans-serif;color:var(--text);">{{ d }}</button>
+            {% endfor %}
+          </div>
+          <textarea id="hub-fc-notes" rows="2" placeholder="Optional note (e.g. new medication, therapy focus area)"
+                    style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:11px;
+                           padding:6px 8px;border:1px solid var(--border-light);background:var(--surface);
+                           color:var(--text);border-radius:4px;resize:vertical;margin-bottom:8px;"></textarea>
+          <div style="display:flex;gap:6px;align-items:center;">
+            <button onclick="saveHubFocusConfig()" id="hub-fc-save-btn"
+                    style="font-size:11px;padding:4px 10px;background:var(--accent);color:#fff;border:none;
+                           border-radius:4px;cursor:pointer;font-family:'DM Sans',sans-serif;font-weight:500;">
+              Save — 4 weeks
+            </button>
+            <button onclick="closeHubFocusEditor()"
+                    style="font-size:11px;padding:4px 8px;background:none;border:1px solid var(--border-light);
+                           border-radius:4px;cursor:pointer;font-family:'DM Sans',sans-serif;color:var(--text-muted);">
+              Cancel
+            </button>
+            <span id="hub-fc-error" style="font-size:11px;color:#dc2626;display:none;"></span>
+          </div>
+        </div>
+      </div>
+
       <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:20px;">
         <button class="hub-action-btn" onclick="closeBriefOptionsModal()">Cancel</button>
         <button class="hub-action-btn hub-action-btn--primary" id="hub-brief-confirm-btn" onclick="confirmGenerateBrief()">Generate</button>
@@ -3191,40 +3250,141 @@ function buildAdherenceGrid() {
 // Build mood chart on page load (default visible tab)
 buildMoodChart();
 
-// ── Monitoring Focus (care team read-only view) ──────────────────────────────
-(async function loadHubFocusConfigs() {
+// ── Monitoring Focus (brief options modal — interactive) ─────────────────────
+let _hubFcSelected  = new Set();
+let _hubFcHasConfig = false;
+
+async function loadHubFocusConfig() {
   try {
     const res  = await fetch('/api/provider/patient/' + PATIENT_ID + '/focus-config');
     if (!res.ok) return;
     const data = await res.json();
-    const configs = (data.team_configs || []).filter(c => c.focus_domains && c.focus_domains.length);
-    if (!configs.length) return;
+    renderHubFocusConfig(data.my_config);
 
-    const container = document.getElementById('hub-focus-configs');
-    const list      = document.getElementById('hub-focus-list');
-    container.style.display = 'block';
-
-    list.innerHTML = configs.map(cfg => {
-      const name    = (cfg.profiles && cfg.profiles.full_name) ? cfg.profiles.full_name : 'Provider';
-      const role    = cfg.set_by_role || '';
-      const expiry  = cfg.expires_at ? cfg.expires_at.slice(0,10) : '';
-      const domains = (cfg.focus_domains || []).map(d =>
-        `<span style="font-size:11px;padding:2px 8px;border-radius:10px;
-                      background:var(--accent);color:#fff;font-weight:500;">${d}</span>`
-      ).join('');
-      const notes   = cfg.notes
-        ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:5px;">${cfg.notes}</div>`
-        : '';
-      return `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:9px 12px;">
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;">
-          <span style="font-size:12px;font-weight:500;">${name}${role ? ' · ' + role : ''}</span>
-          <span style="font-size:10px;color:var(--text-muted);">until ${expiry}</span>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:5px;">${domains}</div>
-        ${notes}
-      </div>`;
-    }).join('');
+    // Care team read-only view
+    const teamConfigs = (data.team_configs || []).filter(c => c.focus_domains && c.focus_domains.length);
+    if (teamConfigs.length) {
+      const container = document.getElementById('hub-focus-configs');
+      const list      = document.getElementById('hub-focus-list');
+      if (container && list) {
+        container.style.display = 'block';
+        list.innerHTML = teamConfigs.map(cfg => {
+          const name   = (cfg.profiles && cfg.profiles.full_name) ? cfg.profiles.full_name : 'Provider';
+          const role   = cfg.set_by_role || '';
+          const expiry = cfg.expires_at ? cfg.expires_at.slice(0,10) : '';
+          const chips  = (cfg.focus_domains || []).map(d =>
+            `<span style="font-size:11px;padding:2px 8px;border-radius:10px;
+                          background:var(--accent);color:#fff;font-weight:500;">${d}</span>`
+          ).join('');
+          const notes = cfg.notes
+            ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:5px;">${cfg.notes}</div>`
+            : '';
+          return `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:9px 12px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;">
+              <span style="font-size:12px;font-weight:500;">${name}${role ? ' · ' + role : ''}</span>
+              <span style="font-size:10px;color:var(--text-muted);">until ${expiry}</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:5px;">${chips}</div>${notes}
+          </div>`;
+        }).join('');
+      }
+    }
   } catch (e) { /* non-blocking */ }
-})();
+}
+
+function renderHubFocusConfig(cfg) {
+  _hubFcHasConfig = !!(cfg && cfg.focus_domains && cfg.focus_domains.length);
+  document.getElementById('hub-fc-active').style.display  = _hubFcHasConfig ? 'flex'  : 'none';
+  document.getElementById('hub-fc-empty').style.display   = _hubFcHasConfig ? 'none'  : 'block';
+  document.getElementById('hub-fc-editor').style.display  = 'none';
+  document.getElementById('hub-fc-controls').style.display = _hubFcHasConfig ? 'flex' : 'none';
+
+  if (!_hubFcHasConfig) return;
+
+  _hubFcSelected = new Set(cfg.focus_domains);
+  document.getElementById('hub-fc-active').innerHTML = cfg.focus_domains.map(d =>
+    `<span style="font-size:11px;padding:3px 9px;border-radius:10px;
+                  background:var(--accent);color:#fff;font-weight:500;">${d}</span>`
+  ).join('');
+  document.getElementById('hub-fc-notes').value = cfg.notes || '';
+  syncHubFcChips();
+}
+
+function syncHubFcChips() {
+  document.querySelectorAll('.hub-fc-chip').forEach(btn => {
+    const sel = _hubFcSelected.has(btn.dataset.domain);
+    btn.style.background  = sel ? 'var(--accent)' : 'var(--surface)';
+    btn.style.color       = sel ? '#fff' : 'var(--text)';
+    btn.style.borderColor = sel ? 'var(--accent)' : 'var(--border-light)';
+    btn.style.fontWeight  = sel ? '500' : '400';
+  });
+}
+
+function toggleHubFcChip(btn) {
+  const d = btn.dataset.domain;
+  _hubFcSelected.has(d) ? _hubFcSelected.delete(d) : _hubFcSelected.add(d);
+  syncHubFcChips();
+}
+
+function openHubFocusEditor() {
+  document.getElementById('hub-fc-active').style.display = 'none';
+  document.getElementById('hub-fc-empty').style.display  = 'none';
+  document.getElementById('hub-fc-controls').style.display = 'none';
+  document.getElementById('hub-fc-editor').style.display = 'block';
+  document.getElementById('hub-fc-error').style.display  = 'none';
+  syncHubFcChips();
+}
+
+function closeHubFocusEditor() {
+  document.getElementById('hub-fc-editor').style.display = 'none';
+  document.getElementById('hub-fc-active').style.display  = _hubFcHasConfig ? 'flex'  : 'none';
+  document.getElementById('hub-fc-empty').style.display   = _hubFcHasConfig ? 'none'  : 'block';
+  document.getElementById('hub-fc-controls').style.display = _hubFcHasConfig ? 'flex' : 'none';
+}
+
+async function saveHubFocusConfig() {
+  if (_hubFcSelected.size === 0) {
+    const e = document.getElementById('hub-fc-error');
+    e.textContent = 'Select at least one domain.';
+    e.style.display = 'inline';
+    return;
+  }
+  const btn = document.getElementById('hub-fc-save-btn');
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/focus-config', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        focus_domains: [..._hubFcSelected],
+        notes: document.getElementById('hub-fc-notes').value.trim(),
+        weeks: 4,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed to save');
+    renderHubFocusConfig(data.config);
+  } catch (err) {
+    const e = document.getElementById('hub-fc-error');
+    e.textContent = err.message; e.style.display = 'inline';
+  } finally {
+    btn.disabled = false; btn.textContent = 'Save — 4 weeks';
+  }
+}
+
+async function clearHubFocusConfig() {
+  if (!confirm('Clear monitoring focus?')) return;
+  await fetch('/api/provider/patient/' + PATIENT_ID + '/focus-config', { method: 'DELETE' });
+  _hubFcSelected.clear();
+  document.getElementById('hub-fc-notes').value = '';
+  renderHubFocusConfig(null);
+}
+
+// Load focus config when brief options modal opens
+const _origGenerateBrief = window.generateBrief;
+window.generateBrief = function() {
+  loadHubFocusConfig();
+  if (typeof _origGenerateBrief === 'function') _origGenerateBrief();
+};
 </script>
 {% endblock %}
