@@ -1765,6 +1765,13 @@
       {% if not care_team.active and not care_team.pending %}
       <div class="hub-empty">No other providers on this patient's care team.</div>
       {% endif %}
+
+      <!-- Monitoring Focus configs across the care team -->
+      <div id="hub-focus-configs" style="display:none;border-top:1px solid var(--border-light);padding:10px 18px 12px;">
+        <div style="font-size:0.7rem;font-weight:500;text-transform:uppercase;letter-spacing:.07em;
+                    color:var(--text-muted);margin-bottom:10px;">Active Monitoring Focus</div>
+        <div id="hub-focus-list" style="display:flex;flex-direction:column;gap:10px;"></div>
+      </div>
     </div>
   </div>
 
@@ -3183,5 +3190,41 @@ function buildAdherenceGrid() {
 
 // Build mood chart on page load (default visible tab)
 buildMoodChart();
+
+// ── Monitoring Focus (care team read-only view) ──────────────────────────────
+(async function loadHubFocusConfigs() {
+  try {
+    const res  = await fetch('/api/provider/patient/' + PATIENT_ID + '/focus-config');
+    if (!res.ok) return;
+    const data = await res.json();
+    const configs = (data.team_configs || []).filter(c => c.focus_domains && c.focus_domains.length);
+    if (!configs.length) return;
+
+    const container = document.getElementById('hub-focus-configs');
+    const list      = document.getElementById('hub-focus-list');
+    container.style.display = 'block';
+
+    list.innerHTML = configs.map(cfg => {
+      const name    = (cfg.profiles && cfg.profiles.full_name) ? cfg.profiles.full_name : 'Provider';
+      const role    = cfg.set_by_role || '';
+      const expiry  = cfg.expires_at ? cfg.expires_at.slice(0,10) : '';
+      const domains = (cfg.focus_domains || []).map(d =>
+        `<span style="font-size:11px;padding:2px 8px;border-radius:10px;
+                      background:var(--accent);color:#fff;font-weight:500;">${d}</span>`
+      ).join('');
+      const notes   = cfg.notes
+        ? `<div style="font-size:11px;color:var(--text-muted);font-style:italic;margin-top:5px;">${cfg.notes}</div>`
+        : '';
+      return `<div style="background:var(--bg);border:1px solid var(--border-light);border-radius:6px;padding:9px 12px;">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:7px;">
+          <span style="font-size:12px;font-weight:500;">${name}${role ? ' · ' + role : ''}</span>
+          <span style="font-size:10px;color:var(--text-muted);">until ${expiry}</span>
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:5px;">${domains}</div>
+        ${notes}
+      </div>`;
+    }).join('');
+  } catch (e) { /* non-blocking */ }
+})();
 </script>
 {% endblock %}
