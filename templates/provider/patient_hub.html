@@ -918,10 +918,10 @@
     transition: transform 0.12s;
   }
   .ch-tl-dot:hover { transform: translate(-50%, -50%) scale(1.6); }
-  .ch-tl-dot--checkin { background: #94a3b8; }
-  .ch-tl-dot--session { background: var(--accent); width: 11px; height: 11px; border: 2px solid var(--surface); box-shadow: 0 0 0 1.5px var(--accent); }
-  .ch-tl-dot--crisis  { background: #c0392b; width: 11px; height: 11px; }
-  .ch-tl-dot--flag    { background: #e8a000; }
+  .ch-tl-dot--checkin { background: #64748b; width: 9px; height: 9px; border: 1.5px solid var(--surface); box-shadow: 0 0 0 1px #94a3b8; }
+  .ch-tl-dot--session { background: var(--accent); width: 12px; height: 12px; border: 2px solid var(--surface); box-shadow: 0 0 0 1.5px var(--accent); }
+  .ch-tl-dot--crisis  { background: #c0392b; width: 12px; height: 12px; border: 2px solid var(--surface); box-shadow: 0 0 0 1.5px #c0392b; }
+  .ch-tl-dot--flag    { background: #e8a000; width: 9px; height: 9px; border: 1.5px solid var(--surface); box-shadow: 0 0 0 1px #e8a000; }
   .ch-tl-dot { cursor: pointer; }
 
   /* Timeline dot tooltip */
@@ -955,10 +955,12 @@
 
   /* ── Two-column body ── */
   .ch-body-grid {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    display: grid; grid-template-columns: 1.1fr 1fr; gap: 16px;
     align-items: start; margin-bottom: 24px;
   }
   @media (max-width: 1000px) { .ch-body-grid { grid-template-columns: 1fr; } }
+  .ch-data-col  { order: -1; }  /* Clinical data leads */
+  .ch-notes-col { order:  1; }  /* Session notes follows */
 
   /* ── Cards ── */
   .ch-card {
@@ -1147,6 +1149,23 @@
           &nbsp;·&nbsp; <span style="color:var(--accent);">Next: {{ next_appt.appointment_date[:10] if next_appt.appointment_date else '—' }}</span>
           {% endif %}
         </div>
+        {% if risk_snap %}
+        <div class="ch-qt-wrap" style="margin-top:8px;">
+          {% if risk_snap.mood is not none %}
+            <span class="ch-tag {% if risk_snap.mood < 5 %}ch-tag--alert{% elif risk_snap.mood >= 7 %}ch-tag--pos{% else %}ch-tag--warn{% endif %}">Mood {{ risk_snap.mood }}/10</span>
+          {% endif %}
+          {% if risk_snap.crash_risk is not none %}
+            <span class="ch-tag {% if risk_snap.crash_risk >= 7 %}ch-tag--alert{% elif risk_snap.crash_risk >= 5 %}ch-tag--warn{% else %}ch-tag--pos{% endif %}">Crash Risk {{ '%.1f'|format(risk_snap.crash_risk) }}</span>
+          {% endif %}
+          {% if risk_snap.stability is not none %}
+            <span class="ch-tag {% if risk_snap.stability < 4 %}ch-tag--alert{% elif risk_snap.stability < 6 %}ch-tag--warn{% else %}ch-tag--pos{% endif %}">Stability {{ '%.1f'|format(risk_snap.stability) }}</span>
+          {% endif %}
+          {% if risk_snap.stim_load is not none %}
+            <span class="ch-tag {% if risk_snap.stim_load >= 7 %}ch-tag--alert{% elif risk_snap.stim_load >= 5 %}ch-tag--warn{% else %}ch-tag--active{% endif %}">Stim Load {{ risk_snap.stim_load }}/10</span>
+          {% endif %}
+          <span class="ch-tag" style="color:var(--text-muted);">Last check-in: {{ risk_snap.date }}</span>
+        </div>
+        {% endif %}
       </div>
     </div>
     <div class="ch-header-actions">
@@ -1492,30 +1511,6 @@
         <span class="ch-live-badge"><span class="ch-live-dot">●</span> Current Session</span>
       </div>
 
-      <!-- Signal tags from risk_snap -->
-      <div class="ch-qt-section">
-        <div class="ch-qt-label">Signal Tags</div>
-        <div class="ch-qt-wrap">
-          {% if risk_snap %}
-            {% if risk_snap.mood is not none %}
-              <span class="ch-tag {% if risk_snap.mood < 5 %}ch-tag--alert{% elif risk_snap.mood >= 7 %}ch-tag--pos{% else %}ch-tag--warn{% endif %}">Mood {{ risk_snap.mood }}/10</span>
-            {% endif %}
-            {% if risk_snap.crash_risk is not none %}
-              <span class="ch-tag {% if risk_snap.crash_risk >= 7 %}ch-tag--alert{% elif risk_snap.crash_risk >= 5 %}ch-tag--warn{% else %}ch-tag--pos{% endif %}">Crash Risk {{ '%.1f'|format(risk_snap.crash_risk) }}</span>
-            {% endif %}
-            {% if risk_snap.stability is not none %}
-              <span class="ch-tag {% if risk_snap.stability < 4 %}ch-tag--alert{% elif risk_snap.stability < 6 %}ch-tag--warn{% else %}ch-tag--pos{% endif %}">Stability {{ '%.1f'|format(risk_snap.stability) }}</span>
-            {% endif %}
-            {% if risk_snap.stim_load is not none %}
-              <span class="ch-tag {% if risk_snap.stim_load >= 7 %}ch-tag--alert{% elif risk_snap.stim_load >= 5 %}ch-tag--warn{% else %}ch-tag--active{% endif %}">Stim Load {{ risk_snap.stim_load }}/10</span>
-            {% endif %}
-            <span class="ch-tag">📅 Last check-in: {{ risk_snap.date }}</span>
-          {% else %}
-            <span class="ch-tag">No recent check-ins</span>
-          {% endif %}
-        </div>
-      </div>
-
       <!-- Current note textarea -->
       <div class="ch-note-section">
         <div class="ch-note-hdr">
@@ -1658,30 +1653,60 @@
     </div>
   </div>
 
-  <!-- ── Voice Recording Data ───────────────────────────────────────────────── -->
-  {% if voice_baseline_status and voice_baseline_status.notice %}
-  <div style="margin:0 0 6px 0;padding:10px 14px;border-radius:7px;font-size:0.79rem;line-height:1.45;
-    {% if voice_baseline_status.status == 'none' %}background:#f0f4ff;border:1px solid #c7d4f7;color:#3a4a8a;
-    {% elif voice_baseline_status.status == 'establishing' %}background:#fffbea;border:1px solid #f5e07a;color:#7a6200;
-    {% elif voice_baseline_status.status == 'stale' %}background:#fff4ec;border:1px solid #f5c5a0;color:#8a4200;
-    {% else %}background:#f0f7f2;border:1px solid #b0d9bc;color:#1e5c2e;{% endif %}">
-    <span style="font-weight:600;">
-      {% if voice_baseline_status.status == 'none' %}🎙 Voice Baseline: Not Started
-      {% elif voice_baseline_status.status == 'establishing' %}🎙 Voice Baseline: In Progress
-      {% elif voice_baseline_status.status == 'stale' %}⚠ Voice Baseline: Outdated
-      {% else %}✓ Voice Baseline Active
-        {% if not voice_baseline_status.anchor_verified %} (anchor unverified){% endif %}
-      {% endif %}
-    </span>
-    — {{ voice_baseline_status.notice }}
+  <!-- ── Care Team Flags ──────────────────────────────────────────────────────── -->
+  <div class="flags-panel" style="margin-bottom:6px;">
+    <div class="flags-panel-hdr">
+      <div class="flags-panel-title">🚩 Care Team Flags
+        <span class="flags-panel-count" id="flags-active-count" style="display:none;">0</span>
+      </div>
+      <button class="hub-action-btn" style="font-size:0.7rem;padding:3px 9px;" onclick="toggleFlagForm()">+ Flag</button>
+    </div>
+    <div class="flag-post-form" id="hub-flag-form">
+      <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">New Flag</div>
+      <select id="hub-flag-type" style="width:100%;font-size:0.82rem;padding:6px 8px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;margin-bottom:8px;box-sizing:border-box;">
+        <option value="observation">Observation</option>
+        <option value="concern">Concern</option>
+        <option value="progress">Progress</option>
+        <option value="coordination_needed">Needs Coordination</option>
+      </select>
+      <textarea id="hub-flag-body" rows="3" placeholder="Note for the care team…" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:7px 9px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;resize:vertical;"></textarea>
+      <div id="hub-flag-err" style="font-size:0.75rem;color:#c0392b;margin-top:5px;display:none;"></div>
+      <div style="display:flex;gap:7px;margin-top:9px;">
+        <button class="hub-action-btn hub-action-btn--primary" id="hub-flag-submit" onclick="submitHubFlag()" style="flex:1;justify-content:center;">Post</button>
+        <button class="hub-action-btn" onclick="toggleFlagForm()">Cancel</button>
+      </div>
+    </div>
+    <div class="flags-panel-body" id="flags-active-list">
+      <div class="flags-panel-empty" id="flags-empty-msg">No open flags.</div>
+    </div>
+    <div class="flags-resolved-section" id="flags-resolved-section" style="display:none;">
+      <button class="flags-resolved-toggle" id="flags-resolved-toggle" onclick="toggleResolvedFlags()">
+        <span id="flags-resolved-toggle-icon">▶</span>
+        <span id="flags-resolved-toggle-label">Show resolved</span>
+      </button>
+      <div id="flags-resolved-list"></div>
+    </div>
   </div>
-  {% endif %}
+
+  <!-- ── Voice Recording Data ───────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-voice">
     <div class="hub-section-hdr" data-toggle="voice">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot"></div>
         <span class="hub-section-title">Voice Recording Data</span>
         <span class="hub-section-meta">{{ voice_notes|length }} recording{{ 's' if voice_notes|length != 1 }}</span>
+        {% if voice_baseline_status and voice_baseline_status.notice %}
+          <span style="font-size:0.68rem;padding:1px 6px;border-radius:8px;font-weight:500;margin-left:4px;
+            {% if voice_baseline_status.status == 'none' %}background:#e8eeff;color:#3a4a8a;
+            {% elif voice_baseline_status.status == 'stale' %}background:#fff0e6;color:#8a4200;
+            {% elif voice_baseline_status.status == 'establishing' %}background:#fffbe6;color:#7a6200;
+            {% else %}background:#eaf4ec;color:#1e5c2e;{% endif %}">
+            {% if voice_baseline_status.status == 'none' %}No baseline
+            {% elif voice_baseline_status.status == 'establishing' %}Establishing
+            {% elif voice_baseline_status.status == 'stale' %}Outdated
+            {% else %}Baseline active{% endif %}
+          </span>
+        {% endif %}
       </div>
       <div style="display:flex;align-items:center;gap:10px;">
         <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;"
@@ -1869,43 +1894,6 @@
   </div>
 
     </div>{# /sections col #}
-
-    <!-- ── Flags panel (full-width in right column) ─────────────────────────── -->
-    <div class="hub-sidebar" style="margin-top:12px;">
-      <div class="flags-panel">
-        <div class="flags-panel-hdr">
-          <div class="flags-panel-title">🚩 Care Team Flags
-            <span class="flags-panel-count" id="flags-active-count" style="display:none;">0</span>
-          </div>
-          <button class="hub-action-btn" style="font-size:0.7rem;padding:3px 9px;" onclick="toggleFlagForm()">+ Flag</button>
-        </div>
-        <div class="flag-post-form" id="hub-flag-form">
-          <div style="font-size:0.7rem;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-muted);margin-bottom:8px;">New Flag</div>
-          <select id="hub-flag-type" style="width:100%;font-size:0.82rem;padding:6px 8px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;margin-bottom:8px;box-sizing:border-box;">
-            <option value="observation">Observation</option>
-            <option value="concern">Concern</option>
-            <option value="progress">Progress</option>
-            <option value="coordination_needed">Needs Coordination</option>
-          </select>
-          <textarea id="hub-flag-body" rows="3" placeholder="Note for the care team…" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.82rem;padding:7px 9px;border:1px solid var(--border);background:var(--surface);color:var(--text);border-radius:6px;resize:vertical;"></textarea>
-          <div id="hub-flag-err" style="font-size:0.75rem;color:#c0392b;margin-top:5px;display:none;"></div>
-          <div style="display:flex;gap:7px;margin-top:9px;">
-            <button class="hub-action-btn hub-action-btn--primary" id="hub-flag-submit" onclick="submitHubFlag()" style="flex:1;justify-content:center;">Post</button>
-            <button class="hub-action-btn" onclick="toggleFlagForm()">Cancel</button>
-          </div>
-        </div>
-        <div class="flags-panel-body" id="flags-active-list">
-          <div class="flags-panel-empty" id="flags-empty-msg">No open flags.</div>
-        </div>
-        <div class="flags-resolved-section" id="flags-resolved-section" style="display:none;">
-          <button class="flags-resolved-toggle" id="flags-resolved-toggle" onclick="toggleResolvedFlags()">
-            <span id="flags-resolved-toggle-icon">▶</span>
-            <span id="flags-resolved-toggle-label">Show resolved</span>
-          </button>
-          <div id="flags-resolved-list"></div>
-        </div>
-      </div>
-    </div>
 
     </div>{# /sections grid #}
   </div>{# /ch-sections #}
@@ -3049,7 +3037,8 @@ function buildMoodChart() {
   if (!canvas || !window.Chart) return;
   var pts = (CH_CHECKINS || [])
     .filter(function(c) { return c.mood_score !== null && c.mood_score !== undefined; })
-    .slice(-30);
+    .slice(-30)
+    .sort(function(a, b) { return (a.checkin_date || '') < (b.checkin_date || '') ? -1 : 1; });
   if (!pts.length) return;
   new Chart(canvas, {
     type: 'line',
@@ -3082,7 +3071,8 @@ function buildSleepChart() {
   if (!canvas || !window.Chart) return;
   var pts = (CH_CHECKINS || [])
     .filter(function(c) { return c.sleep_hours !== null && c.sleep_hours !== undefined; })
-    .slice(-30);
+    .slice(-30)
+    .sort(function(a, b) { return (a.checkin_date || '') < (b.checkin_date || '') ? -1 : 1; });
   if (!pts.length) return;
   new Chart(canvas, {
     type: 'bar',
@@ -3176,7 +3166,7 @@ function buildAdherenceGrid() {
   var weeksHtml = '';
   var todayStr = today.toISOString().slice(0, 10);
 
-  for (var w = 0; w < 4; w++) {
+  for (var w = 3; w >= 0; w--) {  // newest week first
     var week = days.slice(w * 7, w * 7 + 7);
     weeksHtml += '<div class="ch-adh-week">';
     week.forEach(function(day) {
