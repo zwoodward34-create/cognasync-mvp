@@ -199,10 +199,12 @@
     box-shadow: 0 2px 10px rgba(15,110,86,0.1);
   }
   .pd-row-crisis {
-    border-left: 3px solid #c0392b;
+    border-color: rgba(163, 45, 45, 0.30);
+    background: rgba(252, 235, 235, 0.45);
   }
   .pd-row-alert {
-    border-left: 3px solid #e8a000;
+    border-color: rgba(132, 79, 11, 0.24);
+    background: rgba(250, 238, 218, 0.35);
   }
 
   .pd-row-avatar {
@@ -219,8 +221,14 @@
     flex-shrink: 0;
     opacity: 0.85;
   }
-  .pd-row-crisis .pd-row-avatar { background: #c0392b; }
-  .pd-row-alert  .pd-row-avatar { background: #e8a000; }
+  .pd-row-crisis .pd-row-avatar {
+    background: #A32D2D;
+    box-shadow: 0 0 0 3px rgba(163, 45, 45, 0.16), 0 0 0 5px rgba(163, 45, 45, 0.06);
+  }
+  .pd-row-alert .pd-row-avatar {
+    background: #854F0B;
+    box-shadow: 0 0 0 3px rgba(132, 79, 11, 0.14), 0 0 0 5px rgba(132, 79, 11, 0.05);
+  }
 
   .pd-row-identity {
     flex: 1;
@@ -2572,6 +2580,232 @@
     .apmgr-pipe-col { border-right: none; border-bottom: 1px solid var(--border); max-height: 280px; }
     .apmgr-form-row { grid-template-columns: 1fr; }
   }
+
+  /* ══════════════════════════════════════════════════════════════════════
+     REDESIGN OVERRIDES — dashboard visual improvements
+     ══════════════════════════════════════════════════════════════════════ */
+
+  /* ── Header: remove eyebrow, add contextual sub-line ── */
+  .pd-dash-hdr {
+    padding: 20px 28px 18px;
+  }
+  .pd-dash-greeting {
+    display: flex;
+    align-items: baseline;
+    flex-wrap: wrap;
+    gap: 8px;
+    font-size: 1.55rem;
+    margin-bottom: 6px;
+  }
+  .pd-dash-date {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    flex-wrap: wrap;
+  }
+  .pd-dash-attention-note {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.78rem;
+    color: var(--text-muted);
+    font-family: 'DM Sans', sans-serif;
+  }
+  .pd-dash-dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .pd-dash-dot--warn  { background: #e8a000; box-shadow: 0 0 0 2px rgba(232,160,0,0.18); }
+  .pd-dash-dot--clear { background: var(--accent); box-shadow: 0 0 0 2px rgba(15,110,86,0.14); }
+
+  /* ── Stat cards: semantic coloring ── */
+  .pd-stat-card-label {
+    font-size: 0.63rem;
+    font-weight: 500;
+    letter-spacing: 0.055em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+  }
+  /* JetBrains Mono for all stat numbers */
+  .pd-stat-card-val--mono {
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-size: 2rem;
+    font-weight: 400;
+  }
+  /* Fraction suffix in Checked In stat */
+  .pd-stat-frac {
+    font-size: 1rem;
+    color: var(--text-muted);
+    font-weight: 400;
+    margin-left: 1px;
+  }
+  /* Clear (no alerts) state */
+  .pd-stat-card--clear {
+    background: linear-gradient(135deg, rgba(225,245,238,0.5) 0%, var(--surface) 60%);
+  }
+  .pd-stat-card-val--clear {
+    color: var(--accent);
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-size: 2rem;
+  }
+  .pd-stat-card-sub--clear {
+    color: #1D9E75;
+  }
+  /* The ✓ check symbol */
+  .pd-stat-check {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1.6rem;
+    font-weight: 500;
+    line-height: 1;
+  }
+  /* Watch state for Checked In = 0 */
+  .pd-stat-card--watch {
+    background: rgba(250,238,218,0.25);
+  }
+
+  /* ── Patient rows: row improvements ── */
+  /* Lift rows on hover with accent border */
+  .pd-row:hover {
+    box-shadow: 0 2px 12px rgba(15,110,86,0.08), 0 0 0 1px var(--accent);
+    border-color: var(--accent);
+    transform: translateY(-1px);
+    transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s var(--cs-ease-out, cubic-bezier(0.25,1,0.5,1));
+  }
+  .pd-row {
+    transition: border-color 0.12s, box-shadow 0.12s, transform 0.12s var(--cs-ease-out, cubic-bezier(0.25,1,0.5,1));
+  }
+
+  /* ── Compact stats: shown only in 2-col narrow roster ── */
+  .pd-row-compact-stats {
+    display: none;    /* hidden in full-width layout */
+    margin-top: 3px;
+    font-size: 0.68rem;
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    color: var(--text-muted);
+    align-items: center;
+    gap: 4px;
+    flex-wrap: wrap;
+  }
+  .pd-cstat-val {
+    color: var(--text-muted);
+  }
+  .pd-cstat--low  { color: #A32D2D; }
+  .pd-cstat--good { color: #0F6E56; }
+  .pd-cstat-sep   { color: var(--border); }
+  .pd-cstat-none  { color: var(--text-muted); font-style: italic; font-family: 'DM Sans', sans-serif; }
+
+  /* In 2-col mode, show compact stats */
+  .pd-two-col-layout .pd-row-compact-stats {
+    display: flex;
+  }
+
+  /* ── Sidebar: cleared state ── */
+  .pd-sidebar-cleared {
+    padding: 28px 16px 24px;
+    text-align: center;
+  }
+  .pd-sidebar-cleared-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background: var(--cs-teal-50, #E1F5EE);
+    border: 1px solid var(--cs-teal-100, #9FE1CB);
+    color: var(--accent);
+    font-size: 1.15rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 10px;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .pd-sidebar-cleared-label {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 4px;
+    font-family: 'DM Sans', sans-serif;
+  }
+  .pd-sidebar-cleared-sub {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* ── Sidebar card headers: less uppercase weight ── */
+  .pd-sidebar-card-hdr {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--text);
+    letter-spacing: 0;
+    font-family: 'DM Serif Display', serif;
+  }
+
+  /* ── Section headers: reduce eyebrow weight ── */
+  .pd-section-hdr {
+    font-size: 0.6rem;
+    letter-spacing: 0.07em;
+    font-weight: 500;
+  }
+
+  /* ── Urgency badge improvements ── */
+  .pd-urgency-badge {
+    letter-spacing: 0.02em;
+    font-size: 0.6rem;
+    border-radius: 4px;
+    padding: 2px 7px;
+  }
+  .pd-urgency-0 {
+    background: rgba(252,235,235,0.9);
+    color: #A32D2D;
+    border: 1px solid rgba(163,45,45,0.2);
+  }
+  .pd-urgency-1 {
+    background: rgba(250,238,218,0.9);
+    color: #854F0B;
+    border: 1px solid rgba(132,79,11,0.18);
+  }
+  .pd-urgency-2 {
+    background: rgba(250,238,218,0.6);
+    color: #6B3E07;
+    border: 1px solid rgba(132,79,11,0.14);
+  }
+
+  /* ── Provider type badge refinement ── */
+  .pd-provider-type-badge {
+    font-size: 0.58rem;
+    border-radius: 5px;
+    letter-spacing: 0.03em;
+    vertical-align: middle;
+  }
+
+  /* ── Row avatar: default state improvement ── */
+  .pd-row-avatar {
+    opacity: 1;
+    font-weight: 500;
+    font-size: 0.92rem;
+    letter-spacing: 0;
+  }
+
+  /* ── Stat card value: low color fix ── */
+  .pd-stat-card-val--warn {
+    color: #8A4500;
+  }
+  .pd-stat-card-sub--warn {
+    color: #8A4500;
+  }
+  .pd-stat-card--warn {
+    background: rgba(250,238,218,0.35);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .pd-row, .pd-row:hover { transform: none; transition: none; }
+    .pd-vtl-node--active::after { animation: none; }
+  }
 </style>
 {% endblock %}
 
@@ -2606,14 +2840,26 @@
   <!-- Dashboard header -->
   <div class="pd-dash-hdr">
     <div class="pd-dash-hdr-left">
-      <div class="pd-dash-eyebrow">TODAY AT A GLANCE</div>
       <h1 class="pd-dash-greeting">
         {{ user.full_name or user.name or 'Your Dashboard' }}
         {% if user.provider_type %}
         <span class="pd-provider-type-badge {{ user.provider_type }}">{{ user.provider_type | title }}</span>
         {% endif %}
       </h1>
-      <div class="pd-dash-date" id="pd-dash-date">{{ today_str }}</div>
+      <div class="pd-dash-date" id="pd-dash-date">
+        <span>{{ today_str }}</span>
+        {% if alert_patients %}
+        <span class="pd-dash-attention-note">
+          <span class="pd-dash-dot pd-dash-dot--warn"></span>
+          {{ alert_patients|length }} patient{{ 's' if alert_patients|length != 1 }} need{{ '' if alert_patients|length != 1 else 's' }} attention
+        </span>
+        {% elif patients %}
+        <span class="pd-dash-attention-note">
+          <span class="pd-dash-dot pd-dash-dot--clear"></span>
+          Roster clear
+        </span>
+        {% endif %}
+      </div>
     </div>
     <div class="pd-page-hdr-actions">
       <input type="text" class="pd-search" id="pd-search"
@@ -2631,28 +2877,32 @@
   <!-- Stat cards -->
   <div class="pd-stat-row">
     <div class="pd-stat-card">
-      <div class="pd-stat-card-label">ACTIVE PATIENTS</div>
-      <div class="pd-stat-card-val">{{ patients|length }}</div>
+      <div class="pd-stat-card-label">Patients</div>
+      <div class="pd-stat-card-val pd-stat-card-val--mono">{{ patients|length }}</div>
       <div class="pd-stat-card-sub">
-        {% if today_check_ins %}+{{ today_check_ins|length }} checked in today{% else %}On your roster{% endif %}
+        {% if today_check_ins %}{{ today_check_ins|length }} checked in today{% else %}On your roster{% endif %}
       </div>
     </div>
-    <div class="pd-stat-card {% if alert_patients %}pd-stat-card--warn{% endif %}">
-      <div class="pd-stat-card-label">FLAGGED FOR REVIEW</div>
-      <div class="pd-stat-card-val {% if alert_patients %}pd-stat-card-val--warn{% endif %}">{{ alert_patients|length }}</div>
-      <div class="pd-stat-card-sub {% if alert_patients %}pd-stat-card-sub--warn{% endif %}">
-        {% if alert_patients %}Requires attention{% else %}No active alerts{% endif %}
+    <div class="pd-stat-card {% if alert_patients %}pd-stat-card--warn{% else %}pd-stat-card--clear{% endif %}">
+      <div class="pd-stat-card-label">{% if alert_patients %}Needs Review{% else %}Alerts{% endif %}</div>
+      <div class="pd-stat-card-val pd-stat-card-val--mono {% if alert_patients %}pd-stat-card-val--warn{% else %}pd-stat-card-val--clear{% endif %}">
+        {% if alert_patients %}{{ alert_patients|length }}{% else %}<span class="pd-stat-check">✓</span>{% endif %}
+      </div>
+      <div class="pd-stat-card-sub {% if alert_patients %}pd-stat-card-sub--warn{% else %}pd-stat-card-sub--clear{% endif %}">
+        {% if alert_patients %}{{ alert_patients|length }} need{{ '' if alert_patients|length != 1 else 's' }} attention{% else %}Roster clear{% endif %}
       </div>
     </div>
-    <div class="pd-stat-card">
-      <div class="pd-stat-card-label">CHECKED IN TODAY</div>
-      <div class="pd-stat-card-val">{{ today_check_ins|length }}</div>
-      <div class="pd-stat-card-sub">of {{ patients|length }} patients</div>
+    <div class="pd-stat-card {% if patients and not today_check_ins %}pd-stat-card--watch{% endif %}">
+      <div class="pd-stat-card-label">Checked In</div>
+      <div class="pd-stat-card-val pd-stat-card-val--mono {% if today_check_ins %}pd-stat-card-val--good{% endif %}">
+        {{ today_check_ins|length }}<span class="pd-stat-frac">/{{ patients|length }}</span>
+      </div>
+      <div class="pd-stat-card-sub">today</div>
     </div>
     <div class="pd-stat-card">
-      <div class="pd-stat-card-label">ACTIVE SESSIONS</div>
-      <div class="pd-stat-card-val {% if active_now %}pd-stat-card-val--good{% endif %}">{{ active_now|length }}</div>
-      <div class="pd-stat-card-sub">{% if active_now %}In progress now{% else %}None in progress{% endif %}</div>
+      <div class="pd-stat-card-label">Sessions</div>
+      <div class="pd-stat-card-val pd-stat-card-val--mono {% if active_now %}pd-stat-card-val--good{% endif %}">{{ active_now|length }}</div>
+      <div class="pd-stat-card-sub">{% if active_now %}Active now{% else %}None today{% endif %}</div>
     </div>
   </div>
 
@@ -2740,6 +2990,24 @@
             {% endif %}
           </div>
           <div class="pd-row-email">{{ p.email }}</div>
+          <!-- Compact stats: visible only in narrow 2-col roster mode -->
+          <div class="pd-row-compact-stats">
+            {% if p.mood_recent is not none %}
+            <span class="pd-cstat-val {% if p.mood_recent < 5 %}pd-cstat--low{% elif p.mood_recent >= 7 %}pd-cstat--good{% endif %}">{{ p.mood_recent }}/10</span>
+            <span class="pd-cstat-sep">·</span>
+            {% endif %}
+            {% if p.days_since_checkin is not none %}
+            <span class="pd-cstat-val {% if p.days_since_checkin > 7 %}pd-cstat--low{% endif %}">
+              {%- if p.days_since_checkin == 0 %}Today
+              {%- elif p.days_since_checkin == 1 %}Yesterday
+              {%- else %}{{ p.days_since_checkin }}d ago{%- endif %}
+            </span>
+            {% elif p.last_checkin %}
+            <span class="pd-cstat-none">{{ p.last_checkin }}</span>
+            {% else %}
+            <span class="pd-cstat-none">No check-ins</span>
+            {% endif %}
+          </div>
         </div>
 
         <div class="pd-row-stats">
@@ -2834,6 +3102,22 @@
             {% endif %}
           </div>
           <div class="pd-row-email">{{ p.email }}</div>
+          <!-- Compact stats: visible only in narrow 2-col roster mode -->
+          <div class="pd-row-compact-stats">
+            {% if p.mood_recent is not none %}
+            <span class="pd-cstat-val {% if p.mood_recent < 5 %}pd-cstat--low{% elif p.mood_recent >= 7 %}pd-cstat--good{% endif %}">{{ p.mood_recent }}/10</span>
+            <span class="pd-cstat-sep">·</span>
+            {% endif %}
+            {% if p.days_since_checkin is not none %}
+            <span class="pd-cstat-val {% if p.days_since_checkin > 7 %}pd-cstat--low{% endif %}">
+              {%- if p.days_since_checkin == 0 %}Today
+              {%- elif p.days_since_checkin == 1 %}Yesterday
+              {%- else %}{{ p.days_since_checkin }}d ago{%- endif %}
+            </span>
+            {% else %}
+            <span class="pd-cstat-none">No check-ins</span>
+            {% endif %}
+          </div>
         </div>
 
         <div class="pd-row-stats">
@@ -2919,10 +3203,14 @@
       <!-- Clinical Alerts -->
       <div class="pd-sidebar-card">
         <div class="pd-sidebar-card-hdr">
-          <span>⚠ Clinical Alerts</span>
+          <span>Clinical Alerts</span>
         </div>
         {% if not alert_patients %}
-        <div class="pd-sidebar-empty">No active alerts.</div>
+        <div class="pd-sidebar-cleared">
+          <div class="pd-sidebar-cleared-icon">✓</div>
+          <div class="pd-sidebar-cleared-label">No active alerts</div>
+          <div class="pd-sidebar-cleared-sub">All {{ patients|length }} patient{{ 's' if patients|length != 1 }} are at baseline</div>
+        </div>
         {% else %}
           {% for p in alert_patients[:4] %}
           {% set has_crisis = p.suicide_risk %}
