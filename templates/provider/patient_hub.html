@@ -1102,6 +1102,120 @@
     letter-spacing: 0.09em; color: var(--text-muted); margin-bottom: 12px;
     padding-bottom: 8px; border-bottom: 1px solid var(--border);
   }
+
+  /* ═══════════════════════════════════════════════════════════════════════════
+     PATIENT HUB REDESIGN OVERRIDES
+     ═══════════════════════════════════════════════════════════════════════════ */
+
+  /* Header: block layout with structured rows */
+  .ch-header {
+    display: block;
+    padding: 0;
+    overflow: hidden;
+  }
+  .ch-header-identity {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 16px 20px 10px;
+  }
+  .ch-header-meds {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+    padding: 0 20px 12px;
+  }
+  .ch-header-meds-label {
+    font-size: 0.58rem; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.06em; color: var(--text-muted); flex-shrink: 0; margin-right: 2px;
+  }
+
+  /* KPI metrics bar */
+  .ch-kpi-bar {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    background: var(--bg);
+  }
+  .ch-kpi-cell {
+    flex: 1;
+    padding: 11px 10px;
+    border-right: 1px solid var(--border);
+    text-align: center;
+    min-width: 0;
+  }
+  .ch-kpi-cell:last-child { border-right: none; }
+  .ch-kpi-label {
+    font-size: 0.57rem; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.055em; color: var(--text-muted); margin-bottom: 5px;
+    white-space: nowrap;
+  }
+  .ch-kpi-val {
+    font-family: 'JetBrains Mono', 'SF Mono', monospace;
+    font-size: 1.45rem; font-weight: 400; line-height: 1; color: var(--text);
+  }
+  .ch-kpi-val--good  { color: var(--accent); }
+  .ch-kpi-val--warn  { color: #854F0B; }
+  .ch-kpi-val--alert { color: #A32D2D; }
+  .ch-kpi-denom { font-size: 0.72rem; color: var(--text-muted); font-weight: 400; }
+  .ch-kpi-date  { font-size: 0.78rem; color: var(--text-muted); font-family: 'DM Sans', sans-serif; }
+
+  /* Action bar */
+  .ch-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    background: var(--bg);
+    flex-wrap: wrap;
+  }
+  /* Remove old flex override that conflicted */
+  .ch-header-main { display: none !important; }
+  .ch-qt-wrap { display: none !important; }
+
+  /* SMS dropdown group */
+  .ch-sms-group { position: relative; display: inline-flex; }
+  .ch-sms-group > .ch-action-btn {
+    border-radius: 6px 0 0 6px;
+    border-right: none;
+  }
+  .ch-sms-caret {
+    display: flex; align-items: center; justify-content: center;
+    width: 28px; border: 1px solid var(--border); border-radius: 0 6px 6px 0;
+    background: var(--surface); color: var(--text-muted); cursor: pointer;
+    font-size: 0.68rem; transition: border-color 0.12s;
+  }
+  .ch-sms-caret:hover { border-color: var(--accent); color: var(--accent); background: var(--bg); }
+  .ch-sms-dropdown {
+    display: none; position: absolute; top: calc(100% + 4px); left: 0;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
+    min-width: 150px; box-shadow: 0 4px 16px rgba(0,0,0,0.10); z-index: 100; overflow: hidden;
+  }
+  .ch-sms-dropdown.open { display: block; }
+  .ch-sms-opt {
+    display: block; width: 100%; text-align: left; padding: 9px 14px;
+    font-size: 0.8rem; font-family: 'DM Sans', sans-serif; color: var(--text);
+    background: none; border: none; border-bottom: 1px solid var(--border); cursor: pointer;
+    transition: background 0.1s;
+  }
+  .ch-sms-opt:last-child { border-bottom: none; }
+  .ch-sms-opt:hover { background: var(--bg); color: var(--accent); }
+
+  /* Sidebar: muted state for empty/coming-soon sections */
+  .hub-section--muted { opacity: 0.55; transition: opacity 0.15s; }
+  .hub-section--muted:hover { opacity: 1; }
+  .hub-section--muted .hub-section-dot { background: var(--text-muted); }
+
+  /* Sidebar records header */
+  .ch-sections-hdr {
+    font-family: 'DM Serif Display', serif;
+    font-size: 0.95rem;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0;
+    color: var(--text);
+  }
 </style>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 {% endblock %}
@@ -1118,7 +1232,9 @@
 
   <!-- ── ClaraMind Patient Header ─────────────────────────────────────────── -->
   <div class="ch-header">
-    <div class="ch-header-main">
+
+    <!-- Row 1: Identity -->
+    <div class="ch-header-identity">
       <div class="ch-avatar">{{ patient.full_name[0] | upper }}</div>
       <div class="ch-identity">
         <div class="ch-name">
@@ -1134,12 +1250,6 @@
               <span class="ch-risk-pill ch-risk-pill--stable">Stable</span>
             {% endif %}
           {% endif %}
-          {% if medications %}
-            {% for med in medications[:3] %}
-              <span class="ch-med-pill">{{ med.name }}{% if med.standard_dose %} {{ med.standard_dose }}{{ med.dose_unit if med.dose_unit else '' }}{% endif %}</span>
-            {% endfor %}
-            {% if medications|length > 3 %}<span class="ch-med-pill">+{{ medications|length - 3 }} more</span>{% endif %}
-          {% endif %}
         </div>
         <div class="ch-identity-meta">
           {{ patient.email }}
@@ -1149,33 +1259,78 @@
           &nbsp;·&nbsp; <span style="color:var(--accent);">Next: {{ next_appt.appointment_date[:10] if next_appt.appointment_date else '—' }}</span>
           {% endif %}
         </div>
-        {% if risk_snap %}
-        <div class="ch-qt-wrap" style="margin-top:8px;">
-          {% if risk_snap.mood is not none %}
-            <span class="ch-tag {% if risk_snap.mood < 5 %}ch-tag--alert{% elif risk_snap.mood >= 7 %}ch-tag--pos{% else %}ch-tag--warn{% endif %}">Mood {{ risk_snap.mood }}/10</span>
-          {% endif %}
-          {% if risk_snap.crash_risk is not none %}
-            <span class="ch-tag {% if risk_snap.crash_risk >= 7 %}ch-tag--alert{% elif risk_snap.crash_risk >= 5 %}ch-tag--warn{% else %}ch-tag--pos{% endif %}">Crash Risk {{ '%.1f'|format(risk_snap.crash_risk) }}</span>
-          {% endif %}
-          {% if risk_snap.stability is not none %}
-            <span class="ch-tag {% if risk_snap.stability < 4 %}ch-tag--alert{% elif risk_snap.stability < 6 %}ch-tag--warn{% else %}ch-tag--pos{% endif %}">Stability {{ '%.1f'|format(risk_snap.stability) }}</span>
-          {% endif %}
-          {% if risk_snap.stim_load is not none %}
-            <span class="ch-tag {% if risk_snap.stim_load >= 7 %}ch-tag--alert{% elif risk_snap.stim_load >= 5 %}ch-tag--warn{% else %}ch-tag--active{% endif %}">Stim Load {{ risk_snap.stim_load }}/10</span>
-          {% endif %}
-          <span class="ch-tag" style="color:var(--text-muted);">Last check-in: {{ risk_snap.date }}</span>
-        </div>
-        {% endif %}
       </div>
     </div>
+
+    <!-- Row 1b: Medications -->
+    {% if medications %}
+    <div class="ch-header-meds">
+      <span class="ch-header-meds-label">Rx</span>
+      {% for med in medications[:3] %}
+        <span class="ch-med-pill">{{ med.name }}{% if med.standard_dose %} {{ med.standard_dose }}{{ med.dose_unit if med.dose_unit else '' }}{% endif %}</span>
+      {% endfor %}
+      {% if medications|length > 3 %}<span class="ch-med-pill">+{{ medications|length - 3 }} more</span>{% endif %}
+    </div>
+    {% endif %}
+
+    <!-- Row 2: KPI metrics bar -->
+    {% if risk_snap %}
+    <div class="ch-kpi-bar">
+      {% if risk_snap.mood is not none %}
+      <div class="ch-kpi-cell">
+        <div class="ch-kpi-label">Mood avg</div>
+        <div class="ch-kpi-val {% if risk_snap.mood < 5 %}ch-kpi-val--alert{% elif risk_snap.mood >= 7 %}ch-kpi-val--good{% endif %}">
+          {{ risk_snap.mood }}<span class="ch-kpi-denom">/10</span>
+        </div>
+      </div>
+      {% endif %}
+      {% if risk_snap.stability is not none %}
+      <div class="ch-kpi-cell">
+        <div class="ch-kpi-label">Stability</div>
+        <div class="ch-kpi-val {% if risk_snap.stability < 4 %}ch-kpi-val--alert{% elif risk_snap.stability < 6 %}ch-kpi-val--warn{% else %}ch-kpi-val--good{% endif %}">
+          {{ '%.1f'|format(risk_snap.stability) }}
+        </div>
+      </div>
+      {% endif %}
+      {% if risk_snap.crash_risk is not none %}
+      <div class="ch-kpi-cell">
+        <div class="ch-kpi-label">Crash Risk</div>
+        <div class="ch-kpi-val {% if risk_snap.crash_risk >= 7 %}ch-kpi-val--alert{% elif risk_snap.crash_risk >= 5 %}ch-kpi-val--warn{% else %}ch-kpi-val--good{% endif %}">
+          {{ '%.1f'|format(risk_snap.crash_risk) }}
+        </div>
+      </div>
+      {% endif %}
+      {% if risk_snap.stim_load is not none %}
+      <div class="ch-kpi-cell">
+        <div class="ch-kpi-label">Stim Load</div>
+        <div class="ch-kpi-val {% if risk_snap.stim_load >= 7 %}ch-kpi-val--alert{% elif risk_snap.stim_load >= 5 %}ch-kpi-val--warn{% else %}ch-kpi-val--good{% endif %}">
+          {{ risk_snap.stim_load }}<span class="ch-kpi-denom">/10</span>
+        </div>
+      </div>
+      {% endif %}
+      <div class="ch-kpi-cell">
+        <div class="ch-kpi-label">Last check-in</div>
+        <div class="ch-kpi-val" style="font-size:0.92rem;"><span class="ch-kpi-date">{{ risk_snap.date }}</span></div>
+      </div>
+    </div>
+    {% endif %}
+
+    <!-- Row 3: Action bar -->
     <div class="ch-header-actions">
       <button class="ch-action-btn ch-action-btn--primary" id="btn-generate-brief" onclick="generateBrief()">✦ Generate Brief</button>
-      <button class="ch-action-btn" id="btn-short-sms" onclick="sendSMS('short')">Short SMS</button>
-      <button class="ch-action-btn" id="btn-full-sms" onclick="sendSMS('full')">Full SMS</button>
-      <button class="ch-action-btn" id="btn-voice-sms" onclick="sendVoiceSMS()">Voice SMS</button>
+      <div class="ch-sms-group">
+        <button class="ch-action-btn" id="btn-short-sms" onclick="sendSMS('short')">Send SMS</button>
+        <button class="ch-sms-caret" onclick="toggleSmsDropdown(event)" aria-label="More SMS options">▾</button>
+        <div class="ch-sms-dropdown" id="ch-sms-dropdown">
+          <button class="ch-sms-opt" onclick="sendSMS('short');closeSmsDropdown()">Short check-in</button>
+          <button class="ch-sms-opt" id="btn-full-sms" onclick="sendSMS('full');closeSmsDropdown()">Full check-in</button>
+          <button class="ch-sms-opt" id="btn-voice-sms" onclick="sendVoiceSMS();closeSmsDropdown()">Voice question</button>
+        </div>
+      </div>
       <button class="ch-action-btn" id="btn-reminder" onclick="sendReminder()">Reminder</button>
     </div>
-  </div>
+
+  </div>{# /ch-header #}
 
   <!-- Voice prompt modal for voice SMS -->
   <div id="voice-prompt-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;align-items:center;justify-content:center;padding:16px;"
@@ -1688,6 +1843,37 @@
     </div>
   </div>
 
+  <!-- ── Journal Entries (moved up — populated data surfaces first) ─────────── -->
+  <div class="hub-section collapsed" id="section-journals">
+    <div class="hub-section-hdr" data-toggle="journals">
+      <div class="hub-section-hdr-left">
+        <div class="hub-section-dot"></div>
+        <span class="hub-section-title">Journal Entries</span>
+        <span class="hub-section-meta">{{ journals|length }} recent</span>
+      </div>
+      <span class="hub-section-chevron">›</span>
+    </div>
+    <div class="hub-section-body">
+      {% if journals %}
+        {% for j in journals %}
+        <div style="padding:12px 18px;border-bottom:1px solid var(--border);">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
+            <span style="font-size:0.75rem;color:var(--text-muted);">{{ j.entry_date[:10] if j.entry_date else (j.created_at[:10] if j.created_at else '—') }}</span>
+            {% if j.share_with_provider %}<span style="font-size:0.65rem;font-weight:500;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:4px;background:#d4edda;color:#1a7f3c;">Shared</span>
+            {% else %}<span style="font-size:0.65rem;color:var(--text-muted);">Private</span>{% endif %}
+          </div>
+          <p style="font-size:0.84rem;color:var(--text);line-height:1.55;margin:0;">{{ j.content[:300] if j.content else '—' }}{% if j.content and j.content|length > 300 %}…{% endif %}</p>
+          {% if j.ai_insight %}
+          <div style="margin-top:8px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:5px;font-size:0.78rem;color:var(--text-muted);line-height:1.55;"><em>{{ j.ai_insight[:200] if j.ai_insight else '' }}{% if j.ai_insight and j.ai_insight|length > 200 %}…{% endif %}</em></div>
+          {% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+      <div class="hub-empty">No journal entries on file.</div>
+      {% endif %}
+    </div>
+  </div>
+
   <!-- ── Voice Recording Data ───────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-voice">
     <div class="hub-section-hdr" data-toggle="voice">
@@ -1784,37 +1970,6 @@
     </div>
   </div>
 
-  <!-- ── Journal Entries ──────────────────────────────────────────────────── -->
-  <div class="hub-section collapsed" id="section-journals">
-    <div class="hub-section-hdr" data-toggle="journals">
-      <div class="hub-section-hdr-left">
-        <div class="hub-section-dot"></div>
-        <span class="hub-section-title">Journal Entries</span>
-        <span class="hub-section-meta">{{ journals|length }} recent</span>
-      </div>
-      <span class="hub-section-chevron">›</span>
-    </div>
-    <div class="hub-section-body">
-      {% if journals %}
-        {% for j in journals %}
-        <div style="padding:12px 18px;border-bottom:1px solid var(--border);">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
-            <span style="font-size:0.75rem;color:var(--text-muted);">{{ j.entry_date[:10] if j.entry_date else (j.created_at[:10] if j.created_at else '—') }}</span>
-            {% if j.share_with_provider %}<span style="font-size:0.65rem;font-weight:500;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:4px;background:#d4edda;color:#1a7f3c;">Shared</span>
-            {% else %}<span style="font-size:0.65rem;color:var(--text-muted);">Private</span>{% endif %}
-          </div>
-          <p style="font-size:0.84rem;color:var(--text);line-height:1.55;margin:0;">{{ j.content[:300] if j.content else '—' }}{% if j.content and j.content|length > 300 %}…{% endif %}</p>
-          {% if j.ai_insight %}
-          <div style="margin-top:8px;padding:8px 10px;background:var(--bg);border-left:3px solid var(--accent);font-size:0.78rem;color:var(--text-muted);line-height:1.55;"><em>{{ j.ai_insight[:200] if j.ai_insight else '' }}{% if j.ai_insight and j.ai_insight|length > 200 %}…{% endif %}</em></div>
-          {% endif %}
-        </div>
-        {% endfor %}
-      {% else %}
-      <div class="hub-empty">No journal entries on file.</div>
-      {% endif %}
-    </div>
-  </div>
-
   <!-- ── Care Team ─────────────────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-care-team">
     <div class="hub-section-hdr" data-toggle="care-team">
@@ -1875,7 +2030,7 @@
   </div>
 
   <!-- ── Wearables Data ─────────────────────────────────────────────────────── -->
-  <div class="hub-section collapsed" id="section-wearables">
+  <div class="hub-section collapsed hub-section--muted" id="section-wearables">
     <div class="hub-section-hdr" data-toggle="wearables">
       <div class="hub-section-hdr-left">
         <div class="hub-section-dot hub-section-dot--muted"></div>
@@ -2563,6 +2718,20 @@ async function confirmVoiceSMS() {
   }
   btn.disabled = false; btn.textContent = 'Send';
 }
+
+function toggleSmsDropdown(e) {
+  if (e) e.stopPropagation();
+  var d = document.getElementById('ch-sms-dropdown');
+  if (d) d.classList.toggle('open');
+}
+function closeSmsDropdown() {
+  var d = document.getElementById('ch-sms-dropdown');
+  if (d) d.classList.remove('open');
+}
+document.addEventListener('click', function(e) {
+  var grp = document.querySelector('.ch-sms-group');
+  if (grp && !grp.contains(e.target)) closeSmsDropdown();
+});
 
 async function sendReminder() {
   const btn = document.getElementById('btn-reminder');
