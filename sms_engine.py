@@ -362,3 +362,213 @@ def send_daily_checkin_prompt(to_number: str) -> dict:
 def send_enrollment_guide(to_number: str) -> dict:
     """Send the one-time labeled enrollment message."""
     return send_sms(to_number, MSG_ENROLLMENT)
+
+
+# ── Rotating questions ────────────────────────────────────────────────────────
+
+# Each entry: label, prompt_text, field_name, scale, is_crisis_field
+# scale: 'int_0_10' | 'int_0_3' | 'count'
+ROTATING_QUESTIONS = {
+    'suicidality': {
+        'label': 'Safety check',
+        'prompt_text': '0=feeling safe, 1=brief thoughts, 2=frequent thoughts, 3=hard to push away',
+        'field_name': 'suicidality_score',
+        'scale': 'int_0_3',
+        'is_crisis_field': True,
+    },
+    'sleep': {
+        'label': 'Sleep latency',
+        'prompt_text': 'Minutes to fall asleep? Reply number (e.g. 20)',
+        'field_name': 'sleep_latency_min',
+        'scale': 'count',
+        'is_crisis_field': False,
+    },
+    'mood': {
+        'label': 'Enjoyment',
+        'prompt_text': 'Enjoyment of things today? 0=nothing, 10=fully',
+        'field_name': 'enjoyment',
+        'scale': 'int_0_10',
+        'is_crisis_field': False,
+    },
+    'anxiety_stress': {
+        'label': 'Anxiety',
+        'prompt_text': 'Anxiety today? 0=none, 10=severe',
+        'field_name': 'anxiety',
+        'scale': 'int_0_10',
+        'is_crisis_field': False,
+    },
+    'energy_focus': {
+        'label': 'Focus',
+        'prompt_text': 'Focus today? 0=none, 10=sharp',
+        'field_name': 'focus',
+        'scale': 'int_0_10',
+        'is_crisis_field': False,
+    },
+    'medication_response': {
+        'label': 'Medication',
+        'prompt_text': 'Medication working today? 0=not at all, 10=working well',
+        'field_name': 'medication_effectiveness',
+        'scale': 'int_0_10',
+        'is_crisis_field': False,
+    },
+    'social_functioning': {
+        'label': 'Social connection',
+        'prompt_text': 'Social connection today? 0=isolated, 10=connected',
+        'field_name': 'social_quality',
+        'scale': 'int_0_10',
+        'is_crisis_field': False,
+    },
+    'irritability': {
+        'label': 'Irritability',
+        'prompt_text': 'Irritability today? 0=none, 10=severe',
+        'field_name': 'irritability',
+        'scale': 'int_0_10',
+        'is_crisis_field': False,
+    },
+    'motivation': {
+        'label': 'Motivation',
+        'prompt_text': 'Motivation today? 0=none, 10=high',
+        'field_name': 'motivation',
+        'scale': 'int_0_10',
+        'is_crisis_field': False,
+    },
+    'appetite_nutrition': {
+        'label': 'Appetite',
+        'prompt_text': 'Appetite today? 0=no appetite, 10=normal',
+        'field_name': 'appetite',
+        'scale': 'int_0_10',
+        'is_crisis_field': False,
+    },
+    'substance_use': {
+        'label': 'Drinks',
+        'prompt_text': 'Drinks today? Reply number (0=none)',
+        'field_name': 'alcohol_units',
+        'scale': 'count',
+        'is_crisis_field': False,
+    },
+    'side_effects': {
+        'label': 'Side effects',
+        'prompt_text': 'Side effects today? 0=none, 10=severe',
+        'field_name': 'side_effect_burden',
+        'scale': 'int_0_10',
+        'is_crisis_field': False,
+    },
+}
+
+MSG_ROTATING_PARSE_FAIL = (
+    "Didn't catch that. Reply with a number (0-10) or SKIP."
+)
+
+
+def _normalize_target(target: str) -> str:
+    """Normalize a focus_domain target name for lookup in ROTATING_QUESTIONS."""
+    import re
+    return re.sub(r'[\s/\-]+', '_', target.strip().lower())
+
+
+def get_rotating_fields_for_checkin(focus_domains: list, checkin_index: int) -> list:
+    """Return up to 2 rotating question dicts for this check-in.
+
+    Args:
+        focus_domains: Raw target name strings from the DB (provider_focus_configs).
+        checkin_index: Count of completed check-ins so far; used to rotate questions
+                       when there are more than 2 active targets.
+
+    Returns:
+        List of 0–2 field dicts from ROTATING_QUESTIONS.
+    """
+    matched = []
+    for domain in focus_domains:
+        key = _normalize_target(domain)
+        if key in ROTATING_QUESTIONS:
+            matched.append(ROTATING_QUESTIONS[key])
+
+    if len(matched) <= 2:
+        return matched
+
+    # More than 2: rotate start index across check-ins
+    start = checkin_index % len(matched)
+    selected = []
+    for i in range(2):
+        selected.append(matched[(start + i) % len(matched)])
+    return selected
+
+
+def build_rotating_prompt(rotating_fields: list) -> str:
+    """Build the SMS prompt string for a rotating follow-up message.
+
+    Args:
+        rotating_fields: List of 1 or 2 field dicts from ROTATING_QUESTIONS.
+
+    Returns:
+        Formatted SMS string ready to send.
+    """
+    if not rotating_fields:
+        return ''
+
+    if len(rotating_fields) == 1:
+        f = rotating_fields[0]
+        return (
+            f"CognaSync: One more —\n"
+            f"{f['label']}: {f['prompt_text']}\n"
+            f"Reply with a number or SKIP"
+        )
+
+    f1, f2 = rotating_fields[0], rotating_fields[1]
+    return (
+        f"CognaSync: Two more —\n"
+        f"1. {f1['label']}: {f1['prompt_text']}\n"
+        f"2. {f2['label']}: {f2['prompt_text']}\n"
+        f"Reply two numbers (e.g. 3 7) or SKIP"
+    )
+
+
+def parse_rotating_reply(body: str, rotating_fields: list) -> dict | None:
+    """Parse a patient reply to a rotating question follow-up SMS.
+
+    Args:
+        body: Raw SMS reply text.
+        rotating_fields: The same list of 1 or 2 field dicts that were sent.
+
+    Returns:
+        Dict of {field_name: value} on success.
+        Empty dict if the patient replied SKIP.
+        None if the reply cannot be parsed.
+    """
+    import re
+
+    stripped = body.strip()
+
+    # SKIP signal
+    if stripped.upper() == 'SKIP':
+        return {}
+
+    # Extract all numbers from the reply
+    tokens = re.split(r'[\s,/]+', stripped)
+    nums = []
+    for t in tokens:
+        try:
+            nums.append(float(t))
+        except ValueError:
+            pass
+
+    if not nums:
+        return None
+
+    n_expected = len(rotating_fields)
+    if len(nums) < n_expected:
+        return None
+
+    def _apply_scale(value: float, scale: str):
+        if scale == 'int_0_10':
+            return max(0.0, min(10.0, value))
+        elif scale == 'int_0_3':
+            return max(0, min(3, int(round(value))))
+        else:  # count
+            return max(0.0, value)
+
+    result = {}
+    for i, field in enumerate(rotating_fields):
+        result[field['field_name']] = _apply_scale(nums[i], field['scale'])
+
+    return result

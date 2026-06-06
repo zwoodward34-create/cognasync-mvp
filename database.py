@@ -7607,13 +7607,20 @@ def get_sms_session(patient_id: str) -> dict | None:
 
 
 def set_sms_session(patient_id: str, session_type: str,
-                    suspended_session_type: str | None = None) -> dict | None:
-    """Resolve any existing open session then open a new one. Returns new row."""
+                    suspended_session_type: str | None = None,
+                    metadata: dict | None = None) -> dict | None:
+    """Resolve any existing open session then open a new one. Returns new row.
+
+    metadata: optional JSONB payload — used by rotating_pending sessions to
+    store {'checkin_id': str, 'rotating_fields': [field_name, ...],
+           'rotating_index': int}.
+    """
     try:
         resolve_sms_session(patient_id)
         row = {
             'patient_id':   str(patient_id),
             'session_type': session_type,
+            'metadata':     metadata or {},
         }
         if suspended_session_type:
             row['suspended_session_type'] = suspended_session_type
@@ -7789,3 +7796,82 @@ def clear_provider_focus_config(provider_id: str, patient_id: str) -> bool:
     except Exception as e:
         print(f'[db] clear_provider_focus_config error: {e}')
         return False
+
+
+# ── Rotating question helpers ─────────────────────────────────────────────────
+
+def get_patient_sms_checkin_count(patient_id: str) -> int:
+    """Return the total number of SMS check-ins stored for this patient.
+
+    Used as the checkin_index for rotating question slot selection — each
+    check-in increments the index, which determines which rotating questions
+    are sent as a follow-up that day.
+    """
+    try:
+        res = supabase_admin.table('checkins') \
+            .select('id', count='exact') \
+            .eq('user_id', str(patient_id)) \
+            .eq('source', 'sms') \
+            .execute()
+        return res.count or 0
+    except Exception as e:
+        print(f'[db] get_patient_sms_checkin_count error: {e}')
+        return 0
+
+
+def update_checkin_extended_data(checkin_id: str, field_dict: dict) -> bool:
+    """Merge new fields into an existing checkin's extended_data JSONB column.
+
+    Safe to call multiple times — merges rather than overwrites. Used to
+    store rotating question responses after the main check-in has been saved.
+
+    field_dict: e.g. {'irritability': 7, 'motivation': 4}
+    """
+    try:
+        res = supabase_admin.table('checkins') \
+            .select('extended_data') \
+            .eq('id', str(checkin_id)) \
+            .execute()
+
+        current = {}
+        if res.data:
+            current = res.data[0].get('extended_data') or {}
+
+        current.update(field_dict)
+
+        supabase_admin.table('checkins') \
+            .update({'extended_data': current}) \
+            .eq('id', str(checkin_id)) \
+            .execute()
+        return True
+    except Exception as e:
+        print(f'[db] update_checkin_extended_data error: {e}')
+        return False
+
+
+def get_active_focus_domains_for_patient(patient_id: str) -> list:
+    """Return the union of all active focus_domains across the patient's care team.
+
+    Multiple providers may have set targets; this returns the combined list
+    (deduplicated) for use by the rotating question selector.
+    """
+    from datetime import timezone as _tz
+    now = datetime.now(_tz.utc).isoformat()
+    try:
+        res = supabase_admin.table('provider_focus_configs') \
+            .select('focus_domains') \
+            .eq('patient_id', str(patient_id)) \
+            .gt('expires_at', now) \
+            .execute()
+
+        seen = set()
+        combined = []
+        for row in (res.data or []):
+            for domain in (row.get('focus_domains') or []):
+                if domain not in seen:
+                    seen.add(domain)
+                    combined.append(domain)
+        return combined
+    except Exception as e:
+        print(f'[db] get_active_focus_domains_for_patient error: {e}')
+        return []

@@ -4317,10 +4317,46 @@ def api_sms_inbound():
                 db.set_sms_session(patient_id, suspended)
         return _twiml_empty()
 
+    # ── Priority 4.5: rotating question reply ────────────────────────────────
+    # Must come BEFORE the ≥4-number check-in parse so a 1-2 number rotating
+    # reply isn't mistaken for an incomplete check-in.
+    session = db.get_sms_session(patient_id)
+    if session and session['session_type'] == 'rotating_pending':
+        meta             = session.get('metadata') or {}
+        checkin_id       = meta.get('checkin_id')
+        rotating_fields  = meta.get('rotating_fields', [])
+
+        if upper == 'SKIP':
+            db.resolve_sms_session(patient_id)
+            return _twiml_empty()
+
+        parsed_rotating = _sms.parse_rotating_reply(cleaned, rotating_fields)
+
+        if parsed_rotating is None:
+            _sms.send_sms(from_number, _sms.MSG_ROTATING_PARSE_FAIL)
+            return _twiml_empty()
+
+        if parsed_rotating == {}:  # explicit SKIP already handled above
+            db.resolve_sms_session(patient_id)
+            return _twiml_empty()
+
+        # Store into extended_data of the originating check-in
+        if checkin_id and parsed_rotating:
+            db.update_checkin_extended_data(checkin_id, parsed_rotating)
+
+        db.resolve_sms_session(patient_id)
+
+        # Suicidality alert: any non-zero score → immediate provider notification
+        suicidality_score = parsed_rotating.get('suicidality_score')
+        if suicidality_score is not None and suicidality_score > 0:
+            _handle_suicidality_alert(patient_id, patient_name, suicidality_score)
+
+        _sms.send_sms(from_number, '✓ Noted. Thank you.')
+        return _twiml_empty()
+
     # ── Priority 5: ≥4 numbers — check-in reply ───────────────────────────────
     parsed = _sms.parse_checkin_reply(cleaned)
     if parsed is not None:
-        session = db.get_sms_session(patient_id)
         if session and session['session_type'] == 'checkin_pending':
             try:
                 sleep_hrs = parsed.get('sleep_hours')
@@ -4331,7 +4367,7 @@ def api_sms_inbound():
                     'dissociation_source':  'sms_default',
                     'checkin_source':       'sms',
                 }
-                db.create_checkin(
+                checkin_id = db.create_checkin(
                     user_id      = patient_id,
                     mood_score   = parsed['mood'],
                     stress_score = parsed['stress'],
@@ -4351,6 +4387,11 @@ def api_sms_inbound():
                     f"Stress {stress_int} · Sleep {sleep_disp}hrs. Have a good day."
                 )
                 _sms.send_sms(from_number, confirm)
+
+                # Rotating question follow-up (sends second SMS if targets active)
+                if checkin_id:
+                    _trigger_rotating_followup(patient_id, checkin_id,
+                                               to_number=from_number)
             except Exception as e:
                 app.logger.error(f'[sms_inbound] checkin write error: {e}')
         return _twiml_empty()
@@ -4375,6 +4416,8 @@ def api_sms_inbound():
         stype = session['session_type']
         if stype == 'checkin_pending':
             _sms.send_sms(from_number, _sms.MSG_CHECKIN_PARSE_FAIL)
+        elif stype == 'rotating_pending':
+            _sms.send_sms(from_number, _sms.MSG_ROTATING_PARSE_FAIL)
         elif stype == 'med_pending':
             _sms.send_sms(from_number, 'Reply Y if taken, N if skipped.')
         elif stype == 'help_pending':
@@ -4431,6 +4474,105 @@ def _handle_sms_crisis(patient_id: str, patient_name: str,
             }).execute()
     except Exception as e:
         app.logger.error(f'[sms_inbound] provider alert/flag error: {e}')
+
+
+def _trigger_rotating_followup(patient_id: str, checkin_id: str,
+                                to_number: str | None = None) -> None:
+    """Send a rotating question follow-up SMS if the patient has active targets.
+
+    Called after any check-in is stored (both Twilio webhook path and direct
+    inbound path). If active focus_domains exist and map to rotating questions,
+    sends a follow-up SMS and opens a rotating_pending session.
+
+    to_number: patient's phone number. Looked up from profile if not provided.
+    """
+    try:
+        # Get all active focus domains across care team
+        focus_domains = db.get_active_focus_domains_for_patient(patient_id)
+        if not focus_domains:
+            return
+
+        # Determine which rotating fields to ask today
+        checkin_index   = db.get_patient_sms_checkin_count(patient_id)
+        rotating_fields = _sms.get_rotating_fields_for_checkin(focus_domains, checkin_index)
+        if not rotating_fields:
+            return
+
+        # Resolve phone number if not provided (Twilio webhook path)
+        phone = to_number
+        if not phone:
+            res = db.supabase_admin.table('profiles') \
+                .select('phone_number') \
+                .eq('id', str(patient_id)) \
+                .limit(1).execute()
+            phone = res.data[0].get('phone_number') if res.data else None
+        if not phone:
+            return
+
+        # Build and send the rotating question prompt
+        prompt_text = _sms.build_rotating_prompt(rotating_fields)
+        _sms.send_sms(phone, prompt_text)
+
+        # Open rotating_pending session with binding metadata
+        field_names = [f['field_name'] for f in rotating_fields]
+        db.set_sms_session(patient_id, 'rotating_pending', metadata={
+            'checkin_id':      checkin_id,
+            'rotating_fields': field_names,
+            'rotating_index':  checkin_index,
+        })
+
+        import logging
+        logging.getLogger(__name__).info(
+            f"[rotating] sent follow-up patient={patient_id!r} "
+            f"fields={field_names} checkin_id={checkin_id!r}"
+        )
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f'[rotating] followup error: {e}')
+
+
+def _handle_suicidality_alert(patient_id: str, patient_name: str,
+                               score: int) -> None:
+    """Alert provider when a suicidality rotating question returns a non-zero score.
+
+    This is distinct from the full crisis response — it is a scored signal
+    from a provider-directed monitoring target, not a patient-initiated crisis.
+    Score: 1=brief thoughts, 2=frequent thoughts, 3=hard to push away.
+    """
+    severity_map = {1: 'brief/passing', 2: 'frequent', 3: 'hard to push away'}
+    severity_label = severity_map.get(score, f'score {score}')
+
+    try:
+        provider = db.get_provider_for_patient(patient_id)
+        if not provider:
+            return
+
+        # SMS the provider
+        if provider.get('phone_number'):
+            body = (
+                f'CognaSync: {patient_name} reported suicidal thoughts '
+                f'({severity_label}) on their check-in today. '
+                f'Clinical review recommended.'
+            )
+            _sms.send_sms(provider['phone_number'], body)
+
+        # Insert care flag so it surfaces on the provider hub
+        flag_body = (
+            f'🟡 Suicidality monitoring alert — {patient_name} rated suicidal '
+            f'thoughts as "{severity_label}" (score {score}/3) on today\'s '
+            f'check-in. Provider-directed monitoring target is active.'
+        )
+        db.supabase_admin.table('care_flags').insert({
+            'patient_id':         str(patient_id),
+            'author_provider_id': str(provider['id']),
+            'flag_type':          'concern',
+            'body':               flag_body,
+            'visibility':         'care_team',
+        }).execute()
+
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).error(f'[suicidality_alert] error: {e}')
 
 
 @app.route('/api/internal/send-appointment-sms', methods=['POST', 'GET'])
@@ -4902,6 +5044,11 @@ def twilio_checkin():
     app.logger.info(
         f"[twilio/checkin] stored id={checkin_id!r} type={check_in_type!r} patient={patient_id!r}"
     )
+
+    # ── Rotating question follow-up ───────────────────────────────────────────
+    if checkin_id:
+        _trigger_rotating_followup(patient_id, checkin_id)
+
     return jsonify({'ok': True, 'checkin_id': checkin_id})
 
 
