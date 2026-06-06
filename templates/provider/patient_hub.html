@@ -1111,7 +1111,7 @@
   .ch-header {
     display: block;
     padding: 0;
-    overflow: hidden;
+    overflow: visible; /* must be visible so SMS dropdown isn't clipped */
   }
   .ch-header-identity {
     display: flex;
@@ -1136,7 +1136,7 @@
     border-top: 1px solid var(--border);
     border-bottom: 1px solid var(--border);
     display: flex;
-    background: var(--bg);
+    background: #EEF8F4; /* distinct teal-wash — separate from both card white and page bg */
   }
   .ch-kpi-cell {
     flex: 1;
@@ -1169,6 +1169,7 @@
     padding: 10px 20px;
     background: var(--bg);
     flex-wrap: wrap;
+    border-radius: 0 0 10px 10px; /* restore bottom corners now overflow is visible */
   }
   /* Remove old flex override that conflicted */
   .ch-header-main { display: none !important; }
@@ -1190,7 +1191,7 @@
   .ch-sms-dropdown {
     display: none; position: absolute; top: calc(100% + 4px); left: 0;
     background: var(--surface); border: 1px solid var(--border); border-radius: 7px;
-    min-width: 150px; box-shadow: 0 4px 16px rgba(0,0,0,0.10); z-index: 100; overflow: hidden;
+    min-width: 150px; box-shadow: 0 4px 16px rgba(0,0,0,0.10); z-index: 1000; overflow: hidden;
   }
   .ch-sms-dropdown.open { display: block; }
   .ch-sms-opt {
