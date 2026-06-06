@@ -6605,6 +6605,59 @@ def validate_and_consume_token(token: str) -> dict | None:
         return None
 
 
+def validate_sms_token_readonly(token: str) -> dict | None:
+    """
+    Validate a briefing token without consuming it.
+
+    Unlike validate_and_consume_token, this does not block access after
+    first use. Records used_at on first open for analytics (with an IS NULL
+    guard on the UPDATE to handle concurrent opens harmlessly).
+
+    Returns {patient_id, flow_type, metadata} or None on invalid/expired.
+    """
+    from datetime import timezone as _tz
+
+    if not token:
+        return None
+
+    try:
+        now_iso = datetime.now(_tz.utc).isoformat()
+
+        result = supabase_admin.table('sms_tokens') \
+            .select('id, patient_id, flow_type, metadata, expires_at') \
+            .eq('token', token) \
+            .execute()
+
+        if not result.data:
+            print(f'[db] validate_token_readonly: not found token={token!r}')
+            return None
+
+        row = result.data[0]
+
+        if row['expires_at'] < now_iso:
+            print(f'[db] validate_token_readonly: expired token={token!r}')
+            return None
+
+        # Record first open for analytics. IS NULL guard prevents double-write
+        # from concurrent opens (e.g., link preview + actual tap). A 0-row update
+        # is an acceptable "already recorded" outcome — do not check the result.
+        supabase_admin.table('sms_tokens') \
+            .update({'used_at': now_iso}) \
+            .eq('id', row['id']) \
+            .is_('used_at', 'null') \
+            .execute()
+
+        return {
+            'patient_id': row['patient_id'],
+            'flow_type':  row['flow_type'],
+            'metadata':   row['metadata'] or {},
+        }
+
+    except Exception as e:
+        print(f'[db] validate_sms_token_readonly error: {e}')
+        return None
+
+
 # ═══════════════════════════════════════════════════════════════════════════
 # TWILIO SMS — LOGGING
 # ═══════════════════════════════════════════════════════════════════════════
@@ -7877,6 +7930,137 @@ def get_active_focus_domains_for_patient(patient_id: str) -> list:
         return []
 
 
+# ── Patient briefing — domain labels and trend remapping ─────────────────────
+
+_BRIEFING_DOMAIN_LABELS: dict[str, str | None] = {
+    'mood':                'Mood patterns',
+    'anxiety_stress':      'Stress and anxiety levels',
+    'sleep':               'Sleep quality and duration',
+    'energy_focus':        'Energy and focus',
+    'medication_response': 'Medication response',
+    'social_functioning':  'Social wellbeing',
+    'irritability':        'Irritability patterns',
+    'motivation':          'Motivation levels',
+    'appetite_nutrition':  'Appetite and nutrition',
+    'suicidality':         None,   # NEVER surface to patient — silently dropped
+    # Unknown keys are also dropped (forward-compatible with new domain types)
+}
+
+# Maps _trend_stats() output strings to patient-facing vocabulary.
+# 'insufficient_data' → None so the template renders no trend arrow.
+_BRIEFING_TREND_REMAP: dict[str, str | None] = {
+    'increasing':        'improving',
+    'decreasing':        'declining',
+    'stable':            'stable',
+    'insufficient_data': None,
+}
+
+
+def get_briefing_data(patient_id: str) -> dict:
+    """
+    Assemble everything the patient briefing template needs in one call.
+
+    Calls get_trends_data (14-day window), get_active_focus_domains_for_patient,
+    and a profile name lookup. Returns a fully resolved dict safe to pass
+    directly to briefing.html.
+
+    Never raises — returns a zeroed structure on any failure so the route
+    can always render (even if data is empty).
+    """
+    from datetime import timezone as _tz
+
+    def _empty() -> dict:
+        """Zeroed fallback — returned when get_trends_data fails or is None."""
+        start_iso = (date.today() - timedelta(days=14)).isoformat()
+        end_iso   = date.today().isoformat()
+        return {
+            'patient_first_name': 'there',
+            'period_days':  14,
+            'date_range':   {'start': start_iso, 'end': end_iso},
+            'checkin_count': 0,
+            'mood':   {'average': None, 'trend': None, 'daily_scores': [], 'dates': []},
+            'sleep':  {'average': None, 'trend': None, 'daily_hours':  [], 'dates': []},
+            'stress': {'average': None, 'trend': None, 'daily_scores': [], 'dates': []},
+            'energy': {'average': None, 'trend': None, 'daily_scores': [], 'dates': []},
+            'monitoring_targets': [],
+            'generated_at': datetime.now(_tz.utc).isoformat(),
+        }
+
+    def _remap(raw: str | None) -> str | None:
+        return _BRIEFING_TREND_REMAP.get(raw) if raw else None
+
+    # ── 1. Trend data ────────────────────────────────────────────
+    try:
+        trends = get_trends_data(patient_id, days=14)
+    except Exception as e:
+        print(f'[db] get_briefing_data: get_trends_data failed: {e}')
+        trends = None
+
+    if not trends:
+        return _empty()
+
+    # ── 2. Patient first name ────────────────────────────────────
+    first_name = 'there'
+    try:
+        prof = supabase_admin.table('profiles') \
+            .select('full_name') \
+            .eq('id', str(patient_id)) \
+            .limit(1) \
+            .execute()
+        if prof.data and prof.data[0].get('full_name'):
+            full = (prof.data[0]['full_name'] or '').strip()
+            first_name = full.split()[0] if full else 'there'
+    except Exception as e:
+        print(f'[db] get_briefing_data: profile lookup failed: {e}')
+
+    # ── 3. Monitoring targets ────────────────────────────────────
+    try:
+        raw_domains = get_active_focus_domains_for_patient(patient_id) or []
+    except Exception as e:
+        print(f'[db] get_briefing_data: focus domains failed: {e}')
+        raw_domains = []
+
+    monitoring_targets = []
+    for domain in raw_domains:
+        label = _BRIEFING_DOMAIN_LABELS.get(domain)  # None for suicidality or unknown keys
+        if label is not None:
+            monitoring_targets.append(label)
+
+    # ── 4. Assemble ──────────────────────────────────────────────
+    return {
+        'patient_first_name': first_name,
+        'period_days':        14,
+        'date_range':         trends.get('date_range', {}),
+        'checkin_count':      trends.get('checkin_count', 0),
+        'mood': {
+            'average':      trends['mood'].get('average'),
+            'trend':        _remap(trends['mood'].get('trend')),
+            'daily_scores': trends['mood'].get('daily_scores', []),
+            'dates':        trends['mood'].get('dates', []),
+        },
+        'sleep': {
+            'average':     trends['sleep'].get('average'),
+            'trend':       _remap(trends['sleep'].get('trend')),
+            'daily_hours': trends['sleep'].get('daily_hours', []),   # note: daily_hours not daily_scores
+            'dates':       trends['sleep'].get('dates', []),
+        },
+        'stress': {
+            'average':      trends['stress'].get('average'),
+            'trend':        _remap(trends['stress'].get('trend')),
+            'daily_scores': trends['stress'].get('daily_scores', []),
+            'dates':        trends['stress'].get('dates', []),
+        },
+        'energy': {
+            'average':      trends['energy'].get('average'),
+            'trend':        _remap(trends['energy'].get('trend')),
+            'daily_scores': trends['energy'].get('daily_scores', []),
+            'dates':        trends['energy'].get('dates', []),
+        },
+        'monitoring_targets': monitoring_targets,
+        'generated_at':       datetime.now(_tz.utc).isoformat(),
+    }
+
+
 # ── Weekly voice scheduling ───────────────────────────────────────────────────
 
 # Maps normalized target name → (table, column) for trend detection.
@@ -7934,6 +8118,45 @@ def get_all_patients_for_weekly_voice() -> list:
         ]
     except Exception as e:
         print(f'[db] get_all_patients_for_weekly_voice error: {e}')
+        return []
+
+
+def get_all_patients_for_weekly_briefing() -> list:
+    """Return all patients with a phone number who have not received a
+    briefing SMS token in the past 7 days.
+
+    Mirrors get_all_patients_for_weekly_voice but uses flow_type='briefing'.
+
+    Returns [{patient_id, phone}, ...]
+    """
+    from datetime import timezone as _tz, timedelta as _td
+
+    cutoff = (datetime.now(_tz.utc) - _td(days=7)).isoformat()
+
+    try:
+        all_res = supabase_admin.table('patient_profiles') \
+            .select('user_id, phone_number') \
+            .neq('phone_number', None) \
+            .neq('phone_number', '') \
+            .execute()
+
+        if not all_res.data:
+            return []
+
+        recent_res = supabase_admin.table('sms_tokens') \
+            .select('patient_id') \
+            .eq('flow_type', 'briefing') \
+            .gte('created_at', cutoff) \
+            .execute()
+        already_sent = {r['patient_id'] for r in (recent_res.data or [])}
+
+        return [
+            {'patient_id': r['user_id'], 'phone': r['phone_number']}
+            for r in all_res.data
+            if r['user_id'] not in already_sent and r.get('phone_number')
+        ]
+    except Exception as e:
+        print(f'[db] get_all_patients_for_weekly_briefing error: {e}')
         return []
 
 

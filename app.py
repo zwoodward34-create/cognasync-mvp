@@ -4060,6 +4060,23 @@ def checkin_magic_link(token_str):
     return redirect(f'/checkin{qs}')
 
 
+@app.route('/patient/briefing/<token>')
+def patient_briefing_page(token):
+    """Patient weekly briefing page. No login required — token is the auth.
+
+    The token is a 7-day magic link sent via SMS once per week.
+    Multi-access: validates without consuming so patients can reopen.
+    """
+    tok = db.validate_sms_token_readonly(token)
+    if not tok or tok['flow_type'] != 'briefing':
+        return render_template('token_invalid.html',
+            message='Briefing links are valid for one week. '
+                    'Your provider will send a new one next week.'), 410
+
+    data = db.get_briefing_data(tok['patient_id'])
+    return render_template('patient/briefing.html', data=data)
+
+
 @app.route('/voice/<token_str>')
 def voice_note_page(token_str):
     """Patient-facing voice note recording page. No login required."""
@@ -5289,6 +5306,69 @@ def internal_trigger_voice_sms():
             skipped += 1
 
     app.logger.info(f"[internal/voice] triggered={triggered} skipped={skipped}")
+    return jsonify({'ok': True, 'triggered': triggered, 'skipped': skipped})
+
+
+@app.route('/api/internal/trigger-briefing-sms', methods=['POST'])
+def internal_trigger_briefing_sms():
+    """
+    Send weekly briefing SMS to all eligible patients (once per 7 days).
+
+    Called by Render cron or external scheduler. Requires INTERNAL_SECRET.
+    Creates a flow_type='briefing' token (7-day TTL) and delivers via the
+    voice Twilio Studio flow, which sends a plain SMS with the link.
+    """
+    valid, err = _validate_internal_secret()
+    if not valid:
+        return err
+
+    base_url = os.environ.get('APP_URL', '').rstrip('/')
+    patients  = db.get_all_patients_for_weekly_briefing()
+
+    triggered = 0
+    skipped   = 0
+
+    for patient in patients:
+        patient_id = patient['patient_id']
+
+        token = db.create_sms_token(
+            patient_id=patient_id,
+            flow_type='briefing',
+            metadata={'source': 'weekly_briefing'},
+            ttl_hours=168,   # 7 days — patients may revisit throughout the week
+        )
+        if not token:
+            skipped += 1
+            continue
+
+        briefing_url = f"{base_url}/patient/briefing/{token}"
+
+        sid = _twilio.trigger_flow(
+            flow_type='voice',
+            to_phone=patient['phone'],
+            parameters={
+                'provider_name': '',   # required by the voice Studio flow template
+                'voice_prompt': (
+                    'Your weekly CognaSync summary is ready — '
+                    '2 weeks of your mood, sleep, and energy data. '
+                    'No login needed.'
+                ),
+                'voice_link': briefing_url,
+            },
+        )
+
+        if sid:
+            triggered += 1
+            app.logger.info(
+                f"[internal/briefing] sent patient={patient_id!r}"
+            )
+        else:
+            skipped += 1
+            app.logger.warning(
+                f"[internal/briefing] trigger_flow returned None for patient={patient_id!r}"
+            )
+
+    app.logger.info(f"[internal/briefing] triggered={triggered} skipped={skipped}")
     return jsonify({'ok': True, 'triggered': triggered, 'skipped': skipped})
 
 

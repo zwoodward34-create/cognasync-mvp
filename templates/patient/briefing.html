@@ -1,0 +1,355 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Your Weekly Summary — CognaSync</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;1,9..40,300&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/tokens.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    /* ── Briefing-page layout overrides ────────────────────── */
+    body {
+      max-width: 480px;
+      margin: 0 auto;
+      padding: 24px 16px 56px;
+    }
+
+    /* Header */
+    .b-header {
+      text-align: center;
+      padding-bottom: 20px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 24px;
+    }
+    .b-wordmark {
+      font-size: 11px;
+      letter-spacing: 0.10em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+    .b-greeting {
+      font-family: 'DM Serif Display', Georgia, serif;
+      font-size: 28px;
+      font-weight: 400;
+      color: var(--text);
+      margin-bottom: 4px;
+    }
+    .b-period {
+      font-size: 13px;
+      color: var(--text-muted);
+    }
+
+    /* Stat grid */
+    .b-stat-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-bottom: 28px;
+    }
+    .b-stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+    .b-stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 4px;
+    }
+    .b-stat-value {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 26px;
+      color: var(--text);
+      line-height: 1;
+    }
+    .b-stat-unit {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-top: 2px;
+    }
+    .b-stat-trend {
+      font-size: 12px;
+      margin-top: 5px;
+    }
+    .trend-up     { color: var(--green); }
+    .trend-down   { color: var(--red); }
+    .trend-stable { color: var(--text-muted); }
+
+    /* Charts */
+    .b-chart-section { margin-bottom: 20px; }
+    .b-chart-label {
+      font-size: 11px;
+      font-weight: 500;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    .b-chart-wrap {
+      height: 120px;
+      position: relative;
+    }
+
+    /* Empty state */
+    .b-empty {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 20px;
+      text-align: center;
+      color: var(--text-muted);
+      font-size: 14px;
+      line-height: 1.6;
+      margin-bottom: 24px;
+      display: none;
+    }
+
+    /* Targets */
+    .b-targets {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 20px;
+      margin-bottom: 24px;
+    }
+    .b-targets h2 {
+      font-family: 'DM Serif Display', Georgia, serif;
+      font-size: 18px;
+      font-weight: 400;
+      margin-bottom: 6px;
+    }
+    .b-targets p {
+      font-size: 13px;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+    .b-targets ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+    .b-targets li {
+      font-size: 14px;
+      padding: 4px 0 4px 18px;
+      position: relative;
+    }
+    .b-targets li::before {
+      content: '·';
+      position: absolute;
+      left: 4px;
+      color: var(--accent);
+      font-size: 18px;
+      line-height: 1;
+    }
+
+    /* Footer */
+    .b-footer {
+      border-top: 1px solid var(--border);
+      padding-top: 20px;
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-muted);
+      line-height: 1.8;
+    }
+  </style>
+</head>
+<body>
+
+  {# Pass all data to JavaScript in one block at the top of the body #}
+  <script>const BRIEFING_DATA = {{ data | tojson | safe }};</script>
+
+  <!-- ── Header ───────────────────────────────────────────────── -->
+  <header class="b-header">
+    <div class="b-wordmark">CS · CognaSync</div>
+    <h1 class="b-greeting">Hi {{ data.patient_first_name }}</h1>
+    <p class="b-period">
+      {{ data.date_range.start[:10] if data.date_range.start else '' }}
+      –
+      {{ data.date_range.end[:10] if data.date_range.end else '' }}
+    </p>
+  </header>
+
+  <!-- ── Stat strip ───────────────────────────────────────────── -->
+  <div class="b-stat-grid">
+    <div class="b-stat-card">
+      <div class="b-stat-label">Avg Mood</div>
+      <div class="b-stat-value" id="s-mood">—</div>
+      <div class="b-stat-unit" id="u-mood">/10</div>
+      <div class="b-stat-trend" id="t-mood"></div>
+    </div>
+    <div class="b-stat-card">
+      <div class="b-stat-label">Avg Sleep</div>
+      <div class="b-stat-value" id="s-sleep">—</div>
+      <div class="b-stat-unit" id="u-sleep">hrs</div>
+      <div class="b-stat-trend" id="t-sleep"></div>
+    </div>
+    <div class="b-stat-card">
+      <div class="b-stat-label">Avg Stress</div>
+      <div class="b-stat-value" id="s-stress">—</div>
+      <div class="b-stat-unit" id="u-stress">/10</div>
+      <div class="b-stat-trend" id="t-stress"></div>
+    </div>
+    <div class="b-stat-card">
+      <div class="b-stat-label">Avg Energy</div>
+      <div class="b-stat-value" id="s-energy">—</div>
+      <div class="b-stat-unit" id="u-energy">/10</div>
+      <div class="b-stat-trend" id="t-energy"></div>
+    </div>
+  </div>
+
+  <!-- ── Empty state (JS shows/hides based on checkin_count) ─── -->
+  <div class="b-empty" id="charts-empty">
+    Not enough check-in data to show trends yet.<br>
+    Log check-ins throughout the week to see your patterns here.
+  </div>
+
+  <!-- ── Charts (JS hides if < 3 check-ins) ───────────────────── -->
+  <div id="charts-section">
+    <div class="b-chart-section">
+      <div class="b-chart-label">Mood</div>
+      <div class="b-chart-wrap"><canvas id="chart-mood"></canvas></div>
+    </div>
+    <div class="b-chart-section">
+      <div class="b-chart-label">Sleep</div>
+      <div class="b-chart-wrap"><canvas id="chart-sleep"></canvas></div>
+    </div>
+    <div class="b-chart-section">
+      <div class="b-chart-label">Stress</div>
+      <div class="b-chart-wrap"><canvas id="chart-stress"></canvas></div>
+    </div>
+    <div class="b-chart-section">
+      <div class="b-chart-label">Energy</div>
+      <div class="b-chart-wrap"><canvas id="chart-energy"></canvas></div>
+    </div>
+  </div>
+
+  <!-- ── Monitoring targets (Jinja conditional) ───────────────── -->
+  {% if data.monitoring_targets %}
+  <section class="b-targets">
+    <h2>What we're paying attention to</h2>
+    <p>Your care team asked us to focus on these areas in your check-ins:</p>
+    <ul>
+      {% for label in data.monitoring_targets %}
+      <li>{{ label }}</li>
+      {% endfor %}
+    </ul>
+  </section>
+  {% endif %}
+
+  <!-- ── Footer ───────────────────────────────────────────────── -->
+  <footer class="b-footer">
+    <p>Generated from your check-ins · {{ data.generated_at[:10] }}</p>
+    <p>Questions? Reach out to your care team.</p>
+  </footer>
+
+  <!-- ── JavaScript ───────────────────────────────────────────── -->
+  <script>
+    (function () {
+      'use strict';
+      var d = BRIEFING_DATA;
+
+      // ── Stat cards ──────────────────────────────────────────
+      function renderStat(valId, unitId, trendId, average, unit, trend) {
+        var valEl   = document.getElementById(valId);
+        var unitEl  = document.getElementById(unitId);
+        var trendEl = document.getElementById(trendId);
+
+        if (valEl) {
+          valEl.textContent = (average != null) ? Number(average).toFixed(1) : '—';
+        }
+        if (unitEl) {
+          // Clear unit label when no data — "—" with "/10" beneath looks wrong
+          unitEl.textContent = (average != null) ? unit : 'no data';
+        }
+
+        if (!trendEl) return;
+        if (trend === 'improving') {
+          trendEl.textContent = '▲ improving';
+          trendEl.className = 'b-stat-trend trend-up';
+        } else if (trend === 'declining') {
+          trendEl.textContent = '▼ declining';
+          trendEl.className = 'b-stat-trend trend-down';
+        } else if (trend === 'stable') {
+          trendEl.textContent = '– stable';
+          trendEl.className = 'b-stat-trend trend-stable';
+        } else {
+          trendEl.textContent = '';
+        }
+      }
+
+      renderStat('s-mood',   'u-mood',   't-mood',   d.mood.average,   '/10', d.mood.trend);
+      renderStat('s-sleep',  'u-sleep',  't-sleep',  d.sleep.average,  'hrs', d.sleep.trend);
+      renderStat('s-stress', 'u-stress', 't-stress', d.stress.average, '/10', d.stress.trend);
+      renderStat('s-energy', 'u-energy', 't-energy', d.energy.average, '/10', d.energy.trend);
+
+      // ── Empty state check ───────────────────────────────────
+      if (d.checkin_count < 3) {
+        document.getElementById('charts-section').style.display = 'none';
+        document.getElementById('charts-empty').style.display   = 'block';
+        return;   // no charts to render
+      }
+
+      // ── Chart helpers ────────────────────────────────────────
+      function thinLabels(dates) {
+        // Show every 3rd date to prevent crowding on 375px mobile
+        return dates.map(function (iso, i) {
+          if (i % 3 !== 0) return '';
+          var dt = new Date(iso);
+          return dt.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+        });
+      }
+
+      function makeChart(canvasId, dates, values, yMax) {
+        // Fresh config object per chart — no shared mutable state
+        var cfg = {
+          type: 'line',
+          data: {
+            labels: thinLabels(dates),
+            datasets: [{
+              data:             values,
+              borderColor:      '#0F6E56',
+              backgroundColor:  'rgba(15, 110, 86, 0.10)',
+              fill:             true,
+              tension:          0.3,
+              pointRadius:      3,
+              pointHoverRadius: 5,
+              spanGaps:         true,  // connect line across null (missing check-in) days
+            }]
+          },
+          options: {
+            responsive:          true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: {
+                grid:  { display: false },
+                ticks: { font: { size: 11 }, color: '#5F5E5A' }
+              },
+              y: {
+                display: false,   // averages shown in stat cards above
+                min:     0,
+                max:     yMax,
+              }
+            }
+          }
+        };
+        new Chart(document.getElementById(canvasId), cfg);
+      }
+
+      makeChart('chart-mood',   d.mood.dates,   d.mood.daily_scores,   10);
+      makeChart('chart-sleep',  d.sleep.dates,  d.sleep.daily_hours,   12);  // y.max=12 for hours
+      makeChart('chart-stress', d.stress.dates, d.stress.daily_scores, 10);
+      makeChart('chart-energy', d.energy.dates, d.energy.daily_scores, 10);
+
+    })();
+  </script>
+</body>
+</html>
