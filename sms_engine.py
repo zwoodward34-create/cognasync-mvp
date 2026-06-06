@@ -51,6 +51,200 @@ DEFAULT_VOICE_PROMPTS = {
     ),
 }
 
+# ── Weekly voice prompt system ────────────────────────────────────────────────
+# Used for the universal weekly voice recording sent to all active patients.
+# Completely separate from DEFAULT_VOICE_PROMPTS (which are appointment-anchored).
+
+GENERIC_WEEKLY_VOICE_PROMPT = (
+    "How have you been doing this week? Take a minute to share whatever's "
+    "been most present for you."
+)
+
+# Per-target prompts with three trend variants.
+# Suicidality always uses GENERIC_WEEKLY_VOICE_PROMPT — never named directly.
+# Keys are normalized target names (same as ROTATING_QUESTIONS).
+TARGET_VOICE_PROMPTS = {
+    'mood': {
+        'default':   (
+            "How has your mood been this week? "
+            "Walk us through what you've been noticing."
+        ),
+        'improving': (
+            "Your check-ins have been looking a bit brighter lately. "
+            "Tell us how things have been feeling from your side."
+        ),
+        'declining': (
+            "How have you been doing this week? "
+            "Take your time — whatever you want to share is worth mentioning."
+        ),
+    },
+    'anxiety_stress': {
+        'default':   (
+            "How have anxiety and stress been for you this week? "
+            "Tell us what's been on your mind."
+        ),
+        'improving': (
+            "Things seem to have been a bit calmer lately based on your check-ins. "
+            "Tell us how the week felt."
+        ),
+        'declining': (
+            "How has stress been for you this week? "
+            "Take a minute to share what's been weighing on you."
+        ),
+    },
+    'energy_focus': {
+        'default':   (
+            "How have your energy and focus been this week? "
+            "Tell us what a typical day has felt like."
+        ),
+        'improving': (
+            "Your energy scores have been looking stronger lately. "
+            "Tell us how you've been feeling."
+        ),
+        'declining': (
+            "How have you been doing with energy and focus this week? "
+            "Whatever you've noticed is worth sharing."
+        ),
+    },
+    'sleep': {
+        'default':   (
+            "How has sleep been going this week? "
+            "Tell us about your nights."
+        ),
+        'improving': (
+            "Sleep seems to have been improving based on your check-ins. "
+            "Tell us how things have been."
+        ),
+        'declining': (
+            "How has sleep been for you lately? "
+            "Tell us what's been going on with your nights."
+        ),
+    },
+    'medication_response': {
+        'default':   (
+            "How has your medication been feeling this week? "
+            "Take a minute to share what you've been noticing."
+        ),
+        'improving': (
+            "It sounds like things may be going well with your medication. "
+            "Tell us how it's been working."
+        ),
+        'declining': (
+            "How has your medication been feeling this week? "
+            "Take your time — whatever you're noticing is worth sharing."
+        ),
+    },
+    'social_functioning': {
+        'default':   (
+            "How have your social connections been this week? "
+            "Tell us about the people in your life lately."
+        ),
+        'improving': (
+            "It looks like social things may have been going a bit better. "
+            "Tell us how you've been connecting with people."
+        ),
+        'declining': (
+            "How have you been doing with social connection this week? "
+            "Share whatever's been on your mind."
+        ),
+    },
+    'irritability': {
+        'default':   (
+            "How has irritability been for you this week? "
+            "Tell us what you've been noticing."
+        ),
+        'improving': (
+            "Based on your check-ins, things may have been a bit smoother lately. "
+            "Tell us how the week felt."
+        ),
+        'declining': (
+            "How have you been doing this week? "
+            "Take your time — whatever's been most present is worth sharing."
+        ),
+    },
+    'motivation': {
+        'default':   (
+            "How has your motivation been this week? "
+            "Tell us what's been driving you or holding you back."
+        ),
+        'improving': (
+            "Your check-ins suggest motivation may be picking up. "
+            "Tell us how things have been feeling."
+        ),
+        'declining': (
+            "How have you been doing with motivation this week? "
+            "Share whatever's been on your mind."
+        ),
+    },
+    'appetite_nutrition': {
+        'default':   (
+            "How has your appetite been this week? "
+            "Tell us what eating has looked like."
+        ),
+        'improving': (
+            "Appetite seems to be looking better based on your check-ins. "
+            "Tell us how things have been."
+        ),
+        'declining': (
+            "How has your appetite been lately? "
+            "Whatever you've been noticing is worth sharing."
+        ),
+    },
+    'substance_use': {
+        # Don't name the target — use generic prompt
+        'default':   GENERIC_WEEKLY_VOICE_PROMPT,
+        'improving': GENERIC_WEEKLY_VOICE_PROMPT,
+        'declining': GENERIC_WEEKLY_VOICE_PROMPT,
+    },
+    'side_effects': {
+        'default':   (
+            "How have you been feeling physically this week? "
+            "Tell us if anything has stood out."
+        ),
+        'improving': (
+            "How have you been feeling physically this week? "
+            "Tell us if anything has stood out."
+        ),
+        'declining': (
+            "How have you been feeling physically this week? "
+            "Take your time — anything you've noticed is worth mentioning."
+        ),
+    },
+}
+
+
+def get_voice_prompt_for_patient(focus_domains: list, trend: str = 'stable') -> str:
+    """Select the right weekly voice prompt for a patient's active monitoring targets.
+
+    Args:
+        focus_domains: Raw target name strings from provider_focus_configs.
+        trend: Direction of the primary target's metric — 'improving', 'declining',
+               or 'stable'. Determined by the caller via get_target_trend_for_voice().
+
+    Returns:
+        The prompt string to use for this patient's weekly voice recording.
+
+    Rules:
+        - Suicidality target present → always GENERIC_WEEKLY_VOICE_PROMPT
+        - Otherwise, the first active target that has a prompt in TARGET_VOICE_PROMPTS
+          drives the prompt, using the trend variant
+        - No matching target → GENERIC_WEEKLY_VOICE_PROMPT
+    """
+    normalized = [_normalize_target(d) for d in focus_domains]
+
+    # Suicidality always gets the generic neutral prompt
+    if 'suicidality' in normalized:
+        return GENERIC_WEEKLY_VOICE_PROMPT
+
+    variant = trend if trend in ('improving', 'declining') else 'default'
+
+    for key in normalized:
+        if key in TARGET_VOICE_PROMPTS:
+            return TARGET_VOICE_PROMPTS[key][variant]
+
+    return GENERIC_WEEKLY_VOICE_PROMPT
+
+
 # ── Baseline anchor prompt ────────────────────────────────────────────────────
 # Sent to patients who have not yet completed a Phase 1 anchor recording.
 # Instructions are explicit: quiet environment, calm state, ~90 seconds, natural

@@ -5216,32 +5216,52 @@ def internal_trigger_checkin_sms():
 @app.route('/api/internal/trigger-voice-sms', methods=['POST'])
 def internal_trigger_voice_sms():
     """
-    Called weekly on voice_day_of_week by Render cron.
-    Finds patients due for mid-week standalone voice recording and fires Flow 4.
+    Called weekly by Render cron (any day — all active patients, once per week).
+
+    Sends every patient with a phone number one voice recording prompt per week.
+    Patients who still need a baseline anchor always get the anchor prompt.
+    Everyone else gets a target-aware prompt based on their active monitoring
+    targets and the trend direction of the primary target metric.
     """
     valid, err = _validate_internal_secret()
     if not valid:
         return err
 
     base_url = os.environ.get('APP_URL', '').rstrip('/')
-    patients = db.get_patients_due_voice_sms()
 
-    # Patients with no baseline yet get the anchor prompt regardless of schedule
+    # Universal: all active patients with a phone, once per week
+    patients = db.get_all_patients_for_weekly_voice()
+
+    # Patients still needing a baseline anchor recording
     anchor_needed = {p['patient_id'] for p in db.get_patients_needing_anchor_recording()}
 
     triggered = 0
     skipped = 0
 
     for patient in patients:
-        needs_anchor = patient['patient_id'] in anchor_needed
-        voice_prompt = (
-            _sms.BASELINE_ANCHOR_VOICE_PROMPT if needs_anchor
-            else patient.get('voice_prompt', 'How have you been feeling this week?')
-        )
+        patient_id   = patient['patient_id']
+        needs_anchor = patient_id in anchor_needed
+
+        if needs_anchor:
+            voice_prompt = _sms.BASELINE_ANCHOR_VOICE_PROMPT
+        else:
+            # Look up active monitoring targets for this patient
+            focus_domains = db.get_active_focus_domains_for_patient(patient_id)
+
+            if focus_domains:
+                # Detect trend on the primary target to pick the right variant
+                trend = db.get_target_trend_for_voice(patient_id, focus_domains)
+                voice_prompt = _sms.get_voice_prompt_for_patient(focus_domains, trend)
+            else:
+                voice_prompt = _sms.GENERIC_WEEKLY_VOICE_PROMPT
+
         token = db.create_sms_token(
-            patient_id=patient['patient_id'],
+            patient_id=patient_id,
             flow_type='voice',
-            metadata={'source': 'standalone_weekly', 'is_baseline_anchor': needs_anchor},
+            metadata={
+                'source':             'standalone_weekly',
+                'is_baseline_anchor': needs_anchor,
+            },
             ttl_hours=48,
         )
         if not token:
@@ -5254,13 +5274,17 @@ def internal_trigger_voice_sms():
             flow_type='voice',
             to_phone=patient['phone'],
             parameters={
-                'provider_name': patient.get('provider_name', 'your provider'),
+                'provider_name': '',
                 'voice_prompt':  voice_prompt,
                 'voice_link':    voice_link,
             },
         )
         if sid:
             triggered += 1
+            app.logger.info(
+                f"[internal/voice] sent patient={patient_id!r} "
+                f"anchor={needs_anchor}"
+            )
         else:
             skipped += 1
 

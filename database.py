@@ -7875,3 +7875,155 @@ def get_active_focus_domains_for_patient(patient_id: str) -> list:
     except Exception as e:
         print(f'[db] get_active_focus_domains_for_patient error: {e}')
         return []
+
+
+# ── Weekly voice scheduling ───────────────────────────────────────────────────
+
+# Maps normalized target name → (table, column) for trend detection.
+# 'checkins' fields are top-level columns; 'extended_data' fields are JSONB.
+_TREND_FIELD_MAP = {
+    'mood':                ('checkins',     'mood_score'),
+    'anxiety_stress':      ('checkins',     'stress_score'),
+    'energy_focus':        ('checkins',     'energy'),
+    'sleep':               ('checkins',     'sleep_hours'),
+    'medication_response': ('extended_data', 'medication_effectiveness'),
+    'social_functioning':  ('extended_data', 'social_quality'),
+    'irritability':        ('extended_data', 'irritability'),
+    'motivation':          ('extended_data', 'motivation'),
+    'appetite_nutrition':  ('extended_data', 'appetite'),
+}
+
+
+def get_all_patients_for_weekly_voice() -> list:
+    """Return all patients with a phone number who have not received a voice
+    SMS token in the past 7 days.
+
+    Replaces the old voice_day_of_week-based scheduler with a universal
+    weekly cadence: every patient gets one voice prompt per week, sent
+    whenever the cron fires.
+
+    Returns [{patient_id, phone}, ...]
+    """
+    from datetime import timezone as _tz, timedelta as _td
+
+    cutoff = (datetime.now(_tz.utc) - _td(days=7)).isoformat()
+
+    try:
+        # All patients with a phone number
+        all_res = supabase_admin.table('patient_profiles') \
+            .select('user_id, phone_number') \
+            .neq('phone_number', None) \
+            .neq('phone_number', '') \
+            .execute()
+
+        if not all_res.data:
+            return []
+
+        # Patients who already got a voice token this week
+        recent_res = supabase_admin.table('sms_tokens') \
+            .select('patient_id') \
+            .eq('flow_type', 'voice') \
+            .gte('created_at', cutoff) \
+            .execute()
+        already_sent = {r['patient_id'] for r in (recent_res.data or [])}
+
+        return [
+            {'patient_id': r['user_id'], 'phone': r['phone_number']}
+            for r in all_res.data
+            if r['user_id'] not in already_sent and r.get('phone_number')
+        ]
+    except Exception as e:
+        print(f'[db] get_all_patients_for_weekly_voice error: {e}')
+        return []
+
+
+def get_target_trend_for_voice(patient_id: str, focus_domains: list) -> str:
+    """Detect the trend direction for the primary active monitoring target.
+
+    Compares the average of the most recent 3 check-ins against the 3 before
+    that for the primary target's field. Returns 'improving', 'declining', or
+    'stable'. Falls back to 'stable' if there are fewer than 4 data points.
+
+    Args:
+        patient_id:    The patient's user ID.
+        focus_domains: Raw target name list from provider_focus_configs.
+
+    Returns:
+        'improving' | 'declining' | 'stable'
+    """
+    import re as _re
+
+    def _normalize(t):
+        return _re.sub(r'[\s/\-]+', '_', t.strip().lower())
+
+    # Find the first non-suicidality target with a trend field
+    primary_field = None
+    primary_source = None
+    for domain in focus_domains:
+        key = _normalize(domain)
+        if key == 'suicidality':
+            continue
+        if key in _TREND_FIELD_MAP:
+            primary_source, primary_field = _TREND_FIELD_MAP[key]
+            break
+
+    if not primary_field:
+        return 'stable'
+
+    try:
+        if primary_source == 'checkins':
+            res = supabase_admin.table('checkins') \
+                .select(f'id, {primary_field}') \
+                .eq('user_id', str(patient_id)) \
+                .not_.is_(primary_field, 'null') \
+                .order('created_at', desc=True) \
+                .limit(6) \
+                .execute()
+            rows = res.data or []
+            values = [r[primary_field] for r in rows
+                      if r.get(primary_field) is not None]
+
+        else:  # extended_data
+            res = supabase_admin.table('checkins') \
+                .select('id, extended_data') \
+                .eq('user_id', str(patient_id)) \
+                .not_.is_('extended_data', 'null') \
+                .order('created_at', desc=True) \
+                .limit(12) \
+                .execute()
+            values = []
+            for row in (res.data or []):
+                ext = row.get('extended_data') or {}
+                if isinstance(ext, dict) and primary_field in ext:
+                    v = ext[primary_field]
+                    if v is not None:
+                        values.append(float(v))
+                if len(values) >= 6:
+                    break
+
+        if len(values) < 4:
+            return 'stable'  # insufficient data
+
+        recent = values[:3]
+        older  = values[3:6]
+        if not older:
+            return 'stable'
+
+        avg_recent = sum(recent) / len(recent)
+        avg_older  = sum(older)  / len(older)
+        delta = avg_recent - avg_older
+
+        # For sleep and sleep_hours: higher = better (same direction as others)
+        # For stress_score: higher = worse — invert direction
+        if primary_field == 'stress_score':
+            delta = -delta
+
+        if delta > 0.5:
+            return 'improving'
+        if delta < -0.5:
+            return 'declining'
+        return 'stable'
+
+    except Exception as e:
+        print(f'[db] get_target_trend_for_voice error: {e}')
+        return 'stable'
