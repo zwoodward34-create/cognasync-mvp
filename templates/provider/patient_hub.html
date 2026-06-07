@@ -1476,6 +1476,13 @@
             <canvas id="bmc-stim"></canvas>
             <div class="brief-chart-pills" id="bmc-stim-pills"></div>
           </div>
+          <!-- Suicidality chart — shown only when data present -->
+          <div class="brief-chart-card" id="bmc-suicidality-card" style="display:none;">
+            <div class="brief-chart-card-title">Suicidality (PHQ-9 Q9)</div>
+            <canvas id="bmc-suicidality"></canvas>
+            <div style="font-size:0.68rem;color:var(--text-muted);margin-top:3px;">0 = Not at all &nbsp;·&nbsp; 3 = Nearly every day</div>
+            <div class="brief-chart-pills" id="bmc-suicidality-pills"></div>
+          </div>
         </div>
       </div>
 
@@ -2328,6 +2335,52 @@ function _renderBriefCharts(cd) {
   });
   document.getElementById('bmc-stim-pills').innerHTML =
     _pill('Stim avg', avgs.stim_load, '/10') + _pill('Energy avg', avgs.energy, '/10');
+
+  // 5. Suicidality (PHQ-9 Q9) — 0–3 scale; only shown when array has ≥1 non-null value
+  (function renderBmcSuicidality() {
+    const card = document.getElementById('bmc-suicidality-card');
+    const raw  = cd.suicidality_score;
+
+    // Hide and bail if missing or all-null
+    if (!raw || !Array.isArray(raw) || !raw.some(v => v !== null && v !== undefined)) {
+      if (card) card.style.display = 'none';
+      return;
+    }
+    if (card) card.style.display = '';
+
+    const safeVals = raw.map(ns);
+    const nonNull  = safeVals.filter(v => v !== null);
+    const avg      = nonNull.length
+      ? (nonNull.reduce((a, b) => a + b, 0) / nonNull.length).toFixed(2)
+      : null;
+
+    // Destroy previous instance if it exists
+    if (_briefCharts.suicidality) {
+      try { _briefCharts.suicidality.destroy(); } catch(e) {}
+    }
+
+    _briefCharts.suicidality = new Chart(document.getElementById('bmc-suicidality'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Suicidality (Q9)',
+            data: safeVals,
+            backgroundColor: safeVals.map(v =>
+              v === null || v === 0 ? '#d1d5db' : '#ef4444'
+            ),
+            borderWidth: 0 }
+        ]
+      },
+      options: { ...baseOpts, scales: { ...baseOpts.scales,
+        y: { ...baseOpts.scales.y, min: 0, max: 3,
+             ticks: { ...baseOpts.scales.y.ticks, stepSize: 1 } }
+      }}
+    });
+
+    document.getElementById('bmc-suicidality-pills').innerHTML =
+      avg !== null ? _pill('Avg', avg, '/3') : '';
+  })();
 }
 
 function generateBrief() {
@@ -2360,6 +2413,7 @@ async function confirmGenerateBrief() {
 
   btn.disabled = true;
   btn.textContent = 'Generating…';
+  _currentBriefId = null;   // clear stale ID so a failed run never leaves a ghost print URL
   if (copyBtn) copyBtn.style.display = 'none';
   if (pdfBtn)  pdfBtn.style.display  = 'none';
   body.innerHTML = '<p style="color:var(--text-muted);">Generating brief — this takes about 10–20 seconds…</p>';
@@ -2468,7 +2522,7 @@ async function loadBriefBank() {
       });
 
       item.addEventListener('click', function () {
-        _showBriefModal(s.summary_text || '', rangeStr);
+        _showBriefModal(s.summary_text || '', rangeStr, s.id || null, null);
         document.getElementById('brief-modal-title').textContent = 'Between-Session Brief';
       });
       bankBody.appendChild(item);

@@ -430,6 +430,18 @@
         </div>
       </div>
 
+      <!-- Suicidality — PHQ-9 Q9; only rendered when data present (JS-gated) -->
+      <div class="chart-card" id="chartSuicidalityCard" style="display:none;">
+        <div class="chart-card-title">Suicidality (PHQ-9 Q9)</div>
+        <canvas id="chartSuicidality"></canvas>
+        <div style="font-family:'Helvetica Neue',Arial,sans-serif;font-size:7pt;color:#6b7280;margin-top:4px;">
+          0 = Not at all &nbsp;·&nbsp; 3 = Nearly every day
+        </div>
+        <div class="chart-averages">
+          <span class="chart-avg-pill" id="chartSuicidalityAvgPill" style="display:none;"></span>
+        </div>
+      </div>
+
     </div>
   </div>
   {% endif %}
@@ -665,6 +677,50 @@ function changePeriod(days) {
       y: { ...baseOpts.scales.y, min: 0, max: 10 }
     }}
   });
+
+  // 5. Suicidality (PHQ-9 Q9) — 0–3 scale; only rendered when array has ≥1 non-null value
+  (function renderSuicidality() {
+    const raw = cd.suicidality_score;
+    if (!raw || !Array.isArray(raw)) return;
+    const hasData = raw.some(v => v !== null && v !== undefined);
+    if (!hasData) return;
+
+    const card = document.getElementById('chartSuicidalityCard');
+    if (card) card.style.display = '';
+
+    const safeVals = nullSafe(raw);
+    const nonNull  = safeVals.filter(v => v !== null);
+    const avg      = nonNull.length
+      ? (nonNull.reduce((a, b) => a + b, 0) / nonNull.length).toFixed(2)
+      : null;
+
+    if (avg !== null) {
+      const pill = document.getElementById('chartSuicidalityAvgPill');
+      if (pill) {
+        pill.innerHTML = 'Avg <strong>' + avg + '/3</strong>';
+        pill.style.display = '';
+      }
+    }
+
+    new Chart(document.getElementById('chartSuicidality'), {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [
+          { label: 'Suicidality (Q9)',
+            data: safeVals,
+            backgroundColor: safeVals.map(v =>
+              v === null || v === 0 ? '#d1d5db' : '#ef4444'
+            ),
+            borderWidth: 0 }
+        ]
+      },
+      options: { ...baseOpts, scales: { ...baseOpts.scales,
+        y: { ...baseOpts.scales.y, min: 0, max: 3,
+             ticks: { ...baseOpts.scales.y.ticks, stepSize: 1 } }
+      }}
+    });
+  })();
 })();
 {% endif %}
 </script>

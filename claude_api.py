@@ -619,12 +619,20 @@ _PSYCHIATRY_SYSTEM = (
     "occurred but was not recorded.\n"
     "- Do NOT advise changes. Do NOT comment on whether regimen is adequate.\n\n"
     "## Core Stability Metrics\n"
-    "Present as a compact 4-row table. Include exactly:\n"
+    "Present as a compact table. Include exactly:\n"
     "| Metric | Value | Trend | Range |\n"
     "| Stability Score | X/10 | improving/stable/declining | X–X |\n"
     "| Crash Risk | X/10 | trend | N days ≥7/10 |\n"
     "| Nervous System Load | X/10 | trend | — |\n"
     "| Mood Distortion | Δ X pts | — | max X |\n"
+    "Suicidality row rule: include a 5th row ONLY if suicidality_any_nonzero is True OR "
+    "suicidality_n ≥ 3. If the row is included and all scores are 0 across N check-ins, "
+    "write: '| Suicidality (PHQ-9 Q9) | 0/3 (N check-ins, none flagged) | — | — |'. "
+    "If any score > 0, write: '| Suicidality (PHQ-9 Q9) | X/3 | — | max X/3 |' and add "
+    "a 🔴 flag line in the ## 🚨 Flags section: "
+    "'Suicidality item (PHQ-9 Q9): [score]/3 on [date]. Clinical review required.' "
+    "If no suicidality data (suicidality_n = 0): omit the row entirely — do not write a "
+    "placeholder or 'not recorded' row.\n"
     "Add one line below the table: \"Mood Distortion: [no threshold flag / FLAGGED — Δ > 2.5] "
     "(max divergence X, threshold 2.5).\"\n\n"
     "## Session Intelligence\n"
@@ -704,17 +712,20 @@ def _build_chart_data(checkin_data):
 
         scores = _db._compute_checkin_scores(mood, stress, sleep, ext, meds)
 
+        suicidality = ext.get('suicidality_score')
+
         date_str = c.get('checkin_date') or c.get('date') or (c.get('created_at') or '')[:10]
         rows.append({
             'date':             date_str,
-            'mood':             float(mood)   if mood   is not None else None,
+            'mood':             float(mood)         if mood         is not None else None,
             'stability_score':  scores.get('stability_score'),
             'crash_risk':       scores.get('crash_risk'),
-            'sleep_hours':      float(sleep)  if sleep  is not None else None,
+            'sleep_hours':      float(sleep)        if sleep        is not None else None,
             'sleep_disruption': scores.get('sleep_disruption'),
             'stim_load':        scores.get('stim_load'),
-            'energy':           float(energy) if energy is not None else None,
-            'stress':           float(stress) if stress is not None else None,
+            'energy':           float(energy)       if energy       is not None else None,
+            'stress':           float(stress)       if stress       is not None else None,
+            'suicidality_score': float(suicidality) if suicidality is not None else None,
         })
 
     # Sort by date, deduplicate by taking last entry per date
@@ -725,7 +736,7 @@ def _build_chart_data(checkin_data):
 
     sorted_rows = list(by_date.values())
     keys = ['mood', 'stability_score', 'crash_risk', 'sleep_hours',
-            'sleep_disruption', 'stim_load', 'energy', 'stress']
+            'sleep_disruption', 'stim_load', 'energy', 'stress', 'suicidality_score']
 
     chart = {'dates': [r['date'] for r in sorted_rows]}
     for k in keys:
@@ -780,6 +791,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
     irrit_vals, motiv_vals, perceived_stress_vals = [], [], []
     exercise_vals, social_vals, workload_vals = [], [], []
     alcohol_vals, sunlight_vals = [], []
+    suicidality_vals = []
     coping_days = {'breathing': 0, 'meditation': 0, 'movement': 0}
     advanced_days = 0
     meds_logged = high_stim_days = 0
@@ -860,6 +872,14 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                 if coping.get(k):
                     coping_days[k] += 1
             is_advanced = True
+        if ext.get('suicidality_score') is not None:
+            suicidality_vals.append(int(ext['suicidality_score']))
+            is_advanced = True
+        # Rotating question fields not captured by the core advanced fields
+        for _rq_field in ('enjoyment', 'anxiety', 'focus', 'medication_effectiveness',
+                          'appetite', 'side_effect_burden', 'sleep_latency_min'):
+            if ext.get(_rq_field) is not None:
+                row[_rq_field] = float(ext[_rq_field])
         if is_advanced:
             advanced_days += 1
         if ext.get('caffeine_mg') is not None:
@@ -945,6 +965,11 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         # (chart_data deduplicates to one row per calendar day, which is the
         # correct unit; checkin_rows may have multiple entries per day).
         'avg_stim_load':        chart_data.get('averages', {}).get('stim_load'),
+        # Suicidality — PHQ-9 item 9 (0–3 scale), provider-only metric
+        'avg_suicidality':      _avg(suicidality_vals) if suicidality_vals else None,
+        'max_suicidality':      max(suicidality_vals) if suicidality_vals else None,
+        'suicidality_any_nonzero': any(v > 0 for v in suicidality_vals) if suicidality_vals else False,
+        'suicidality_n':        len(suicidality_vals),
     }
 
     # Advanced stats — only include when enough observations exist
@@ -961,6 +986,11 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         if len(sunlight_vals)        >= 3: adv_stats['avg_sunlight_hours']   = _avg(sunlight_vals)
         if any(v > 0 for v in coping_days.values()):
             adv_stats['coping_activity_days'] = coping_days
+        if len(suicidality_vals)     >= 3:
+            adv_stats['avg_suicidality']         = _avg(suicidality_vals)
+            adv_stats['max_suicidality']         = max(suicidality_vals)
+            adv_stats['suicidality_any_nonzero'] = any(v > 0 for v in suicidality_vals)
+            adv_stats['suicidality_n']           = len(suicidality_vals)
 
     n_days = days
     period_label = (
@@ -1320,6 +1350,55 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         if adv_stats else ""
     )
 
+    # ── Monitoring target data block ──────────────────────────────────────────
+    # When a provider has selected specific monitoring targets, pull the rotating
+    # question response data for each target and surface it explicitly in the
+    # user_content block. This ensures Claude always references target metrics
+    # even when data is sparse or values are all zero.
+    _TARGET_FIELD_MAP = {
+        'mood':               ('enjoyment',               'Enjoyment (0–10)',         '0–10'),
+        'suicidality':        ('suicidality_score',       'Suicidality (PHQ-9 Q9)',   '0–3'),
+        'anxiety_stress':     ('anxiety',                 'Anxiety (0–10)',            '0–10'),
+        'energy_focus':       ('focus',                   'Focus (0–10)',              '0–10'),
+        'medication_response':('medication_effectiveness','Medication effectiveness',  '0–10'),
+        'social_functioning': ('social_quality',          'Social quality (0–10)',     '0–10'),
+        'irritability':       ('irritability',            'Irritability (0–10)',       '0–10'),
+        'motivation':         ('motivation',              'Motivation (0–10)',         '0–10'),
+        'appetite_nutrition': ('appetite',                'Appetite (0–10)',           '0–10'),
+        'substance_use':      ('alcohol_units',           'Alcohol (units)',           'count'),
+        'side_effects':       ('side_effect_burden',      'Side effect burden (0–10)', '0–10'),
+        'sleep':              ('sleep_latency_min',       'Sleep latency (min)',       'count'),
+    }
+    monitoring_target_section = ''
+    if focus_config and focus_config.get('focus_domains'):
+        import re as _re
+        _norm = lambda d: _re.sub(r'[\s/\-]+', '_', d.strip().lower())
+        target_lines = []
+        for raw_domain in focus_config['focus_domains']:
+            key = _norm(raw_domain)
+            mapping = _TARGET_FIELD_MAP.get(key)
+            if not mapping:
+                continue
+            field_name, label, scale = mapping
+            # Collect all values for this field from checkin rows
+            vals = [r[field_name] for r in checkin_rows if field_name in r]
+            if not vals:
+                target_lines.append(f"  {label}: No responses logged this period.")
+            else:
+                avg_val = round(sum(vals) / len(vals), 1)
+                max_val = max(vals)
+                min_val = min(vals)
+                target_lines.append(
+                    f"  {label}: avg {avg_val} (min {min_val}, max {max_val}) "
+                    f"across {len(vals)} response{'s' if len(vals) != 1 else ''}. Scale: {scale}."
+                )
+        if target_lines:
+            monitoring_target_section = (
+                "\n\nMONITORING TARGET DATA (provider-selected targets — "
+                "surface each explicitly in the brief even if values are at zero baseline):\n"
+                + "\n".join(target_lines)
+            )
+
     patient_line = f"PATIENT: {patient_name}\n" if patient_name else ""
     user_content = (
         f"{patient_line}"
@@ -1329,6 +1408,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         f"DAILY CHECK-INS ({n} total):\n{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
         f"JOURNAL ENTRIES ({len(journal_rows)} total):\n{json.dumps(journal_rows, indent=2, default=str)}"
         f"{psych_engagement_section}"
+        f"{monitoring_target_section}"
         f"{symptom_section}"
         f"{substance_section}"
         f"{safety_section}"
@@ -1351,6 +1431,11 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
             f"{', '.join(domains)}.\n"
             + (f"Provider notes: {fc_notes}\n" if fc_notes else "")
             + "Apply the following emphasis rules:\n"
+            "- MONITORING TARGET DATA block in the user message contains per-target "
+            "rotating question response data. You MUST reference each listed target "
+            "explicitly in the brief. If a target shows 'No responses logged this period', "
+            "note it as a data gap in ## Flags (e.g., '🔵 Suicidality target active — "
+            "no responses logged this period'). Never silently omit a selected target.\n"
             "- In ## Flags, lower the threshold for these domains: surface at 🟡 Watch "
             "anything that would normally be informational-only. If a domain shows any "
             "notable deviation, flag it even if it does not cross a hard threshold.\n"
@@ -1358,8 +1443,8 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
             "to these domains, citing a specific data point.\n"
             "- In ## Medication (or the most relevant quantitative section), lead with "
             "data for the focus domains before other metrics.\n"
-            "- Append '(Enhanced monitoring per provider configuration)' as the last "
-            "line of the ## Flags section so the reader understands the emphasis.\n"
+            "- Append '(Enhanced monitoring per provider configuration)' once at the "
+            "end of the ## Flags section — not after individual flag lines.\n"
         )
 
     psych_system = _PSYCHIATRY_SYSTEM + psych_system_addon + focus_addon
