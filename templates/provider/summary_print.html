@@ -363,7 +363,7 @@
     </div>
     <div class="patient-period">
       <strong>Review Period</strong>
-      <span style="white-space: nowrap;">{{ period_start }} — {{ period_end }}</span><br>
+      <span style="white-space: nowrap; word-break: keep-all;">{{ period_start | replace('-', '‑') }} — {{ period_end | replace('-', '‑') }}</span><br>
       ({{ days }}-day window)
     </div>
   </div>
