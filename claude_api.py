@@ -642,6 +642,17 @@ _PSYCHIATRY_SYSTEM = (
     "Themes: [medication mentions if any, then key themes in ≤15 words]. "
     "[Convergence note only if acoustic + text + check-in scores align or diverge meaningfully — "
     "1 sentence, omit if not applicable.]\n\n"
+    "## Advanced Data\n"
+    "Include this section ONLY if ADVANCED CHECK-IN DATA is present in the user message. "
+    "Report averages for any field with data: exercise (minutes/day), social quality, "
+    "workload friction, perceived stress, alcohol units, sunlight hours, coping activity days. "
+    "Note any field where the value is notably elevated or depressed. "
+    "Do NOT include this section if no ADVANCED CHECK-IN DATA block is present.\n\n"
+    "## Qualitative Themes\n"
+    "Include this section ONLY if JOURNAL ENTRIES are present and contain non-empty content. "
+    "Identify 2–3 language-level patterns: recurring subjects, tone shifts, "
+    "notable themes the patient returned to. Observations only — no clinical interpretation. "
+    "Do NOT include this section if journal entries are absent or all entries are empty.\n\n"
     "## Symptom Patterns\n"
     "Omit this section entirely if no symptoms meet threshold (≥3 occurrences). "
     "If present: \"[Symptom]: N of T days. Co-signals: [variable] [higher/lower] on symptom days "
@@ -655,10 +666,9 @@ _PSYCHIATRY_SYSTEM = (
     "and speech content — those are separate observations.\n"
     "- Do NOT include a Quantitative Summary section. Mood, sleep, energy, and stress averages are "
     "already rendered as charts in the document — repeating them as text adds length without adding value.\n"
-    "- Omit Positive Correlates, Coping Activities, Sunlight, Workload Friction unless threshold-crossing.\n"
-    "- Alcohol: include only if ≥3 units/use day or ≥4 drinking days in 7-day window.\n"
+    "- Alcohol in Advanced Data: include only if ≥3 units/use day or ≥4 drinking days in 7-day window.\n"
     "- Engagement: note gaps ≥5 days in the Flags section. Do not repeat engagement stats in multiple sections.\n"
-    "- Keep the entire brief under 550 words.\n"
+    "- Keep the entire brief under 650 words.\n"
 )
 
 
@@ -767,7 +777,11 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
     # ── Parse checkin data for psychiatry-relevant fields ─────────────────────
     checkin_rows = []
     mood_vals, stress_vals, sleep_vals, energy_vals = [], [], [], []
-    irrit_vals, motiv_vals = [], []
+    irrit_vals, motiv_vals, perceived_stress_vals = [], [], []
+    exercise_vals, social_vals, workload_vals = [], [], []
+    alcohol_vals, sunlight_vals = [], []
+    coping_days = {'breathing': 0, 'meditation': 0, 'movement': 0}
+    advanced_days = 0
     meds_logged = high_stim_days = 0
 
     for c in checkin_data:
@@ -814,11 +828,40 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         }
         if energy is not None:
             row['energy'] = energy
+        is_advanced = False
         if ext.get('irritability') is not None:
             row['irritability'] = ext['irritability']
             irrit_vals.append(float(ext['irritability']))
+            is_advanced = True
         if ext.get('motivation') is not None:
             motiv_vals.append(float(ext['motivation']))
+            is_advanced = True
+        if ext.get('perceived_stress') is not None:
+            perceived_stress_vals.append(float(ext['perceived_stress']))
+            is_advanced = True
+        if ext.get('exercise_minutes') is not None:
+            exercise_vals.append(float(ext['exercise_minutes']))
+            is_advanced = True
+        if ext.get('social_quality') is not None:
+            social_vals.append(float(ext['social_quality']))
+            is_advanced = True
+        if ext.get('workload_friction') is not None:
+            workload_vals.append(float(ext['workload_friction']))
+            is_advanced = True
+        if ext.get('alcohol_units') is not None:
+            alcohol_vals.append(float(ext['alcohol_units']))
+            is_advanced = True
+        if ext.get('sunlight_hours') is not None:
+            sunlight_vals.append(float(ext['sunlight_hours']))
+            is_advanced = True
+        if ext.get('coping'):
+            coping = ext['coping']
+            for k in coping_days:
+                if coping.get(k):
+                    coping_days[k] += 1
+            is_advanced = True
+        if is_advanced:
+            advanced_days += 1
         if ext.get('caffeine_mg') is not None:
             row['caffeine_mg'] = ext['caffeine_mg']
         if meds:
@@ -903,6 +946,21 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         # correct unit; checkin_rows may have multiple entries per day).
         'avg_stim_load':        chart_data.get('averages', {}).get('stim_load'),
     }
+
+    # Advanced stats — only include when enough observations exist
+    adv_stats = {}
+    if advanced_days >= 3:
+        adv_stats['advanced_checkin_days'] = advanced_days
+        if len(irrit_vals)           >= 3: adv_stats['avg_irritability']     = _avg(irrit_vals)
+        if len(motiv_vals)           >= 3: adv_stats['avg_motivation']       = _avg(motiv_vals)
+        if len(perceived_stress_vals) >= 3: adv_stats['avg_perceived_stress'] = _avg(perceived_stress_vals)
+        if len(exercise_vals)        >= 3: adv_stats['avg_exercise_minutes'] = _avg(exercise_vals)
+        if len(social_vals)          >= 3: adv_stats['avg_social_quality']   = _avg(social_vals)
+        if len(workload_vals)        >= 3: adv_stats['avg_workload_friction'] = _avg(workload_vals)
+        if len(alcohol_vals)         >= 3: adv_stats['avg_alcohol_units']    = _avg(alcohol_vals)
+        if len(sunlight_vals)        >= 3: adv_stats['avg_sunlight_hours']   = _avg(sunlight_vals)
+        if any(v > 0 for v in coping_days.values()):
+            adv_stats['coping_activity_days'] = coping_days
 
     n_days = days
     period_label = (
@@ -1171,9 +1229,15 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                 + (" ⚠ BELOW 40% — INSUFFICIENT DATA" if insufficient_data else "")
             )
         if src_breakdown:
-            eg_lines.append("- Source: "
-                            + ", ".join(f"{k}: {v}"
-                                        for k, v in sorted(src_breakdown.items())))
+            # Format as submission counts, not response metrics, to avoid ambiguity
+            src_parts = [
+                f"{v} submission{'s' if v != 1 else ''} via {k}"
+                for k, v in sorted(src_breakdown.items())
+            ]
+            eg_lines.append(
+                f"- Check-in submission counts by channel: {', '.join(src_parts)}"
+                f" (submission totals only — not SMS response metrics)"
+            )
         psych_engagement_section = '\n'.join(eg_lines)
 
         # Dynamic system prompt additions for engagement signals
@@ -1182,8 +1246,10 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
             "## Quantitative Summary. Format:\n"
             "- Participation: [active_days] of [period_days] days ([pct]%)\n"
             "- Longest calendar gap: [N] days\n"
-            "- Per-channel response rates: list each channel with responded/sent, "
-            "percentage, and specific unanswered dates if any"
+            "- Per-channel SMS response rates: list each SMS channel with responded/sent, "
+            "percentage, and specific unanswered dates if any. "
+            "Do NOT apply response-rate language to the submission count breakdown — "
+            "web submissions are direct logins, not prompted SMS flows."
         )
         if gap_segs:
             psych_system_addon += "\n- Silent periods: list date ranges"
@@ -1249,11 +1315,17 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                 "Treat segments independently. Do NOT carry patterns across the gap.\n"
             )
 
+    adv_section = (
+        f"\n\nADVANCED CHECK-IN DATA:\n{json.dumps(adv_stats, indent=2)}"
+        if adv_stats else ""
+    )
+
     patient_line = f"PATIENT: {patient_name}\n" if patient_name else ""
     user_content = (
         f"{patient_line}"
         f"REVIEW PERIOD: {period_label}\n\n"
-        f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}\n\n"
+        f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}"
+        f"{adv_section}\n\n"
         f"DAILY CHECK-INS ({n} total):\n{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
         f"JOURNAL ENTRIES ({len(journal_rows)} total):\n{json.dumps(journal_rows, indent=2, default=str)}"
         f"{psych_engagement_section}"
@@ -2102,8 +2174,16 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             )
 
         if src_breakdown:
-            src_str = ', '.join(f"{k}: {v}" for k, v in sorted(src_breakdown.items()))
-            lines.append(f"- Check-in source breakdown: {src_str}")
+            # Format explicitly as submission counts — distinct from SMS sent/responded
+            # metrics — to prevent the AI from treating these as response-rate figures.
+            src_parts = [
+                f"{v} check-in submission{'s' if v != 1 else ''} via {k}"
+                for k, v in sorted(src_breakdown.items())
+            ]
+            lines.append(
+                f"- Check-in submission counts by channel: {', '.join(src_parts)}"
+                f" (NOTE: these are submission totals, NOT SMS response metrics)"
+            )
 
         if type_breakdown:
             type_str = ', '.join(f"{k}: {v}" for k, v in sorted(type_breakdown.items()))
@@ -2133,13 +2213,19 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                 )
             if sms_by_flow:
                 engagement_system_note += (
-                    "\n- Per-channel response rates: list each channel with "
+                    "\n- Per-channel SMS response rates: list each SMS channel with "
                     "responded/sent, percentage, AND the specific dates of unanswered "
                     "prompts (e.g. 'unanswered on: 2025-04-03, 2025-04-07'). "
                     "Omit the unanswered dates line if a channel had no unanswered prompts."
                 )
             if src_breakdown:
-                engagement_system_note += "\n- Source breakdown (web / sms / manual)"
+                engagement_system_note += (
+                    "\n- Check-in submission counts by channel: report exactly as given "
+                    "(e.g. '10 submissions via web'). Do NOT apply response-rate "
+                    "language (sent/responded/%) to these submission counts. "
+                    "Web submissions have no SMS prompt — there is no 'sent and responded' "
+                    "framing for web check-ins."
+                )
             engagement_system_note += (
                 "\nIf participation rate is below 50%, add a 🟡 flag in the Flags "
                 "section: 'Low engagement — [active_days] of [period_days] days "
@@ -2751,8 +2837,15 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
                     eg_lines.append("- Per-feature response rates:\n" + '\n'.join(flow_lines))
 
         if src_breakdown:
-            src_str = ', '.join(f"{k}: {v}" for k, v in sorted(src_breakdown.items()))
-            eg_lines.append(f"- Check-in source breakdown: {src_str}")
+            # Format as submission counts, not response metrics, to avoid ambiguity
+            src_parts = [
+                f"{v} submission{'s' if v != 1 else ''} via {k}"
+                for k, v in sorted(src_breakdown.items())
+            ]
+            eg_lines.append(
+                f"- Check-in submission counts by channel: {', '.join(src_parts)}"
+                f" (submission totals only — not SMS response metrics)"
+            )
 
         if type_breakdown:
             type_str = ', '.join(f"{k}: {v}" for k, v in sorted(type_breakdown.items()))
@@ -2774,11 +2867,15 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
             th_eng_note += "\n- SMS response rate: [N] of [N] prompts ([pct]%)"
             if len(sms_by_flow) > 1:
                 th_eng_note += (
-                    "\n- Per-feature response rates: list each feature type "
+                    "\n- Per-feature SMS response rates: list each feature type "
                     "with responded/sent count and percentage"
                 )
         if src_breakdown:
-            th_eng_note += "\n- Source breakdown (web / sms / manual)"
+            th_eng_note += (
+                "\n- Check-in submission counts by channel: report exactly as given. "
+                "Do NOT apply sent/responded/% language — these are direct submission "
+                "counts, not SMS prompt metrics. Web submissions require no SMS prompt."
+            )
         th_eng_note += (
             "\nIf participation rate is below 50%, add a 🟡 flag: "
             "'Low engagement — [active_days] of [period_days] days logged. "
