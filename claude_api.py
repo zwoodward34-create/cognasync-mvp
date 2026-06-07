@@ -1355,19 +1355,21 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
     # question response data for each target and surface it explicitly in the
     # user_content block. This ensures Claude always references target metrics
     # even when data is sparse or values are all zero.
+    # Labels use the provider-facing target name, not the rotating field name.
+    # Format: (field_name_in_extended_data, provider_label, scale)
     _TARGET_FIELD_MAP = {
-        'mood':               ('enjoyment',               'Enjoyment (0–10)',         '0–10'),
-        'suicidality':        ('suicidality_score',       'Suicidality (PHQ-9 Q9)',   '0–3'),
-        'anxiety_stress':     ('anxiety',                 'Anxiety (0–10)',            '0–10'),
-        'energy_focus':       ('focus',                   'Focus (0–10)',              '0–10'),
-        'medication_response':('medication_effectiveness','Medication effectiveness',  '0–10'),
-        'social_functioning': ('social_quality',          'Social quality (0–10)',     '0–10'),
-        'irritability':       ('irritability',            'Irritability (0–10)',       '0–10'),
-        'motivation':         ('motivation',              'Motivation (0–10)',         '0–10'),
-        'appetite_nutrition': ('appetite',                'Appetite (0–10)',           '0–10'),
-        'substance_use':      ('alcohol_units',           'Alcohol (units)',           'count'),
-        'side_effects':       ('side_effect_burden',      'Side effect burden (0–10)', '0–10'),
-        'sleep':              ('sleep_latency_min',       'Sleep latency (min)',       'count'),
+        'mood':               ('enjoyment',               'Mood target',               '0–10'),
+        'suicidality':        ('suicidality_score',       'Suicidality target',        '0–3'),
+        'anxiety_stress':     ('anxiety',                 'Anxiety/Stress target',     '0–10'),
+        'energy_focus':       ('focus',                   'Energy/Focus target',       '0–10'),
+        'medication_response':('medication_effectiveness','Medication Response target', '0–10'),
+        'social_functioning': ('social_quality',          'Social Functioning target', '0–10'),
+        'irritability':       ('irritability',            'Irritability target',       '0–10'),
+        'motivation':         ('motivation',              'Motivation target',         '0–10'),
+        'appetite_nutrition': ('appetite',                'Appetite/Nutrition target', '0–10'),
+        'substance_use':      ('alcohol_units',           'Substance Use target',      'count'),
+        'side_effects':       ('side_effect_burden',      'Side Effects target',       '0–10'),
+        'sleep':              ('sleep_latency_min',       'Sleep target',              'count'),
     }
     monitoring_target_section = ''
     if focus_config and focus_config.get('focus_domains'):
