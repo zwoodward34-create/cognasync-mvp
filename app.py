@@ -4909,7 +4909,7 @@ def api_patient_voice_biomarkers(patient_id):
                     session_type='voice_note',
                 )
                 _sid = db.store_clinical_session(
-                    provider_id=None,
+                    provider_id=provider['id'],
                     patient_id=patient_id,
                     session_date=_vn_date,
                     session_type='voice_note',
