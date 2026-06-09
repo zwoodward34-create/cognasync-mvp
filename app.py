@@ -4852,6 +4852,11 @@ def api_patient_voice_biomarkers(patient_id):
 
     analyzed = analyzed[:limit]
 
+    # Optional single-session filter
+    filter_session_id = request.args.get('session_id')
+    if filter_session_id:
+        analyzed = [s for s in analyzed if s['session_id'] == filter_session_id]
+
     if not analyzed:
         return jsonify({'ok': True, 'sessions': [], 'aggregate': None,
                         'analysis': None, 'session_count': 0})

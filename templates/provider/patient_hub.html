@@ -461,6 +461,36 @@
   }
   .delete-btn:hover { color: #c0392b; background: #fdecea; }
 
+  /* ── Voice card — selectable state ──────────────────────────────────────── */
+  .voice-card--selectable { cursor: pointer; transition: background 0.12s; }
+  .voice-card--selectable:hover { background: #f5f7ff; }
+  .voice-card--selected {
+    background: #eef2ff;
+    border-left: 3px solid #6366f1;
+    padding-left: 15px; /* compensate for the 3px border */
+  }
+  .voice-card--no-analysis { opacity: 0.65; cursor: default; }
+
+  /* ── Measured acoustic values table (single-session view) ────────────────── */
+  .bm-measured-wrap { margin: 0 0 14px; }
+  .bm-measured-title {
+    font-size: 0.68rem; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.08em; color: var(--text-muted); margin-bottom: 8px;
+  }
+  .bm-measured-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    gap: 7px;
+  }
+  .bm-measured-cell {
+    background: var(--bg-subtle, #f8f9fb);
+    border: 1px solid var(--border);
+    border-radius: 7px;
+    padding: 8px 10px;
+  }
+  .bm-measured-lbl { display: block; font-size: 0.67rem; color: var(--text-muted); margin-bottom: 2px; }
+  .bm-measured-val { display: block; font-size: 0.88rem; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+
   /* ── Session card ────────────────────────────────────────────────────────── */
   .session-card {
     padding: 12px 18px;
@@ -1925,11 +1955,20 @@
     <div style="border-top:1px solid var(--border);">
       {% if voice_notes %}
         {% for note in voice_notes %}
-        <div class="voice-card" id="voice-card-{{ note.id }}">
+        {# Cards with a processed clinical session are selectable; others are dimmed #}
+        {% set has_analysis = note.clinical_session_id %}
+        <div class="voice-card voice-card--selectable{% if not has_analysis %} voice-card--no-analysis{% endif %}"
+             id="voice-card-{{ note.id }}"
+             data-session-id="{{ note.clinical_session_id or '' }}"
+             data-note-date="{{ note.created_at[:10] if note.created_at else '' }}"
+             onclick="selectVoiceCard(this)">
           <div class="voice-card-hdr">
             <span class="voice-date">{{ note.created_at[:10] if note.created_at else '—' }}</span>
             <span class="voice-badge {% if note.transcript %}voice-badge--done{% endif %}">{{ 'Transcribed' if note.transcript else 'No transcript' }}</span>
-            <button class="delete-btn" title="Delete recording" onclick="deleteVoiceNote('{{ note.id }}')">✕</button>
+            {% if not has_analysis %}
+              <span style="font-size:0.65rem;color:var(--text-muted);margin-left:6px;">Processing…</span>
+            {% endif %}
+            <button class="delete-btn" title="Delete recording" onclick="event.stopPropagation(); deleteVoiceNote('{{ note.id }}')">✕</button>
           </div>
           {% if note.guiding_question or note.prompt %}<div class="voice-prompt">"{{ note.guiding_question or note.prompt }}"</div>{% endif %}
           {% if note.transcript %}<div class="voice-transcript">{{ note.transcript }}</div>
@@ -1941,6 +1980,13 @@
       <div class="hub-empty">No voice recordings on file. Upload a recording above, or wait for the patient to respond to an SMS voice prompt.</div>
       {% endif %}
     </div>
+
+    <!-- Selection hint — shown when recordings are present -->
+    {% if voice_notes %}
+    <div id="bm-select-hint" style="font-size:0.75rem;color:var(--text-muted);padding:8px 18px;background:#f8f9ff;border-top:1px solid var(--border);">
+      Click a recording to select it, then click <strong>⚡ Analyze Audio</strong> to see its full analysis. Or click the button without a selection to view the aggregate across all recordings.
+    </div>
+    {% endif %}
 
     <!-- Acoustic analysis panel — shown when Analyze Audio is triggered -->
     <div id="bm-section-body" style="display:none;border-top:1px solid var(--border);">
@@ -3735,9 +3781,11 @@ window.generateBrief = function() {
 (function () {
   'use strict';
 
-  const PATIENT_ID_BM = PATIENT_ID;  // set at top of page via Jinja
-  let   _bmLoaded     = false;
-  let   _bmCharts     = {};          // Chart.js instances keyed by canvas id
+  const PATIENT_ID_BM   = PATIENT_ID;  // set at top of page via Jinja
+  let   _bmLoaded       = false;
+  let   _bmCharts       = {};          // Chart.js instances keyed by canvas id
+  let   _selectedSessionId  = null;    // session_id of selected voice card (or null)
+  let   _selectedNoteDate   = null;    // date label of selected card
 
   // Feature display config: field name → { label, values_ordered, value_colors }
   const BM_FEATURES = [
@@ -3873,6 +3921,75 @@ window.generateBrief = function() {
     }
   }
 
+  // ── Voice card selection ─────────────────────────────────────────────────
+  window.selectVoiceCard = function (el) {
+    const sid = el.dataset.sessionId;
+    if (!sid) return;  // not yet processed — no-op
+    if (_selectedSessionId === sid) {
+      // Deselect
+      el.classList.remove('voice-card--selected');
+      _selectedSessionId = null;
+      _selectedNoteDate  = null;
+    } else {
+      // Select — deselect any previously selected card
+      document.querySelectorAll('.voice-card--selected')
+        .forEach(c => c.classList.remove('voice-card--selected'));
+      el.classList.add('voice-card--selected');
+      _selectedSessionId = sid;
+      _selectedNoteDate  = el.dataset.noteDate || '';
+    }
+    // Update button label
+    const btn = document.getElementById('btn-analyze-voice');
+    if (btn) {
+      btn.textContent = _selectedSessionId
+        ? '⚡ Analyze ' + (_selectedNoteDate || 'Selected')
+        : '⚡ Analyze Audio';
+    }
+    // Hide analysis panel until user clicks Analyze
+    const panel = document.getElementById('bm-section-body');
+    if (panel) panel.style.display = 'none';
+    _bmLoaded = false;
+  };
+
+  // ── Single-session measured values table ─────────────────────────────────
+  const _MEASURED_LABELS = {
+    articulation_rate_sps: 'Articulation Rate',
+    speech_rate_sps:       'Speech Rate (sps)',
+    pause_ratio:           'Pause Ratio',
+    pause_count:           'Pause Count',
+    f0_mean_hz:            'Mean Pitch (Hz)',
+    f0_cv:                 'Pitch Variability',
+    f0_sd_hz:              'Pitch SD (Hz)',
+    hnr_db:                'HNR (dB)',
+    jitter_local:          'Jitter (local)',
+    shimmer_local:         'Shimmer (local)',
+    duration_s:            'Duration (s)',
+    rms_mean:              'RMS Amplitude',
+  };
+
+  function _fmt(key, val) {
+    if (val === null || val === undefined) return '—';
+    if (key === 'pause_ratio')   return (val * 100).toFixed(1) + '%';
+    if (key === 'duration_s')    return val.toFixed(1) + 's';
+    if (key === 'pause_count')   return Math.round(val);
+    return parseFloat(val).toFixed(3).replace(/\.?0+$/, '');
+  }
+
+  function _buildMeasuredTable(measured) {
+    if (!measured) return '';
+    const entries = Object.entries(_MEASURED_LABELS).filter(([k]) => measured[k] != null);
+    if (!entries.length) return '';
+    let html = '<div class="bm-measured-wrap"><div class="bm-measured-title">Acoustic Measurements</div><div class="bm-measured-grid">';
+    for (const [k, lbl] of entries) {
+      html += `<div class="bm-measured-cell">
+        <span class="bm-measured-lbl">${lbl}</span>
+        <span class="bm-measured-val">${_fmt(k, measured[k])}</span>
+      </div>`;
+    }
+    html += '</div></div>';
+    return html;
+  }
+
   function _renderBiomarkers(data) {
     const body = document.getElementById('bm-section-body');
     if (!body) return;
@@ -3882,18 +3999,47 @@ window.generateBrief = function() {
     if (!data || !data.ok || !data.session_count) {
       body.innerHTML = '<div class="bm-empty">No processed audio sessions found. ' +
         'Upload and analyze a session recording to see acoustic biomarker data.</div>';
-      document.getElementById('bm-meta').textContent = '0 voice recordings';
+      const metaEl = document.getElementById('bm-meta');
+      if (metaEl) metaEl.textContent = '0 voice recordings';
       return;
     }
 
-    const agg = data.aggregate || {};
-    document.getElementById('bm-meta').textContent =
-      `${data.session_count} voice recording${data.session_count !== 1 ? 's' : ''}`;
+    const agg      = data.aggregate || {};
+    const isSingle = data.session_count === 1;
+    const metaEl   = document.getElementById('bm-meta');
+    if (metaEl) {
+      metaEl.textContent = isSingle
+        ? (_selectedNoteDate ? 'Recording: ' + _selectedNoteDate : '1 voice recording')
+        : `${data.session_count} voice recording${data.session_count !== 1 ? 's' : ''}`;
+    }
 
     let html = '<div class="bm-body">';
-    html += _buildPatternBadge(agg);
-    html += _buildGaugesHtml(agg.label_counts);
-    html += _renderLongCharts(agg.longitudinal);
+
+    if (isSingle) {
+      // ── Single-session view: vocab chips + measured table (no longitudinal charts) ──
+      const sess = (data.sessions || [])[0] || {};
+      html += _buildGaugesHtml(agg.label_counts);
+      html += _buildMeasuredTable(sess.measured);
+      if (sess.vocabulary && sess.vocabulary.clinical_pattern_type &&
+          sess.vocabulary.clinical_pattern_type !== 'none_detected') {
+        const pt = sess.vocabulary.clinical_pattern_type.replace(/_/g,' ');
+        const slugClass = (sess.vocabulary.clinical_pattern_type || '').replace(/_/g,'-');
+        html += `<div class="bm-pattern-row">
+          <span class="bm-pattern-label">Acoustic Pattern</span>
+          <span class="bm-pattern-badge bm-pattern-badge--${slugClass}">${pt}</span>
+        </div>`;
+      }
+      if (sess.vocabulary && sess.vocabulary.severity_note) {
+        html += `<div style="font-size:0.78rem;color:var(--text-muted);padding:6px 0 2px;">
+          ${sess.vocabulary.severity_note.replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+        </div>`;
+      }
+    } else {
+      // ── Aggregate view: pattern badge + chips + longitudinal charts ──
+      html += _buildPatternBadge(agg);
+      html += _buildGaugesHtml(agg.label_counts);
+      html += _renderLongCharts(agg.longitudinal);
+    }
 
     if (data.analysis) {
       const escaped = data.analysis.replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -3905,17 +4051,19 @@ window.generateBrief = function() {
 
     body.innerHTML = html;
 
-    // Initialise Chart.js instances after DOM is ready
-    if (agg.longitudinal) {
+    // Initialise Chart.js instances (aggregate view only — skipped for single session)
+    if (!isSingle && agg.longitudinal) {
       _initLongCharts(agg.longitudinal);
     }
   }
 
-  async function loadBiomarkerData() {
+  async function loadBiomarkerData(sessionId) {
     if (_bmLoaded) return;
     _bmLoaded = true;
     try {
-      const res  = await fetch(`/api/provider/patient/${PATIENT_ID_BM}/voice-biomarkers`);
+      let url = `/api/provider/patient/${PATIENT_ID_BM}/voice-biomarkers`;
+      if (sessionId) url += `?session_id=${encodeURIComponent(sessionId)}`;
+      const res  = await fetch(url);
       const data = await res.json();
       _renderBiomarkers(data);
     } catch (e) {
@@ -3924,7 +4072,8 @@ window.generateBrief = function() {
     }
   }
 
-  // Triggered by the "Analyze Audio" button — forces a fresh fetch each time
+  // Triggered by the "Analyze Audio" button — forces a fresh fetch each time.
+  // If a voice card is selected, fetches that single session; otherwise fetches aggregate.
   window.triggerVoiceAnalysis = function () {
     const panel = document.getElementById('bm-section-body');
     if (panel) {
@@ -3933,9 +4082,13 @@ window.generateBrief = function() {
     }
     const btn = document.getElementById('btn-analyze-voice');
     if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
+    const targetSession = _selectedSessionId;   // capture at click time
+    const restoreLabel  = targetSession
+      ? '⚡ Analyze ' + (_selectedNoteDate || 'Selected')
+      : '⚡ Analyze Audio';
     _bmLoaded = false;
-    loadBiomarkerData().finally(function () {
-      if (btn) { btn.disabled = false; btn.textContent = '⚡ Analyze Audio'; }
+    loadBiomarkerData(targetSession || null).finally(function () {
+      if (btn) { btn.disabled = false; btn.textContent = restoreLabel; }
     });
   };
 }());
