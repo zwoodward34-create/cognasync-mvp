@@ -3922,13 +3922,13 @@ window.generateBrief = function() {
     if (!data || !data.ok || !data.session_count) {
       body.innerHTML = '<div class="bm-empty">No processed audio sessions found. ' +
         'Upload and analyze a session recording to see acoustic biomarker data.</div>';
-      document.getElementById('bm-meta').textContent = '0 sessions';
+      document.getElementById('bm-meta').textContent = '0 voice recordings';
       return;
     }
 
     const agg = data.aggregate || {};
     document.getElementById('bm-meta').textContent =
-      `${data.session_count} analyzed session${data.session_count !== 1 ? 's' : ''}`;
+      `${data.session_count} voice recording${data.session_count !== 1 ? 's' : ''}`;
 
     let html = '<div class="bm-body">';
     html += _buildPatternBadge(agg);
@@ -3940,7 +3940,7 @@ window.generateBrief = function() {
       html += `<div class="bm-analysis-box">${escaped}</div>`;
     }
 
-    html += `<div class="bm-footnote">Provider view only · Acoustic measurements from processed session recordings</div>`;
+    html += `<div class="bm-footnote">Provider view only · Acoustic measurements from patient voice recordings (SMS prompt responses)</div>`;
     html += '</div>';
 
     body.innerHTML = html;

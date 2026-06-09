@@ -4783,15 +4783,16 @@ def api_get_patient_voice_notes(patient_id):
 @app.route('/api/provider/patient/<patient_id>/voice-biomarkers', methods=['GET'])
 def api_patient_voice_biomarkers(patient_id):
     """
-    Return acoustic biomarker data for clinical sessions where audio has been processed.
+    Return acoustic biomarker data from patient voice recordings submitted in
+    response to SMS prompts (session_type='voice_note').
     PROVIDER-ONLY — this endpoint must never be exposed to patient routes.
 
-    Returns per-session vocabulary labels, aggregate label distributions,
+    Returns per-recording vocabulary labels, aggregate label distributions,
     longitudinal numeric series for charts, and an AI-generated Mode C
     acoustic observation summary.
 
     Query params:
-        limit (int, default 20, max 50)
+        limit (int, default 20, max 50)  — applied after voice_note filtering
     """
     provider, err = _api_user('provider')
     if err:
@@ -4799,14 +4800,17 @@ def api_patient_voice_biomarkers(patient_id):
 
     limit = min(int(request.args.get('limit', 20)), 50)
 
+    # Fetch more than limit to ensure we have enough after filtering to voice_note type
     sessions = db.get_clinical_sessions_for_period(
         patient_id=patient_id,
-        limit=limit,
+        limit=limit * 3,
     )
 
-    # Filter to sessions with processed acoustic features
+    # Filter to SMS prompt voice recordings with processed acoustic features
     analyzed = []
     for s in (sessions or []):
+        if s.get('session_type') != 'voice_note':
+            continue
         scores = s.get('scores') or {}
         af     = scores.get('acoustic_features') or {}
         vocab  = af.get('vocabulary') or {}
@@ -4845,6 +4849,8 @@ def api_patient_voice_biomarkers(patient_id):
                 'duration_s':            meas.get('duration_s'),
             },
         })
+
+    analyzed = analyzed[:limit]
 
     if not analyzed:
         return jsonify({'ok': True, 'sessions': [], 'aggregate': None,

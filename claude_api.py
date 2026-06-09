@@ -3940,7 +3940,7 @@ def generate_brief_from_sessions(
 
 _VOICE_BIOMARKER_ANALYSIS_SYSTEM = """You are a clinical data assistant generating an acoustic observation summary for a licensed mental health provider.
 
-TASK: Write exactly 3–5 sentences describing speech pattern observations derived from acoustic biomarker measurements across the provided sessions. This summary appears in the provider-facing clinical dashboard only — never shown to the patient.
+TASK: Write exactly 3–5 sentences describing speech pattern observations derived from acoustic biomarker measurements across the provided voice recordings. These recordings are brief audio responses the patient submitted in reply to daily SMS prompts — they are not full clinical sessions. This summary appears in the provider-facing clinical dashboard only — never shown to the patient.
 
 CONTROLLED VOCABULARY — use only these labels for speech features:
   speech_rate:       slowed | normal | pressured
