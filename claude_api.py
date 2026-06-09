@@ -3931,3 +3931,139 @@ def generate_brief_from_sessions(
         'raw':    raw,
         'crisis_sessions': len(crisis_sessions),
     }
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Vocal Biomarker Analysis — Mode C acoustic observation summary
+# CLAUDE.md §24: provider-only, controlled vocabulary, no diagnostic claims
+# ──────────────────────────────────────────────────────────────────────────────
+
+_VOICE_BIOMARKER_ANALYSIS_SYSTEM = """You are a clinical data assistant generating an acoustic observation summary for a licensed mental health provider.
+
+TASK: Write exactly 3–5 sentences describing speech pattern observations derived from acoustic biomarker measurements across the provided sessions. This summary appears in the provider-facing clinical dashboard only — never shown to the patient.
+
+CONTROLLED VOCABULARY — use only these labels for speech features:
+  speech_rate:       slowed | normal | pressured
+  prosody:           flat | normal | elevated
+  pauses:            increased | normal | decreased
+  arousal:           low | normal | elevated | agitated
+  vocal_affect:      flat | normal | strained
+  speech_coherence:  intact | disorganized
+  clinical_pattern_type: depressive | anxiety_stress | mania_hypomania | psychosis_risk | mixed | none_detected
+
+OUTPUT RULES:
+- Cite the label, the supporting numeric measurement (if provided), and the session count.
+- When labels vary across sessions, name the direction of change (e.g., "shifted from slowed to normal across three sessions").
+- If only one session: state that the observation is based on a single session; do not write trend language.
+- Name the acoustic pattern type, if present, as a cluster observation — never as a clinical finding.
+- Write in clinically neutral, data-first prose. No bullet points. No headers. Plain paragraphs.
+
+FORBIDDEN (never include):
+- "this confirms," "this indicates [disorder]," "this explains," "this is consistent with [condition]"
+- "patient has," "patient is," "you have," "you are," or any diagnostic label
+- Causal or mechanistic language (e.g., "caused by," "explains," "suggests [diagnosis]")
+- Any language that crosses from describing acoustic patterns into clinical interpretation
+
+UNCERTAINTY: If confidence is low for a session, note it — do not present low-confidence data as established fact.
+
+OUTPUT LENGTH: 3–5 sentences maximum. No more."""
+
+
+def generate_voice_biomarker_analysis(
+    sessions_with_biomarkers: list,
+    patient_id: str | None = None,
+) -> dict:
+    """
+    Generate a Mode C compliant acoustic observation summary from session biomarker data.
+    Provider-only output — MUST NOT be shown to patients (CLAUDE.md §24).
+
+    Each item in sessions_with_biomarkers must contain:
+        session_date  : str  (ISO date, e.g. "2025-04-10")
+        vocabulary    : dict — controlled-vocab labels from map_features_to_vocabulary()
+        measured      : dict — raw numeric measurements (articulation_rate_sps, pause_ratio, etc.)
+
+    Returns:
+        {'status': 'safe' | 'error', 'text': str, 'raw': str | None}
+    """
+    if not sessions_with_biomarkers:
+        return {
+            'status': 'safe',
+            'text': 'No acoustic biomarker data is available for this period.',
+            'raw': None,
+        }
+
+    n = len(sessions_with_biomarkers)
+    session_lines = []
+
+    for s in sessions_with_biomarkers:
+        vocab    = s.get('vocabulary') or {}
+        measured = s.get('measured') or {}
+        date_str = s.get('session_date', 'unknown date')
+
+        parts = [f"Session {date_str}:"]
+
+        for fld in ('speech_rate', 'prosody', 'pauses', 'arousal', 'vocal_affect', 'speech_coherence'):
+            v = vocab.get(fld)
+            if v:
+                parts.append(f"{fld}={v}")
+
+        if vocab.get('clinical_pattern_type'):
+            parts.append(f"pattern={vocab['clinical_pattern_type']}")
+        if vocab.get('confidence'):
+            parts.append(f"confidence={vocab['confidence']}")
+
+        # Key numeric measurements — provide context the model can cite
+        num_pairs = [
+            ('articulation_rate_sps', 'artic', '{:.2f}sps'),
+            ('pause_ratio',           'pause_ratio', '{:.1%}'),
+            ('f0_cv',                 'F0_CV', '{:.3f}'),
+            ('hnr_db',                'HNR', '{:.1f}dB'),
+            ('jitter_local',          'jitter', '{:.3f}'),
+            ('shimmer_local',         'shimmer', '{:.3f}'),
+        ]
+        for key, label, fmt in num_pairs:
+            val = measured.get(key)
+            if val is not None:
+                try:
+                    parts.append(f"{label}={fmt.format(val)}")
+                except (TypeError, ValueError):
+                    pass
+
+        session_lines.append(" | ".join(parts))
+
+    data_block     = "\n".join(session_lines)
+    data_boundary  = f"Based on {n} analyzed session{'s' if n != 1 else ''}."
+
+    user_content = (
+        f"ANALYZED SESSIONS ({n}):\n{data_block}\n\n"
+        f"DATA BOUNDARY: {data_boundary}\n\n"
+        "Write a 3–5 sentence acoustic observation summary for the provider. "
+        "Describe speech patterns across these sessions using controlled vocabulary. "
+        "No diagnosis. No causal claims."
+    )
+
+    try:
+        raw = _call_claude(
+            _VOICE_BIOMARKER_ANALYSIS_SYSTEM,
+            user_content,
+            max_tokens=300,
+        )
+    except RuntimeError as e:
+        import logging
+        logging.getLogger(__name__).error(
+            "generate_voice_biomarker_analysis failed: %s", e
+        )
+        return {'status': 'error', 'text': str(e), 'raw': None}
+
+    clean = _sanitize_output(raw)
+    if clean is None:
+        clean = (
+            "Acoustic data is available for this period. "
+            "Please review the individual session measurements for detailed observations."
+        )
+
+    return {
+        'status': 'safe',
+        'text':   clean + f"\n\n*{data_boundary}*",
+        'raw':    raw,
+    }

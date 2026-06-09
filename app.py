@@ -4780,6 +4780,139 @@ def api_get_patient_voice_notes(patient_id):
     return jsonify({'ok': True, 'voice_notes': notes or []})
 
 
+@app.route('/api/provider/patient/<patient_id>/voice-biomarkers', methods=['GET'])
+def api_patient_voice_biomarkers(patient_id):
+    """
+    Return acoustic biomarker data for clinical sessions where audio has been processed.
+    PROVIDER-ONLY — this endpoint must never be exposed to patient routes.
+
+    Returns per-session vocabulary labels, aggregate label distributions,
+    longitudinal numeric series for charts, and an AI-generated Mode C
+    acoustic observation summary.
+
+    Query params:
+        limit (int, default 20, max 50)
+    """
+    provider, err = _api_user('provider')
+    if err:
+        return err
+
+    limit = min(int(request.args.get('limit', 20)), 50)
+
+    sessions = db.get_clinical_sessions_for_period(
+        patient_id=patient_id,
+        limit=limit,
+    )
+
+    # Filter to sessions with processed acoustic features
+    analyzed = []
+    for s in (sessions or []):
+        scores = s.get('scores') or {}
+        af     = scores.get('acoustic_features') or {}
+        vocab  = af.get('vocabulary') or {}
+        meas   = af.get('measured') or {}
+        # Skip sessions without any populated vocabulary labels
+        if not vocab or not any(v for v in vocab.values() if v not in (None, '')):
+            continue
+        analyzed.append({
+            'session_id':            s['session_id'],
+            'session_date':          str(s.get('session_date', '')),
+            'session_type':          s.get('session_type', ''),
+            'processing_status':     s.get('processing_status', ''),
+            'confidence':            vocab.get('confidence'),
+            'clinical_pattern_type': vocab.get('clinical_pattern_type'),
+            'severity_note':         vocab.get('severity_note'),
+            'vocabulary': {
+                'speech_rate':      vocab.get('speech_rate'),
+                'prosody':          vocab.get('prosody'),
+                'pauses':           vocab.get('pauses'),
+                'arousal':          vocab.get('arousal'),
+                'vocal_affect':     vocab.get('vocal_affect'),
+                'speech_coherence': vocab.get('speech_coherence'),
+            },
+            'measured': {
+                'articulation_rate_sps': meas.get('articulation_rate_sps'),
+                'speech_rate_sps':       meas.get('speech_rate_sps'),
+                'pause_ratio':           meas.get('pause_ratio'),
+                'pause_count':           meas.get('pause_count'),
+                'f0_mean_hz':            meas.get('f0_mean_hz'),
+                'f0_cv':                 meas.get('f0_cv'),
+                'f0_sd_hz':              meas.get('f0_sd_hz'),
+                'rms_mean':              meas.get('rms_mean'),
+                'hnr_db':                meas.get('hnr_db'),
+                'jitter_local':          meas.get('jitter_local'),
+                'shimmer_local':         meas.get('shimmer_local'),
+                'duration_s':            meas.get('duration_s'),
+            },
+        })
+
+    if not analyzed:
+        return jsonify({'ok': True, 'sessions': [], 'aggregate': None,
+                        'analysis': None, 'session_count': 0})
+
+    # ── Aggregate label distributions ──────────────────────────────────────
+    label_fields = ['speech_rate', 'prosody', 'pauses', 'arousal', 'vocal_affect', 'speech_coherence']
+    label_counts = {}
+    for field in label_fields:
+        counts = {}
+        for s in analyzed:
+            v = (s['vocabulary'] or {}).get(field)
+            if v:
+                counts[v] = counts.get(v, 0) + 1
+        if counts:
+            label_counts[field] = counts
+
+    # ── Longitudinal numeric series for chart rendering ────────────────────
+    numeric_keys = ['articulation_rate_sps', 'pause_ratio', 'f0_cv', 'hnr_db', 'jitter_local']
+    longitudinal = {}
+    for key in numeric_keys:
+        series = []
+        for s in sorted(analyzed, key=lambda x: x['session_date']):
+            val = (s['measured'] or {}).get(key)
+            if val is not None:
+                series.append({'date': s['session_date'], 'value': round(float(val), 4)})
+        if series:
+            longitudinal[key] = series
+
+    # ── Pattern type distribution ──────────────────────────────────────────
+    pattern_counts = {}
+    for s in analyzed:
+        p = s.get('clinical_pattern_type')
+        if p:
+            pattern_counts[p] = pattern_counts.get(p, 0) + 1
+
+    aggregate = {
+        'label_counts':       label_counts,
+        'longitudinal':       longitudinal,
+        'pattern_distribution': pattern_counts,
+        'dominant_pattern':   max(pattern_counts, key=pattern_counts.get) if pattern_counts else None,
+        'session_count':      len(analyzed),
+    }
+
+    # ── AI acoustic observation (Mode C, §24 rules) ─────────────────────────
+    sessions_for_ai = [
+        {
+            'session_date': s['session_date'],
+            'vocabulary':   {**s['vocabulary'],
+                             'confidence':            s['confidence'],
+                             'clinical_pattern_type': s['clinical_pattern_type']},
+            'measured':     s['measured'],
+        }
+        for s in analyzed
+    ]
+    ai_result = claude_api.generate_voice_biomarker_analysis(
+        sessions_for_ai, patient_id=patient_id
+    )
+
+    return jsonify({
+        'ok':           True,
+        'sessions':     analyzed,
+        'aggregate':    aggregate,
+        'analysis':     ai_result.get('text') if ai_result.get('status') == 'safe' else None,
+        'session_count': len(analyzed),
+    })
+
+
 @app.route('/api/provider/patient/<patient_id>/send-flow-sms', methods=['POST'])
 def api_send_flow_sms(patient_id):
     """Provider manually triggers a specific Twilio flow SMS for a patient.

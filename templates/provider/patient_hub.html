@@ -818,6 +818,131 @@
   }
   .brief-chart-pill strong { color: var(--text); font-weight: 600; }
   @media (max-width: 600px) { .brief-chart-grid { grid-template-columns: 1fr; } }
+
+  /* ── Vocal Biomarker Analysis section ──────────────────────────────── */
+  .bm-loading { font-size:0.8rem; color:var(--text-muted); padding:24px 18px; }
+  .bm-empty   { font-size:0.8rem; color:var(--text-muted); padding:24px 18px; }
+  .bm-body    { padding:16px 18px 20px; }
+  .bm-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 600px) { .bm-grid { grid-template-columns: 1fr; } }
+
+  /* Gauge card — one feature per card */
+  .bm-gauge-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px 8px;
+    background: var(--surface, #fafafa);
+  }
+  .bm-gauge-label {
+    font-size: 0.63rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 7px;
+  }
+  .bm-gauge-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .bm-chip {
+    font-size: 0.69rem;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 99px;
+    border: 1px solid var(--border);
+    background: #fff;
+    color: var(--text-muted);
+    white-space: nowrap;
+  }
+  .bm-chip--active {
+    background: var(--accent, #6366f1);
+    color: #fff;
+    border-color: transparent;
+  }
+  .bm-chip--count {
+    font-size: 0.6rem;
+    opacity: 0.75;
+    margin-left: 2px;
+  }
+
+  /* Pattern badge */
+  .bm-pattern-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+  }
+  .bm-pattern-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+  }
+  .bm-pattern-badge {
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 99px;
+    background: #e8f4fd;
+    color: #1e6ea6;
+    border: 1px solid #b3d9f3;
+    text-transform: capitalize;
+  }
+  .bm-pattern-badge--depressive     { background:#fde8e8; color:#a61e1e; border-color:#f3b3b3; }
+  .bm-pattern-badge--anxiety_stress { background:#fef3e2; color:#8a5700; border-color:#f3d48a; }
+  .bm-pattern-badge--mania_hypomania{ background:#f0ebfe; color:#5b21b6; border-color:#c4b5fd; }
+  .bm-pattern-badge--psychosis_risk { background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
+  .bm-pattern-badge--mixed          { background:#f3f4f6; color:#374151; border-color:#d1d5db; }
+  .bm-pattern-badge--none_detected  { background:#f0fdf4; color:#166534; border-color:#86efac; }
+
+  /* Chart row */
+  .bm-chart-row {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 16px;
+  }
+  @media (max-width: 600px) { .bm-chart-row { grid-template-columns: 1fr; } }
+  .bm-chart-card {
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 12px 8px;
+    background: var(--surface, #fafafa);
+  }
+  .bm-chart-title {
+    font-size: 0.63rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.07em;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .bm-chart-card canvas { width:100% !important; height:80px !important; }
+
+  /* AI analysis box */
+  .bm-analysis-box {
+    background: var(--surface, #fafafa);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 14px;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre-wrap;
+    margin-bottom: 10px;
+  }
+  .bm-footnote {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: right;
+  }
+
   .brief-md-table { width: 100%; border-collapse: collapse; margin: 8px 0; font-size: 13px; }
   .brief-md-table th, .brief-md-table td { border: 1px solid #e5e7eb; padding: 5px 10px; text-align: left; }
   .brief-md-table thead { background: #f3f4f6; font-weight: 600; }
@@ -1975,6 +2100,21 @@
         <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}" style="color:var(--accent);text-decoration:none;display:block;margin-top:6px;font-size:0.8rem;">Upload a transcript →</a>
       </div>
       {% endif %}
+    </div>
+  </div>
+
+  <!-- ── Vocal Biomarker Analysis (provider-only) ─────────────────────────── -->
+  <div class="hub-section collapsed" id="section-biomarkers">
+    <div class="hub-section-hdr" data-toggle="biomarkers">
+      <div class="hub-section-hdr-left">
+        <div class="hub-section-dot"></div>
+        <span class="hub-section-title">Vocal Biomarker Analysis</span>
+        <span class="hub-section-meta" id="bm-meta">provider view</span>
+      </div>
+      <span class="hub-section-chevron">›</span>
+    </div>
+    <div class="hub-section-body" id="bm-section-body">
+      <div class="bm-loading" id="bm-loading">Loading acoustic data…</div>
     </div>
   </div>
 
@@ -3627,5 +3767,218 @@ window.generateBrief = function() {
   loadHubFocusConfig();
   if (typeof _origGenerateBrief === 'function') _origGenerateBrief();
 };
+
+// ── Vocal Biomarker Analysis ───────────────────────────────────────────────
+// Provider-only: fetch acoustic features and render gauges + charts + AI analysis.
+// MUST NOT be called from any patient-facing route or shared with patients.
+
+(function () {
+  'use strict';
+
+  const PATIENT_ID_BM = PATIENT_ID;  // set at top of page via Jinja
+  let   _bmLoaded     = false;
+  let   _bmCharts     = {};          // Chart.js instances keyed by canvas id
+
+  // Feature display config: field name → { label, values_ordered, value_colors }
+  const BM_FEATURES = [
+    { field: 'speech_rate',      label: 'Speech Rate',
+      ordered: ['slowed','normal','pressured'],
+      color:   { slowed:'#64748b', normal:'#6366f1', pressured:'#ef4444' } },
+    { field: 'prosody',          label: 'Prosody',
+      ordered: ['flat','normal','elevated'],
+      color:   { flat:'#94a3b8', normal:'#6366f1', elevated:'#f59e0b' } },
+    { field: 'pauses',           label: 'Pauses',
+      ordered: ['decreased','normal','increased'],
+      color:   { decreased:'#f59e0b', normal:'#6366f1', increased:'#94a3b8' } },
+    { field: 'arousal',          label: 'Arousal',
+      ordered: ['low','normal','elevated','agitated'],
+      color:   { low:'#94a3b8', normal:'#6366f1', elevated:'#f59e0b', agitated:'#ef4444' } },
+    { field: 'vocal_affect',     label: 'Vocal Affect',
+      ordered: ['flat','normal','strained'],
+      color:   { flat:'#94a3b8', normal:'#6366f1', strained:'#f97316' } },
+    { field: 'speech_coherence', label: 'Speech Coherence',
+      ordered: ['intact','disorganized'],
+      color:   { intact:'#22c55e', disorganized:'#ef4444' } },
+  ];
+
+  // Longitudinal charts: key → display label
+  const BM_LONG_CHARTS = [
+    { key: 'articulation_rate_sps', label: 'Articulation Rate (sps)',  fmt: v => v.toFixed(2) },
+    { key: 'pause_ratio',           label: 'Pause Ratio (%)',          fmt: v => (v * 100).toFixed(1) + '%' },
+    { key: 'f0_cv',                 label: 'Pitch Variability (F0 CV)', fmt: v => v.toFixed(3) },
+  ];
+
+  function _destroyBmCharts() {
+    Object.values(_bmCharts).forEach(c => { try { c.destroy(); } catch(_){} });
+    _bmCharts = {};
+  }
+
+  function _buildGaugesHtml(labelCounts) {
+    if (!labelCounts || Object.keys(labelCounts).length === 0) return '';
+    let html = '<div class="bm-grid">';
+    for (const feat of BM_FEATURES) {
+      const counts = labelCounts[feat.field];
+      if (!counts) continue;
+      html += `<div class="bm-gauge-card"><div class="bm-gauge-label">${feat.label}</div><div class="bm-gauge-chips">`;
+      for (const val of feat.ordered) {
+        const n = counts[val] || 0;
+        const cls = n > 0 ? ' bm-chip--active' : '';
+        const style = (n > 0 && feat.color[val])
+          ? ` style="background:${feat.color[val]};border-color:transparent;"` : '';
+        html += `<span class="bm-chip${cls}"${style}>${val}`;
+        if (n > 0) html += ` <span class="bm-chip--count">×${n}</span>`;
+        html += `</span>`;
+      }
+      html += '</div></div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function _buildPatternBadge(agg) {
+    const dp = agg.dominant_pattern;
+    if (!dp || dp === 'none_detected') return '';
+    const slugClass = dp.replace(/_/g,'-');
+    const pd = agg.pattern_distribution || {};
+    const total = Object.values(pd).reduce((a,b) => a+b, 0);
+    const n = pd[dp] || 0;
+    const pct = total > 0 ? Math.round(n/total*100) : 0;
+    return `<div class="bm-pattern-row">
+      <span class="bm-pattern-label">Dominant Acoustic Pattern</span>
+      <span class="bm-pattern-badge bm-pattern-badge--${slugClass}">${dp.replace(/_/g,' ')}</span>
+      <span style="font-size:0.65rem;color:var(--text-muted);">${n} of ${total} session${total!==1?'s':''} (${pct}%)</span>
+    </div>`;
+  }
+
+  function _renderLongCharts(longitudinal) {
+    if (!longitudinal || !BM_LONG_CHARTS.some(c => longitudinal[c.key] && longitudinal[c.key].length >= 2)) {
+      return '';
+    }
+    let html = '<div class="bm-chart-row">';
+    for (const cfg of BM_LONG_CHARTS) {
+      const series = longitudinal[cfg.key];
+      if (!series || series.length < 2) continue;
+      html += `<div class="bm-chart-card">
+        <div class="bm-chart-title">${cfg.label}</div>
+        <canvas id="bm-chart-${cfg.key}"></canvas>
+      </div>`;
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function _initLongCharts(longitudinal) {
+    for (const cfg of BM_LONG_CHARTS) {
+      const series = longitudinal[cfg.key];
+      if (!series || series.length < 2) continue;
+      const canvasId = `bm-chart-${cfg.key}`;
+      const canvas = document.getElementById(canvasId);
+      if (!canvas) continue;
+      const labels = series.map(p => p.date.slice(5));  // MM-DD
+      const values = series.map(p => {
+        // pause_ratio: stored as fraction, display as %
+        if (cfg.key === 'pause_ratio') return +(p.value * 100).toFixed(2);
+        return +(p.value);
+      });
+      _bmCharts[canvasId] = new Chart(canvas, {
+        type: 'line',
+        data: {
+          labels,
+          datasets: [{
+            data:            values,
+            borderColor:     '#6366f1',
+            backgroundColor: 'rgba(99,102,241,0.08)',
+            borderWidth:     1.5,
+            pointRadius:     3,
+            pointHoverRadius:4,
+            tension:         0.3,
+            fill:            true,
+          }],
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false }, tooltip: {
+            callbacks: { label: ctx => cfg.fmt(cfg.key === 'pause_ratio'
+              ? ctx.parsed.y / 100 : ctx.parsed.y) }
+          }},
+          scales: {
+            x: { ticks: { font: { size: 9 }, maxRotation: 0, color: '#94a3b8' },
+                 grid:  { display: false } },
+            y: { ticks: { font: { size: 9 }, color: '#94a3b8' },
+                 grid:  { color: '#f1f5f9' } },
+          },
+        },
+      });
+    }
+  }
+
+  function _renderBiomarkers(data) {
+    const body = document.getElementById('bm-section-body');
+    if (!body) return;
+
+    _destroyBmCharts();
+
+    if (!data || !data.ok || !data.session_count) {
+      body.innerHTML = '<div class="bm-empty">No processed audio sessions found. ' +
+        'Upload and analyze a session recording to see acoustic biomarker data.</div>';
+      document.getElementById('bm-meta').textContent = '0 sessions';
+      return;
+    }
+
+    const agg = data.aggregate || {};
+    document.getElementById('bm-meta').textContent =
+      `${data.session_count} analyzed session${data.session_count !== 1 ? 's' : ''}`;
+
+    let html = '<div class="bm-body">';
+    html += _buildPatternBadge(agg);
+    html += _buildGaugesHtml(agg.label_counts);
+    html += _renderLongCharts(agg.longitudinal);
+
+    if (data.analysis) {
+      const escaped = data.analysis.replace(/</g,'&lt;').replace(/>/g,'&gt;');
+      html += `<div class="bm-analysis-box">${escaped}</div>`;
+    }
+
+    html += `<div class="bm-footnote">Provider view only · Acoustic measurements from processed session recordings</div>`;
+    html += '</div>';
+
+    body.innerHTML = html;
+
+    // Initialise Chart.js instances after DOM is ready
+    if (agg.longitudinal) {
+      _initLongCharts(agg.longitudinal);
+    }
+  }
+
+  async function loadBiomarkerData() {
+    if (_bmLoaded) return;
+    _bmLoaded = true;
+    try {
+      const res  = await fetch(`/api/provider/patient/${PATIENT_ID_BM}/voice-biomarkers`);
+      const data = await res.json();
+      _renderBiomarkers(data);
+    } catch (e) {
+      const body = document.getElementById('bm-section-body');
+      if (body) body.innerHTML = '<div class="bm-empty">Could not load acoustic data.</div>';
+    }
+  }
+
+  // Lazy-load: only fetch when provider expands the section
+  document.addEventListener('DOMContentLoaded', function () {
+    const hdr = document.querySelector('[data-toggle="biomarkers"]');
+    if (!hdr) return;
+    hdr.addEventListener('click', function () {
+      // hubToggle runs first (event bubbles from the section header handler)
+      // After toggle, check if now expanded and fetch if needed
+      setTimeout(function () {
+        const sec = document.getElementById('section-biomarkers');
+        if (sec && !sec.classList.contains('collapsed')) {
+          loadBiomarkerData();
+        }
+      }, 50);
+    });
+  });
+}());
 </script>
 {% endblock %}
