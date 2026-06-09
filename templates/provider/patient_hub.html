@@ -469,6 +469,8 @@
     border-left: 3px solid #6366f1;
     padding-left: 15px; /* compensate for the 3px border */
   }
+  /* Compound selector wins the cascade tie over :hover when card is selected */
+  .voice-card--selectable.voice-card--selected { background: #eef2ff; }
   .voice-card--no-analysis { opacity: 0.65; cursor: default; }
 
   /* ── Measured acoustic values table (single-session view) ────────────────── */
@@ -1957,7 +1959,7 @@
         {% for note in voice_notes %}
         {# Cards with a processed clinical session are selectable; others are dimmed #}
         {% set has_analysis = note.clinical_session_id %}
-        <div class="voice-card voice-card--selectable{% if not has_analysis %} voice-card--no-analysis{% endif %}"
+        <div class="voice-card{% if has_analysis %} voice-card--selectable{% else %} voice-card--no-analysis{% endif %}"
              id="voice-card-{{ note.id }}"
              data-session-id="{{ note.clinical_session_id or '' }}"
              data-note-date="{{ note.created_at[:10] if note.created_at else '' }}"
