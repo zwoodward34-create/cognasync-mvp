@@ -1896,6 +1896,59 @@
 
   </div>{# /ch-body-grid #}
 
+  <!-- ── Voice Recordings & Acoustic Analysis (provider-only) ─────────────── -->
+  <div class="ch-card" id="section-voice-analysis" style="margin-top:24px;">
+    <div class="ch-card-hdr" style="flex-wrap:wrap;gap:8px;">
+      <div style="display:flex;align-items:center;gap:10px;flex:1;flex-wrap:wrap;">
+        <span class="ch-card-title">Voice Recordings &amp; Acoustic Analysis</span>
+        <span style="font-size:0.75rem;color:var(--text-muted);">{{ voice_notes|length }} recording{{ 's' if voice_notes|length != 1 }}</span>
+        {% if voice_baseline_status and voice_baseline_status.notice %}
+          <span style="font-size:0.68rem;padding:1px 6px;border-radius:8px;font-weight:500;
+            {% if voice_baseline_status.status == 'none' %}background:#e8eeff;color:#3a4a8a;
+            {% elif voice_baseline_status.status == 'stale' %}background:#fff0e6;color:#8a4200;
+            {% elif voice_baseline_status.status == 'establishing' %}background:#fffbe6;color:#7a6200;
+            {% else %}background:#eaf4ec;color:#1e5c2e;{% endif %}">
+            {% if voice_baseline_status.status == 'none' %}No baseline
+            {% elif voice_baseline_status.status == 'establishing' %}Establishing
+            {% elif voice_baseline_status.status == 'stale' %}Outdated
+            {% else %}Baseline active{% endif %}
+          </span>
+        {% endif %}
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;">
+        <button class="hub-action-btn" onclick="openUploadModal()">⬆ Upload Recording</button>
+        <button class="hub-action-btn hub-action-btn--primary" id="btn-analyze-voice" onclick="triggerVoiceAnalysis()">⚡ Analyze Audio</button>
+      </div>
+    </div>
+
+    <!-- Voice recording list -->
+    <div style="border-top:1px solid var(--border);">
+      {% if voice_notes %}
+        {% for note in voice_notes %}
+        <div class="voice-card" id="voice-card-{{ note.id }}">
+          <div class="voice-card-hdr">
+            <span class="voice-date">{{ note.created_at[:10] if note.created_at else '—' }}</span>
+            <span class="voice-badge {% if note.transcript %}voice-badge--done{% endif %}">{{ 'Transcribed' if note.transcript else 'No transcript' }}</span>
+            <button class="delete-btn" title="Delete recording" onclick="deleteVoiceNote('{{ note.id }}')">✕</button>
+          </div>
+          {% if note.guiding_question or note.prompt %}<div class="voice-prompt">"{{ note.guiding_question or note.prompt }}"</div>{% endif %}
+          {% if note.transcript %}<div class="voice-transcript">{{ note.transcript }}</div>
+          {% elif note.processing_status == 'error' %}<div style="font-size:0.8rem;color:#c0392b;">Transcription failed{% if note.processing_error %}: {{ note.processing_error }}{% endif %}</div>
+          {% else %}<div style="font-size:0.8rem;color:var(--text-muted);">Recording received — transcript pending.</div>{% endif %}
+        </div>
+        {% endfor %}
+      {% else %}
+      <div class="hub-empty">No voice recordings on file. Upload a recording above, or wait for the patient to respond to an SMS voice prompt.</div>
+      {% endif %}
+    </div>
+
+    <!-- Acoustic analysis panel — shown when Analyze Audio is triggered -->
+    <div id="bm-section-body" style="display:none;border-top:1px solid var(--border);">
+      <div class="bm-loading" id="bm-loading">Loading acoustic data…</div>
+    </div>
+    <span id="bm-meta" style="display:none;"></span>
+  </div>
+
   </div>{# /ch-left-col #}
 
   <!-- ── Detailed Records — right column ─────────────────────────────────── -->
@@ -1976,84 +2029,6 @@
     </div>
   </div>
 
-  <!-- ── Journal Entries (moved up — populated data surfaces first) ─────────── -->
-  <div class="hub-section collapsed" id="section-journals">
-    <div class="hub-section-hdr" data-toggle="journals">
-      <div class="hub-section-hdr-left">
-        <div class="hub-section-dot"></div>
-        <span class="hub-section-title">Journal Entries</span>
-        <span class="hub-section-meta">{{ journals|length }} recent</span>
-      </div>
-      <span class="hub-section-chevron">›</span>
-    </div>
-    <div class="hub-section-body">
-      {% if journals %}
-        {% for j in journals %}
-        <div style="padding:12px 18px;border-bottom:1px solid var(--border);">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:5px;">
-            <span style="font-size:0.75rem;color:var(--text-muted);">{{ j.entry_date[:10] if j.entry_date else (j.created_at[:10] if j.created_at else '—') }}</span>
-            {% if j.share_with_provider %}<span style="font-size:0.65rem;font-weight:500;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:4px;background:#d4edda;color:#1a7f3c;">Shared</span>
-            {% else %}<span style="font-size:0.65rem;color:var(--text-muted);">Private</span>{% endif %}
-          </div>
-          <p style="font-size:0.84rem;color:var(--text);line-height:1.55;margin:0;">{{ j.content[:300] if j.content else '—' }}{% if j.content and j.content|length > 300 %}…{% endif %}</p>
-          {% if j.ai_insight %}
-          <div style="margin-top:8px;padding:8px 10px;background:var(--bg);border:1px solid var(--border);border-radius:5px;font-size:0.78rem;color:var(--text-muted);line-height:1.55;"><em>{{ j.ai_insight[:200] if j.ai_insight else '' }}{% if j.ai_insight and j.ai_insight|length > 200 %}…{% endif %}</em></div>
-          {% endif %}
-        </div>
-        {% endfor %}
-      {% else %}
-      <div class="hub-empty">No journal entries on file.</div>
-      {% endif %}
-    </div>
-  </div>
-
-  <!-- ── Voice Recording Data ───────────────────────────────────────────────── -->
-  <div class="hub-section collapsed" id="section-voice">
-    <div class="hub-section-hdr" data-toggle="voice">
-      <div class="hub-section-hdr-left">
-        <div class="hub-section-dot"></div>
-        <span class="hub-section-title">Voice Recording Data</span>
-        <span class="hub-section-meta">{{ voice_notes|length }} recording{{ 's' if voice_notes|length != 1 }}</span>
-        {% if voice_baseline_status and voice_baseline_status.notice %}
-          <span style="font-size:0.68rem;padding:1px 6px;border-radius:8px;font-weight:500;margin-left:4px;
-            {% if voice_baseline_status.status == 'none' %}background:#e8eeff;color:#3a4a8a;
-            {% elif voice_baseline_status.status == 'stale' %}background:#fff0e6;color:#8a4200;
-            {% elif voice_baseline_status.status == 'establishing' %}background:#fffbe6;color:#7a6200;
-            {% else %}background:#eaf4ec;color:#1e5c2e;{% endif %}">
-            {% if voice_baseline_status.status == 'none' %}No baseline
-            {% elif voice_baseline_status.status == 'establishing' %}Establishing
-            {% elif voice_baseline_status.status == 'stale' %}Outdated
-            {% else %}Baseline active{% endif %}
-          </span>
-        {% endif %}
-      </div>
-      <div style="display:flex;align-items:center;gap:10px;">
-        <button class="hub-action-btn" style="font-size:0.72rem;padding:4px 10px;"
-                onclick="event.stopPropagation();openUploadModal()">⬆ Upload</button>
-        <span class="hub-section-chevron">›</span>
-      </div>
-    </div>
-    <div class="hub-section-body">
-      {% if voice_notes %}
-        {% for note in voice_notes %}
-        <div class="voice-card" id="voice-card-{{ note.id }}">
-          <div class="voice-card-hdr">
-            <span class="voice-date">{{ note.created_at[:10] if note.created_at else '—' }}</span>
-            <span class="voice-badge {% if note.transcript %}voice-badge--done{% endif %}">{{ 'Transcribed' if note.transcript else 'No transcript' }}</span>
-            <button class="delete-btn" title="Delete recording" onclick="deleteVoiceNote('{{ note.id }}')">✕</button>
-          </div>
-          {% if note.guiding_question or note.prompt %}<div class="voice-prompt">"{{ note.guiding_question or note.prompt }}"</div>{% endif %}
-          {% if note.transcript %}<div class="voice-transcript">{{ note.transcript }}</div>
-          {% elif note.processing_status == 'error' %}<div style="font-size:0.8rem;color:#c0392b;">Transcription failed{% if note.processing_error %}: {{ note.processing_error }}{% endif %}</div>
-          {% else %}<div style="font-size:0.8rem;color:var(--text-muted);">Recording received — transcript pending.</div>{% endif %}
-        </div>
-        {% endfor %}
-      {% else %}
-      <div class="hub-empty">No voice recordings on file.</div>
-      {% endif %}
-    </div>
-  </div>
-
   <!-- ── Session Recording Data ────────────────────────────────────────────── -->
   <div class="hub-section collapsed" id="section-sessions">
     <div class="hub-section-hdr" data-toggle="sessions">
@@ -2100,21 +2075,6 @@
         <a href="{{ url_for('provider_intel_dashboard', patient_id=patient.patient_id) }}" style="color:var(--accent);text-decoration:none;display:block;margin-top:6px;font-size:0.8rem;">Upload a transcript →</a>
       </div>
       {% endif %}
-    </div>
-  </div>
-
-  <!-- ── Vocal Biomarker Analysis (provider-only) ─────────────────────────── -->
-  <div class="hub-section collapsed" id="section-biomarkers">
-    <div class="hub-section-hdr" data-toggle="biomarkers">
-      <div class="hub-section-hdr-left">
-        <div class="hub-section-dot"></div>
-        <span class="hub-section-title">Vocal Biomarker Analysis</span>
-        <span class="hub-section-meta" id="bm-meta">provider view</span>
-      </div>
-      <span class="hub-section-chevron">›</span>
-    </div>
-    <div class="hub-section-body" id="bm-section-body">
-      <div class="bm-loading" id="bm-loading">Loading acoustic data…</div>
     </div>
   </div>
 
@@ -3964,21 +3924,20 @@ window.generateBrief = function() {
     }
   }
 
-  // Lazy-load: only fetch when provider expands the section
-  document.addEventListener('DOMContentLoaded', function () {
-    const hdr = document.querySelector('[data-toggle="biomarkers"]');
-    if (!hdr) return;
-    hdr.addEventListener('click', function () {
-      // hubToggle runs first (event bubbles from the section header handler)
-      // After toggle, check if now expanded and fetch if needed
-      setTimeout(function () {
-        const sec = document.getElementById('section-biomarkers');
-        if (sec && !sec.classList.contains('collapsed')) {
-          loadBiomarkerData();
-        }
-      }, 50);
+  // Triggered by the "Analyze Audio" button — forces a fresh fetch each time
+  window.triggerVoiceAnalysis = function () {
+    const panel = document.getElementById('bm-section-body');
+    if (panel) {
+      panel.style.display = '';
+      panel.innerHTML = '<div class="bm-loading">Loading acoustic data…</div>';
+    }
+    const btn = document.getElementById('btn-analyze-voice');
+    if (btn) { btn.disabled = true; btn.textContent = 'Analyzing…'; }
+    _bmLoaded = false;
+    loadBiomarkerData().finally(function () {
+      if (btn) { btn.disabled = false; btn.textContent = '⚡ Analyze Audio'; }
     });
-  });
+  };
 }());
 </script>
 {% endblock %}

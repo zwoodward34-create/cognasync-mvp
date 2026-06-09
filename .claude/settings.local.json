@@ -112,7 +112,9 @@
       "Bash(sed -n '1470,1482p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
       "Bash(sed -n '1790,1800p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
       "Bash(sed -n '1477,1490p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
-      "Bash(sed -n '1750,1798p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)"
+      "Bash(sed -n '1750,1798p' /Users/woodwardfamily/cognasync-mvp/templates/provider/patient_hub.html)",
+      "Bash(pyenv which *)",
+      "Bash(/Users/woodwardfamily/.local/share/uv/python/cpython-3.12.13-macos-aarch64-none/bin/python3.12 *)"
     ]
   }
 }
