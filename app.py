@@ -4142,113 +4142,19 @@ def api_voice_submit(token_str):
         {'used_at': 'now()'}
     ).eq('token', token_str).execute()
 
-    # Background transcription + full intelligence pipeline
+    # Background transcription + full intelligence pipeline (shared pipeline —
+    # audio is already in storage, so pass audio_already_stored_url to skip
+    # the storage step inside the pipeline).
     if voice_note_id and audio_bytes:
-        import threading as _threading
-        _audio_bytes_snapshot = audio_bytes
-        _session_date_snapshot = datetime.utcnow().date().isoformat()
-        def _transcribe():
-            try:
-                import uuid as _uuid
-                from audio_engine import transcribe_audio_file, _run_acoustic_extraction
-                from transcript_engine import extract_features
-
-                # 1. Transcribe
-                result = transcribe_audio_file(
-                    file_bytes=_audio_bytes_snapshot,
-                    filename='voice_note.webm',
-                    patient_id=patient_id,
-                    session_id=str(_uuid.uuid4()),
-                )
-                if not (result.get('status') == 'completed' and result.get('text')):
-                    db.supabase_admin.table('voice_notes').update({
-                        'processing_status': 'error',
-                        'processing_error':  result.get('error', 'Transcription failed'),
-                    }).eq('id', voice_note_id).execute()
-                    return
-
-                transcript_text = result['text']
-
-                # Update voice_notes with transcript
-                db.supabase_admin.table('voice_notes').update({
-                    'transcript':        transcript_text,
-                    'processing_status': 'processing',
-                }).eq('id', voice_note_id).execute()
-
-                # 2. Create clinical_sessions row early so baseline lifecycle has
-                # a session_id to tag. transcript_raw filled in after transcription.
-                provider_id_for_session = tok.get('provider_id')
-                session_id = db.store_clinical_session(
-                    provider_id=provider_id_for_session,
-                    patient_id=patient_id,
-                    session_date=_session_date_snapshot,
-                    session_type='voice_note',
-                    transcript_raw=transcript_text,
-                    transcript_source='voice_note',
-                )
-
-                # 3. Acoustic extraction (non-fatal) + baseline lifecycle
-                acoustic_result = None
-                try:
-                    acoustic_result = _run_acoustic_extraction(
-                        file_bytes=_audio_bytes_snapshot,
-                        filename='voice_note.webm',
-                        session_id=str(session_id or voice_note_id),
-                        session_date=_session_date_snapshot,
-                    )
-                    if acoustic_result and session_id:
-                        # Determine baseline phase and run lifecycle
-                        from audio_engine import _run_baseline_lifecycle as _rbl
-                        voice_recording_role = db.determine_voice_recording_role(patient_id)
-                        _rbl(db, patient_id, session_id, _session_date_snapshot,
-                             acoustic_result, voice_recording_role)
-                except Exception as ae:
-                    app.logger.warning(f'[voice] Acoustic/baseline step skipped: {ae}')
-
-                # 4. Semantic extraction via Claude
-                population_flags = db.get_patient_population_flags(patient_id) or {}
-                extraction = extract_features(
-                    transcript_text=transcript_text,
-                    session_date=_session_date_snapshot,
-                    session_type='voice_note',
-                    population_flags=population_flags,
-                )
-
-                # Merge acoustic features into extraction scores
-                if acoustic_result:
-                    scores = extraction.setdefault('scores', {})
-                    scores['acoustic_features'] = acoustic_result
-                    if acoustic_result.get('affect'):
-                        scores['affect_dimensions'] = acoustic_result['affect']
-
-                if session_id:
-                    db.store_session_features(
-                        session_id=session_id,
-                        patient_id=patient_id,
-                        extraction_result=extraction,
-                    )
-
-                # Mark voice_note complete (link to session if column exists)
-                vn_update = {'processing_status': 'complete'}
-                if session_id:
-                    try:
-                        db.supabase_admin.table('voice_notes').update({
-                            **vn_update, 'clinical_session_id': session_id,
-                        }).eq('id', voice_note_id).execute()
-                    except Exception:
-                        db.supabase_admin.table('voice_notes').update(
-                            vn_update).eq('id', voice_note_id).execute()
-                else:
-                    db.supabase_admin.table('voice_notes').update(
-                        vn_update).eq('id', voice_note_id).execute()
-
-            except Exception as ex:
-                app.logger.error(f'[voice] Pipeline failed: {ex}')
-                db.supabase_admin.table('voice_notes').update({
-                    'processing_status': 'error',
-                    'processing_error':  str(ex),
-                }).eq('id', voice_note_id).execute()
-        _threading.Thread(target=_transcribe, daemon=True).start()
+        from audio_engine import process_voice_note_async
+        process_voice_note_async(
+            voice_note_id=voice_note_id,
+            patient_id=patient_id,
+            provider_id=tok.get('provider_id'),
+            file_bytes=audio_bytes,
+            filename='voice_note.webm',
+            audio_already_stored_url=audio_url,
+        )
 
     return jsonify({'ok': True, 'voice_note_id': voice_note_id}), 201
 
@@ -4690,7 +4596,7 @@ def api_send_patient_checkin_sms(patient_id):
 @app.route('/api/provider/patient/<patient_id>/upload-voice-note', methods=['POST'])
 def api_provider_upload_voice_note(patient_id):
     """Provider uploads a voice recording on behalf of a patient (e.g. in-session note)."""
-    import uuid as _uuid, threading as _threading
+    import uuid as _uuid
     provider, err = _api_user('provider')
     if err:
         return err
@@ -4728,79 +4634,17 @@ def api_provider_upload_voice_note(patient_id):
     if not voice_note_id:
         return jsonify({'error': 'Failed to create voice note record'}), 500
 
-    # Fire-and-forget: transcription + feature extraction runs in background
-    _bytes_snap       = audio_bytes
-    _id_snap          = voice_note_id
-    _name_snap        = file_name
-    _provider_id_snap = provider['id']
-
-    def _transcribe():
-        import datetime as _dt
-        try:
-            from audio_engine import transcribe_audio_file
-            result = transcribe_audio_file(
-                file_bytes=_bytes_snap,
-                filename=_name_snap,
-                patient_id=patient_id,
-                session_id=str(_uuid.uuid4()),
-            )
-            if result.get('status') == 'completed' and result.get('text'):
-                transcript_text = result['text']
-                update = {
-                    'transcript':        transcript_text,
-                    'processing_status': 'complete',
-                }
-                if result.get('storage_path'):
-                    update['audio_url'] = result['storage_path']
-                db.supabase_admin.table('voice_notes').update(update).eq('id', _id_snap).execute()
-
-                # Run feature extraction so voice cards become selectable on next load
-                try:
-                    from transcript_engine import extract_features as _tef
-                    _session_date = _dt.date.today().isoformat()
-                    _extraction = _tef(
-                        transcript_text=transcript_text,
-                        session_date=_session_date,
-                        session_type='voice_note',
-                    )
-                    _sid = db.store_clinical_session(
-                        provider_id=_provider_id_snap,
-                        patient_id=patient_id,
-                        session_date=_session_date,
-                        session_type='voice_note',
-                        transcript_raw=transcript_text,
-                        transcript_source='voice_note',
-                    )
-                    if _sid:
-                        db.store_session_features(
-                            session_id=_sid,
-                            patient_id=patient_id,
-                            extraction_result=_extraction,
-                        )
-                        try:
-                            db.supabase_admin.table('voice_notes').update(
-                                {'clinical_session_id': str(_sid)}
-                            ).eq('id', _id_snap).execute()
-                        except Exception as _ue:
-                            app.logger.warning(f'[voice-upload] clinical_session_id write-back: {_ue}')
-                except Exception as _fe:
-                    app.logger.warning(f'[voice-upload] feature extraction skipped: {_fe}')
-            else:
-                db.supabase_admin.table('voice_notes').update({
-                    'processing_status': 'error',
-                    'processing_error':  result.get('error', 'Transcription failed'),
-                }).eq('id', _id_snap).execute()
-        except Exception as ex:
-            app.logger.error(f'[voice-upload] Transcription failed: {ex}')
-            try:
-                db.supabase_admin.table('voice_notes').update({
-                    'processing_status': 'error',
-                    'processing_error':  str(ex),
-                }).eq('id', _id_snap).execute()
-            except Exception:
-                pass
-
-    _threading.Thread(target=_transcribe, daemon=True).start()
+    # Fire-and-forget: full voice-note pipeline runs in background (audio
+    # storage + transcription + acoustic extraction + clinical session +
+    # feature extraction). Shared with the SMS patient flow.
+    from audio_engine import process_voice_note_async
+    process_voice_note_async(
+        voice_note_id=voice_note_id,
+        patient_id=patient_id,
+        provider_id=provider['id'],
+        file_bytes=audio_bytes,
+        filename=file_name,
+    )
     return jsonify({'ok': True, 'voice_note_id': voice_note_id})
 
 

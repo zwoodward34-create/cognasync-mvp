@@ -5541,26 +5541,31 @@ def store_clinical_session(
 
     Returns the new session UUID as a str, or None on failure.
     """
-    try:
-        row = {
-            'provider_id':       provider_id,
-            'patient_id':        patient_id,
-            'session_date':      session_date,
-            'session_type':      session_type,
-            'transcript_raw':    transcript_raw,
-            'transcript_source': transcript_source,
-            'processing_status': 'pending',
-        }
-        if duration_minutes is not None:
-            row['duration_minutes'] = duration_minutes
+    row = {
+        'provider_id':       provider_id,
+        'patient_id':        patient_id,
+        'session_date':      session_date,
+        'session_type':      session_type,
+        'transcript_raw':    transcript_raw,
+        'transcript_source': transcript_source,
+        'processing_status': 'pending',
+    }
+    if duration_minutes is not None:
+        row['duration_minutes'] = duration_minutes
 
+    # Loggable copy — keep the constraint-relevant fields but don't dump the
+    # full transcript text into logs.
+    log_row = {**row, 'transcript_raw': f'<{len(transcript_raw or "")} chars>'}
+
+    try:
         result = supabase_admin.table('clinical_sessions').insert(row).execute()
         data = result.data
         if data and len(data) > 0:
             return str(data[0]['id'])
+        print(f"Error in store_clinical_session: insert returned no data row={log_row}")
         return None
     except Exception as e:
-        print(f"Error in store_clinical_session: {e}")
+        print(f"Error in store_clinical_session: {e} row={log_row}")
         return None
 
 

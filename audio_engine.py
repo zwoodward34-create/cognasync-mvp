@@ -520,6 +520,46 @@ def _run_baseline_lifecycle(db, patient_id, session_id, session_date,
         logger.warning("Baseline lifecycle error (non-fatal): session=%s error=%s", session_id, e)
 
 
+def _merge_acoustic_into_extraction(extraction, acoustic_result, session_id):
+    """
+    Merge acoustic biomarker results into an extract_features() result dict so
+    store_session_features() persists them alongside transcript-derived scores.
+
+    Mutates `extraction` in place. No-op when acoustic_result is falsy.
+    Shared by _run_audio_pipeline (clinical session uploads) and
+    process_voice_note (voice-note uploads from any entry point).
+    """
+    if not acoustic_result:
+        return
+
+    if extraction.get('scores') is None:
+        extraction['scores'] = {}
+    extraction['scores']['acoustic_features'] = acoustic_result
+    # Store affect dimensions separately for clean retrieval
+    if acoustic_result.get('affect'):
+        extraction['scores']['affect_dimensions'] = acoustic_result['affect']
+
+    # If transcript speech_features are low-confidence or null, promote the
+    # acoustic vocabulary labels so the brief has something to work with.
+    transcript_sf = (extraction.get('scores') or {}).get('speech_features')
+    if not transcript_sf or transcript_sf.get('confidence') == 'low':
+        acoustic_vocab = acoustic_result.get('vocabulary', {})
+        if extraction.get('scores') is not None:
+            extraction['scores']['speech_features'] = {
+                k: acoustic_vocab.get(k)
+                for k in ('speech_rate', 'prosody', 'pauses', 'speech_coherence',
+                          'arousal', 'vocal_affect', 'severity_note', 'confidence',
+                          'baseline_deviation')
+            }
+            extraction['scores']['speech_features']['source'] = 'acoustic'
+        logger.info(
+            "Using acoustic-derived speech features for session %s "
+            "(transcript speech_features were %s)",
+            session_id,
+            'absent' if not transcript_sf else 'low-confidence',
+        )
+
+
 def _run_audio_pipeline(db, extract_features, session_id, patient_id,
                          file_bytes, filename, session_date, session_type):
     """Inner pipeline extracted so the outer function can wrap it with a safety net."""
@@ -574,33 +614,7 @@ def _run_audio_pipeline(db, extract_features, session_id, patient_id,
     # ── Merge acoustic features into extraction result ────────────────────────
     # Both acoustic_features and affect_dimensions stored in scores so
     # store_session_features persists them alongside transcript-derived scores.
-    if acoustic_result:
-        if extraction.get('scores') is None:
-            extraction['scores'] = {}
-        extraction['scores']['acoustic_features'] = acoustic_result
-        # Store affect dimensions separately for clean retrieval
-        if acoustic_result.get('affect'):
-            extraction['scores']['affect_dimensions'] = acoustic_result['affect']
-
-        # If transcript speech_features are low-confidence or null, promote the
-        # acoustic vocabulary labels so the brief has something to work with.
-        transcript_sf = (extraction.get('scores') or {}).get('speech_features')
-        if not transcript_sf or transcript_sf.get('confidence') == 'low':
-            acoustic_vocab = acoustic_result.get('vocabulary', {})
-            if extraction.get('scores') is not None:
-                extraction['scores']['speech_features'] = {
-                    k: acoustic_vocab.get(k)
-                    for k in ('speech_rate', 'prosody', 'pauses', 'speech_coherence',
-                              'arousal', 'vocal_affect', 'severity_note', 'confidence',
-                              'baseline_deviation')
-                }
-                extraction['scores']['speech_features']['source'] = 'acoustic'
-            logger.info(
-                "Using acoustic-derived speech features for session %s "
-                "(transcript speech_features were %s)",
-                session_id,
-                'absent' if not transcript_sf else 'low-confidence',
-            )
+    _merge_acoustic_into_extraction(extraction, acoustic_result, session_id)
 
     # ── Persist features ──────────────────────────────────────────
     db.store_session_features(
@@ -648,6 +662,179 @@ def process_audio_session_async(
     )
     t.start()
     logger.info("Audio processing thread started: session=%s thread=%s", session_id, t.name)
+
+
+# ── Voice-note pipeline (shared by SMS patient flow + provider upload) ───────
+
+def process_voice_note(
+    voice_note_id: str,
+    patient_id: str,
+    provider_id: str | None,
+    file_bytes: bytes,
+    filename: str,
+    session_date: str | None = None,
+    audio_already_stored_url: str | None = None,
+) -> None:
+    """
+    Unified synchronous voice-note pipeline. Used by both audio entry points:
+      - SMS patient flow (api_voice_submit) — audio already stored, pass
+        audio_already_stored_url so the storage step is skipped.
+      - Provider upload flow (api_provider_upload_voice_note) — audio stored here.
+
+    Steps:
+      1. Store audio in the 'voice-notes' bucket (non-fatal on failure)
+      2. Transcribe via AssemblyAI (fatal on failure)
+      3. Acoustic biomarker extraction from the waveform (non-fatal)
+      4. Create clinical_sessions row (session_type='voice_note')
+      5. Baseline lifecycle (Phase 1/2/3 voice memo handling)
+      6. Semantic feature extraction via Claude + acoustic merge
+      7. Persist session_features and link voice_notes.clinical_session_id
+
+    Progress is tracked via voice_notes.processing_status:
+      'pending' → 'processing' → 'complete' | 'error'
+    """
+    import database as db
+    from transcript_engine import extract_features
+
+    if not session_date:
+        from datetime import datetime as _dt
+        session_date = _dt.utcnow().date().isoformat()
+
+    def _vn_error(reason: str) -> None:
+        try:
+            db.supabase_admin.table('voice_notes').update({
+                'processing_status': 'error',
+                'processing_error':  reason,
+            }).eq('id', voice_note_id).execute()
+        except Exception as ue:
+            logger.error("voice_notes error-status update failed: id=%s error=%s",
+                         voice_note_id, ue)
+
+    try:
+        # ── 1. Audio storage (skipped when the caller already uploaded) ──────
+        if not audio_already_stored_url:
+            ext          = os.path.splitext(filename)[1].lower() or '.webm'
+            storage_path = f"{patient_id}/{voice_note_id}{ext}"
+            try:
+                db.supabase_admin.storage.from_('voice-notes').upload(
+                    path=storage_path,
+                    file=file_bytes,
+                    file_options={'content-type': _mime_for_ext(ext)},
+                )
+                audio_url = db.supabase_admin.storage.from_('voice-notes').get_public_url(storage_path)
+                if audio_url:
+                    db.supabase_admin.table('voice_notes').update(
+                        {'audio_url': audio_url}).eq('id', voice_note_id).execute()
+            except Exception as se:
+                logger.warning("Voice-note storage upload failed (non-fatal): id=%s error=%s",
+                               voice_note_id, se)
+
+        # ── 2. Transcription (fatal on failure) ──────────────────────────────
+        result = transcribe_audio_file(
+            file_bytes=file_bytes,
+            filename=filename,
+            patient_id=patient_id,
+            session_id=str(voice_note_id),
+        )
+        if not (result.get('status') == 'completed' and result.get('text')):
+            _vn_error(result.get('error') or 'Transcription failed')
+            return
+
+        transcript_text = result['text']
+        db.supabase_admin.table('voice_notes').update({
+            'transcript':        transcript_text,
+            'processing_status': 'processing',
+        }).eq('id', voice_note_id).execute()
+
+        # ── 3. Acoustic biomarker extraction (non-fatal) ─────────────────────
+        # Runs on raw bytes — independent of transcript content. The session_id
+        # is only used for logging here; the clinical session does not exist yet.
+        acoustic_result = _run_acoustic_extraction(
+            file_bytes=file_bytes,
+            filename=filename,
+            session_id=str(voice_note_id),
+            session_date=session_date,
+        )
+
+        # ── 4. Resolve provider + create clinical session ─────────────────────
+        # clinical_sessions.provider_id is NOT NULL — fall back to the patient's
+        # active provider relationship when the caller didn't supply one.
+        if not provider_id:
+            provider = db.get_provider_for_patient(patient_id)
+            provider_id = provider.get('id') if provider else None
+        if not provider_id:
+            _vn_error('No provider linked to patient — cannot create clinical session')
+            return
+
+        session_id = db.store_clinical_session(
+            provider_id=provider_id,
+            patient_id=patient_id,
+            session_date=session_date,
+            session_type='voice_note',
+            transcript_raw=transcript_text,
+            transcript_source='voice_note',
+        )
+        if not session_id:
+            _vn_error('Failed to create clinical session record')
+            return
+
+        # ── 5. Baseline lifecycle (voice memos only, non-fatal internally) ───
+        if acoustic_result:
+            voice_recording_role = db.determine_voice_recording_role(patient_id)
+            _run_baseline_lifecycle(db, patient_id, session_id, session_date,
+                                    acoustic_result, voice_recording_role)
+
+        # ── 6. Semantic extraction via Claude + acoustic merge ───────────────
+        extraction = extract_features(
+            transcript_text=transcript_text,
+            session_date=session_date,
+            session_type='voice_note',
+            population_flags=db.get_patient_population_flags(patient_id) or None,
+        )
+        _merge_acoustic_into_extraction(extraction, acoustic_result, session_id)
+
+        # ── 7. Persist features + link voice note to its clinical session ────
+        db.store_session_features(
+            session_id=session_id,
+            patient_id=patient_id,
+            extraction_result=extraction,
+        )
+        db.supabase_admin.table('voice_notes').update({
+            'processing_status':   'complete',
+            'clinical_session_id': str(session_id),
+        }).eq('id', voice_note_id).execute()
+
+        logger.info("Voice-note pipeline complete: voice_note=%s session=%s",
+                    voice_note_id, session_id)
+
+    except Exception as exc:
+        logger.exception("Voice-note pipeline failed: voice_note=%s", voice_note_id)
+        _vn_error(str(exc))
+
+
+def process_voice_note_async(
+    voice_note_id: str,
+    patient_id: str,
+    provider_id: str | None,
+    file_bytes: bytes,
+    filename: str,
+    session_date: str | None = None,
+    audio_already_stored_url: str | None = None,
+) -> None:
+    """
+    Start background processing for a voice note. Returns immediately.
+    Progress is tracked via voice_notes.processing_status.
+    """
+    t = threading.Thread(
+        target=process_voice_note,
+        args=(voice_note_id, patient_id, provider_id, file_bytes, filename,
+              session_date, audio_already_stored_url),
+        daemon=True,
+        name=f'voice-note-{str(voice_note_id)[:8]}',
+    )
+    t.start()
+    logger.info("Voice-note processing thread started: voice_note=%s thread=%s",
+                voice_note_id, t.name)
 
 
 # ── Utilities ────────────────────────────────────────────────────────────────
