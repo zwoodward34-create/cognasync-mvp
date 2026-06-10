@@ -4609,10 +4609,17 @@ def api_provider_upload_voice_note(patient_id):
     audio_bytes = audio_file.read()
     if not audio_bytes:
         return jsonify({'error': 'Empty audio file'}), 400
+    if len(audio_bytes) > 10 * 1024 * 1024:
+        return jsonify({'error': 'Audio file too large (max 10 MB)'}), 413
 
     file_ext  = audio_file.filename.rsplit('.', 1)[-1].lower() if (audio_file.filename and '.' in audio_file.filename) else 'webm'
     file_name = f'provider_upload_{patient_id}_{_uuid.uuid4().hex[:8]}.{file_ext}'
     mime_type = audio_file.content_type or 'audio/webm'
+
+    from audio_engine import validate_audio_file
+    valid, err_msg = validate_audio_file(file_name, audio_bytes, mime_type)
+    if not valid:
+        return jsonify({'error': err_msg}), 400
 
     # Insert record immediately so the UI can show "pending" status.
     # Only include columns confirmed to exist in voice_notes (match patient-flow insert).
@@ -4743,6 +4750,11 @@ def api_patient_voice_biomarkers(patient_id):
             _vn for _vn in (db.get_voice_notes_for_patient(patient_id, limit=20) or [])
             if not _vn.get('clinical_session_id')
             and (_vn.get('transcript') or '').strip()
+            # Exclude notes the unified pipeline is still working on — a note
+            # mid-run has a transcript but no clinical_session_id yet, and
+            # spawning an orphan processor here would create a duplicate
+            # clinical session. Only settled notes qualify as orphans.
+            and _vn.get('processing_status') in ('complete', 'error')
         ]
         if _orphans:
             _provider_id = provider['id']

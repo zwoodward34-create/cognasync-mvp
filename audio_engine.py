@@ -794,11 +794,26 @@ def process_voice_note(
         _merge_acoustic_into_extraction(extraction, acoustic_result, session_id)
 
         # ── 7. Persist features + link voice note to its clinical session ────
-        db.store_session_features(
+        features_stored = db.store_session_features(
             session_id=session_id,
             patient_id=patient_id,
             extraction_result=extraction,
+            extraction_model=os.environ.get('CLAUDE_MODEL', 'claude-haiku-4-5-20251001'),
         )
+        if extraction.get('error') or not features_stored:
+            # The clinical session exists — link it even on failure so the
+            # transcript remains usable and debugging is easier. But do NOT
+            # claim 'complete' when extraction or persistence failed.
+            try:
+                db.supabase_admin.table('voice_notes').update(
+                    {'clinical_session_id': str(session_id)}
+                ).eq('id', voice_note_id).execute()
+            except Exception as le:
+                logger.warning("voice_notes clinical_session_id link failed: id=%s error=%s",
+                               voice_note_id, le)
+            _vn_error(extraction.get('error') or 'Failed to persist session features')
+            return
+
         db.supabase_admin.table('voice_notes').update({
             'processing_status':   'complete',
             'clinical_session_id': str(session_id),
