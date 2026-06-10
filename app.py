@@ -4891,93 +4891,63 @@ def api_patient_voice_biomarkers(patient_id):
     # orphan voice notes on demand (transcript → extract_features → clinical_session
     # → write clinical_session_id back to voice_notes).  This handles recordings
     # that went through the simpler upload pipeline which only transcribed.
+    # Processing runs in a background thread to avoid HTTP timeouts on Render
+    # (~30s limit; 4 sequential Claude calls can take 40-60s).
     if not analyzed:
-        _lazy_any = False
-        _orphans = db.get_voice_notes_for_patient(patient_id, limit=20) or []
-        for _vn in _orphans:
-            if _vn.get('clinical_session_id'):
-                continue  # already linked
-            _text = (_vn.get('transcript') or '').strip()
-            if not _text:
-                continue
-            _vn_date = (_vn.get('created_at') or '')[:10]
-            try:
-                from transcript_engine import extract_features as _tef
-                _extraction = _tef(
-                    transcript_text=_text,
-                    session_date=_vn_date,
-                    session_type='voice_note',
-                )
-                _sid = db.store_clinical_session(
-                    provider_id=provider['id'],
-                    patient_id=patient_id,
-                    session_date=_vn_date,
-                    session_type='voice_note',
-                    transcript_raw=_text,
-                    transcript_source='voice_note',
-                )
-                if _sid:
-                    db.store_session_features(
-                        session_id=_sid,
-                        patient_id=patient_id,
-                        extraction_result=_extraction,
-                    )
-                    # Write clinical_session_id back so cards become selectable
-                    try:
-                        db.supabase_admin.table('voice_notes').update(
-                            {'clinical_session_id': str(_sid)}
-                        ).eq('id', _vn['id']).execute()
-                    except Exception as _ue:
-                        app.logger.warning(f'[voice-biomarkers] clinical_session_id write-back: {_ue}')
-                    _lazy_any = True
-            except Exception as _le:
-                app.logger.warning(f'[voice-biomarkers] lazy processing: {_le}')
+        import threading
+        _orphans = [
+            _vn for _vn in (db.get_voice_notes_for_patient(patient_id, limit=20) or [])
+            if not _vn.get('clinical_session_id')
+            and (_vn.get('transcript') or '').strip()
+        ]
+        if _orphans:
+            _provider_id = provider['id']
 
-        if _lazy_any:
-            # Re-query and rebuild analyzed list with newly created sessions
-            _sessions2 = db.get_clinical_sessions_for_period(patient_id=patient_id, limit=limit * 3)
-            analyzed = []
-            for _s in (_sessions2 or []):
-                if _s.get('session_type') != 'voice_note':
-                    continue
-                _sc  = _s.get('scores') or {}
-                _af  = _sc.get('acoustic_features') or {}
-                _vc  = _af.get('vocabulary') or {}
-                _ms  = _af.get('measured') or {}
-                if not _vc or not any(v for v in _vc.values() if v not in (None, '')):
-                    continue
-                analyzed.append({
-                    'session_id':            _s['session_id'],
-                    'session_date':          str(_s.get('session_date', '')),
-                    'session_type':          _s.get('session_type', ''),
-                    'processing_status':     _s.get('processing_status', ''),
-                    'confidence':            _vc.get('confidence'),
-                    'clinical_pattern_type': _vc.get('clinical_pattern_type'),
-                    'severity_note':         _vc.get('severity_note'),
-                    'vocabulary': {
-                        'speech_rate':      _vc.get('speech_rate'),
-                        'prosody':          _vc.get('prosody'),
-                        'pauses':           _vc.get('pauses'),
-                        'arousal':          _vc.get('arousal'),
-                        'vocal_affect':     _vc.get('vocal_affect'),
-                        'speech_coherence': _vc.get('speech_coherence'),
-                    },
-                    'measured': {
-                        'articulation_rate_sps': _ms.get('articulation_rate_sps'),
-                        'speech_rate_sps':       _ms.get('speech_rate_sps'),
-                        'pause_ratio':           _ms.get('pause_ratio'),
-                        'pause_count':           _ms.get('pause_count'),
-                        'f0_mean_hz':            _ms.get('f0_mean_hz'),
-                        'f0_cv':                 _ms.get('f0_cv'),
-                        'f0_sd_hz':              _ms.get('f0_sd_hz'),
-                        'rms_mean':              _ms.get('rms_mean'),
-                        'hnr_db':                _ms.get('hnr_db'),
-                        'jitter_local':          _ms.get('jitter_local'),
-                        'shimmer_local':         _ms.get('shimmer_local'),
-                        'duration_s':            _ms.get('duration_s'),
-                    },
-                })
-            analyzed = analyzed[:limit]
+            def _process_orphans(orphans, pid, prov_id):
+                from transcript_engine import extract_features as _tef
+                for _vn in orphans:
+                    _text    = (_vn.get('transcript') or '').strip()
+                    _vn_date = (_vn.get('created_at') or '')[:10]
+                    try:
+                        _extraction = _tef(
+                            transcript_text=_text,
+                            session_date=_vn_date,
+                            session_type='voice_note',
+                        )
+                        _sid = db.store_clinical_session(
+                            provider_id=prov_id,
+                            patient_id=pid,
+                            session_date=_vn_date,
+                            session_type='voice_note',
+                            transcript_raw=_text,
+                            transcript_source='voice_note',
+                        )
+                        if _sid:
+                            db.store_session_features(
+                                session_id=_sid,
+                                patient_id=pid,
+                                extraction_result=_extraction,
+                            )
+                            try:
+                                db.supabase_admin.table('voice_notes').update(
+                                    {'clinical_session_id': str(_sid)}
+                                ).eq('id', _vn['id']).execute()
+                            except Exception as _ue:
+                                app.logger.warning(
+                                    f'[voice-biomarkers] clinical_session_id write-back: {_ue}'
+                                )
+                    except Exception as _le:
+                        app.logger.warning(f'[voice-biomarkers] lazy processing: {_le}')
+
+            threading.Thread(
+                target=_process_orphans,
+                args=(_orphans, patient_id, _provider_id),
+                daemon=True,
+            ).start()
+
+            # Return immediately — client will auto-reload after 15s
+            return jsonify({'ok': True, 'status': 'processing',
+                            'message': 'Analyzing voice notes — this may take up to 30 seconds.'})
 
     # Optional single-session filter
     filter_session_id = request.args.get('session_id')

@@ -4065,8 +4065,15 @@ window.generateBrief = function() {
     try {
       let url = `/api/provider/patient/${PATIENT_ID_BM}/voice-biomarkers`;
       if (sessionId) url += `?session_id=${encodeURIComponent(sessionId)}`;
-      const res  = await fetch(url);
+      const res  = await fetch(url, { credentials: 'same-origin' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
+      if (data.status === 'processing') {
+        const body = document.getElementById('bm-section-body');
+        if (body) body.innerHTML = '<div class="bm-loading">Processing audio… reloading in 15s</div>';
+        setTimeout(() => window.location.reload(), 15000);
+        return;
+      }
       _renderBiomarkers(data);
     } catch (e) {
       const body = document.getElementById('bm-section-body');
