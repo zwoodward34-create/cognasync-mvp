@@ -4666,6 +4666,82 @@ def api_get_patient_voice_notes(patient_id):
     return jsonify({'ok': True, 'voice_notes': notes or []})
 
 
+_VOICE_LABEL_FIELDS = ('speech_rate', 'prosody', 'pauses', 'arousal',
+                       'vocal_affect', 'speech_coherence')
+
+
+def _normalize_voice_session(s, audio_map):
+    """
+    Normalize one voice_note clinical session row for the voice-biomarkers
+    endpoint.
+
+    Prefers waveform-derived acoustic vocabulary labels; when those are
+    absent/empty (e.g. older recordings whose audio was never retained and
+    only went through the transcript pipeline), falls back to the
+    transcript-derived speech_features labels (§24 schema).
+
+    Returns the normalized session dict, or None when neither source has
+    any populated labels.
+    """
+    scores = s.get('scores') or {}
+    af     = scores.get('acoustic_features') or {}
+    vocab  = af.get('vocabulary') or {}
+    # The acoustic pipeline stores numeric metrics under 'raw'; support the
+    # legacy 'measured' key defensively.
+    meas   = af.get('measured') or af.get('raw') or {}
+
+    def _has_labels(d):
+        return any(d.get(f) not in (None, '') for f in _VOICE_LABEL_FIELDS)
+
+    if _has_labels(vocab):
+        vocabulary_source = 'acoustic'
+    else:
+        # Fall back to transcript-derived speech features (present for all
+        # processed sessions, including text-only ones).
+        vocab = scores.get('speech_features') or {}
+        if not _has_labels(vocab):
+            return None
+        vocabulary_source = 'transcript'
+        meas = {}  # measured metrics come only from acoustic extraction
+
+    audio_info = audio_map.get(str(s.get('session_id'))) or {}
+
+    return {
+        'session_id':            s['session_id'],
+        'note_id':               audio_info.get('note_id'),
+        'session_date':          str(s.get('session_date', '')),
+        'session_type':          s.get('session_type', ''),
+        'processing_status':     s.get('processing_status', ''),
+        'confidence':            vocab.get('confidence'),
+        'clinical_pattern_type': vocab.get('clinical_pattern_type'),
+        'severity_note':         vocab.get('severity_note'),
+        'vocabulary': {
+            'speech_rate':      vocab.get('speech_rate'),
+            'prosody':          vocab.get('prosody'),
+            'pauses':           vocab.get('pauses'),
+            'arousal':          vocab.get('arousal'),
+            'vocal_affect':     vocab.get('vocal_affect'),
+            'speech_coherence': vocab.get('speech_coherence'),
+        },
+        'measured': {
+            'articulation_rate_sps': meas.get('articulation_rate_sps'),
+            'speech_rate_sps':       meas.get('speech_rate_sps'),
+            'pause_ratio':           meas.get('pause_ratio'),
+            'pause_count':           meas.get('pause_count'),
+            'f0_mean_hz':            meas.get('f0_mean_hz'),
+            'f0_cv':                 meas.get('f0_cv'),
+            'f0_sd_hz':              meas.get('f0_sd_hz'),
+            'rms_mean':              meas.get('rms_mean'),
+            'hnr_db':                meas.get('hnr_db'),
+            'jitter_local':          meas.get('jitter_local'),
+            'shimmer_local':         meas.get('shimmer_local'),
+            'duration_s':            meas.get('duration_s'),
+        },
+        'vocabulary_source':     vocabulary_source,
+        'audio_retained':        bool(audio_info.get('audio_retained')),
+    }
+
+
 @app.route('/api/provider/patient/<patient_id>/voice-biomarkers', methods=['GET'])
 def api_patient_voice_biomarkers(patient_id):
     """
@@ -4675,7 +4751,9 @@ def api_patient_voice_biomarkers(patient_id):
 
     Returns per-recording vocabulary labels, aggregate label distributions,
     longitudinal numeric series for charts, and an AI-generated Mode C
-    acoustic observation summary.
+    acoustic observation summary. Sessions without waveform acoustic features
+    fall back to transcript-derived speech labels (vocabulary_source =
+    'transcript'); each session also reports whether its audio was retained.
 
     Query params:
         limit (int, default 20, max 50)  — applied after voice_note filtering
@@ -4692,51 +4770,28 @@ def api_patient_voice_biomarkers(patient_id):
         limit=limit * 3,
     )
 
-    # Filter to SMS prompt voice recordings with processed acoustic features
+    # Map clinical_session_id → voice_notes row, for audio retention status
+    # and note id. Fetched once; sessions without a matching note default to
+    # audio_retained=False / note_id=None.
+    voice_notes = db.get_voice_notes_for_patient(patient_id, limit=50) or []
+    audio_map = {
+        str(vn['clinical_session_id']): {
+            'note_id':        vn.get('id'),
+            'audio_retained': bool(vn.get('audio_url')),
+        }
+        for vn in voice_notes
+        if vn.get('clinical_session_id')
+    }
+
+    # Filter to SMS prompt voice recordings with processed features —
+    # acoustic vocabulary preferred, transcript-derived labels as fallback.
     analyzed = []
     for s in (sessions or []):
         if s.get('session_type') != 'voice_note':
             continue
-        scores = s.get('scores') or {}
-        af     = scores.get('acoustic_features') or {}
-        vocab  = af.get('vocabulary') or {}
-        meas   = af.get('measured') or {}
-        # Skip sessions without any populated vocabulary labels
-        if not vocab or not any(v for v in vocab.values() if v not in (None, '')):
-            continue
-        analyzed.append({
-            'session_id':            s['session_id'],
-            'session_date':          str(s.get('session_date', '')),
-            'session_type':          s.get('session_type', ''),
-            'processing_status':     s.get('processing_status', ''),
-            'confidence':            vocab.get('confidence'),
-            'clinical_pattern_type': vocab.get('clinical_pattern_type'),
-            'severity_note':         vocab.get('severity_note'),
-            'vocabulary': {
-                'speech_rate':      vocab.get('speech_rate'),
-                'prosody':          vocab.get('prosody'),
-                'pauses':           vocab.get('pauses'),
-                'arousal':          vocab.get('arousal'),
-                'vocal_affect':     vocab.get('vocal_affect'),
-                'speech_coherence': vocab.get('speech_coherence'),
-            },
-            'measured': {
-                'articulation_rate_sps': meas.get('articulation_rate_sps'),
-                'speech_rate_sps':       meas.get('speech_rate_sps'),
-                'pause_ratio':           meas.get('pause_ratio'),
-                'pause_count':           meas.get('pause_count'),
-                'f0_mean_hz':            meas.get('f0_mean_hz'),
-                'f0_cv':                 meas.get('f0_cv'),
-                'f0_sd_hz':              meas.get('f0_sd_hz'),
-                'rms_mean':              meas.get('rms_mean'),
-                'hnr_db':                meas.get('hnr_db'),
-                'jitter_local':          meas.get('jitter_local'),
-                'shimmer_local':         meas.get('shimmer_local'),
-                'duration_s':            meas.get('duration_s'),
-            },
-        })
-
-    analyzed = analyzed[:limit]
+        item = _normalize_voice_session(s, audio_map)
+        if item:
+            analyzed.append(item)
 
     # Lazy processing: if no voice_note clinical_sessions exist yet, process
     # orphan voice notes on demand (transcript → extract_features → clinical_session
@@ -4747,7 +4802,7 @@ def api_patient_voice_biomarkers(patient_id):
     if not analyzed:
         import threading
         _orphans = [
-            _vn for _vn in (db.get_voice_notes_for_patient(patient_id, limit=20) or [])
+            _vn for _vn in voice_notes
             if not _vn.get('clinical_session_id')
             and (_vn.get('transcript') or '').strip()
             # Exclude notes the unified pipeline is still working on — a note
@@ -4805,10 +4860,14 @@ def api_patient_voice_biomarkers(patient_id):
             return jsonify({'ok': True, 'status': 'processing',
                             'message': 'Analyzing voice notes — this may take up to 30 seconds.'})
 
-    # Optional single-session filter
+    # Optional single-session filter — applied to the full analyzed list,
+    # BEFORE the limit slice, so a session beyond the first `limit` entries
+    # is still addressable directly.
     filter_session_id = request.args.get('session_id')
     if filter_session_id:
         analyzed = [s for s in analyzed if s['session_id'] == filter_session_id]
+
+    analyzed = analyzed[:limit]
 
     if not analyzed:
         return jsonify({'ok': True, 'sessions': [], 'aggregate': None,
@@ -4845,22 +4904,29 @@ def api_patient_voice_biomarkers(patient_id):
         if p:
             pattern_counts[p] = pattern_counts.get(p, 0) + 1
 
+    acoustic_n = sum(1 for s in analyzed if s.get('vocabulary_source') == 'acoustic')
+
     aggregate = {
         'label_counts':       label_counts,
         'longitudinal':       longitudinal,
         'pattern_distribution': pattern_counts,
         'dominant_pattern':   max(pattern_counts, key=pattern_counts.get) if pattern_counts else None,
         'session_count':      len(analyzed),
+        'acoustic_session_count':        acoustic_n,
+        'transcript_only_session_count': len(analyzed) - acoustic_n,
     }
 
     # ── AI acoustic observation (Mode C, §24 rules) ─────────────────────────
     sessions_for_ai = [
         {
-            'session_date': s['session_date'],
-            'vocabulary':   {**s['vocabulary'],
-                             'confidence':            s['confidence'],
-                             'clinical_pattern_type': s['clinical_pattern_type']},
-            'measured':     s['measured'],
+            'session_date':      s['session_date'],
+            'vocabulary':        {**s['vocabulary'],
+                                  'confidence':            s['confidence'],
+                                  'clinical_pattern_type': s['clinical_pattern_type']},
+            # Transcript-only sessions carry no acoustic measurements — pass an
+            # empty dict so the prompt never cites placeholder numbers.
+            'measured':          s['measured'] if s['vocabulary_source'] == 'acoustic' else {},
+            'vocabulary_source': s['vocabulary_source'],
         }
         for s in analyzed
     ]
