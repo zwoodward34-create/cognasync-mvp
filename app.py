@@ -4695,6 +4695,9 @@ def _normalize_voice_session(s, audio_map):
 
     if _has_labels(vocab):
         vocabulary_source = 'acoustic'
+        # Acoustic vocabulary carries its own pattern type; fall back to the
+        # transcript-level sibling key only when the acoustic one is absent.
+        pattern_type = vocab.get('clinical_pattern_type') or scores.get('clinical_pattern_type')
     else:
         # Fall back to transcript-derived speech features (present for all
         # processed sessions, including text-only ones).
@@ -4703,6 +4706,9 @@ def _normalize_voice_session(s, audio_map):
             return None
         vocabulary_source = 'transcript'
         meas = {}  # measured metrics come only from acoustic extraction
+        # transcript_engine stores clinical_pattern_type as a sibling of
+        # speech_features, not inside it.
+        pattern_type = scores.get('clinical_pattern_type') or vocab.get('clinical_pattern_type')
 
     audio_info = audio_map.get(str(s.get('session_id'))) or {}
 
@@ -4713,7 +4719,7 @@ def _normalize_voice_session(s, audio_map):
         'session_type':          s.get('session_type', ''),
         'processing_status':     s.get('processing_status', ''),
         'confidence':            vocab.get('confidence'),
-        'clinical_pattern_type': scores.get('clinical_pattern_type') or vocab.get('clinical_pattern_type'),
+        'clinical_pattern_type': pattern_type,
         'severity_note':         vocab.get('severity_note'),
         'vocabulary': {
             'speech_rate':      vocab.get('speech_rate'),
