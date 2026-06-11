@@ -28,6 +28,7 @@ jiter==0.14.0
 MarkupSafe==3.0.3
 librosa==0.10.2
 numpy==1.26.4
+praat-parselmouth
 packaging==26.1
 postgrest==0.18.0
 scipy==1.13.1

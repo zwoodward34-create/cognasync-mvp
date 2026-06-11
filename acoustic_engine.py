@@ -402,7 +402,7 @@ def _severity_note(features: dict, speech_rate, pauses, prosody, vocal_affect,
     return "Acoustic measurements: " + "; ".join(parts) + f". Recording {dur:.0f} s."
 
 
-def map_features_to_vocabulary(features: dict) -> dict:
+def map_features_to_vocabulary(features: dict, baseline: dict | None = None) -> dict:
     """Map measured acoustic features to the §24 controlled vocabulary.
 
     The output mirrors the transcript_engine speech_features schema so that
@@ -412,6 +412,12 @@ def map_features_to_vocabulary(features: dict) -> dict:
     Adds a 'measured' sub-dict with the raw numeric values and a
     'clinical_pattern_type' derived from the label cluster.
 
+    When `baseline` is provided and its status is 'established' or 'stale',
+    speech_rate, prosody, and pauses are classified using patient-relative
+    z-score thresholds (±1.5 SD) instead of the module-level absolute
+    constants. Falls back to absolute constants when the baseline field is
+    missing, its SD is zero, or the measured value is None.
+
     This function maps; it never interprets. Clinical meaning is the
     provider's job, not the AI's (CLAUDE.md §24).
     """
@@ -419,10 +425,33 @@ def map_features_to_vocabulary(features: dict) -> dict:
     praat_avail   = features.get("praat_available", False)
     base_conf     = {"good": "high", "fair": "medium", "poor": "low"}[quality]
 
+    # Whether the baseline path was used for at least one feature.
+    baseline_used = False
+
+    # Determine whether baseline is usable at all.
+    _bl_active = (
+        baseline is not None
+        and baseline.get("status") in ("established", "stale")
+    )
+
     # ── Speech rate ──────────────────────────────────────────────────────────
     artic = features.get("articulation_rate_sps")
     if artic is None:
         speech_rate = None
+    elif (
+        _bl_active
+        and baseline.get("articulation_rate_mean") is not None
+        and baseline.get("articulation_rate_sd") is not None
+        and baseline["articulation_rate_sd"] > 0
+    ):
+        z = (artic - baseline["articulation_rate_mean"]) / baseline["articulation_rate_sd"]
+        baseline_used = True
+        if z < -1.5:
+            speech_rate = "slowed"
+        elif z > 1.5:
+            speech_rate = "pressured"
+        else:
+            speech_rate = "normal"
     elif artic < _ARTIC_SLOWED:
         speech_rate = "slowed"
     elif artic > _ARTIC_PRESSURED:
@@ -434,6 +463,20 @@ def map_features_to_vocabulary(features: dict) -> dict:
     p_ratio = features.get("pause_ratio")
     if p_ratio is None:
         pauses = None
+    elif (
+        _bl_active
+        and baseline.get("pause_ratio_mean") is not None
+        and baseline.get("pause_ratio_sd") is not None
+        and baseline["pause_ratio_sd"] > 0
+    ):
+        z = (p_ratio - baseline["pause_ratio_mean"]) / baseline["pause_ratio_sd"]
+        baseline_used = True
+        if z > 1.5:
+            pauses = "increased"
+        elif z < -1.5:
+            pauses = "decreased"
+        else:
+            pauses = "normal"
     elif p_ratio > _PAUSE_INCREASED:
         pauses = "increased"
     elif p_ratio < _PAUSE_DECREASED:
@@ -445,6 +488,20 @@ def map_features_to_vocabulary(features: dict) -> dict:
     f0_cv = features.get("f0_cv")
     if f0_cv is None:
         prosody = None
+    elif (
+        _bl_active
+        and baseline.get("f0_cv_mean") is not None
+        and baseline.get("f0_cv_sd") is not None
+        and baseline["f0_cv_sd"] > 0
+    ):
+        z = (f0_cv - baseline["f0_cv_mean"]) / baseline["f0_cv_sd"]
+        baseline_used = True
+        if z < -1.5:
+            prosody = "flat"
+        elif z > 1.5:
+            prosody = "elevated"
+        else:
+            prosody = "normal"
     elif f0_cv < _F0_CV_FLAT:
         prosody = "flat"
     elif f0_cv > _F0_CV_ELEVATED:
@@ -496,6 +553,12 @@ def map_features_to_vocabulary(features: dict) -> dict:
     sev_note = _severity_note(features, speech_rate, pauses, prosody, vocal_affect,
                               praat_avail)
 
+    # Confidence boost: when at least one feature used patient-relative thresholds
+    # we have a personal reference, so "medium" grades up to "high".
+    # "poor" stays "low"; "good" (already "high") is unchanged.
+    if baseline_used and base_conf == "medium":
+        base_conf = "high"
+
     return {
         # §24 vocabulary labels (shared schema with transcript_engine)
         "speech_rate":           speech_rate,
@@ -508,6 +571,7 @@ def map_features_to_vocabulary(features: dict) -> dict:
         "confidence":            base_conf,
         "clinical_pattern_type": pattern,
         "baseline_deviation":    None,   # populated by caller if prior sessions available
+        "baseline_used":         baseline_used,
         # Measured values — provider-facing only, never patient-facing
         "measured": {
             "articulation_rate_sps": artic,
@@ -688,3 +752,27 @@ def extract_acoustic_features(path: str) -> dict:
         "praat_available": bool(_PRAAT_AVAILABLE),
     }
     return result
+
+
+# ── Subprocess CLI entry point ───────────────────────────────────────────────
+# Acoustic extraction peaks at ~400 MB RSS (librosa pyin probability matrices).
+# Running it inside the web worker risks an OOM kill that takes the whole
+# worker down mid-pipeline, stranding voice_notes rows at 'processing'.
+# audio_engine therefore invokes this module as a short-lived subprocess:
+#     python acoustic_engine.py <audio_path>
+# stdout: one JSON object {"raw": {...}, "vocabulary": {...}}
+# Any failure (including an OOM kill of this child) leaves the parent worker
+# alive to continue with transcript-only analysis.
+
+def _json_safe(obj):
+    """Recursively convert numpy scalars/arrays to plain Python types."""
+    import numpy as _np
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, _np.generic):
+        return obj.item()
+    if isinstance(obj, _np.ndarray):
+        return obj.tolist()
+    if

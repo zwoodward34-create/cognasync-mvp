@@ -2028,6 +2028,12 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                 "Frame as 'session speech features showed [X]' not 'patient exhibited [X].' "
                 "When acoustic measurements (articulation rate, HNR, F0 CV, pause ratio) are present, cite the numbers. "
                 "When affect model output is present, report valence/arousal/dominance with research-signal caveat.\n"
+                "When CONVERGENT SIGNAL ANALYSIS includes an 'affect_model' stream: cite the VAD signal explicitly "
+                "in the Flags section — frame it as a supporting measurement, not a finding. "
+                "When a VAD divergence is detected: surface it as a discrepancy per CLAUDE.md §5 — never suppress it. "
+                "Example divergence framing: 'Signal discrepancy: reported mood ([value]/10) and affect model valence "
+                "([value]) point in opposite directions — worth examining directly with the patient.' "
+                "Always accompany VAD observations with the accuracy ceiling caveat (~70-75%).\n"
                 "CONVERGENCE: when signals align across sources (transcript content + speech features + acoustic + check-ins), "
                 "name the convergence explicitly — e.g., 'Check-in mood averaged 9.0/10 while session language included "
                 "[X concerning phrase] — a Mood Distortion of [N] points worth examining directly.'\n"
@@ -2455,6 +2461,79 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         f"{lexical_section}"
         f"{what_worked_section}"
     )
+
+    # ── Convergent signal detection (CLAUDE.md §5) — provider path only ─────────
+    # Pure deterministic function; no DB or Claude calls.
+    # Local import avoids the circular-import risk at module level
+    # (transcript_engine imports from claude_api).
+    if audience == 'provider':
+        from transcript_engine import _build_convergent_signals
+        # Assemble checkin_scores from the stats dict already computed above.
+        # Also surface speech_features from the most recent complete session, if any.
+        _cs_for_convergence = {
+            'mood_avg':           stats.get('avg_mood'),
+            'stability_score':    None,   # not computed in generate_appointment_summary's stats block
+            'crash_risk':         None,   # not computed here — would come from chart_data in psychiatry path
+            'ns_load':            None,
+            'stress_avg':         stats.get('avg_stress'),
+        }
+        # Pull speech_features from the first complete session in session_context
+        _sf_for_convergence = None
+        if session_context:
+            for _sc in session_context:
+                if _sc.get('processing_status') == 'complete':
+                    _sc_scores = _sc.get('scores') or {}
+                    if _sc_scores.get('speech_features'):
+                        _sf_for_convergence = _sc_scores['speech_features']
+                        break
+
+        # Extract affect dimensions from most recent complete session
+        _afd_for_convergence = None
+        if session_context:
+            for _sc_item in session_context:
+                if _sc_item.get('processing_status') == 'complete':
+                    _sc_scores = _sc_item.get('scores') or {}
+                    _afd = _sc_scores.get('affect_dimensions') or {}
+                    if _afd.get('model_available') and _afd.get('valence') is not None:
+                        _afd_for_convergence = _afd
+                        break
+
+        convergent_signals = _build_convergent_signals(
+            checkin_scores=_cs_for_convergence,
+            speech_features=_sf_for_convergence,
+            lexical_data=lexical_data,
+            affect_dimensions=_afd_for_convergence,
+        )
+        if convergent_signals['convergent'] or convergent_signals['divergent']:
+            _cs_lines = ['\n\nCONVERGENT SIGNAL ANALYSIS (CLAUDE.md §5 — reference in Flags section):']
+            if convergent_signals['convergent']:
+                _cs_lines.append('Convergent signals:')
+                for _sig in convergent_signals['convergent']:
+                    _cs_lines.append(
+                        f"  [{_sig['confidence'].upper()} | {_sig['direction']} | "
+                        f"streams: {', '.join(_sig['streams'])}] {_sig['observation']}"
+                    )
+            if convergent_signals['divergent']:
+                _cs_lines.append('Divergent signals (discrepancies — name these, do not suppress):')
+                for _sig in convergent_signals['divergent']:
+                    _cs_lines.append(
+                        f"  [{_sig['significance'].upper()} | "
+                        f"streams: {', '.join(_sig['streams'])}] {_sig['observation']}"
+                    )
+            user_content += '\n'.join(_cs_lines)
+            summary_system += (
+                "\n\nFor CONVERGENT SIGNAL ANALYSIS: reference detected convergent and divergent "
+                "signals in the **Flags** section. "
+                "For convergent signals (streams pointing in the same direction): cite them as "
+                "supporting evidence when they reinforce a flag you are already writing — do not "
+                "create a standalone 'convergence' flag unless no other flag covers the same territory. "
+                "For divergent signals (discrepancies between streams): always surface them — "
+                "CLAUDE.md §5 requires that divergences be named explicitly, not suppressed. "
+                "Format a divergent signal as: 'Signal discrepancy: [observation].' "
+                "Never diagnose, never assign clinical meaning — describe only what the streams show "
+                "and that they differ. Use the observation text provided verbatim or paraphrase "
+                "without adding clinical interpretation.\n"
+            )
 
     # ── Provider focus config — domain-weighting addon (provider audience only) ─
     if audience == 'provider' and focus_config and focus_config.get('focus_domains'):

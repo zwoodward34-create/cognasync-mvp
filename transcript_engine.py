@@ -92,14 +92,14 @@ Populate speech_features based on observable characteristics of the patient's ut
 - speech_rate: "slowed" if responses are brief, hesitant, or the transcript notes long pauses; "pressured" if the patient produces long uninterrupted runs of text, interrupts, or the transcript notes rapid speech; "normal" otherwise; null if insufficient data.
 - prosody: "flat" if emotional affect appears diminished (short affect-free responses, minimal variation); "elevated" if emotion is notably heightened or intense; "normal" otherwise; null if insufficient data.
 - pauses: "increased" if ellipses, [pause] markers, or very short fragmented responses appear; "decreased" if speech is continuous and unbroken; "normal" otherwise; null if insufficient data.
-- speech_coherence: "disorganized" if speech jumps between unrelated topics, is hard to follow, or contains loose associations; "intact" otherwise; null if insufficient.
+- speech_coherence: "disorganized" if speech jumps between unrelated topics, is hard to follow, or contains loose associations. Default to "intact" for any session where the conversation is followable, even if brief. Only use null when the patient has fewer than 5 utterances total and you genuinely cannot assess coherence.
 - arousal: "low" if patient seems subdued, minimally responsive, flat; "elevated" if patient is animated, excitable; "agitated" if irritable or dysregulated; "normal" otherwise; null if insufficient.
 - vocal_affect: "flat" if emotional expression is minimal across the session; "strained" if the patient seems to be struggling to express themselves; "normal" otherwise; null if insufficient.
 - severity_note: One brief factual observation about the most notable speech or engagement characteristic. Example: "Responses were notably brief and affect appeared flat throughout." Null if nothing stands out.
 - confidence: "high" if clear evidence supports the labels; "medium" if partially visible; "low" if the transcript has minimal content to assess.
 
 BASELINE DEVIATION:
-If the transcript or notes contain any reference to how the patient "usually" presents, how today compares to prior sessions, or the provider notes a change — populate baseline_deviation with one sentence. Example: "Provider noted the patient was quieter than usual." Null if no baseline comparison is available.
+Populate baseline_deviation if (a) an ACOUSTIC BASELINE COMPARISON block is present in the context — use it to write one sentence describing how today's speech features compared to the patient's established acoustic baseline, in plain language (e.g., "Articulation rate was notably slower than this patient's baseline and pitch variability was reduced.") — or (b) the transcript or notes contain any reference to how the patient "usually" presents or how today compares to prior sessions. If neither source is available, set to null.
 
 CLINICAL PATTERN TYPE:
 Assign the single best-matching pattern for the session. Choose from:
@@ -159,6 +159,10 @@ def _trim_transcript(text: str) -> str:
     Trim a long transcript for extraction.
     Keeps the first 8000 chars and last 4000 chars, with a gap marker.
     Clinical density is typically highest at the opening and close of sessions.
+
+    NOTE: This function is retained for backward compatibility but is no longer
+    called in the main extract_features() path. Long transcripts are now handled
+    by _split_transcript_into_chunks() + _merge_chunk_features().
     """
     if len(text) <= MAX_TRANSCRIPT_CHARS:
         return text
@@ -169,6 +173,278 @@ def _trim_transcript(text: str) -> str:
         + "\n\n[--- transcript trimmed for length ---]\n\n"
         + tail
     )
+
+
+def _split_transcript_into_chunks(
+    text: str,
+    chunk_size: int = MAX_TRANSCRIPT_CHARS,
+    overlap: int = 500,
+) -> list[str]:
+    """
+    Split a transcript into overlapping chunks of at most chunk_size chars.
+
+    Splits at newline boundaries when possible to avoid breaking mid-utterance.
+    Returns a list of chunk strings. Capped at 8 chunks for very long transcripts.
+    Never returns an empty list — if text is short, returns [text].
+
+    Args:
+        text:       Full transcript text.
+        chunk_size: Maximum chars per chunk (default: MAX_TRANSCRIPT_CHARS).
+        overlap:    Chars of overlap between adjacent chunks (default: 500).
+    """
+    if not text:
+        return [text]
+    if len(text) <= chunk_size:
+        return [text]
+
+    MAX_CHUNKS = 8
+    chunks: list[str] = []
+    pos = 0
+    total = len(text)
+
+    while pos < total:
+        end = min(pos + chunk_size, total)
+
+        # If not at end of text, try to split at a newline boundary
+        # within the last 200 chars of the chunk window.
+        if end < total:
+            search_start = max(pos, end - 200)
+            last_newline = text.rfind('\n', search_start, end)
+            if last_newline != -1:
+                end = last_newline + 1  # include the newline in this chunk
+
+        chunks.append(text[pos:end])
+
+        if end >= total:
+            break
+
+        # Next chunk starts with `overlap` chars of context from the previous chunk
+        next_pos = end - overlap
+        # Guard: always advance to avoid infinite loop
+        if next_pos <= pos:
+            next_pos = pos + 1
+        pos = next_pos
+
+        # Cap at MAX_CHUNKS — if we'd exceed it, make the last chunk cover the rest
+        if len(chunks) >= MAX_CHUNKS - 1:
+            remaining = text[pos:]
+            if remaining:
+                chunks.append(remaining)
+            break
+
+    return chunks if chunks else [text]
+
+
+def _extract_single_chunk(
+    chunk_text: str,
+    session_type: str,
+    session_date: str | None,
+    assemblyai_hints: dict | None = None,
+    acoustic_baseline_context: str | None = None,
+) -> dict | None:
+    """
+    Run a single extraction call for one transcript chunk.
+
+    Mirrors the user_content construction and _call_claude() invocation from
+    extract_features(), but operates on a single chunk. Crisis detection is
+    intentionally omitted — it already ran on the full transcript before chunking.
+
+    Returns the parsed features dict (the JSON object from the model response),
+    or None on parse failure or API error.
+    """
+    hints_block = _format_assemblyai_hints(assemblyai_hints)
+    baseline_block = (
+        f"\n\nACOUSTIC BASELINE COMPARISON:\n{acoustic_baseline_context}"
+        if acoustic_baseline_context
+        else ''
+    )
+    user_content = (
+        f"Session type: {session_type}\n"
+        f"Session date: {session_date or 'not specified'}\n\n"
+        f"TRANSCRIPT:\n{chunk_text}"
+        + baseline_block
+        + (hints_block or '')
+    )
+
+    try:
+        raw_response = _call_claude(
+            system_prompt=_EXTRACTION_SYSTEM,
+            user_content=user_content,
+            max_tokens=1_200,
+        )
+    except RuntimeError as e:
+        logger.error("Chunk extraction Claude call failed: %s", e)
+        return None
+
+    return _parse_extraction_response(raw_response)
+
+
+def _merge_chunk_features(chunks: list[dict]) -> dict:
+    """
+    Merge a list of per-chunk extracted feature dicts into a single features dict.
+
+    Merge rules:
+    - medications_mentioned: union deduplicated on name (case-insensitive)
+    - symptoms_mentioned:    union deduplicated (case-insensitive)
+    - topics_discussed:      union deduplicated (case-insensitive)
+    - patient_quotes:        concatenate all (quotes are unique per chunk)
+    - speech_features:       take first chunk's value (opening carries richest signal)
+    - clinical_pattern_type: take highest-priority value across all chunks
+      Priority: crisis > psychosis_risk > mania_hypomania > anxiety_stress >
+                depressive > mixed > none_detected > None
+    - baseline_deviation:    take first non-None value
+    - all other scalar fields: take first non-None value across chunks
+
+    Returns {} if chunks is empty.
+    """
+    if not chunks:
+        return {}
+
+    _PATTERN_PRIORITY = {
+        'crisis':           7,
+        'psychosis_risk':   6,
+        'mania_hypomania':  5,
+        'anxiety_stress':   4,
+        'depressive':       3,
+        'mixed':            2,
+        'none_detected':    1,
+        None:               0,
+    }
+
+    merged: dict = {}
+
+    # ── List fields that union-deduplicate ─────────────────────────────────
+    # medications_mentioned: deduplicate by name (case-insensitive), keep first occurrence
+    all_meds: list[dict] = []
+    seen_med_names: set[str] = set()
+    for chunk in chunks:
+        for med in (chunk.get('medications_mentioned') or []):
+            key = (med.get('name') or '').lower().strip()
+            if key and key not in seen_med_names:
+                seen_med_names.add(key)
+                all_meds.append(med)
+    merged['medications_mentioned'] = all_meds
+
+    # symptoms_mentioned: string list, deduplicate case-insensitively
+    all_symptoms: list[str] = []
+    seen_symptoms: set[str] = set()
+    for chunk in chunks:
+        for sym in (chunk.get('symptoms_mentioned') or []):
+            key = sym.lower().strip()
+            if key and key not in seen_symptoms:
+                seen_symptoms.add(key)
+                all_symptoms.append(sym)
+    merged['symptoms_mentioned'] = all_symptoms
+
+    # topics_discussed: string list, deduplicate case-insensitively
+    all_topics: list[str] = []
+    seen_topics: set[str] = set()
+    for chunk in chunks:
+        for topic in (chunk.get('topics_discussed') or []):
+            key = topic.lower().strip()
+            if key and key not in seen_topics:
+                seen_topics.add(key)
+                all_topics.append(topic)
+    merged['topics_discussed'] = all_topics
+
+    # themes: same dedup treatment (extraction schema uses "themes")
+    all_themes: list[str] = []
+    seen_themes: set[str] = set()
+    for chunk in chunks:
+        for theme in (chunk.get('themes') or []):
+            key = theme.lower().strip()
+            if key and key not in seen_themes:
+                seen_themes.add(key)
+                all_themes.append(theme)
+    merged['themes'] = all_themes
+
+    # patient_quotes: concatenate all (no dedup — each is unique in context)
+    all_quotes: list[str] = []
+    for chunk in chunks:
+        all_quotes.extend(chunk.get('patient_quotes') or [])
+    merged['patient_quotes'] = all_quotes
+
+    # stressors: union deduplicate
+    all_stressors: list[str] = []
+    seen_stressors: set[str] = set()
+    for chunk in chunks:
+        for s in (chunk.get('stressors') or []):
+            key = s.lower().strip()
+            if key and key not in seen_stressors:
+                seen_stressors.add(key)
+                all_stressors.append(s)
+    merged['stressors'] = all_stressors
+
+    # positive_signals: union deduplicate
+    all_pos: list[str] = []
+    seen_pos: set[str] = set()
+    for chunk in chunks:
+        for p in (chunk.get('positive_signals') or []):
+            key = p.lower().strip()
+            if key and key not in seen_pos:
+                seen_pos.add(key)
+                all_pos.append(p)
+    merged['positive_signals'] = all_pos
+
+    # concerning_language: union deduplicate
+    all_concern: list[str] = []
+    seen_concern: set[str] = set()
+    for chunk in chunks:
+        for c in (chunk.get('concerning_language') or []):
+            key = c.lower().strip()
+            if key and key not in seen_concern:
+                seen_concern.add(key)
+                all_concern.append(c)
+    merged['concerning_language'] = all_concern
+
+    # ── Special scalar fields ───────────────────────────────────────────────
+
+    # speech_features: first chunk's value (opening of session)
+    merged['speech_features'] = chunks[0].get('speech_features')
+
+    # clinical_pattern_type: highest priority across all chunks
+    best_pattern = None
+    best_priority = -1
+    for chunk in chunks:
+        p = chunk.get('clinical_pattern_type')
+        priority = _PATTERN_PRIORITY.get(p, 0)
+        if priority > best_priority:
+            best_priority = priority
+            best_pattern = p
+    merged['clinical_pattern_type'] = best_pattern
+
+    # baseline_deviation: first non-None value
+    merged['baseline_deviation'] = None
+    for chunk in chunks:
+        val = chunk.get('baseline_deviation')
+        if val is not None:
+            merged['baseline_deviation'] = val
+            break
+
+    # ── Scalar fields: first non-None value across chunks ──────────────────
+    scalar_fields = [
+        'patient_mood_description',
+        'mood_estimate',
+        'energy_description',
+        'energy_estimate',
+        'sleep_hours_mentioned',
+        'sleep_quality_description',
+        'stress_description',
+        'functional_status',
+        'session_notes',
+        'crisis_language_detected',
+    ]
+    for field in scalar_fields:
+        if field in merged:
+            continue  # already set above
+        merged[field] = None
+        for chunk in chunks:
+            val = chunk.get(field)
+            if val is not None:
+                merged[field] = val
+                break
+
+    return merged
 
 
 def _parse_extraction_response(raw: str) -> dict | None:
@@ -355,11 +631,67 @@ def _build_safety_note(crisis_result: dict) -> str:
 
 # ── Public API ──────────────────────────────────────────────────────────────
 
+def _format_assemblyai_hints(hints: dict) -> str | None:
+    """
+    Convert AssemblyAI enrichment data (entities, highlights, sentiment) into a
+    structured supplemental block appended to user_content when ASSEMBLYAI_ENHANCED
+    is active.  Gives Haiku named-entity anchors and highlight keyphrases so the
+    extraction picks up medication names and key topics without hallucinating them.
+
+    Returns None when all three hint lists are empty (free-tier path).
+    """
+    if not hints:
+        return None
+
+    entities   = hints.get('entities') or []
+    highlights = hints.get('auto_highlights') or []
+    sentiments = hints.get('sentiment_results') or []
+
+    if not (entities or highlights or sentiments):
+        return None
+
+    lines = ['\n\n--- ASSEMBLYAI ENRICHMENT (supplemental context; do not quote verbatim) ---']
+
+    if entities:
+        # Deduplicate by (text, entity_type); keep only clinically useful types
+        seen = set()
+        useful_types = {'medication', 'medical_process', 'medical_condition',
+                        'person', 'organization', 'date', 'time', 'number'}
+        for e in entities:
+            key = (e.get('text', '').lower(), e.get('entity_type', ''))
+            if key not in seen and e.get('entity_type', '').lower() in useful_types:
+                seen.add(key)
+        if seen:
+            lines.append('Detected entities (type: text):')
+            for text, etype in sorted(seen):
+                lines.append(f'  {etype}: {text}')
+
+    if highlights:
+        # Top-8 by count; keyphrases worth surfacing as session themes
+        sorted_hl = sorted(highlights, key=lambda h: h.get('count', 0), reverse=True)[:8]
+        lines.append('Key phrases (frequency-ranked): ' +
+                     ', '.join(h.get('text', '') for h in sorted_hl if h.get('text')))
+
+    if sentiments:
+        # Summarise overall sentiment distribution — useful for affect_model corroboration
+        from collections import Counter
+        dist = Counter(s.get('sentiment', '') for s in sentiments)
+        total = sum(dist.values()) or 1
+        parts = [f"{k}: {v/total:.0%}" for k, v in dist.most_common() if k]
+        if parts:
+            lines.append('Sentence-level sentiment distribution: ' + ', '.join(parts))
+
+    lines.append('--- END ENRICHMENT ---')
+    return '\n'.join(lines)
+
+
 def extract_features(
     transcript_text: str,
     session_date: str | None = None,
     session_type: str = 'therapy',
     population_flags: dict | None = None,
+    assemblyai_hints: dict | None = None,
+    acoustic_baseline_context: str | None = None,
 ) -> dict:
     """
     Primary extraction function. Safe to call from any route.
@@ -373,6 +705,16 @@ def extract_features(
         population_flags: Optional {population_name: bool} for graduated crisis scoring.
                           Valid keys: 'adolescent', 'older_adult', 'veteran',
                           'prior_self_harm', 'serious_mental_illness'
+        assemblyai_hints: Optional dict with keys 'entities', 'auto_highlights',
+                          'sentiment_results' from AssemblyAI enrichment (paid tier).
+                          When present, appended as a structured supplemental block
+                          so Haiku has named-entity anchors for medication extraction.
+        acoustic_baseline_context: Optional natural-language string describing how
+                          this session's acoustic features compare to the patient's
+                          established voice baseline. When present, injected into
+                          user_content as an ACOUSTIC BASELINE COMPARISON block so
+                          the model can populate baseline_deviation with concrete data
+                          rather than relying on transcript mentions alone.
 
     Returns:
         {
@@ -427,52 +769,107 @@ def extract_features(
             'transcript_length': len(transcript_text),
         }
 
-    # ── Step 2: Trim transcript if needed ──────────────────────────────────
-    trimmed = _trim_transcript(transcript_text)
-
-    # ── Step 3: Structured extraction call ─────────────────────────────────
-    user_content = (
-        f"Session type: {session_type}\n"
-        f"Session date: {session_date or 'not specified'}\n\n"
-        f"TRANSCRIPT:\n{trimmed}"
-    )
-
-    try:
-        raw_response = _call_claude(
-            system_prompt=_EXTRACTION_SYSTEM,
-            user_content=user_content,
-            max_tokens=1_200,
+    # ── Step 2: Extraction — short path or chunked long path ──────────────
+    if len(transcript_text) <= MAX_TRANSCRIPT_CHARS:
+        # ── Short path: single extraction call on the full transcript ──────
+        hints_block    = _format_assemblyai_hints(assemblyai_hints)
+        baseline_block = (
+            f"\n\nACOUSTIC BASELINE COMPARISON:\n{acoustic_baseline_context}"
+            if acoustic_baseline_context
+            else ''
         )
-    except RuntimeError as e:
-        logger.error("Extraction Claude call failed: %s", e)
-        return {
-            'crisis_detected':   False,
-            'safety_note':       None,
-            'features':          None,
-            'scores':            None,
-            'session_date':      session_date,
-            'session_type':      session_type,
-            'transcript_length': len(transcript_text),
-            'error':             f'Extraction API error: {str(e)}',
-        }
+        user_content = (
+            f"Session type: {session_type}\n"
+            f"Session date: {session_date or 'not specified'}\n\n"
+            f"TRANSCRIPT:\n{transcript_text}"
+            + baseline_block
+            + (hints_block or '')
+        )
 
-    # ── Step 4: Parse response ─────────────────────────────────────────────
-    features = _parse_extraction_response(raw_response)
-    if features is None:
-        return {
-            'crisis_detected':   False,
-            'safety_note':       None,
-            'features':          None,
-            'scores':            None,
-            'session_date':      session_date,
-            'session_type':      session_type,
-            'transcript_length': len(transcript_text),
-            'error':             'Extraction response could not be parsed',
-        }
+        try:
+            raw_response = _call_claude(
+                system_prompt=_EXTRACTION_SYSTEM,
+                user_content=user_content,
+                max_tokens=1_200,
+            )
+        except RuntimeError as e:
+            logger.error("Extraction Claude call failed: %s", e)
+            return {
+                'crisis_detected':   False,
+                'crisis_level':      crisis_level,
+                'crisis_result':     crisis_result,
+                'safety_note':       None,
+                'features':          None,
+                'scores':            None,
+                'session_date':      session_date,
+                'session_type':      session_type,
+                'transcript_length': len(transcript_text),
+                'error':             f'Extraction API error: {str(e)}',
+            }
 
-    # ── Step 5: Secondary crisis check on extracted concerning_language ─────
+        # ── Step 3: Parse response (short path) ───────────────────────────
+        features = _parse_extraction_response(raw_response)
+        if features is None:
+            return {
+                'crisis_detected':   False,
+                'crisis_level':      crisis_level,
+                'crisis_result':     crisis_result,
+                'safety_note':       None,
+                'features':          None,
+                'scores':            None,
+                'session_date':      session_date,
+                'session_type':      session_type,
+                'transcript_length': len(transcript_text),
+                'error':             'Extraction response could not be parsed',
+            }
+
+    else:
+        # ── Long path: chunked extraction + merge ─────────────────────────
+        chunks = _split_transcript_into_chunks(transcript_text)
+        logger.info(
+            "Long transcript (%d chars) split into %d chunks for extraction "
+            "(session_date=%s, session_type=%s).",
+            len(transcript_text), len(chunks), session_date, session_type
+        )
+        chunk_results: list[dict] = []
+        for i, chunk in enumerate(chunks):
+            chunk_features = _extract_single_chunk(
+                chunk_text=chunk,
+                session_type=session_type,
+                session_date=session_date,
+                assemblyai_hints=assemblyai_hints,
+                # Acoustic baseline context only injected into the first chunk —
+                # opening of session has richest speech signal.
+                acoustic_baseline_context=acoustic_baseline_context if i == 0 else None,
+            )
+            if chunk_features is not None:
+                chunk_results.append(chunk_features)
+            else:
+                logger.warning(
+                    "Chunk %d/%d extraction failed (session_date=%s).",
+                    i + 1, len(chunks), session_date
+                )
+
+        if not chunk_results:
+            return {
+                'crisis_detected':   False,
+                'crisis_level':      crisis_level,
+                'crisis_result':     crisis_result,
+                'safety_note':       None,
+                'features':          None,
+                'scores':            None,
+                'session_date':      session_date,
+                'session_type':      session_type,
+                'transcript_length': len(transcript_text),
+                'error':             'All chunk extractions failed',
+            }
+
+        features = _merge_chunk_features(chunk_results)
+
+    # ── Step 3: Secondary crisis check on extracted concerning_language ─────
     # Belt-and-suspenders: re-score against the concerning_language phrases
     # the model surfaced. Uses score_crisis() for consistency with Step 1.
+    # Runs on both the short path and the long (chunked) path.
     concerning = features.get('concerning_language') or []
     secondary_crisis = None
     if features.get('crisis_language_detected') and not concerning:
@@ -509,7 +906,7 @@ def extract_features(
             'transcript_length': len(transcript_text),
         }
 
-    # ── Step 6: Deterministic scoring ─────────────────────────────────────
+    # ── Step 4: Deterministic scoring ─────────────────────────────────────
     scores = _compute_transcript_scores(features)
 
     # If Level 1-2 signals were detected, include them as non-blocking context
@@ -532,6 +929,382 @@ def extract_features(
         'session_type':      session_type,
         'transcript_length': len(transcript_text),
     }
+
+
+def _build_convergent_signals(
+    checkin_scores: dict | None,
+    speech_features: dict | None,
+    lexical_data: dict | None,
+    affect_dimensions: dict | None = None,
+) -> dict:
+    """
+    Detect convergent and divergent signal patterns across independent data streams.
+
+    Implements the Convergent Signal Principle (CLAUDE.md §5):
+      - Convergent: ≥2 independent streams pointing in the same direction
+      - Divergent: streams pointing in opposite directions — the divergence is
+        itself clinically meaningful and must be named, not suppressed
+
+    This function is purely deterministic — no DB calls, no Claude calls.
+    All numeric thresholds mirror the spec exactly.
+
+    Args:
+        checkin_scores: Aggregate scores for the period. Expected keys:
+            mood_avg, stability_score, crash_risk, ns_load, stress_avg,
+            sleep_disruption_score, energy_avg. Any may be absent.
+        speech_features: Speech feature dict from extract_features()['scores']
+            ['speech_features']. Expected keys: speech_rate, prosody, pauses,
+            arousal, vocal_affect, speech_coherence. Any may be absent.
+        lexical_data: Dict from compute_lexical_diversity(). Expected keys:
+            type_token_ratio, trend, delta, entries_analyzed. Any may be absent.
+        affect_dimensions: Optional VAD affect model output dict. Expected keys:
+            model_available (bool), valence (float 0-1), arousal (float 0-1),
+            dominance (float 0-1), valence_label (str), arousal_label (str).
+            When None or model_available is False, VAD checks are skipped.
+
+    Returns:
+        {
+            'convergent': [
+                {
+                    'streams':     list[str],  # e.g. ['self_report', 'acoustic']
+                    'direction':   str,        # 'negative' | 'positive' | 'elevated_load'
+                    'observation': str,        # plain-English sentence, no clinical terms
+                    'confidence':  str,        # 'strong' (3+ streams) | 'moderate' (2 streams)
+                },
+                ...
+            ],
+            'divergent': [
+                {
+                    'streams':     list[str],
+                    'observation': str,        # plain-English description of discrepancy
+                    'significance': str,       # 'high' | 'medium'
+                },
+                ...
+            ]
+        }
+    """
+    convergent: list[dict] = []
+    divergent:  list[dict] = []
+
+    # Normalise None inputs to empty dicts so .get() calls below never raise
+    cs = checkin_scores  or {}
+    sf = speech_features or {}
+    ld = lexical_data    or {}
+
+    mood_avg        = cs.get('mood_avg')
+    stability_score = cs.get('stability_score')
+    crash_risk      = cs.get('crash_risk')
+    ns_load         = cs.get('ns_load')
+    stress_avg      = cs.get('stress_avg')
+
+    speech_rate  = sf.get('speech_rate')
+    prosody      = sf.get('prosody')
+    arousal      = sf.get('arousal')
+    vocal_affect = sf.get('vocal_affect')
+
+    ld_trend    = ld.get('trend')
+    ld_delta    = ld.get('delta')
+    ld_entries  = ld.get('entries_analyzed', 0)
+
+    # ── Check 1: Mood Distortion (CLAUDE.md §9) ────────────────────────────────
+    # When |reported mood − stability score| > 2.5 it is a divergent signal.
+    if mood_avg is not None and stability_score is not None:
+        distortion = mood_avg - stability_score
+        if distortion > 2.5:
+            divergent.append({
+                'streams':      ['self_report', 'derived_scores'],
+                'observation':  (
+                    f"Mood average ({mood_avg:.1f}/10) is notably higher than computed "
+                    f"stability score ({stability_score:.1f}/10) — a gap of "
+                    f"{distortion:.1f} points that may reflect intra-day variability "
+                    "or a difference between how the patient rates their mood and what "
+                    "the other data signals show."
+                ),
+                'significance': 'high',
+            })
+        elif distortion < -2.5:
+            divergent.append({
+                'streams':      ['self_report', 'derived_scores'],
+                'observation':  (
+                    f"Mood average ({mood_avg:.1f}/10) is notably lower than computed "
+                    f"stability score ({stability_score:.1f}/10) — a gap of "
+                    f"{abs(distortion):.1f} points. Reported mood is lower than what "
+                    "the derived metrics indicate, which may be worth examining directly."
+                ),
+                'significance': 'high',
+            })
+
+    # ── Check 2: Negative convergent trajectory ────────────────────────────────
+    # All three scores in the negative range simultaneously → strong convergence.
+    if (
+        mood_avg        is not None and mood_avg        <= 4.0
+        and stability_score is not None and stability_score <= 4.0
+        and crash_risk      is not None and crash_risk      >= 6.0
+    ):
+        convergent.append({
+            'streams':     ['self_report', 'derived_scores'],
+            'direction':   'negative',
+            'observation': (
+                f"Mood average ({mood_avg:.1f}/10), stability score "
+                f"({stability_score:.1f}/10), and crash risk ({crash_risk:.1f}/10) "
+                "are all in the lower or elevated range this period — three "
+                "independent measures pointing in the same direction."
+            ),
+            'confidence':  'strong',
+        })
+
+    # ── Check 3: Speech-mood negative convergence ──────────────────────────────
+    # Depressive speech markers co-occurring with low mood self-report.
+    if mood_avg is not None and speech_features is not None:
+        negative_speech_markers = sum([
+            speech_rate == 'slowed',
+            arousal     == 'low',
+            prosody     == 'flat',
+        ])
+        if mood_avg <= 4.5 and negative_speech_markers >= 1:
+            marker_labels = []
+            if speech_rate == 'slowed': marker_labels.append('slowed speech rate')
+            if arousal     == 'low':    marker_labels.append('low arousal')
+            if prosody     == 'flat':   marker_labels.append('flat prosody')
+            conf = 'strong' if negative_speech_markers >= 2 else 'moderate'
+            convergent.append({
+                'streams':     ['self_report', 'acoustic'],
+                'direction':   'negative',
+                'observation': (
+                    f"Mood average ({mood_avg:.1f}/10) and session speech features "
+                    f"({', '.join(marker_labels)}) both point in a lower-range "
+                    "direction — two independent data streams in agreement."
+                ),
+                'confidence':  conf,
+            })
+
+    # ── Check 4: Speech-mood divergence (elevated arousal vs. normal mood) ─────
+    # Pressured speech or agitation alongside a self-reported mood in normal range.
+    if mood_avg is not None and speech_features is not None:
+        if speech_rate == 'pressured' or arousal == 'agitated':
+            if mood_avg >= 6.0:
+                markers = []
+                if speech_rate == 'pressured': markers.append('pressured speech rate')
+                if arousal     == 'agitated':  markers.append('agitated arousal')
+                divergent.append({
+                    'streams':      ['self_report', 'acoustic'],
+                    'observation':  (
+                        f"Session speech features ({', '.join(markers)}) suggest elevated "
+                        f"physiological arousal while mood self-report averaged "
+                        f"{mood_avg:.1f}/10 — a discrepancy between reported state and "
+                        "observed speech presentation that may be worth exploring."
+                    ),
+                    'significance': 'medium',
+                })
+
+    # ── Check 5: Lexical-mood convergence or divergence ────────────────────────
+    # Lexical diversity trend as a cognitive trait signal (CLAUDE.md §25).
+    if (
+        ld_trend  is not None
+        and ld_trend   != 'insufficient_data'
+        and ld_delta   is not None
+        and abs(ld_delta)  >= 0.10
+        and ld_entries >= 10
+        and mood_avg   is not None
+    ):
+        if ld_trend == 'declining':
+            if mood_avg <= 4.5:
+                # Both cognitive trait and self-report pointing negative → convergence
+                convergent.append({
+                    'streams':     ['lexical', 'self_report'],
+                    'direction':   'negative',
+                    'observation': (
+                        f"Vocabulary range in journal entries has narrowed over this period "
+                        f"(TTR change: {ld_delta:+.2f} across {ld_entries} entries) "
+                        f"alongside a mood average of {mood_avg:.1f}/10 — two independent "
+                        "data streams pointing in the same direction."
+                    ),
+                    'confidence':  'moderate',
+                })
+            elif mood_avg >= 6.0:
+                # Cognitive load signal diverges from self-reported normal mood
+                divergent.append({
+                    'streams':      ['lexical', 'self_report'],
+                    'observation':  (
+                        f"Vocabulary range in journal entries has narrowed over this period "
+                        f"(TTR change: {ld_delta:+.2f} across {ld_entries} entries) "
+                        f"while mood self-report averaged {mood_avg:.1f}/10 — a discrepancy "
+                        "between the cognitive load signal and the self-reported state that "
+                        "may be worth examining further."
+                    ),
+                    'significance': 'medium',
+                })
+
+    # ── Check 6: Nervous system load convergence ───────────────────────────────
+    # High NS Load + high stress self-report, with or without acoustic corroboration.
+    if ns_load is not None and ns_load >= 7.0 and stress_avg is not None and stress_avg >= 6.0:
+        has_acoustic_corroboration = (
+            speech_features is not None
+            and (arousal in ('elevated', 'agitated') or vocal_affect == 'strained')
+        )
+        if has_acoustic_corroboration:
+            acoustic_markers = []
+            if arousal      in ('elevated', 'agitated'): acoustic_markers.append(f"arousal: {arousal}")
+            if vocal_affect == 'strained':               acoustic_markers.append('strained vocal affect')
+            convergent.append({
+                'streams':     ['self_report', 'derived_scores', 'acoustic'],
+                'direction':   'elevated_load',
+                'observation': (
+                    f"Nervous system load ({ns_load:.1f}/10), stress average "
+                    f"({stress_avg:.1f}/10), and session speech features "
+                    f"({', '.join(acoustic_markers)}) all indicate elevated physiological "
+                    "load — three independent data streams in agreement."
+                ),
+                'confidence':  'strong',
+            })
+        else:
+            convergent.append({
+                'streams':     ['self_report', 'derived_scores'],
+                'direction':   'elevated_load',
+                'observation': (
+                    f"Nervous system load ({ns_load:.1f}/10) and stress average "
+                    f"({stress_avg:.1f}/10) are both elevated — two derived and "
+                    "self-report streams pointing in the same direction."
+                ),
+                'confidence':  'moderate',
+            })
+
+    # ── Check 7: Positive trajectory convergence ──────────────────────────────
+    # Mood, stability, and crash risk all in healthy range, with stable speech.
+    if (
+        mood_avg        is not None and mood_avg        >= 6.5
+        and stability_score is not None and stability_score >= 6.0
+        and crash_risk      is not None and crash_risk      <= 3.0
+    ):
+        speech_benign = (
+            speech_features is None
+            or (speech_rate in ('normal', None) and arousal in ('normal', None))
+        )
+        if speech_features is not None and speech_benign:
+            streams = ['self_report', 'derived_scores', 'acoustic']
+            conf    = 'strong'
+        else:
+            streams = ['self_report', 'derived_scores']
+            conf    = 'moderate'
+        convergent.append({
+            'streams':     streams,
+            'direction':   'positive',
+            'observation': (
+                f"Mood average ({mood_avg:.1f}/10), stability score "
+                f"({stability_score:.1f}/10), and crash risk ({crash_risk:.1f}/10) "
+                "are all in a stable or positive range this period — "
+                f"{len(streams)} independent data stream{'s' if len(streams) > 1 else ''} "
+                "in agreement."
+            ),
+            'confidence':  conf,
+        })
+
+    # ── Checks 8–11: VAD affect model integration ─────────────────────────────
+    # Only run when affect_dimensions is present, model_available is True, and
+    # valence is populated. All existing checks above remain unaffected.
+    if (
+        affect_dimensions is not None
+        and affect_dimensions.get('model_available')
+        and affect_dimensions.get('valence') is not None
+    ):
+        afd = affect_dimensions or {}
+        valence  = afd.get('valence')
+        vad_arousal = afd.get('arousal')
+        mood_avg = cs.get('mood_avg') if cs else None
+
+        # ── Check 8: VAD low-valence + low mood (negative convergence) ────────
+        if valence < 0.35 and mood_avg is not None and mood_avg <= 4.5:
+            conf_8 = (
+                'strong' if (vad_arousal is not None and vad_arousal <= 0.40)
+                else 'moderate'
+            )
+            convergent.append({
+                'streams':    ['self_report', 'affect_model'],
+                'direction':  'negative',
+                'confidence': conf_8,
+                'observation': (
+                    f"Affect model valence ({valence:.2f}) and mood average "
+                    f"({mood_avg:.1f}/10) both indicate a lower-range period — "
+                    "two independent measurement approaches in agreement. "
+                    "(Affect model: ~70–75% accuracy ceiling; treat as supporting "
+                    "signal, not a finding.)"
+                ),
+            })
+
+        # ── Check 9: VAD high-valence + elevated mood (positive convergence) ──
+        # Mutually exclusive with Check 8 by construction (valence can't be
+        # both < 0.35 and > 0.65).
+        elif valence > 0.65 and mood_avg is not None and mood_avg >= 6.5:
+            conf_9 = (
+                'strong'
+                if (cs.get('stability_score') is not None
+                    and cs['stability_score'] >= 6.0)
+                else 'moderate'
+            )
+            convergent.append({
+                'streams':    ['self_report', 'affect_model'],
+                'direction':  'positive',
+                'confidence': conf_9,
+                'observation': (
+                    f"Affect model valence ({valence:.2f}) and mood average "
+                    f"({mood_avg:.1f}/10) both indicate a higher-range period — "
+                    "consistent across two independent measurement approaches. "
+                    "(Affect model: ~70–75% accuracy ceiling.)"
+                ),
+            })
+
+        # ── Check 10: VAD-self-report divergence (only one sub-case fires) ────
+        if mood_avg is not None:
+            if mood_avg >= 6.5 and valence < 0.40:
+                divergent.append({
+                    'streams':      ['self_report', 'affect_model'],
+                    'significance': 'medium',
+                    'observation':  (
+                        f"Reported mood ({mood_avg:.1f}/10) is in the higher range, "
+                        f"but affect model valence ({valence:.2f}) is in the lower range "
+                        "— a discrepancy between self-report and the acoustic affect signal "
+                        "worth noting. (Affect model accuracy ceiling ~70–75%; divergence "
+                        "warrants clinical inquiry rather than conclusions.)"
+                    ),
+                })
+            elif mood_avg <= 4.0 and valence > 0.60:
+                divergent.append({
+                    'streams':      ['self_report', 'affect_model'],
+                    'significance': 'medium',
+                    'observation':  (
+                        f"Reported mood ({mood_avg:.1f}/10) is in the lower range, "
+                        f"but affect model valence ({valence:.2f}) is in the higher range "
+                        "— self-report and acoustic affect signal point in opposite "
+                        "directions. (Affect model accuracy ceiling ~70–75%; this "
+                        "discrepancy may reflect self-reporting patterns or acute state "
+                        "variation.)"
+                    ),
+                })
+
+        # ── Check 11: High VAD arousal + acoustic agitation convergence ───────
+        if (
+            vad_arousal is not None and vad_arousal > 0.65
+            and sf is not None
+            and (sf.get('arousal') == 'agitated' or sf.get('speech_rate') == 'pressured')
+        ):
+            acoustic_markers_11 = []
+            if sf.get('arousal') == 'agitated':
+                acoustic_markers_11.append('agitated arousal')
+            if sf.get('speech_rate') == 'pressured':
+                acoustic_markers_11.append('pressured speech rate')
+            convergent.append({
+                'streams':    ['affect_model', 'acoustic'],
+                'direction':  'elevated_load',
+                'confidence': 'moderate',
+                'observation': (
+                    f"Affect model arousal ({vad_arousal:.2f}) is elevated, and session "
+                    f"speech features ({', '.join(acoustic_markers_11)}) point in the same "
+                    "direction — two independent acoustic-derived measurements in agreement. "
+                    "(Affect model accuracy ceiling ~70–75%.)"
+                ),
+            })
+
+    return {'convergent': convergent, 'divergent': divergent}
 
 
 def extract_patient_speech(transcript_text: str) -> str:

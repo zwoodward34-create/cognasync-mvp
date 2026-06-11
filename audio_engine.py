@@ -62,6 +62,11 @@ MAX_POLL_SECONDS     = 900    # 15 minutes — covers a 75-minute session
 POLL_INTERVAL        = 5      # seconds between status checks
 MAX_AUDIO_BYTES      = 500 * 1024 * 1024   # 500 MB hard limit
 
+# Set ASSEMBLYAI_ENHANCED=true in Render env vars to enable paid-tier features:
+# speaker_labels, sentiment_analysis, entity_detection, auto_highlights.
+# Leave unset (or set to false/0) to run on free-tier keys without error.
+ASSEMBLYAI_ENHANCED = os.environ.get('ASSEMBLYAI_ENHANCED', '').lower() in ('1', 'true', 'yes')
+
 ACCEPTED_MIME_TYPES = {
     'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a',
     'audio/wav', 'audio/wave', 'audio/x-wav',
@@ -163,13 +168,19 @@ def _submit_transcription_job(audio_url: str) -> tuple:
     if not ASSEMBLYAI_API_KEY:
         return None, 'ASSEMBLYAI_API_KEY is not configured.'
 
-    # speaker_labels is a paid feature — omit it so free-tier keys work.
     # speech_models is now required by AssemblyAI; universal-2 works on all tiers.
+    # Enhanced features (speaker_labels, sentiment_analysis, entity_detection,
+    # auto_highlights) require a paid plan — gated by ASSEMBLYAI_ENHANCED env var.
     payload = {
-        'audio_url':    audio_url,
+        'audio_url':     audio_url,
         'speech_models': ['universal-2'],
         'language_code': 'en',
     }
+    if ASSEMBLYAI_ENHANCED:
+        payload['speaker_labels']      = True
+        payload['sentiment_analysis']  = True
+        payload['entity_detection']    = True
+        payload['auto_highlights']     = True
 
     try:
         resp = requests.post(
@@ -223,7 +234,15 @@ def _poll_transcription_job(job_id: str) -> dict:
                     transcript_text = _format_utterances(utterances)
 
                 logger.info("AssemblyAI job %s completed (%d chars)", job_id, len(transcript_text))
-                return {'status': 'completed', 'text': transcript_text, 'utterances': utterances, 'error': None}
+                return {
+                    'status':            'completed',
+                    'text':              transcript_text,
+                    'utterances':        utterances,
+                    'entities':          data.get('entities') or [],
+                    'auto_highlights':   (data.get('auto_highlights_result') or {}).get('results') or [],
+                    'sentiment_results': data.get('sentiment_analysis_results') or [],
+                    'error':             None,
+                }
 
             elif status == 'error':
                 err = data.get('error', 'Unknown transcription error')
@@ -246,19 +265,85 @@ def _poll_transcription_job(job_id: str) -> dict:
 def _format_utterances(utterances: list) -> str:
     """
     Convert AssemblyAI speaker-diarized utterances to a labeled transcript.
-    Speaker A → PATIENT, Speaker B → PROVIDER (heuristic: assume A speaks first
-    and is typically the patient, B is the clinician).
 
-    The heuristic is imperfect. Providers can relabel if needed.
-    More robust labeling requires knowing who speaks first from external context.
+    Label assignment uses a word-count heuristic:
+    - Count total words spoken by each speaker across all utterances.
+    - The speaker with the MOST words is labeled PATIENT. Patients consistently
+      produce more verbal content in therapy/psychiatry sessions; providers ask
+      questions while patients elaborate.
+    - If the top two speakers are within 20% of each other in word count the
+      data is too ambiguous to override, so the function falls back to the
+      original first-utterance order (A → PATIENT, B → PROVIDER).
+    - The fallback also applies when there is only one speaker with any words.
+    - Any speakers beyond the two most active are labeled SPEAKER_C, SPEAKER_D,
+      etc. (unchanged behavior for 3+ speaker recordings).
+
+    Edge cases handled:
+    - Empty utterance list → returns empty string.
+    - Single speaker → that speaker is labeled PATIENT.
+    - More than 2 speakers → top two are assigned by word count (with the
+      20% ambiguity check); extras become SPEAKER_<letter>.
     """
-    label_map = {'A': 'PATIENT', 'B': 'PROVIDER'}
+    if not utterances:
+        return ''
+
+    # --- build per-speaker word counts and first-appearance order ---
+    word_counts: dict[str, int] = {}
+    first_order: list[str] = []          # speakers in order of first utterance
+    for u in utterances:
+        speaker = u.get('speaker', 'UNKNOWN')
+        text    = u.get('text', '').strip()
+        if not text:
+            continue
+        words = len(text.split())
+        word_counts[speaker] = word_counts.get(speaker, 0) + words
+        if speaker not in first_order:
+            first_order.append(speaker)
+
+    # --- determine label map ---
+    if not word_counts:
+        return ''
+
+    # Sort speakers by descending word count
+    ranked = sorted(word_counts.keys(), key=lambda s: word_counts[s], reverse=True)
+
+    label_map: dict[str, str] = {}
+
+    if len(ranked) == 1:
+        # Only one speaker — label as PATIENT regardless of letter
+        label_map[ranked[0]] = 'PATIENT'
+    else:
+        top, second = ranked[0], ranked[1]
+        top_words    = word_counts[top]
+        second_words = word_counts[second]
+
+        # Ambiguity check: are the two most active speakers within 20% of each other?
+        ambiguous = (top_words > 0 and
+                     abs(top_words - second_words) / top_words <= 0.20)
+
+        if ambiguous:
+            # Fall back to first-utterance order: first speaker → PATIENT
+            fallback_patient  = first_order[0] if len(first_order) > 0 else top
+            fallback_provider = first_order[1] if len(first_order) > 1 else second
+            label_map[fallback_patient]  = 'PATIENT'
+            label_map[fallback_provider] = 'PROVIDER'
+        else:
+            # Word-count heuristic: most words → PATIENT
+            label_map[top]    = 'PATIENT'
+            label_map[second] = 'PROVIDER'
+
+        # Any additional speakers get positional labels (C, D, …)
+        extras = [s for s in ranked[2:]]
+        for i, spk in enumerate(extras):
+            label_map[spk] = f'SPEAKER_{chr(ord("C") + i)}'
+
+    # --- build transcript lines ---
     lines = []
     for u in utterances:
         speaker = u.get('speaker', 'UNKNOWN')
-        label   = label_map.get(speaker, f'SPEAKER_{speaker}')
         text    = u.get('text', '').strip()
         if text:
+            label = label_map.get(speaker, f'SPEAKER_{speaker}')
             lines.append(f'{label}: {text}')
     return '\n'.join(lines)
 
@@ -583,6 +668,29 @@ def _run_audio_pipeline(db, extract_features, session_id, patient_id,
                                     acoustic_result, voice_recording_role)
     else:
         db._tag_session_voice_role(session_id, 'clinical_session')
+        # For clinical sessions, attempt a baseline comparison if a baseline exists.
+        # _run_baseline_lifecycle() is intentionally NOT called here — it is designed
+        # for the voice-note Phase 1/2/3 lifecycle only.
+        acoustic_baseline_context = None
+        if acoustic_result is not None:
+            try:
+                baseline = db.get_voice_baseline(patient_id)
+                if baseline and baseline.get('status') in ('established', 'stale'):
+                    deviation = db.compute_baseline_deviation(
+                        acoustic_result.get('raw') or {}, baseline
+                    )
+                    if deviation:
+                        acoustic_baseline_context = deviation
+                        logger.info(
+                            "Clinical session baseline deviation computed: session=%s",
+                            session_id,
+                        )
+            except Exception as _bl_err:
+                logger.warning(
+                    "Clinical session baseline lookup failed (non-fatal): "
+                    "session=%s error=%s",
+                    session_id, _bl_err,
+                )
 
     # ── Transcription ─────────────────────────────────────────────
     db.update_clinical_session_status(session_id, 'transcribing')
@@ -605,11 +713,18 @@ def _run_audio_pipeline(db, extract_features, session_id, patient_id,
     # Fetch population flags so the graduated crisis scorer (spec §23) can apply
     # population-aware modifiers. Returns {} if no flags are set — safe default.
     population_flags = db.get_patient_population_flags(patient_id)
+    assemblyai_hints  = {
+        'entities':          transcription.get('entities') or [],
+        'auto_highlights':   transcription.get('auto_highlights') or [],
+        'sentiment_results': transcription.get('sentiment_results') or [],
+    } if ASSEMBLYAI_ENHANCED else None
     extraction = extract_features(
         transcript_text=transcript_text,
         session_date=session_date,
         session_type=session_type,
         population_flags=population_flags or None,
+        assemblyai_hints=assemblyai_hints,
+        acoustic_baseline_context=acoustic_baseline_context if session_type != 'voice_note' else None,
     )
 
     # ── Merge acoustic features into extraction result ────────────────────────
@@ -744,6 +859,7 @@ def process_voice_note(
                                voice_note_id, se)
 
         # ── 2. Transcription (fatal on failure; skipped on recovery re-runs) ─
+        _transcription_result = {}   # may be populated below for assemblyai_hints
         if existing_transcript:
             transcript_text = existing_transcript
             db.supabase_admin.table('voice_notes').update({
@@ -761,6 +877,7 @@ def process_voice_note(
                 _vn_error(result.get('error') or 'Transcription failed')
                 return
 
+            _transcription_result = result
             transcript_text = result['text']
             db.supabase_admin.table('voice_notes').update({
                 'transcript':        transcript_text,
@@ -809,11 +926,17 @@ def process_voice_note(
                                     acoustic_result, voice_recording_role)
 
         # ── 6. Semantic extraction via Claude + acoustic merge ───────────────
+        _vn_hints = {
+            'entities':          _transcription_result.get('entities') or [],
+            'auto_highlights':   _transcription_result.get('auto_highlights') or [],
+            'sentiment_results': _transcription_result.get('sentiment_results') or [],
+        } if ASSEMBLYAI_ENHANCED else None
         extraction = extract_features(
             transcript_text=transcript_text,
             session_date=session_date,
             session_type='voice_note',
             population_flags=db.get_patient_population_flags(patient_id) or None,
+            assemblyai_hints=_vn_hints,
         )
         _merge_acoustic_into_extraction(extraction, acoustic_result, session_id)
 
