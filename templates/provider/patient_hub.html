@@ -493,6 +493,54 @@
   .bm-measured-lbl { display: block; font-size: 0.67rem; color: var(--text-muted); margin-bottom: 2px; }
   .bm-measured-val { display: block; font-size: 0.88rem; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
 
+  /* ── Metric bars with typical-range bands (single-recording view) ────────── */
+  .bm-bars { display: flex; flex-direction: column; gap: 9px; }
+  .bm-bars-legend {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 0.65rem; color: var(--text-muted); margin-bottom: 7px;
+  }
+  .bm-bars-legend-swatch {
+    width: 18px; height: 8px; border-radius: 3px;
+    background: var(--border); opacity: 0.55;
+  }
+  .bm-bar-row { display: grid; grid-template-columns: 185px 1fr; gap: 10px; align-items: center; }
+  .bm-bar-meta { display: flex; justify-content: space-between; align-items: baseline; gap: 6px; }
+  .bm-bar-lbl { font-size: 0.7rem; color: var(--text-muted); }
+  .bm-bar-val { font-size: 0.78rem; font-weight: 600; color: var(--text); font-variant-numeric: tabular-nums; }
+  .bm-bar-track {
+    position: relative; height: 12px; border-radius: 6px;
+    background: var(--surface, #fafafa); border: 1px solid var(--border);
+  }
+  .bm-bar-band {
+    position: absolute; top: 0; bottom: 0; border-radius: 5px;
+    background: var(--border); opacity: 0.55;
+  }
+  .bm-bar-marker {
+    position: absolute; top: 50%; transform: translate(-50%, -50%);
+    width: 9px; height: 9px; border-radius: 50%;
+    background: var(--accent); box-shadow: 0 0 0 2px var(--surface, #fff);
+  }
+  .bm-bars-note { font-size: 0.65rem; color: var(--text-muted); font-style: italic; margin-top: 8px; }
+  @media (max-width: 600px) { .bm-bar-row { grid-template-columns: 1fr; gap: 4px; } }
+
+  /* ── Single-recording header + transcript-only info box ──────────────────── */
+  .bm-single-hdr { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .bm-single-date { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+  .bm-source-tag {
+    font-size: 0.62rem; font-weight: 500; text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 2px 7px; border-radius: 8px; border: 1px solid var(--border);
+    color: var(--text-muted); background: var(--surface, #fafafa);
+  }
+  .bm-info-box {
+    font-size: 0.78rem; color: var(--text-muted); line-height: 1.5;
+    background: var(--surface, #fafafa); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; margin: 0 0 12px;
+  }
+  .voice-badge--noaudio {
+    background: transparent; border: 1px dashed var(--border);
+    color: var(--text-muted); margin-left: 6px;
+  }
+
   /* ── Session card ────────────────────────────────────────────────────────── */
   .session-card {
     padding: 12px 18px;
@@ -1967,8 +2015,15 @@
           <div class="voice-card-hdr">
             <span class="voice-date">{{ note.created_at[:10] if note.created_at else '—' }}</span>
             <span class="voice-badge {% if note.transcript %}voice-badge--done{% endif %}">{{ 'Transcribed' if note.transcript else 'No transcript' }}</span>
+            {% if not note.audio_url %}
+              <span class="voice-badge voice-badge--noaudio" title="The audio file for this recording was not stored; acoustic measurements cannot be computed. Transcript-based analysis is still available.">No audio retained</span>
+            {% endif %}
             {% if not has_analysis %}
-              <span style="font-size:0.65rem;color:var(--text-muted);margin-left:6px;">Processing…</span>
+              {% if note.processing_status in ('pending', 'processing') %}
+                <span style="font-size:0.65rem;color:var(--text-muted);margin-left:6px;">Processing…</span>
+              {% elif note.transcript %}
+                <span style="font-size:0.65rem;color:var(--text-muted);margin-left:6px;">Not yet analyzed — click ⚡ Analyze Audio to process</span>
+              {% endif %}
             {% endif %}
             <button class="delete-btn" title="Delete recording" onclick="event.stopPropagation(); deleteVoiceNote('{{ note.id }}')">✕</button>
           </div>
@@ -3953,7 +4008,7 @@ window.generateBrief = function() {
     _bmLoaded = false;
   };
 
-  // ── Single-session measured values table ─────────────────────────────────
+  // ── Single-session measured values (graphical bars + stat tiles) ─────────
   const _MEASURED_LABELS = {
     articulation_rate_sps: 'Articulation Rate',
     speech_rate_sps:       'Speech Rate (sps)',
@@ -3977,18 +4032,62 @@ window.generateBrief = function() {
     return parseFloat(val).toFixed(3).replace(/\.?0+$/, '');
   }
 
-  function _buildMeasuredTable(measured) {
+  // Display range (min–max) and typical adult speech reference band (lo–hi) per metric.
+  // Reference bands are broad orientation values only — not clinical thresholds.
+  const _BM_BANDS = {
+    articulation_rate_sps: { min: 0,  max: 8,    lo: 3.5,  hi: 5.5  },
+    speech_rate_sps:       { min: 0,  max: 8,    lo: 2.5,  hi: 4.5  },
+    pause_ratio:           { min: 0,  max: 1,    lo: 0.15, hi: 0.45 },
+    f0_cv:                 { min: 0,  max: 0.6,  lo: 0.10, hi: 0.30 },
+    hnr_db:                { min: 0,  max: 30,   lo: 12,   hi: 25   },
+    jitter_local:          { min: 0,  max: 0.03, lo: 0,    hi: 0.01 },
+    shimmer_local:         { min: 0,  max: 0.15, lo: 0,    hi: 0.06 },
+    f0_mean_hz:            { min: 60, max: 300,  lo: 85,   hi: 255  },
+  };
+  // Metrics without a reference band render as plain stat tiles.
+  const _BM_TILE_KEYS = ['pause_count', 'duration_s', 'rms_mean', 'f0_sd_hz'];
+
+  function _buildMeasuredBars(measured) {
     if (!measured) return '';
-    const entries = Object.entries(_MEASURED_LABELS).filter(([k]) => measured[k] != null);
-    if (!entries.length) return '';
-    let html = '<div class="bm-measured-wrap"><div class="bm-measured-title">Acoustic Measurements</div><div class="bm-measured-grid">';
-    for (const [k, lbl] of entries) {
-      html += `<div class="bm-measured-cell">
-        <span class="bm-measured-lbl">${lbl}</span>
-        <span class="bm-measured-val">${_fmt(k, measured[k])}</span>
-      </div>`;
+    const barKeys  = Object.keys(_BM_BANDS).filter(k => measured[k] != null);
+    const tileKeys = _BM_TILE_KEYS.filter(k => measured[k] != null);
+    if (!barKeys.length && !tileKeys.length) return '';
+    let html = '<div class="bm-measured-wrap"><div class="bm-measured-title">Acoustic Measurements</div>';
+    if (barKeys.length) {
+      html += '<div class="bm-bars-legend"><span class="bm-bars-legend-swatch"></span>typical adult speech range</div>';
+      html += '<div class="bm-bars">';
+      for (const k of barKeys) {
+        const b    = _BM_BANDS[k];
+        const span = b.max - b.min;
+        const pct  = v => Math.max(0, Math.min(100, ((v - b.min) / span) * 100));
+        const val  = parseFloat(measured[k]);
+        const bandLeft  = pct(b.lo);
+        const bandWidth = Math.max(0, pct(b.hi) - bandLeft);
+        html += `<div class="bm-bar-row">
+          <div class="bm-bar-meta">
+            <span class="bm-bar-lbl">${_MEASURED_LABELS[k] || k}</span>
+            <span class="bm-bar-val">${_fmt(k, val)}</span>
+          </div>
+          <div class="bm-bar-track">
+            <div class="bm-bar-band" style="left:${bandLeft.toFixed(1)}%;width:${bandWidth.toFixed(1)}%;" title="typical adult speech range"></div>
+            <div class="bm-bar-marker" style="left:${pct(val).toFixed(1)}%;"></div>
+          </div>
+        </div>`;
+      }
+      html += '</div>';
     }
-    html += '</div></div>';
+    if (tileKeys.length) {
+      html += '<div class="bm-measured-grid" style="margin-top:10px;">';
+      for (const k of tileKeys) {
+        html += `<div class="bm-measured-cell">
+          <span class="bm-measured-lbl">${_MEASURED_LABELS[k]}</span>
+          <span class="bm-measured-val">${_fmt(k, measured[k])}</span>
+        </div>`;
+      }
+      html += '</div>';
+    }
+    html += '<div class="bm-bars-note">Typical ranges are broad adult speech reference values shown for orientation only — they are not clinical thresholds.</div>';
+    html += '</div>';
     return html;
   }
 
@@ -4018,10 +4117,27 @@ window.generateBrief = function() {
     let html = '<div class="bm-body">';
 
     if (isSingle) {
-      // ── Single-session view: vocab chips + measured table (no longitudinal charts) ──
-      const sess = (data.sessions || [])[0] || {};
+      // ── Single-session view: header + vocab chips + graphical measurements ──
+      const sess     = (data.sessions || [])[0] || {};
+      const measured = sess.measured || {};
+      const hasMeasured = Object.keys(measured).some(k => measured[k] != null);
+      const isTranscriptOnly = sess.vocabulary_source === 'transcript' || !hasMeasured;
+      const dateStr = sess.session_date
+        ? String(sess.session_date).slice(0, 10)
+        : (_selectedNoteDate || 'Recording');
+      html += `<div class="bm-single-hdr">
+        <span class="bm-single-date">${dateStr}</span>
+        <span class="bm-source-tag">${isTranscriptOnly ? 'transcript-derived' : 'acoustic analysis'}</span>
+      </div>`;
       html += _buildGaugesHtml(agg.label_counts);
-      html += _buildMeasuredTable(sess.measured);
+      if (isTranscriptOnly) {
+        const retainedClause = sess.audio_retained === false
+          ? ' — audio was not retained for this recording'
+          : '';
+        html += `<div class="bm-info-box">Speech labels derived from the transcript. Acoustic measurements unavailable${retainedClause}.</div>`;
+      } else {
+        html += _buildMeasuredBars(measured);
+      }
       if (sess.vocabulary && sess.vocabulary.clinical_pattern_type &&
           sess.vocabulary.clinical_pattern_type !== 'none_detected') {
         const pt = sess.vocabulary.clinical_pattern_type.replace(/_/g,' ');
