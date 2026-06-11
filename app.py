@@ -4713,7 +4713,7 @@ def _normalize_voice_session(s, audio_map):
         'session_type':          s.get('session_type', ''),
         'processing_status':     s.get('processing_status', ''),
         'confidence':            vocab.get('confidence'),
-        'clinical_pattern_type': vocab.get('clinical_pattern_type'),
+        'clinical_pattern_type': scores.get('clinical_pattern_type') or vocab.get('clinical_pattern_type'),
         'severity_note':         vocab.get('severity_note'),
         'vocabulary': {
             'speech_rate':      vocab.get('speech_rate'),
