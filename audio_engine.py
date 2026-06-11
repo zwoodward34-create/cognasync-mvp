@@ -48,6 +48,7 @@ import os
 import threading
 import time
 import uuid
+from datetime import datetime, timezone
 
 import requests
 
@@ -674,16 +675,20 @@ def process_voice_note(
     filename: str,
     session_date: str | None = None,
     audio_already_stored_url: str | None = None,
+    existing_transcript: str | None = None,
 ) -> None:
     """
     Unified synchronous voice-note pipeline. Used by both audio entry points:
       - SMS patient flow (api_voice_submit) — audio already stored, pass
         audio_already_stored_url so the storage step is skipped.
       - Provider upload flow (api_provider_upload_voice_note) — audio stored here.
+      - Recovery path (reprocess_stuck_voice_notes) — audio re-downloaded from
+        storage; existing_transcript skips the AssemblyAI re-call.
 
     Steps:
       1. Store audio in the 'voice-notes' bucket (non-fatal on failure)
-      2. Transcribe via AssemblyAI (fatal on failure)
+      2. Transcribe via AssemblyAI (fatal on failure; skipped when
+         existing_transcript is provided)
       3. Acoustic biomarker extraction from the waveform (non-fatal)
       4. Create clinical_sessions row (session_type='voice_note')
       5. Baseline lifecycle (Phase 1/2/3 voice memo handling)
@@ -695,6 +700,15 @@ def process_voice_note(
     """
     import database as db
     from transcript_engine import extract_features
+
+    # In-flight guard — prevents double-processing the same note within this
+    # worker (e.g. recovery re-enqueue racing a click-spam re-enqueue).
+    note_key = str(voice_note_id)
+    with _IN_FLIGHT_LOCK:
+        if note_key in _IN_FLIGHT_NOTES:
+            logger.info("Voice note %s already in flight — skipping duplicate run", note_key)
+            return
+        _IN_FLIGHT_NOTES.add(note_key)
 
     if not session_date:
         from datetime import datetime as _dt
@@ -712,7 +726,7 @@ def process_voice_note(
 
     try:
         # ── 1. Audio storage (skipped when the caller already uploaded) ──────
-        if not audio_already_stored_url:
+        if not audio_already_stored_url and file_bytes:
             ext          = os.path.splitext(filename)[1].lower() or '.webm'
             storage_path = f"{patient_id}/{voice_note_id}{ext}"
             try:
@@ -729,32 +743,42 @@ def process_voice_note(
                 logger.warning("Voice-note storage upload failed (non-fatal): id=%s error=%s",
                                voice_note_id, se)
 
-        # ── 2. Transcription (fatal on failure) ──────────────────────────────
-        result = transcribe_audio_file(
-            file_bytes=file_bytes,
-            filename=filename,
-            patient_id=patient_id,
-            session_id=str(voice_note_id),
-        )
-        if not (result.get('status') == 'completed' and result.get('text')):
-            _vn_error(result.get('error') or 'Transcription failed')
-            return
+        # ── 2. Transcription (fatal on failure; skipped on recovery re-runs) ─
+        if existing_transcript:
+            transcript_text = existing_transcript
+            db.supabase_admin.table('voice_notes').update({
+                'processing_status': 'processing',
+                'processing_error':  None,
+            }).eq('id', voice_note_id).execute()
+        else:
+            result = transcribe_audio_file(
+                file_bytes=file_bytes,
+                filename=filename,
+                patient_id=patient_id,
+                session_id=str(voice_note_id),
+            )
+            if not (result.get('status') == 'completed' and result.get('text')):
+                _vn_error(result.get('error') or 'Transcription failed')
+                return
 
-        transcript_text = result['text']
-        db.supabase_admin.table('voice_notes').update({
-            'transcript':        transcript_text,
-            'processing_status': 'processing',
-        }).eq('id', voice_note_id).execute()
+            transcript_text = result['text']
+            db.supabase_admin.table('voice_notes').update({
+                'transcript':        transcript_text,
+                'processing_status': 'processing',
+            }).eq('id', voice_note_id).execute()
 
         # ── 3. Acoustic biomarker extraction (non-fatal) ─────────────────────
         # Runs on raw bytes — independent of transcript content. The session_id
         # is only used for logging here; the clinical session does not exist yet.
-        acoustic_result = _run_acoustic_extraction(
-            file_bytes=file_bytes,
-            filename=filename,
-            session_id=str(voice_note_id),
-            session_date=session_date,
-        )
+        # Skipped when no audio bytes are available (transcript-only recovery).
+        acoustic_result = None
+        if file_bytes:
+            acoustic_result = _run_acoustic_extraction(
+                file_bytes=file_bytes,
+                filename=filename,
+                session_id=str(voice_note_id),
+                session_date=session_date,
+            )
 
         # ── 4. Resolve provider + create clinical session ─────────────────────
         # clinical_sessions.provider_id is NOT NULL — fall back to the patient's
@@ -825,6 +849,9 @@ def process_voice_note(
     except Exception as exc:
         logger.exception("Voice-note pipeline failed: voice_note=%s", voice_note_id)
         _vn_error(str(exc))
+    finally:
+        with _IN_FLIGHT_LOCK:
+            _IN_FLIGHT_NOTES.discard(note_key)
 
 
 def process_voice_note_async(
@@ -835,6 +862,7 @@ def process_voice_note_async(
     filename: str,
     session_date: str | None = None,
     audio_already_stored_url: str | None = None,
+    existing_transcript: str | None = None,
 ) -> None:
     """
     Start background processing for a voice note. Returns immediately.
@@ -843,13 +871,143 @@ def process_voice_note_async(
     t = threading.Thread(
         target=process_voice_note,
         args=(voice_note_id, patient_id, provider_id, file_bytes, filename,
-              session_date, audio_already_stored_url),
+              session_date, audio_already_stored_url, existing_transcript),
         daemon=True,
         name=f'voice-note-{str(voice_note_id)[:8]}',
     )
     t.start()
     logger.info("Voice-note processing thread started: voice_note=%s thread=%s",
                 voice_note_id, t.name)
+
+
+# ── Stuck-note recovery ───────────────────────────────────────────────────────
+# Background threads are not durable: a Render deploy, worker restart, or OOM
+# kills them silently, stranding voice_notes in a non-terminal status
+# ('pending'/'processing') with no error and no clinical session. These helpers
+# detect that state and re-enqueue the pipeline from the stored audio.
+
+_IN_FLIGHT_LOCK   = threading.Lock()
+_IN_FLIGHT_NOTES: set[str] = set()
+
+STUCK_STATUSES      = ('pending', 'processing')
+STUCK_AFTER_MINUTES = 30   # max plausible pipeline runtime (poll cap 15 min + extraction)
+
+
+def _note_is_stuck(note: dict, now: datetime | None = None) -> bool:
+    """
+    True when a voice note sits in a non-terminal status long past any
+    plausible pipeline runtime — i.e. its background thread is dead.
+    Notes inside the staleness window may still have a live thread and are
+    never touched. Unparseable timestamps are treated as not-stuck (safe side).
+    """
+    if note.get('clinical_session_id'):
+        return False
+    if note.get('processing_status') not in STUCK_STATUSES:
+        return False
+
+    created_raw = (note.get('created_at') or '').strip().replace('Z', '+00:00')
+    # Supabase returns '2026-06-11 03:03:28.524112+00' — the bare '+00' offset
+    # is rejected by fromisoformat on Python < 3.11. Normalize it.
+    if len(created_raw) >= 3 and created_raw[-3] in '+-' and created_raw[-2:].isdigit():
+        created_raw += ':00'
+    try:
+        ts = datetime.fromisoformat(created_raw)
+    except ValueError:
+        return False
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+
+    now = now or datetime.now(timezone.utc)
+    return (now - ts).total_seconds() > STUCK_AFTER_MINUTES * 60
+
+
+def _storage_path_from_url(audio_url: str) -> str | None:
+    """
+    Derive the 'voice-notes' bucket object path from a stored public URL.
+    Returns None when the URL is not a voice-notes storage URL.
+    """
+    if not audio_url:
+        return None
+    marker = '/voice-notes/'
+    idx = audio_url.find(marker)
+    if idx == -1:
+        return None
+    return audio_url[idx + len(marker):].split('?')[0] or None
+
+
+def _download_voice_note_audio(note: dict) -> tuple[bytes | None, str]:
+    """
+    Download a voice note's stored audio from the 'voice-notes' bucket.
+    Returns (bytes, filename) — (None, '') when unavailable. Non-fatal:
+    recovery falls back to transcript-only processing.
+    """
+    import database as db
+
+    path = _storage_path_from_url(note.get('audio_url') or '')
+    if not path:
+        return None, ''
+    try:
+        data = db.supabase_admin.storage.from_('voice-notes').download(path)
+        if data:
+            return data, os.path.basename(path)
+    except Exception as e:
+        logger.warning("Voice-note audio download failed: id=%s path=%s error=%s",
+                       note.get('id'), path, e)
+    return None, ''
+
+
+def reprocess_stuck_voice_notes(notes: list, default_provider_id: str | None = None) -> int:
+    """
+    Re-enqueue processing for voice notes whose pipeline thread died mid-run.
+
+    For each stuck note (see _note_is_stuck):
+      - re-download the stored audio for full acoustic re-extraction
+      - reuse the existing transcript to skip the AssemblyAI re-call
+      - fall back to transcript-only processing when the audio is gone
+      - skip entirely when there is neither audio nor transcript (mark error
+        so the note stops presenting as recoverable)
+
+    Returns the number of notes re-enqueued. Safe to call on every
+    voice-biomarkers request — non-stuck notes are untouched and the
+    in-flight guard in process_voice_note prevents duplicate runs.
+    """
+    import database as db
+
+    enqueued = 0
+    for note in notes or []:
+        if not _note_is_stuck(note):
+            continue
+
+        note_id    = str(note.get('id'))
+        transcript = (note.get('transcript') or '').strip() or None
+        file_bytes, filename = _download_voice_note_audio(note)
+
+        if not file_bytes and not transcript:
+            # Nothing to recover from — make the state terminal and honest.
+            try:
+                db.supabase_admin.table('voice_notes').update({
+                    'processing_status': 'error',
+                    'processing_error':  'Processing was interrupted and no audio or transcript was retained.',
+                }).eq('id', note_id).execute()
+            except Exception as ue:
+                logger.error("Stuck-note error-status update failed: id=%s error=%s", note_id, ue)
+            continue
+
+        logger.info("Recovering stuck voice note: id=%s status=%s has_audio=%s has_transcript=%s",
+                    note_id, note.get('processing_status'), bool(file_bytes), bool(transcript))
+        process_voice_note_async(
+            voice_note_id=note_id,
+            patient_id=str(note.get('patient_id')),
+            provider_id=note.get('provider_id') or default_provider_id,
+            file_bytes=file_bytes or b'',
+            filename=filename or 'voice_note.webm',
+            session_date=(note.get('created_at') or '')[:10] or None,
+            audio_already_stored_url=note.get('audio_url'),
+            existing_transcript=transcript,
+        )
+        enqueued += 1
+
+    return enqueued
 
 
 # ── Utilities ────────────────────────────────────────────────────────────────

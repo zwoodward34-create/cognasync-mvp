@@ -4799,6 +4799,19 @@ def api_patient_voice_biomarkers(patient_id):
         if item:
             analyzed.append(item)
 
+    # Stuck-note recovery: background pipeline threads are killed silently by
+    # deploys/worker restarts, stranding notes in 'pending'/'processing' with
+    # no clinical session and no error. Detect staleness (>30 min) and re-run
+    # the full pipeline from the stored audio (transcript-only fallback).
+    # Runs regardless of how many analyzed sessions exist — unlike the orphan
+    # block below, which only fires for patients with zero sessions.
+    from audio_engine import reprocess_stuck_voice_notes
+    _recovered = reprocess_stuck_voice_notes(voice_notes, default_provider_id=provider['id'])
+    if _recovered:
+        return jsonify({'ok': True, 'status': 'processing',
+                        'message': f'Recovered {_recovered} interrupted recording(s) — '
+                                   'reprocessing now. This may take a minute.'})
+
     # Lazy processing: if no voice_note clinical_sessions exist yet, process
     # orphan voice notes on demand (transcript → extract_features → clinical_session
     # → write clinical_session_id back to voice_notes).  This handles recordings
