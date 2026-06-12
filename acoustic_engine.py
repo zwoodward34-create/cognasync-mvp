@@ -402,7 +402,9 @@ def _severity_note(features: dict, speech_rate, pauses, prosody, vocal_affect,
     return "Acoustic measurements: " + "; ".join(parts) + f". Recording {dur:.0f} s."
 
 
-def map_features_to_vocabulary(features: dict, baseline: dict | None = None) -> dict:
+def map_features_to_vocabulary(features: dict,
+                                baseline: dict | None = None,
+                                capture_channel: str | None = None) -> dict:
     """Map measured acoustic features to the §24 controlled vocabulary.
 
     The output mirrors the transcript_engine speech_features schema so that
@@ -444,11 +446,11 @@ def map_features_to_vocabulary(features: dict, baseline: dict | None = None) -> 
         and baseline.get("articulation_rate_sd") is not None
         and baseline["articulation_rate_sd"] > 0
     ):
-        z = (artic - baseline["articulation_rate_mean"]) / baseline["articulation_rate_sd"]
+        z = round((artic - baseline["articulation_rate_mean"]) / baseline["articulation_rate_sd"], 6)
         baseline_used = True
-        if z < -1.5:
+        if z <= -1.5:
             speech_rate = "slowed"
-        elif z > 1.5:
+        elif z >= 1.5:
             speech_rate = "pressured"
         else:
             speech_rate = "normal"
@@ -469,11 +471,11 @@ def map_features_to_vocabulary(features: dict, baseline: dict | None = None) -> 
         and baseline.get("pause_ratio_sd") is not None
         and baseline["pause_ratio_sd"] > 0
     ):
-        z = (p_ratio - baseline["pause_ratio_mean"]) / baseline["pause_ratio_sd"]
+        z = round((p_ratio - baseline["pause_ratio_mean"]) / baseline["pause_ratio_sd"], 6)
         baseline_used = True
-        if z > 1.5:
+        if z >= 1.5:
             pauses = "increased"
-        elif z < -1.5:
+        elif z <= -1.5:
             pauses = "decreased"
         else:
             pauses = "normal"
@@ -494,11 +496,11 @@ def map_features_to_vocabulary(features: dict, baseline: dict | None = None) -> 
         and baseline.get("f0_cv_sd") is not None
         and baseline["f0_cv_sd"] > 0
     ):
-        z = (f0_cv - baseline["f0_cv_mean"]) / baseline["f0_cv_sd"]
+        z = round((f0_cv - baseline["f0_cv_mean"]) / baseline["f0_cv_sd"], 6)
         baseline_used = True
-        if z < -1.5:
+        if z <= -1.5:
             prosody = "flat"
-        elif z > 1.5:
+        elif z >= 1.5:
             prosody = "elevated"
         else:
             prosody = "normal"
@@ -545,6 +547,30 @@ def map_features_to_vocabulary(features: dict, baseline: dict | None = None) -> 
     else:
         arousal = "normal"
 
+    # ── Low-quality suppression (asymmetric, accuracy + safety) ───────────────
+    # Poor-quality audio (low SNR, dropouts, clipping) biases the DSP toward
+    # spurious *abnormal* readings. False "pressured / elevated / agitated /
+    # strained" labels are the most clinically costly error — they can trip
+    # convergent-signal flags downstream (transcript_engine reads these labels
+    # without always re-checking confidence). When quality is poor we withhold
+    # the alarming labels rather than assert them. The "quiet" labels
+    # (slowed / flat / low / increased pauses) are not suppressed: they bias
+    # toward caution, and the measured numbers still pass through either way.
+    low_quality_suppressed = False
+    if quality == "poor":
+        if speech_rate == "pressured":
+            speech_rate = None
+            low_quality_suppressed = True
+        if prosody == "elevated":
+            prosody = None
+            low_quality_suppressed = True
+        if arousal in ("elevated", "agitated"):
+            arousal = None
+            low_quality_suppressed = True
+        if vocal_affect == "strained":
+            vocal_affect = None
+            low_quality_suppressed = True
+
     # speech_coherence cannot be measured from waveform alone — left null.
     # transcript_engine populates this from semantic content.
     speech_coherence = None
@@ -552,6 +578,10 @@ def map_features_to_vocabulary(features: dict, baseline: dict | None = None) -> 
     pattern  = _acoustic_pattern(speech_rate, prosody, pauses, arousal, vocal_affect)
     sev_note = _severity_note(features, speech_rate, pauses, prosody, vocal_affect,
                               praat_avail)
+    if low_quality_suppressed:
+        sev_note = ("Recording quality low — elevated/agitated/strained acoustic "
+                    "labels withheld to avoid false positives. Measured values are "
+                    "shown for provider review.")
 
     # Confidence boost: when at least one feature used patient-relative thresholds
     # we have a personal reference, so "medium" grades up to "high".
@@ -594,8 +624,280 @@ def map_features_to_vocabulary(features: dict, baseline: dict | None = None) -> 
             "snr_db":                features.get("snr_db"),
         },
         "recording_quality":  quality,
+        "low_quality_suppressed": low_quality_suppressed,
         "praat_available":    praat_avail,
         "extractor_version":  features.get("extractor_version", EXTRACTOR_VERSION),
+        # Channel provenance — used to gate cross-channel baseline comparisons.
+        # "phone" | "browser" | "clinic_mic" | "unknown" | None (not provided).
+        "capture_channel":    capture_channel,
+    }
+
+
+def _classify_articulation(artic, baseline: dict | None = None) -> str | None:
+    """Slowed / normal / pressured classification for an articulation rate.
+
+    Uses the patient baseline z-score (±1.5 SD) when an established/stale
+    baseline with a usable SD is supplied, else the module absolute constants.
+    Mirrors the inline logic in map_features_to_vocabulary so the transcript
+    refinement path classifies a rate exactly the way the acoustic path does.
+    """
+    if artic is None:
+        return None
+    bl_active = (
+        baseline is not None
+        and baseline.get("status") in ("established", "stale")
+        and baseline.get("articulation_rate_mean") is not None
+        and baseline.get("articulation_rate_sd") is not None
+        and baseline.get("articulation_rate_sd", 0) > 0
+    )
+    if bl_active:
+        z = round((artic - baseline["articulation_rate_mean"]) / baseline["articulation_rate_sd"], 6)
+        if z <= -1.5:
+            return "slowed"
+        if z >= 1.5:
+            return "pressured"
+        return "normal"
+    if artic < _ARTIC_SLOWED:
+        return "slowed"
+    if artic > _ARTIC_PRESSURED:
+        return "pressured"
+    return "normal"
+
+
+def estimate_syllables(word: str) -> int:
+    """Deterministic English syllable estimate for one token.
+
+    Counts vowel-letter groups, drops a single silent terminal 'e' (but not
+    'le' / 'ie' / 'ee' endings), and floors at 1 for any alphabetic token.
+    Non-alphabetic tokens count 0. This is a rate heuristic, not a linguistic
+    analyzer — it only needs to be stable and approximately right in aggregate.
+    """
+    import re
+    w = re.sub(r"[^a-z]", "", (word or "").lower())
+    if not w:
+        return 0
+    count = len(re.findall(r"[aeiouy]+", w))
+    if count > 1 and w.endswith("e") and not w.endswith(("le", "ie", "ee")):
+        count -= 1
+    return max(1, count)
+
+
+def infer_capture_channel(filename: str | None,
+                           session_type: str | None = None) -> str:
+    """Infer the recording device / channel from filename extension and session context.
+
+    DSP features like jitter, shimmer, HNR, and CPP are sensitive to recording
+    conditions — a patient switching from a clinic microphone to a phone produces
+    apparent "deterioration" that is actually device drift.  Storing the inferred
+    channel alongside every extraction makes it possible to build per-channel
+    baselines and flag cross-channel baseline comparisons in provider output.
+
+    Returns one of:
+        "phone"      — mobile voice memo (.m4a, .aac, .mp4, .3gp, .amr, .caf)
+        "browser"    — web/browser recording (.webm, .ogg)
+        "clinic_mic" — assumed for high-quality formats in a clinical session context
+                       (.wav, .flac, .aiff, .aif)
+        "unknown"    — fallback when no reliable signal is available
+
+    This is heuristic — correct in the common case, not guaranteed.  The caller
+    should store it and expose it in the vocabulary dict so providers can see when
+    a comparison crosses channel types.
+    """
+    PHONE_EXTS   = {".m4a", ".aac", ".mp4", ".3gp", ".amr", ".caf"}
+    BROWSER_EXTS = {".webm", ".ogg"}
+    MIC_EXTS     = {".wav", ".flac", ".aiff", ".aif"}
+
+    ext = ""
+    if filename:
+        import os as _os
+        ext = _os.path.splitext(filename)[1].lower()
+
+    if ext in PHONE_EXTS:
+        return "phone"
+    if ext in BROWSER_EXTS:
+        return "browser"
+    if ext in MIC_EXTS:
+        # WAV from a clinical session → more likely a clinic mic than a phone export.
+        # WAV from a voice-note flow (SMS/mobile) → probably a phone conversion.
+        if session_type and session_type not in ("voice_note",):
+            return "clinic_mic"
+        return "unknown"   # WAV in voice_note context is ambiguous
+    return "unknown"
+
+
+def compute_transcript_timing(words: list | None, min_words: int = 8) -> dict | None:
+    """Derive speech-rate measures from ASR word timestamps.
+
+    `words` is the AssemblyAI word list — each item a dict with 'text' and
+    integer 'start'/'end' in milliseconds (optionally 'confidence'). Returns
+    None when there are too few timed words, or when the derived rate is
+    physiologically implausible (an ASR timing artifact).
+
+    articulation_rate_sps: syllables per second of *speaking* time (sum of
+        per-word durations — naturally excludes inter-word pauses).
+    speech_rate_sps: syllables per second over the full span (first word start
+        → last word end — includes pauses).
+
+    This is the reliable replacement for the energy-envelope syllable-nuclei
+    proxy in _speech_rate(), built from data AssemblyAI already returns.
+    """
+    if not words:
+        return None
+    timed = [
+        w for w in words
+        if isinstance(w, dict)
+        and w.get("start") is not None and w.get("end") is not None
+        and (w.get("text") or "").strip()
+    ]
+    if len(timed) < min_words:
+        return None
+
+    syllables = sum(estimate_syllables(w["text"]) for w in timed)
+    if syllables <= 0:
+        return None
+
+    speak_ms = sum(max(0, int(w["end"]) - int(w["start"])) for w in timed)
+    span_ms = max(int(timed[-1]["end"]) - int(timed[0]["start"]), 0)
+    speak_s = speak_ms / 1000.0
+    span_s = span_ms / 1000.0
+
+    artic = (syllables / speak_s) if speak_s > 0 else None
+    rate = (syllables / span_s) if span_s > 0 else None
+
+    # Plausibility guard: human articulation is ~2–9 syll/s. Outside ~1.5–10
+    # the timestamps are unreliable, so treat as missing and keep the acoustic
+    # fallback rather than emit a bogus "pressured"/"slowed" label.
+    if artic is None or not (1.5 <= artic <= 10.0):
+        return None
+
+    confs = [w.get("confidence") for w in timed
+             if isinstance(w.get("confidence"), (int, float))]
+    mean_conf = (sum(confs) / len(confs)) if confs else None
+
+    return {
+        "articulation_rate_sps": round(artic, 3),
+        "speech_rate_sps": round(rate, 3) if rate is not None else None,
+        "syllable_count": int(syllables),
+        "word_count": len(timed),
+        "speaking_time_s": round(speak_s, 3),
+        "span_s": round(span_s, 3),
+        "mean_word_confidence": round(mean_conf, 3) if mean_conf is not None else None,
+        "source": "transcript",
+    }
+
+
+def refine_speech_rate_with_transcript(vocab: dict,
+                                       transcript_timing: dict | None,
+                                       baseline: dict | None = None) -> dict:
+    """Override the envelope-peak speech_rate label with the transcript rate.
+
+    The energy-envelope syllable proxy (_speech_rate) is the least reliable
+    measured feature, yet it solely drives the speech_rate label and therefore
+    the depressive/mania pattern split. ASR word timestamps yield a far more
+    reliable articulation rate. Mutates `vocab` in place:
+
+      * reclassifies speech_rate from the transcript articulation rate,
+      * preserves the acoustic proxy under measured.articulation_rate_acoustic_sps,
+      * records speech_rate_source and a cross-check flag,
+      * recomputes clinical_pattern_type from the corrected label,
+      * caps confidence at 'medium' when the two estimates disagree on direction
+        (independent methods contradicting each other is itself low-confidence).
+
+    No-op when transcript_timing lacks a usable articulation rate, so the
+    acoustic proxy remains the fallback.
+    """
+    if not transcript_timing:
+        return vocab
+    artic_t = transcript_timing.get("articulation_rate_sps")
+    if artic_t is None:
+        return vocab
+
+    measured = vocab.get("measured") or {}
+    artic_acoustic = measured.get("articulation_rate_sps")
+
+    new_label = _classify_articulation(artic_t, baseline)
+
+    cross_check = None
+    if artic_acoustic is not None:
+        cross_check = (
+            "agree"
+            if _classify_articulation(artic_acoustic, baseline) == new_label
+            else "disagree"
+        )
+
+    vocab["speech_rate"] = new_label
+    vocab["speech_rate_source"] = "transcript"
+    vocab["speech_rate_cross_check"] = cross_check
+    measured["articulation_rate_transcript_sps"] = artic_t
+    measured["articulation_rate_acoustic_sps"] = artic_acoustic
+    measured["articulation_rate_sps"] = artic_t  # primary now reflects the better estimate
+    vocab["measured"] = measured
+
+    vocab["clinical_pattern_type"] = _acoustic_pattern(
+        new_label, vocab.get("prosody"), vocab.get("pauses"),
+        vocab.get("arousal"), vocab.get("vocal_affect"),
+    )
+
+    if cross_check == "disagree" and vocab.get("confidence") == "high":
+        vocab["confidence"] = "medium"
+
+    return vocab
+
+
+def _vad_arousal_label(v) -> str | None:
+    """Map a VAD arousal value in [0,1] to the acoustic arousal vocabulary."""
+    if v is None:
+        return None
+    if v < 0.35:
+        return "low"
+    if v > 0.65:
+        return "elevated"
+    return "normal"
+
+
+_AROUSAL_RECONCILE_NOTES = {
+    "convergent": ("Amplitude-based and model-based arousal agree — convergent "
+                   "signal raises confidence in the arousal reading."),
+    "divergent": ("Amplitude-based and model-based arousal disagree — the "
+                  "divergence is itself worth noting; the model dimension is "
+                  "the less gain-confounded of the two."),
+    "partial": "Only one arousal estimate was available this session.",
+    "insufficient": "Neither arousal estimate was available this session.",
+}
+
+
+def reconcile_arousal(acoustic_vocab: dict | None, affect: dict | None) -> dict:
+    """Reconcile the two independent arousal estimates into one record.
+
+    Arousal is computed twice from the same audio: an RMS-amplitude heuristic
+    (acoustic_vocab['arousal'], heavily confounded by recording gain / mic
+    distance) and the wav2vec2 VAD arousal dimension (affect['arousal'], better
+    grounded but model-dependent). Per the Convergent Signal Principle
+    (CLAUDE.md §5), agreement raises confidence and disagreement is itself
+    signal — so this surfaces the relationship as a first-class field instead of
+    leaving the two estimates in separate silos. 'recommended' prefers the model
+    label, the less gain-confounded of the two.
+    """
+    ac = (acoustic_vocab or {}).get("arousal")
+    affect = affect or {}
+    vad = affect.get("arousal") if affect.get("model_available") else None
+    vad_label = _vad_arousal_label(vad)
+
+    if ac is None and vad_label is None:
+        status = "insufficient"
+    elif ac is None or vad_label is None:
+        status = "partial"
+    else:
+        ac_norm = "elevated" if ac in ("elevated", "agitated") else ac
+        status = "convergent" if ac_norm == vad_label else "divergent"
+
+    return {
+        "acoustic_arousal": ac,
+        "vad_arousal_value": vad,
+        "vad_arousal_label": vad_label,
+        "status": status,
+        "recommended": vad_label if vad_label is not None else ac,
+        "note": _AROUSAL_RECONCILE_NOTES.get(status),
     }
 
 
@@ -775,4 +1077,39 @@ def _json_safe(obj):
         return obj.item()
     if isinstance(obj, _np.ndarray):
         return obj.tolist()
-    if
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return obj
+    return str(obj)
+
+
+def _main(argv) -> int:
+    """Subprocess CLI: extract + map one audio file, print one JSON object.
+
+    Honors the stdout contract documented above:
+        {"raw": {...}, "vocabulary": {...}}
+    On any failure prints {"error": "..."} and returns a non-zero code so the
+    parent worker can fall back to transcript-only analysis without dying.
+    """
+    import json
+    import sys
+
+    if len(argv) < 2:
+        sys.stdout.write(json.dumps(
+            {"error": "usage: python acoustic_engine.py <audio_path>"}))
+        return 2
+
+    path = argv[1]
+    try:
+        raw = extract_acoustic_features(path)
+        vocab = map_features_to_vocabulary(raw)
+        sys.stdout.write(json.dumps(_json_safe({"raw": raw, "vocabulary": vocab})))
+        return 0
+    except Exception as exc:  # pragma: no cover - exercised via subprocess only
+        sys.stdout.write(json.dumps({"error": str(exc)}))
+        return 1
+
+
+if __name__ == "__main__":
+    import sys
+
+    sys.exit(_main(sys.argv))

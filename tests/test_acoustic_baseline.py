@@ -58,17 +58,24 @@ def _features(
     shimmer=0.05,
     speech_rate=3.5,
 ):
-    """Return a minimal acoustic features dict."""
+    """Return a minimal acoustic features dict.
+
+    quality defaults to 'good': these fixtures assert confident abnormal labels
+    (e.g. 'pressured', 'elevated'), which presuppose adequate recording quality.
+    The low-quality suppression path (poor audio → alarming labels withheld) is
+    covered separately in tests/test_speech_rate_transcript.py.
+    """
     return {
-        'articulation_rate': articulation_rate,
-        'f0_cv':             f0_cv,
-        'pause_ratio':       pause_ratio,
-        'f0_mean_hz':        f0_mean_hz,
-        'hnr_db':            hnr_db,
-        'voiced_fraction':   voiced_fraction,
-        'jitter':            jitter,
-        'shimmer':           shimmer,
-        'speech_rate':       speech_rate,
+        'articulation_rate_sps': articulation_rate,
+        'f0_cv':                 f0_cv,
+        'pause_ratio':           pause_ratio,
+        'f0_mean_hz':            f0_mean_hz,
+        'hnr_db':                hnr_db,
+        'voiced_fraction':       voiced_fraction,
+        'jitter_local':          jitter,
+        'shimmer_local':         shimmer,
+        'speech_rate_sps':       speech_rate,
+        'quality':               'good',
     }
 
 

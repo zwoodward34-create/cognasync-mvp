@@ -152,8 +152,16 @@ def _load_model() -> bool:
 
 # ── Inference ───────────────────────────────────────────────────────────────────
 
-def _infer_chunks(y: np.ndarray) -> np.ndarray:
-    """Run the model on y in chunks and return the mean [arousal, dom, valence]."""
+def _infer_chunks(y: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """Run the model on y in chunks and return (mean, per-chunk array).
+
+    Returns:
+        mean_vad: shape (3,) — [arousal, dominance, valence] averaged over all
+            chunks. Used the same way as the old scalar return value.
+        series: shape (N, 3) — per-chunk VAD values in temporal order.
+            N >= 1. Callers should use this for within-session dynamics
+            (variance, trajectory) rather than reading only the mean.
+    """
     import torch
 
     chunk_frames = _MAX_CHUNK_S * SR
@@ -176,9 +184,11 @@ def _infer_chunks(y: np.ndarray) -> np.ndarray:
         results.append(logits.cpu().numpy()[0])
 
     if not results:
-        return np.array([0.5, 0.5, 0.5])
+        fallback = np.array([0.5, 0.5, 0.5])
+        return fallback, fallback.reshape(1, 3)
 
-    return np.mean(results, axis=0)
+    arr = np.array(results)        # (N, 3)
+    return arr.mean(axis=0), arr
 
 
 def _dim_label(value: float) -> str:
@@ -238,6 +248,109 @@ def _interpret_vad(arousal: float, dominance: float, valence: float) -> dict:
     }
 
 
+def _compute_session_dynamics(series: np.ndarray) -> dict:
+    """Compute within-session affect dynamics from the per-chunk VAD array.
+
+    The mean VAD scores (exposed as 'arousal', 'valence', 'dominance') describe
+    *what* a session looked like on average. Session dynamics describe *how it
+    changed* during the session — whether arousal built or dropped, whether
+    emotional state was stable or volatile. Both are clinically relevant; neither
+    replaces the other.
+
+    Args:
+        series: shape (N, 3) float array, columns [arousal, dominance, valence],
+            in temporal order (first chunk first). N should be >= 2 to produce
+            meaningful dynamics; single-chunk sessions get a note.
+
+    Returns a dict with:
+        chunk_count            — number of 60-second chunks analysed
+        arousal_variance       — variance of arousal across chunks (within-session
+                                 volatility; high = topic-reactive or emotionally
+                                 variable session)
+        valence_variance       — variance of valence across chunks
+        arousal_trajectory     — directional label for arousal change over the
+                                 session: "rising" | "falling" | "stable" | "insufficient"
+        valence_trajectory     — same for valence
+        arousal_trajectory_delta — raw change (last-half mean − first-half mean)
+        valence_trajectory_delta — raw change
+        dynamics_note          — one-line interpretation note for providers;
+                                 never uses diagnostic language
+    """
+    n = len(series)
+
+    if n < 2:
+        return {
+            "chunk_count":              n,
+            "arousal_variance":         None,
+            "valence_variance":         None,
+            "arousal_trajectory":       "insufficient",
+            "valence_trajectory":       "insufficient",
+            "arousal_trajectory_delta": None,
+            "valence_trajectory_delta": None,
+            "dynamics_note":            (
+                "Session was too short to compute within-session dynamics "
+                f"({n} chunk)."
+            ),
+        }
+
+    arousal_series = series[:, 0]
+    valence_series = series[:, 2]
+
+    # Variance: how much did each dimension move around?
+    a_var = float(np.var(arousal_series))
+    v_var = float(np.var(valence_series))
+
+    # Trajectory: first-half mean vs last-half mean.
+    # Using half-halves rather than first-vs-last point is more robust to a
+    # noisy tail chunk or a loud intro. |delta| < 0.08 is treated as stable
+    # (the model's precision on 60 s chunks is ~0.05–0.10).
+    mid = n // 2
+    _TRAJ_THRESH = 0.08
+
+    a_first = float(arousal_series[:mid].mean())
+    a_last  = float(arousal_series[mid:].mean())
+    a_delta = round(a_last - a_first, 4)
+    a_traj  = ("rising"  if a_delta >  _TRAJ_THRESH
+               else "falling" if a_delta < -_TRAJ_THRESH
+               else "stable")
+
+    v_first = float(valence_series[:mid].mean())
+    v_last  = float(valence_series[mid:].mean())
+    v_delta = round(v_last - v_first, 4)
+    v_traj  = ("rising"  if v_delta >  _TRAJ_THRESH
+               else "falling" if v_delta < -_TRAJ_THRESH
+               else "stable")
+
+    # One-line note for provider display — non-diagnostic, describes pattern.
+    parts = []
+    if a_traj == "rising":
+        parts.append("arousal increased over the session")
+    elif a_traj == "falling":
+        parts.append("arousal decreased over the session")
+    if v_traj == "rising":
+        parts.append("valence increased over the session")
+    elif v_traj == "falling":
+        parts.append("valence decreased over the session")
+    if a_var > 0.02:
+        parts.append(f"arousal was variable across chunks (var={a_var:.3f})")
+
+    dynamics_note = (
+        "; ".join(parts).capitalize() + "." if parts
+        else f"Arousal and valence were stable across {n} chunks."
+    )
+
+    return {
+        "chunk_count":              n,
+        "arousal_variance":         round(a_var, 5),
+        "valence_variance":         round(v_var, 5),
+        "arousal_trajectory":       a_traj,
+        "valence_trajectory":       v_traj,
+        "arousal_trajectory_delta": a_delta,
+        "valence_trajectory_delta": v_delta,
+        "dynamics_note":            dynamics_note,
+    }
+
+
 def run_affect_inference(y: np.ndarray) -> dict:
     """
     Run VAD inference on a 16 kHz mono float32 array.
@@ -263,6 +376,7 @@ def run_affect_inference(y: np.ndarray) -> dict:
         "pattern":     None,
         "description": None,
         "disclaimer":  _DISCLAIMER,
+        "session_dynamics": None,
     }
 
     if not _load_model():
@@ -270,10 +384,11 @@ def run_affect_inference(y: np.ndarray) -> dict:
         return base
 
     try:
-        vad = _infer_chunks(y)                    # [arousal, dominance, valence]
+        vad, series = _infer_chunks(y)            # mean [3], series (N, 3)
         arousal, dominance, valence = float(vad[0]), float(vad[1]), float(vad[2])
 
-        interp = _interpret_vad(arousal, dominance, valence)
+        interp    = _interpret_vad(arousal, dominance, valence)
+        dynamics  = _compute_session_dynamics(series)
 
         return {
             **base,
@@ -282,6 +397,7 @@ def run_affect_inference(y: np.ndarray) -> dict:
             "dominance":  round(dominance, 3),
             "valence":    round(valence,   3),
             **interp,
+            "session_dynamics": dynamics,
         }
 
     except Exception as exc:
@@ -351,6 +467,19 @@ def aggregate_affect_sessions(session_affect_list: list[dict]) -> dict:
         for s in valid
     ]
 
+    # Within-session dynamics aggregated across sessions.
+    # Each session may have a dynamics dict (from _compute_session_dynamics).
+    dyn_sessions = [
+        s["session_dynamics"] for s in valid
+        if (s.get("session_dynamics") or {}).get("arousal_trajectory") not in (None, "insufficient")
+    ]
+    from collections import Counter as _Counter
+    arousal_traj_dist = dict(_Counter(d["arousal_trajectory"] for d in dyn_sessions))
+    valence_traj_dist = dict(_Counter(d["valence_trajectory"] for d in dyn_sessions))
+    arousal_var_vals  = [d["arousal_variance"] for d in dyn_sessions
+                         if d.get("arousal_variance") is not None]
+    avg_arousal_var   = round(sum(arousal_var_vals) / len(arousal_var_vals), 5) if arousal_var_vals else None
+
     return {
         "session_count":    n_total,
         "valid_count":      n_valid,
@@ -369,6 +498,13 @@ def aggregate_affect_sessions(session_affect_list: list[dict]) -> dict:
         "arousal_max":      round(max(arousal_series),  3),
         "pattern_distribution": dict(patterns),
         "dominant_pattern": patterns.most_common(1)[0][0] if patterns else None,
+        # Within-session dynamics across the multi-session window
+        "session_dynamics_summary": {
+            "arousal_trajectory_distribution": arousal_traj_dist,
+            "valence_trajectory_distribution":  valence_traj_dist,
+            "avg_within_session_arousal_variance": avg_arousal_var,
+            "sessions_with_dynamics": len(dyn_sessions),
+        },
         "series":           series_rows,
         "disclaimer":       _DISCLAIMER,
     }

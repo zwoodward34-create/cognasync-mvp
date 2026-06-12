@@ -238,6 +238,7 @@ def _poll_transcription_job(job_id: str) -> dict:
                     'status':            'completed',
                     'text':              transcript_text,
                     'utterances':        utterances,
+                    'words':             data.get('words') or [],
                     'entities':          data.get('entities') or [],
                     'auto_highlights':   (data.get('auto_highlights_result') or {}).get('results') or [],
                     'sentiment_results': data.get('sentiment_analysis_results') or [],
@@ -425,7 +426,8 @@ def transcribe_audio_file(
 # ── Background processing ────────────────────────────────────────────────────
 
 def _run_acoustic_extraction(file_bytes: bytes, filename: str,
-                              session_id: str, session_date: str) -> dict | None:
+                              session_id: str, session_date: str,
+                              session_type: str | None = None) -> dict | None:
     """
     Write audio bytes to a temp file, run the acoustic biomarker extractor,
     and map the raw measurements to the §24 controlled vocabulary.
@@ -438,7 +440,9 @@ def _run_acoustic_extraction(file_bytes: bytes, filename: str,
     """
     import tempfile
     try:
-        from acoustic_engine import extract_acoustic_features, map_features_to_vocabulary
+        from acoustic_engine import (extract_acoustic_features,
+                                     map_features_to_vocabulary,
+                                     infer_capture_channel)
     except ImportError as e:
         logger.warning("acoustic_engine unavailable — skipping acoustic extraction: %s", e)
         return None
@@ -450,8 +454,9 @@ def _run_acoustic_extraction(file_bytes: bytes, filename: str,
             tmp.write(file_bytes)
             tmp_path = tmp.name
 
+        channel = infer_capture_channel(filename, session_type)
         raw     = extract_acoustic_features(tmp_path)
-        vocab   = map_features_to_vocabulary(raw)
+        vocab   = map_features_to_vocabulary(raw, capture_channel=channel)
         vocab['session_date'] = session_date
 
         logger.info(
@@ -625,6 +630,19 @@ def _merge_acoustic_into_extraction(extraction, acoustic_result, session_id):
     if acoustic_result.get('affect'):
         extraction['scores']['affect_dimensions'] = acoustic_result['affect']
 
+    # Reconcile the two independent arousal estimates (RMS-amplitude heuristic
+    # vs. wav2vec2 VAD) into one first-class field instead of leaving them in
+    # separate silos. Convergent → higher confidence; divergent → its own
+    # signal (CLAUDE.md §5). Non-fatal.
+    try:
+        from acoustic_engine import reconcile_arousal
+        extraction['scores']['arousal_reconciliation'] = reconcile_arousal(
+            acoustic_result.get('vocabulary'), acoustic_result.get('affect'),
+        )
+    except Exception as _ar:
+        logger.warning("Arousal reconciliation failed (non-fatal) for session %s: %s",
+                       session_id, _ar)
+
     # If transcript speech_features are low-confidence or null, promote the
     # acoustic vocabulary labels so the brief has something to work with.
     transcript_sf = (extraction.get('scores') or {}).get('speech_features')
@@ -655,7 +673,8 @@ def _run_audio_pipeline(db, extract_features, session_id, patient_id,
     # Runs on raw bytes before transcription — independent of transcript content.
     # Result merged into extraction dict so store_session_features persists it.
     acoustic_result = _run_acoustic_extraction(file_bytes, filename,
-                                               session_id, session_date)
+                                               session_id, session_date,
+                                               session_type=session_type)
 
     # ── Baseline lifecycle (voice memos only) ──────────────────────────────
     # Determines Phase 1/2/3, creates/updates baseline, and populates
@@ -707,6 +726,34 @@ def _run_audio_pipeline(db, extract_features, session_id, patient_id,
 
     # Store the transcript text on the session record
     db.store_session_transcript(session_id, transcript_text, transcription.get('storage_path'))
+
+    # ── Refine acoustic speech rate with ASR word timestamps ──────────────
+    # The energy-envelope syllable proxy is the least reliable acoustic feature
+    # yet it solely drives the speech_rate label (and the depressive/mania
+    # pattern split). AssemblyAI word timings give a far better articulation
+    # rate from data already paid for. Non-fatal; falls back to the proxy.
+    if acoustic_result and acoustic_result.get('vocabulary'):
+        try:
+            from acoustic_engine import (
+                compute_transcript_timing, refine_speech_rate_with_transcript,
+            )
+            _timing = compute_transcript_timing(transcription.get('words'))
+            if _timing:
+                refine_speech_rate_with_transcript(
+                    acoustic_result['vocabulary'], _timing,
+                    baseline=db.get_voice_baseline(patient_id),
+                )
+                acoustic_result['transcript_timing'] = _timing
+                logger.info(
+                    "Speech rate refined from transcript: session=%s artic=%.2f sps "
+                    "label=%s cross_check=%s",
+                    session_id, _timing['articulation_rate_sps'],
+                    acoustic_result['vocabulary'].get('speech_rate'),
+                    acoustic_result['vocabulary'].get('speech_rate_cross_check'),
+                )
+        except Exception as _re:
+            logger.warning("Transcript speech-rate refine failed (non-fatal): "
+                           "session=%s error=%s", session_id, _re)
 
     # ── Feature extraction ────────────────────────────────────────
     db.update_clinical_session_status(session_id, 'extracting')
@@ -895,7 +942,27 @@ def process_voice_note(
                 filename=filename,
                 session_id=str(voice_note_id),
                 session_date=session_date,
+                session_type='voice_note',
             )
+
+        # Refine speech rate from ASR word timestamps (more reliable than the
+        # energy-envelope proxy). Skipped on transcript-only recovery runs where
+        # no word timings exist. Non-fatal.
+        if acoustic_result and acoustic_result.get('vocabulary'):
+            try:
+                from acoustic_engine import (
+                    compute_transcript_timing, refine_speech_rate_with_transcript,
+                )
+                _timing = compute_transcript_timing(_transcription_result.get('words'))
+                if _timing:
+                    refine_speech_rate_with_transcript(
+                        acoustic_result['vocabulary'], _timing,
+                        baseline=db.get_voice_baseline(patient_id),
+                    )
+                    acoustic_result['transcript_timing'] = _timing
+            except Exception as _re:
+                logger.warning("Transcript speech-rate refine failed (non-fatal): "
+                               "voice_note=%s error=%s", voice_note_id, _re)
 
         # ── 4. Resolve provider + create clinical session ─────────────────────
         # clinical_sessions.provider_id is NOT NULL — fall back to the patient's
