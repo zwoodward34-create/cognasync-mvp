@@ -375,6 +375,12 @@ FORBIDDEN_PATTERNS = [
     (r'\bthis is caused by\b', 'this pattern coincides with'),
     (r'\bcaused by your medication\b', 'coinciding with your medication timing'),
     (r'\bthis is a side effect\b', 'this is worth discussing with your provider'),
+    # ── Clinical vocabulary banned by _SAFETY_RULES_BLOCK even in Mode C ─────
+    (r'\bdysregulation\b', 'irregularity'),
+    (r'\bdysregulated\b', 'irregular'),
+    # Causal verbs (spec §3 / safety rules: co-occurrence language only)
+    (r'\bcontributed to\b', 'coincided with'),
+    (r'\bis causing\b', 'is coinciding with'),
 ]
 
 
@@ -436,6 +442,55 @@ def _sanitize_output(text):
             )
             result = pattern.sub(replacement, result)
     return result
+
+
+def _verify_date_claims(text, checkin_dates):
+    """Deterministic post-generation fact check (spec §8).
+
+    Scans generated text for sentences that attribute CHECK-IN data to a
+    specific date, and verifies the date against the authoritative list of
+    dates that actually have check-ins. Returns a list of flagged sentence
+    excerpts (empty when everything verifies).
+
+    This catches the hallucination class where the model writes
+    "check-in mood 9/10 on 2026-06-12" for a date with no check-in —
+    one checkable false claim destroys clinical trust in the whole document.
+
+    Only check-in claims are verified: voice notes, journals, and SMS events
+    legitimately occur on non-check-in dates.
+    """
+    import re as _re
+    if not text:
+        return []
+    valid = set()
+    for d in (checkin_dates or []):
+        d = str(d)[:10]
+        valid.add(d)
+        # Accept the no-year form the model sometimes uses ("06-12")
+        if len(d) == 10:
+            valid.add(d[5:])
+
+    flagged = []
+    # Split into sentence-ish units (also break on newlines/table rows)
+    units = _re.split(r'(?<=[.!?])\s+|\n', text)
+    date_pat = _re.compile(r'\b(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})\b')
+    checkin_pat = _re.compile(r'check[\s-]?in|checked[\s-]?in', _re.IGNORECASE)
+    for unit in units:
+        if not checkin_pat.search(unit):
+            continue
+        # Skip sentences that are ABOUT missing check-ins — those legitimately
+        # name dates without check-in data ("no check-in submissions 06-09–06-12").
+        if _re.search(r'\bno\b|\bnot\b|gap|unanswered|missing|without|last|most recent',
+                      unit, _re.IGNORECASE):
+            continue
+        for m in date_pat.finditer(unit):
+            if m.group(1) not in valid:
+                excerpt = unit.strip()
+                if len(excerpt) > 160:
+                    excerpt = excerpt[:157] + '…'
+                flagged.append(excerpt)
+                break
+    return flagged
 
 
 def _call_claude(system_prompt, user_content, max_tokens=600):
@@ -603,8 +658,11 @@ _PSYCHIATRY_SYSTEM = (
     "first, then verify with supporting data. Build the document in that order.\n\n"
     "STRUCTURE (use exactly these section headers in this order):\n\n"
     "## Trajectory\n"
-    "One sentence maximum. State the overall direction. Name any key divergence "
-    "(e.g., Crash Risk rising despite low stress self-report). "
+    "Two sentences maximum. LEAD with the most clinically significant exception or divergence "
+    "in the period (e.g., voice-note affect diverging from check-in scores, Crash Risk rising "
+    "despite low stress self-report) — the average comes second, never first. A skimming "
+    "clinician reads only the first line; it must carry the most important signal, not the "
+    "rosiest number. If there is no notable exception, state the overall direction plainly. "
     "If last_checkin_date is more than 3 days before period_end, append: "
     "\"Most recent check-in: [date]. No check-in data for the final [N] days of the review window.\"\n\n"
     "## 🚨 Flags\n"
@@ -649,11 +707,12 @@ _PSYCHIATRY_SYSTEM = (
     "**[Date] — [Session type]**\n"
     "Mood/affect: [patient's reported mood in their own words or a 1-phrase description]. "
     "Speech: [text-inferred pattern using §24 vocab — rate / prosody / coherence in ≤10 words]. "
-    "[If acoustic measurements are present in the data: cite articulation rate (sps), pause ratio, F0 CV, "
-    "HNR dB, jitter (%), shimmer (%) and flag out-of-range values using these thresholds — "
-    "artic <3.5 sps = slowed; pause ratio >35% = elevated silence; F0 CV <0.05 = flat prosody; "
-    "HNR <15 dB = reduced harmonic quality; jitter >1% = elevated vocal perturbation; "
-    "shimmer >5% = elevated amplitude perturbation. "
+    "[If acoustic measurements are present in the data: cite the measured values (articulation rate, "
+    "pause ratio, F0 CV, HNR dB, jitter %, shimmer %) together with the labels already provided in the "
+    "data (e.g., 'flat prosody', 'slowed'). Do NOT apply or state numeric thresholds yourself — "
+    "labels are computed upstream, some relative to the patient's own baseline, and a threshold you "
+    "assert may be wrong. If a provided label appears to disagree with a measured value, report both "
+    "verbatim without reconciling them — the label may be baseline-relative. "
     "If acoustic measurements are NOT present in the data, omit this sentence entirely — "
     "do NOT write 'acoustic data not available' or any placeholder.]\n"
     "Themes: [medication mentions if any, then key themes in ≤15 words]. "
@@ -678,9 +737,29 @@ _PSYCHIATRY_SYSTEM = (
     + "STRUCTURAL RULES:\n"
     "- Begin output directly with the ## Trajectory header. Do NOT write any preamble.\n"
     "- No warm conversational prose. Number first, label second.\n"
+    "- DATE-CLAIM DISCIPLINE (critical): a check-in score may ONLY be attributed to a date that "
+    "appears in the CHECK-IN DATES list in the user message. Dates not in that list have NO "
+    "check-in data — never write 'check-in mood X/10 on [date]' for such a date. When comparing "
+    "voice recordings to check-in scores, compare to the NEAREST check-in date and name both dates "
+    "explicitly (e.g., 'voice note 06-12 vs most recent check-in 06-08'). Attributing a score to a "
+    "dateless day is a hallucination and destroys clinical trust in the entire document.\n"
+    "- TREND VOCABULARY: Crash Risk, Nervous System Load, Sleep Disruption, Stim Load, and Mood "
+    "Distortion are lower-is-better metrics. Never label them 'improving'/'worsening' alone — write "
+    "the direction plus desirability: 'declining (favorable)' or 'rising (unfavorable)'. "
+    "Higher-is-better metrics (Mood, Stability, Energy) may use improving/declining.\n"
+    "- SUICIDALITY-ADJACENT CONSOLIDATION: if two or more of the following co-occur in the period — "
+    "(a) hopelessness/self-harm-adjacent language in voice notes or journals, (b) an engagement gap "
+    "or non-response streak, (c) an active suicidality or mood monitoring target with no responses — "
+    "consolidate them into a SINGLE 🔴 flag placed FIRST in ## Flags, listing each signal with its "
+    "dates, ending with: 'Convergent signals warrant direct clinical check-in.' Do not scatter these "
+    "as separate informational flags; together they are the most clinically urgent content.\n"
     "- Mood Distortion is defined as |reported mood score − Stability Score|. Flag in the Flags section "
     "ONLY when Δ > 2.5. Do NOT confuse Mood Distortion with convergence/divergence between mood check-ins "
-    "and speech content — those are separate observations.\n"
+    "and speech content — those are separate observations. IMPORTANT CAVEAT: when voice-note affect "
+    "diverges from check-in scores but Mood Distortion shows no flag, add one line after the metrics "
+    "table: 'Note: Mood Distortion compares self-reported mood to scores derived from the same "
+    "self-report and cannot detect uniform over- or under-reporting; the voice channel is the "
+    "independent signal here.'\n"
     "- Do NOT include a Quantitative Summary section. Mood, sleep, energy, and stress averages are "
     "already rendered as charts in the document — repeating them as text adds length without adding value.\n"
     "- Alcohol in Advanced Data: include only if ≥3 units/use day or ≥4 drinking days in 7-day window.\n"
@@ -689,11 +768,16 @@ _PSYCHIATRY_SYSTEM = (
 )
 
 
-def _build_chart_data(checkin_data):
+def _build_chart_data(checkin_data, period_start=None, period_end=None):
     """Compute per-day chart arrays from checkin_data. Pure computation, no API call.
 
-    Returns a dict with parallel arrays (one entry per check-in, sorted by date)
+    Returns a dict with parallel arrays (one entry per day, sorted by date)
     suitable for Chart.js rendering.
+
+    When period_start/period_end (ISO dates) are given, the date axis spans the
+    FULL review window with None for days without check-ins — so engagement
+    gaps render as visible gaps instead of being silently cropped out. The
+    final no-check-in days of a window are often the clinically important ones.
     """
     import database as _db  # local import to avoid circular at module level
 
@@ -743,9 +827,32 @@ def _build_chart_data(checkin_data):
     for r in sorted(rows, key=lambda x: x['date']):
         by_date[r['date']] = r
 
-    sorted_rows = list(by_date.values())
     keys = ['mood', 'stability_score', 'crash_risk', 'sleep_hours',
             'sleep_disruption', 'stim_load', 'energy', 'stress', 'suicidality_score']
+
+    # Expand to the full review window when bounds are provided
+    if period_start and period_end:
+        from datetime import date as _cd_date, timedelta as _cd_td
+        try:
+            d0 = _cd_date.fromisoformat(str(period_start)[:10])
+            d1 = _cd_date.fromisoformat(str(period_end)[:10])
+            if d0 <= d1 and (d1 - d0).days <= 400:
+                empty = {k: None for k in keys}
+                full = OrderedDict()
+                d = d0
+                while d <= d1:
+                    ds = d.isoformat()
+                    full[ds] = by_date.get(ds, dict(empty, date=ds))
+                    d += _cd_td(days=1)
+                # Keep any check-ins that fall outside the stated bounds
+                for ds, r in by_date.items():
+                    if ds not in full:
+                        full[ds] = r
+                by_date = OrderedDict(sorted(full.items()))
+        except (ValueError, TypeError):
+            pass
+
+    sorted_rows = list(by_date.values())
 
     chart = {'dates': [r['date'] for r in sorted_rows]}
     for k in keys:
@@ -778,7 +885,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
     """
     # Build chart data first (pure computation, always succeeds)
     try:
-        chart_data = _build_chart_data(checkin_data)
+        chart_data = _build_chart_data(checkin_data, period_start, period_end)
     except Exception as _cde:
         chart_data = {}
 
@@ -907,6 +1014,12 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
     def _trend(v):
         if len(v) < 2: return 'insufficient data'
         return 'improving' if v[-1] > v[0] else 'declining' if v[-1] < v[0] else 'stable'
+    def _trend_dir(v):
+        # Direction-only label for lower-is-better metrics (Crash Risk, NS Load):
+        # 'improving' would be ambiguous or misleading for these.
+        if len(v) < 2: return 'insufficient data'
+        return 'rising (unfavorable)' if v[-1] > v[0] else \
+               'declining (favorable)' if v[-1] < v[0] else 'stable'
     def _std(v):
         if len(v) < 2: return None
         m = sum(v) / len(v)
@@ -962,11 +1075,11 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         'stability_trend':      _trend(stab_vals),
         'stability_range':      [round(min(stab_vals), 1), round(max(stab_vals), 1)] if stab_vals else None,
         'avg_crash_risk':       _avg(cr_vals),
-        'crash_risk_trend':     _trend(cr_vals),
+        'crash_risk_trend':     _trend_dir(cr_vals),
         'crash_risk_high_days': sum(1 for v in cr_vals if v >= 7),
         'avg_sleep_disruption': _avg(sd_vals),
         'avg_nervous_system_load': _avg(ns_load_vals) if ns_load_vals else None,
-        'ns_load_trend':        _trend(ns_load_vals) if ns_load_vals else 'insufficient data',
+        'ns_load_trend':        _trend_dir(ns_load_vals) if ns_load_vals else 'insufficient data',
         'avg_mood_distortion':  avg_distortion,
         'max_mood_distortion':  max_distortion,
         'avg_irritability':     _avg(irrit_vals) if irrit_vals else None,
@@ -1024,22 +1137,22 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         for sp in symptom_patterns:
             sym   = sp.get('symptom', '')
             d_rep = sp.get('days_reported', 0)
-        d_tot = sp.get('total_days', n)
-        co    = sp.get('co_occurring') or []
-        med   = sp.get('medication_context')
-        line  = f"{sym}: {d_rep} of {d_tot} days."
-        if co:
-            co_str = '; '.join(
-                f"{c['label']} {c['direction']} on symptom days "
-                f"(avg {c['avg_on_symptom_days']} vs {c['avg_off_symptom_days']}, Δ={c['delta']})"
-                for c in co[:2]
-            )
-            line += f" Co-signals: {co_str}."
-        if med:
-            line += (f" Medication context: {med.get('change_type', 'change')} in "
-                     f"{med.get('medication_name', 'medication')} "
-                     f"{abs(med.get('days_before_symptom_onset', 0))} days before first entry.")
-        lines.append(line)
+            d_tot = sp.get('total_days', n)
+            co    = sp.get('co_occurring') or []
+            med   = sp.get('medication_context')
+            line  = f"{sym}: {d_rep} of {d_tot} days."
+            if co:
+                co_str = '; '.join(
+                    f"{c['label']} {c['direction']} on symptom days "
+                    f"(avg {c['avg_on_symptom_days']} vs {c['avg_off_symptom_days']}, Δ={c['delta']})"
+                    for c in co[:2]
+                )
+                line += f" Co-signals: {co_str}."
+            if med:
+                line += (f" Medication context: {med.get('change_type', 'change')} in "
+                         f"{med.get('medication_name', 'medication')} "
+                         f"{abs(med.get('days_before_symptom_onset', 0))} days before first entry.")
+            lines.append(line)
         if lines:
             symptom_section = '\n\nSYMPTOM PATTERNS:\n' + '\n'.join(lines)
 
@@ -1410,12 +1523,77 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                 + "\n".join(target_lines)
             )
 
+    # ── Voice-checkin divergence (deterministic) ──────────────────────────────
+    # Mood Distortion compares self-reported mood to a score derived from the
+    # same self-report, so it cannot detect uniform over-reporting. The voice
+    # channel is the independent stream: when a session's speech features show
+    # a depressive/low-affect cluster while the nearest check-in mood is high,
+    # that divergence is computed here and passed as data — not left for the
+    # model to infer (and risk attributing scores to dateless days).
+    voice_divergence = []
+    if session_context and checkin_rows:
+        from datetime import date as _vd_date
+
+        def _parse_d(s):
+            try:
+                return _vd_date.fromisoformat(str(s)[:10])
+            except (ValueError, TypeError):
+                return None
+
+        ci_dated = [(d, r) for r in checkin_rows
+                    if r.get('mood') is not None and (d := _parse_d(r.get('date')))]
+        for s in session_context[:10]:
+            if s.get('processing_status') != 'complete':
+                continue
+            sd = _parse_d(s.get('session_date'))
+            if not sd:
+                continue
+            feat   = s.get('features') or {}
+            sf_obs = feat.get('speech_features') or {}
+            pattern = sf_obs.get('clinical_pattern_type')
+            low_affect = (
+                pattern in ('depressive', 'crisis')
+                or (sf_obs.get('prosody') == 'flat' and sf_obs.get('arousal') == 'low')
+                or (sf_obs.get('vocal_affect') == 'flat' and sf_obs.get('arousal') == 'low')
+            )
+            if not low_affect or not ci_dated:
+                continue
+            nearest_d, nearest_r = min(ci_dated, key=lambda t: abs((t[0] - sd).days))
+            gap = abs((nearest_d - sd).days)
+            if gap <= 3 and float(nearest_r['mood']) >= 7:
+                voice_divergence.append({
+                    'session_date':        sd.isoformat(),
+                    'voice_pattern':       pattern or 'flat affect / low arousal',
+                    'nearest_checkin_date': nearest_d.isoformat(),
+                    'days_between':        gap,
+                    'checkin_mood':        nearest_r['mood'],
+                    'checkin_stability':   nearest_r.get('stability_score'),
+                })
+
+    checkin_dates_block = (
+        "\n\nCHECK-IN DATES (authoritative — these are the ONLY dates with check-in data; "
+        "any other date has NO check-in and must never be cited with a check-in score):\n"
+        + (', '.join(sorted(r['date'] for r in checkin_rows if r.get('date'))) or 'none')
+    )
+
+    voice_divergence_block = ''
+    if voice_divergence:
+        voice_divergence_block = (
+            "\n\nVOICE-CHECKIN DIVERGENCE (computed deterministically — cite these exact "
+            "dates and values; do not restate as same-day check-in scores):\n"
+            + json.dumps(voice_divergence, indent=2)
+            + "\nSurface this as the lead divergence in Trajectory and as a flag, naming "
+            "BOTH dates (session date vs nearest check-in date)."
+        )
+
     patient_line = f"PATIENT: {patient_name}\n" if patient_name else ""
     user_content = (
         f"{patient_line}"
         f"REVIEW PERIOD: {period_label}\n\n"
         f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}"
-        f"{adv_section}\n\n"
+        f"{adv_section}"
+        f"{checkin_dates_block}"
+        f"{voice_divergence_block}\n\n"
         f"DAILY CHECK-INS ({n} total):\n{json.dumps(checkin_rows, indent=2, default=str)}\n\n"
         f"JOURNAL ENTRIES ({len(journal_rows)} total):\n{json.dumps(journal_rows, indent=2, default=str)}"
         f"{psych_engagement_section}"
@@ -1466,6 +1644,35 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
             "A summary was generated but contained language that requires clinical review. "
             "Please regenerate or contact support."
         )
+
+    # ── Deterministic date-claim verification (spec §8) ───────────────────────
+    # One retry with an explicit correction, then annotate if still failing —
+    # a clinician must never read an unflagged false date claim.
+    _ci_dates = [r['date'] for r in checkin_rows if r.get('date')]
+    flagged = _verify_date_claims(clean, _ci_dates)
+    if flagged:
+        logger.warning("psychiatry brief failed date-claim verification (%d claims); retrying once",
+                       len(flagged))
+        retry_system = psych_system + (
+            "\n\nCORRECTION — your previous draft attributed check-in scores to dates with NO "
+            "check-in data: " + " | ".join(flagged[:3]) +
+            "\nRe-generate. Only the CHECK-IN DATES listed in the user message have check-in scores."
+        )
+        try:
+            raw2   = _call_claude(retry_system, user_content, max_tokens=2000)
+            clean2 = _sanitize_output(raw2)
+            if clean2 and not _verify_date_claims(clean2, _ci_dates):
+                clean, raw, flagged = clean2, raw2, []
+        except Exception:
+            pass
+    if flagged:
+        clean += (
+            "\n\n---\n⚠ **Automated data verification:** the following statements reference "
+            "check-in data on dates with no check-in records and could not be verified — "
+            "treat with caution:\n"
+            + "\n".join(f"- {f}" for f in flagged[:5])
+        )
+
     return {'status': 'safe', 'text': clean, 'raw': raw, 'chart_data': chart_data}
 
 

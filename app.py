@@ -1069,7 +1069,7 @@ def provider_summary_print(patient_id):
                         db.get_checkins_in_range(patient_id, period_start, period_end), perms
                     )
                     if _ci:
-                        chart_data = claude_api._build_chart_data(_ci)
+                        chart_data = claude_api._build_chart_data(_ci, period_start, period_end)
                 except Exception as _cde:
                     app.logger.warning(f'[print] chart_data fast path: {_cde}')
         else:
@@ -1163,6 +1163,19 @@ def provider_summary_print(patient_id):
                 error_msg = str(e)
         else:
             error_msg = 'No check-in or journal data found for this period.'
+
+    # Dedupe exact name+dose duplicates in the medication header (distinct
+    # doses of the same drug are legitimate and kept, e.g. XR + booster).
+    meds = patient.get('current_medications') or []
+    if meds:
+        seen, unique_meds = set(), []
+        for m in meds:
+            key = (str(m.get('name', '')).strip().lower(),
+                   str(m.get('dose', '')).replace(' ', '').lower())
+            if key not in seen:
+                seen.add(key)
+                unique_meds.append(m)
+        patient['current_medications'] = unique_meds
 
     return render_template(
         'provider/summary_print.html',
