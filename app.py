@@ -78,6 +78,18 @@ def _provider_owns_patient(provider_id, patient_id):
     return db.provider_has_care_access(provider_id, patient_id)
 
 
+def _require_owned_patient(provider_id, patient_id):
+    """Return a 404 JSON response if the provider lacks access to this patient, else None.
+
+    Every API route that takes a patient_id MUST call this (or
+    _provider_owns_patient directly) after the role check — a role check
+    alone allows any provider to access any patient's data (IDOR).
+    """
+    if not _provider_owns_patient(provider_id, patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+    return None
+
+
 # ── Permission helpers ────────────────────────────────────────────────────────
 
 _ALL_PERMS_TRUE = {k: True for k in (
@@ -1172,9 +1184,10 @@ def provider_summary_print(patient_id):
 # ══════════════════════════════════════════════════════════════════════════════
 
 def _api_user(required_role=None):
+    # NOTE: tokens are deliberately NOT accepted from URL query parameters —
+    # they leak into server logs, browser history, and Referer headers.
     token = (
         (request.get_json(silent=True) or {}).get('session_token')
-        or request.args.get('session_token')
         or request.headers.get('X-Session-Token')
         or session.get('session_token')
     )
@@ -1975,6 +1988,9 @@ def api_provider_perms_debug(patient_id):
     user, err = _api_user('provider')
     if err:
         return err
+    own_err = _require_owned_patient(user['id'], patient_id)
+    if own_err:
+        return own_err
     raw = db.get_care_team_permissions(patient_id, user['id'])
     perms = _get_provider_perms(user['id'], patient_id)
     is_legacy = user['id'] in [
@@ -3474,6 +3490,9 @@ def provider_intel_dashboard(patient_id):
     if err:
         return err
 
+    if not _provider_owns_patient(provider['id'], patient_id):
+        return 'Patient not found', 404
+
     patient_row = db.get_user_by_id(patient_id)
     if not patient_row:
         return 'Patient not found', 404
@@ -3516,6 +3535,9 @@ def api_intel_upload_audio_session(patient_id):
     provider, err = _api_user('provider')
     if err:
         return err
+    own_err = _require_owned_patient(provider['id'], patient_id)
+    if own_err:
+        return own_err
 
     if 'audio_file' not in request.files:
         return jsonify({'error': 'audio_file is required (multipart/form-data)'}), 400
@@ -3603,6 +3625,9 @@ def api_intel_upload_session(patient_id):
     provider, err = _api_user('provider')
     if err:
         return err
+    own_err = _require_owned_patient(provider['id'], patient_id)
+    if own_err:
+        return own_err
 
     data = request.get_json(silent=True) or {}
     transcript = data.get('transcript', '').strip()
@@ -3673,6 +3698,9 @@ def api_intel_get_sessions(patient_id):
     provider, err = _api_user('provider')
     if err:
         return err
+    own_err = _require_owned_patient(provider['id'], patient_id)
+    if own_err:
+        return own_err
 
     period_start = request.args.get('period_start')
     period_end   = request.args.get('period_end')
@@ -3705,9 +3733,12 @@ def api_intel_session_status(patient_id, session_id):
     provider, err = _api_user('provider')
     if err:
         return err
+    own_err = _require_owned_patient(provider['id'], patient_id)
+    if own_err:
+        return own_err
 
     session = db.get_clinical_session_by_id(session_id)
-    if not session:
+    if not session or str(session.get('patient_id')) != str(patient_id):
         return jsonify({'error': 'Session not found'}), 404
 
     themes = (session.get('features') or {}).get('themes') or []
@@ -3744,6 +3775,9 @@ def api_intel_generate_brief(patient_id):
     provider, err = _api_user('provider')
     if err:
         return err
+    own_err = _require_owned_patient(provider['id'], patient_id)
+    if own_err:
+        return own_err
 
     from datetime import date as _date, timedelta as _timedelta
     data         = request.get_json(silent=True) or {}
@@ -3937,6 +3971,9 @@ def api_intel_list_briefs(patient_id):
     provider, err = _api_user('provider')
     if err:
         return err
+    own_err = _require_owned_patient(provider['id'], patient_id)
+    if own_err:
+        return own_err
 
     limit  = min(int(request.args.get('limit', 5)), 20)
     briefs = db.get_provider_briefs_for_patient(provider['id'], patient_id, limit=limit)
@@ -4600,6 +4637,9 @@ def api_provider_upload_voice_note(patient_id):
     provider, err = _api_user('provider')
     if err:
         return err
+    own_err = _require_owned_patient(provider['id'], patient_id)
+    if own_err:
+        return own_err
 
     audio_file = request.files.get('audio')
     if not audio_file:
@@ -4661,6 +4701,9 @@ def api_get_patient_voice_notes(patient_id):
     provider, err = _api_user('provider')
     if err:
         return err
+    own_err = _require_owned_patient(provider['id'], patient_id)
+    if own_err:
+        return own_err
 
     notes = db.get_voice_notes_for_patient(patient_id, limit=20)
     return jsonify({'ok': True, 'voice_notes': notes or []})
@@ -4767,6 +4810,9 @@ def api_patient_voice_biomarkers(patient_id):
     provider, err = _api_user('provider')
     if err:
         return err
+    own_err = _require_owned_patient(provider['id'], patient_id)
+    if own_err:
+        return own_err
 
     limit = min(int(request.args.get('limit', 20)), 50)
 
@@ -5562,6 +5608,8 @@ def internal_trigger_briefing_sms():
 def api_provider_patient_calendar_list(patient_id):
     user, err = _api_user('provider')
     if err: return err
+    own_err = _require_owned_patient(user['id'], patient_id)
+    if own_err: return own_err
     events = db.get_provider_calendar_appointments(user['id'], patient_id)
     return jsonify({'events': events})
 
@@ -5574,6 +5622,8 @@ def api_provider_patient_calendar_create(patient_id):
     event_date = (data.get('date') or '').strip()
     if not event_date:
         return jsonify({'error': 'date is required'}), 400
+    own_err = _require_owned_patient(user['id'], patient_id)
+    if own_err: return own_err
     event = db.create_calendar_appointment(
         provider_id=user['id'],
         patient_id=patient_id,
@@ -5592,6 +5642,8 @@ def api_provider_patient_calendar_create(patient_id):
 def api_provider_patient_calendar_update(patient_id, event_id):
     user, err = _api_user('provider')
     if err: return err
+    own_err = _require_owned_patient(user['id'], patient_id)
+    if own_err: return own_err
     data = request.get_json() or {}
     event_date = (data.get('date') or '').strip()
     if not event_date:
@@ -5611,6 +5663,8 @@ def api_provider_patient_calendar_update(patient_id, event_id):
 def api_provider_patient_calendar_delete(patient_id, event_id):
     user, err = _api_user('provider')
     if err: return err
+    own_err = _require_owned_patient(user['id'], patient_id)
+    if own_err: return own_err
     ok = db.delete_calendar_appointment(event_id, user['id'])
     return jsonify({'ok': ok})
 
@@ -5637,6 +5691,8 @@ def api_provider_appointments_create():
     event_date = (data.get('date') or '').strip()
     if not patient_id or not event_date:
         return jsonify({'error': 'patient_id and date are required'}), 400
+    own_err = _require_owned_patient(user['id'], patient_id)
+    if own_err: return own_err
     event = db.create_calendar_appointment(
         provider_id=user['id'],
         patient_id=patient_id,

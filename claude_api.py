@@ -239,9 +239,12 @@ def _score_crisis_features(text: str, population_flags: dict | None = None) -> d
         if detected:
             raw_score += weights.get(feature, 0)
 
-    # Population modifier — applies only to passive-range signals
+    # Population modifier — applies only to passive-range signals.
+    # Spec §23 rule 3: Level 3 and Level 4 base scores are never modified;
+    # modifiers only affect the passive range (base Level 0–2, i.e. raw < 6),
+    # where clinical sensitivity matters most and false negatives are costliest.
     pop_modifier = 0
-    if population_flags:
+    if population_flags and raw_score < 6:
         for pop, active in population_flags.items():
             if active and pop in _POPULATION_PASSIVE_MODIFIER:
                 pop_modifier += _POPULATION_PASSIVE_MODIFIER[pop]
@@ -337,34 +340,41 @@ _SAFETY_RULES_BLOCK = (
     "- Never write 'this confirms,' 'this explains,' 'this is a sign of,' or 'this indicates [condition].'\n"
 )
 
+# Clinical condition stems used to scope the "you have <condition>" pattern.
+# Spec §3 forbids "you have [condition]" — a diagnostic claim. The pattern is
+# scoped with a lookahead so benign phrases ("you have a 7-day streak",
+# "you have logged sleep every night") are left untouched.
+_CONDITION_STEMS = (
+    r'depress\w*|anxiet\w*|anxious|mania|manic|bipolar|adhd\b|ptsd|ocd\b|'
+    r'psychosis|psychotic|schizo\w*|insomnia|anhedonia|dysregulat\w*|'
+    r'addiction\w*|dependenc\w*|disorder\w*|condition\w*|diagnos\w*|'
+    r'illness\w*|syndrome\w*|impairment\w*'
+)
+
+# Substitution patterns — (regex, replacement), applied case-insensitively in
+# _sanitize_output(). Patterns use \b word boundaries and do not consume
+# surrounding whitespace, so replacements preserve sentence spacing.
+# Diagnostic labels ("you are depressed") and medication advice ("stop
+# taking") are NOT in this list — they are hard-blocked in _sanitize_output()
+# (whole output suppressed) because no rephrasing preserves meaning safely.
+# Note: keep these specific enough not to mangle negated or legitimate
+# sentences. Broad patterns like 'caused by the', 'this indicates ',
+# 'side effect of' are intentionally excluded — they match inside benign
+# constructions and are handled at the prompt level instead.
 FORBIDDEN_PATTERNS = [
     # ── Diagnostic claims (spec §3) ───────────────────────────────────────────
-    ('you have ', 'noting you may be experiencing'),
-    ('you suffer from ', 'you\'ve described experiences that'),
-    ('diagnosed with', 'this pattern'),
-    ('you are depressed', 'you\'ve described feeling down'),
-    ('you are anxious', 'you\'ve noted anxiety'),
-    ('you are manic', 'you\'ve described an elevated period'),
-    ('you are struggling with', 'you\'ve noted increased difficulty with'),
-    ('this is a sign of', 'this pattern coincides with'),
-    ('this confirms that', 'the data is consistent with'),
-    # ── Medication advice (spec §3) ───────────────────────────────────────────
-    ('stop taking', 'discuss with your provider changes to'),
-    ('reduce your dose', 'discuss dosing with your provider'),
-    ('increase your dose', 'discuss dosing with your provider'),
-    ('you should take', 'some people find it helpful to discuss'),
-    ('this will make you better', 'many people find this approach helpful'),
+    (r'\byou have\b(?=\s+(?:a\s+|an\s+|the\s+)?(?:%s))' % _CONDITION_STEMS,
+     'your logs reflect'),
+    (r'\byou suffer from\b', "you've described experiences with"),
+    (r'\bdiagnosed with\b', 'showing patterns associated with'),
+    (r'\byou are struggling with\b', "you've noted increased difficulty with"),
+    (r'\bthis is a sign of\b', 'this pattern coincides with'),
+    (r'\bthis confirms that\b', 'the data is consistent with'),
     # ── Causal / outcome claims (spec §3) ─────────────────────────────────────
-    # Note: keep these specific enough not to mangle negated or legitimate sentences.
-    # Broad patterns like 'caused by the', 'this indicates ', 'side effect of'
-    # are intentionally excluded — they match inside benign constructions and are
-    # handled at the prompt level instead.
-    ('this explains your', 'this pattern coincides with'),
-    ('this is caused by', 'this pattern coincides with'),
-    ('caused by your medication', 'coinciding with your medication timing'),
-    ('this is a side effect', 'worth discussing with your provider regarding'),
-    ('this is a sign of', 'this pattern coincides with'),
-    ('this confirms that', 'the data is consistent with'),
+    (r'\bthis explains your\b', 'this pattern coincides with your'),
+    (r'\bthis is caused by\b', 'this pattern coincides with'),
+    (r'\bcaused by your medication\b', 'coinciding with your medication timing'),
+    (r'\bthis is a side effect\b', 'this is worth discussing with your provider'),
 ]
 
 
@@ -413,13 +423,12 @@ def _sanitize_output(text):
             )
             return None
 
-    # Substitution pass — replace in-place, case-insensitive
+    # Substitution pass — patterns are regexes (word-boundary scoped, never
+    # consuming surrounding whitespace), replaced in-place, case-insensitive.
     import re as _re
     result = text
     for forbidden, replacement in FORBIDDEN_PATTERNS:
-        if forbidden in HARD_BLOCK:
-            continue  # already handled above
-        pattern = _re.compile(_re.escape(forbidden), _re.IGNORECASE)
+        pattern = _re.compile(forbidden, _re.IGNORECASE)
         if pattern.search(result):
             logger.warning(
                 "SUBSTITUTION pattern caught in output: %r — replacing with %r.",

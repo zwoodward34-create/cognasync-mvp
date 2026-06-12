@@ -6298,7 +6298,7 @@ def get_clinical_session_by_id(session_id: str) -> dict | None:
         result = (
             supabase_admin
             .table('clinical_sessions')
-            .select('id, session_date, session_type, duration_minutes, transcript_source, processing_status, processing_error, session_features(extracted, scores, crisis_detected)')
+            .select('id, patient_id, session_date, session_type, duration_minutes, transcript_source, processing_status, processing_error, session_features(extracted, scores, crisis_detected)')
             .eq('id', session_id)
             .single()
             .execute()
@@ -6310,6 +6310,7 @@ def get_clinical_session_by_id(session_id: str) -> dict | None:
         feat_row  = feat_rows[0] if feat_rows else {}
         return {
             'session_id':        str(row['id']),
+            'patient_id':        str(row['patient_id']) if row.get('patient_id') else None,
             'session_date':      row.get('session_date'),
             'session_type':      row.get('session_type', 'other'),
             'duration_minutes':  row.get('duration_minutes'),

@@ -421,6 +421,14 @@ def _merge_chunk_features(chunks: list[dict]) -> dict:
             merged['baseline_deviation'] = val
             break
 
+    # crisis_language_detected: OR across all chunks — NEVER first-non-None.
+    # A transcript where crisis language appears only in a later chunk must
+    # still flag the merged session (a chunk reporting False is non-None and
+    # would otherwise mask a later True).
+    merged['crisis_language_detected'] = any(
+        bool(chunk.get('crisis_language_detected')) for chunk in chunks
+    )
+
     # ── Scalar fields: first non-None value across chunks ──────────────────
     scalar_fields = [
         'patient_mood_description',
@@ -432,7 +440,6 @@ def _merge_chunk_features(chunks: list[dict]) -> dict:
         'stress_description',
         'functional_status',
         'session_notes',
-        'crisis_language_detected',
     ]
     for field in scalar_fields:
         if field in merged:
