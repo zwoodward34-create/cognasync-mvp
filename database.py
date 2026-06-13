@@ -2,9 +2,36 @@ import math
 import os
 import re
 import json
+import logging
 from datetime import datetime, timedelta, date
 from supabase import create_client, Client
 import uuid
+
+logger = logging.getLogger(__name__)
+
+
+class DataUnavailableError(Exception):
+    """Raised when a clinically load-bearing READ fails.
+
+    The data layer must never let a failed read masquerade as genuinely
+    empty data: an empty list/dict returned from an exception handler is
+    indistinguishable from "no rows", and a provider summary built on it
+    looks authoritative while silently omitting a safety signal, substance
+    flag, or symptom pattern. Clinical read functions raise this instead of
+    returning an empty default so the failure is visible to callers, which
+    surface an explicit "data unavailable" state rather than a clean,
+    misleading empty section.
+
+    Carries the original exception via implicit chaining (``__cause__`` /
+    ``__context__``) when raised inside an ``except`` block.
+    """
+
+    def __init__(self, message, *, source=None):
+        super().__init__(message)
+        # Name of the data-layer function whose read failed, for logging /
+        # the section marker rendered to the provider.
+        self.source = source
+
 
 SUPABASE_URL = os.environ.get('SUPABASE_URL')
 SUPABASE_KEY = os.environ.get('SUPABASE_KEY')
@@ -44,7 +71,7 @@ def init_db():
         result = supabase_admin.table('profiles').select('id').limit(1).execute()
         print("✓ Database connection verified")
     except Exception as e:
-        print(f"✗ Database connection failed: {e}")
+        logger.exception(f"✗ Database connection failed: {e}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -71,7 +98,7 @@ def get_user_by_email(email):
             }
         return None
     except Exception as e:
-        print(f"Error getting user by email: {e}")
+        logger.exception(f"Error getting user by email: {e}")
         return None
 
 
@@ -89,7 +116,7 @@ def get_user_by_id(user_id):
             }
         return None
     except Exception as e:
-        print(f"Error getting user by id: {e}")
+        logger.exception(f"Error getting user by id: {e}")
         return None
 
 
@@ -125,7 +152,7 @@ def get_patient_profile(user_id):
             return response.data[0]
         return None
     except Exception as e:
-        print(f"Error getting patient profile: {e}")
+        logger.exception(f"Error getting patient profile: {e}")
         return None
 
 
@@ -136,7 +163,7 @@ def update_patient_profile(user_id, **kwargs):
         supabase_admin.table('patient_profiles').upsert(data, on_conflict='user_id').execute()
         return True
     except Exception as e:
-        print(f"Error updating patient profile: {e}")
+        logger.exception(f"Error updating patient profile: {e}")
         return False
 
 
@@ -160,8 +187,8 @@ def get_patient_population_flags(patient_user_id: str) -> dict:
             return response.data[0].get('population_flags') or {}
         return {}
     except Exception as e:
-        print(f"Error getting population flags for {patient_user_id}: {e}")
-        return {}
+        logger.exception(f"Error getting population flags for {patient_user_id}: {e}")
+        raise DataUnavailableError(f"Error getting population flags for {patient_user_id}", source="get_patient_population_flags")
 
 
 def set_patient_population_flags(patient_user_id: str, flags: dict) -> bool:
@@ -187,7 +214,7 @@ def set_patient_population_flags(patient_user_id: str, flags: dict) -> bool:
         ).execute()
         return True
     except Exception as e:
-        print(f"Error setting population flags for {patient_user_id}: {e}")
+        logger.exception(f"Error setting population flags for {patient_user_id}: {e}")
         return False
 
 
@@ -201,7 +228,7 @@ def assign_patient_to_provider(patient_user_id, provider_id):
         ).execute()
         return True
     except Exception as e:
-        print(f"Error assigning patient to provider: {e}")
+        logger.exception(f"Error assigning patient to provider: {e}")
         return False
 
 
@@ -258,8 +285,8 @@ def get_patients_needing_checkin_reminder(min_days_inactive: int = 2) -> list:
 
         return eligible
     except Exception as e:
-        print(f"get_patients_needing_checkin_reminder error: {e}")
-        return []
+        logger.exception(f"get_patients_needing_checkin_reminder error: {e}")
+        raise DataUnavailableError(f"get_patients_needing_checkin_reminder error", source="get_patients_needing_checkin_reminder")
 
 
 def mark_reminder_sent(user_id: str) -> None:
@@ -269,7 +296,7 @@ def mark_reminder_sent(user_id: str) -> None:
             'last_reminder_sent_at': datetime.utcnow().isoformat(),
         }).eq('user_id', str(user_id)).execute()
     except Exception as e:
-        print(f"mark_reminder_sent error: {e}")
+        logger.exception(f"mark_reminder_sent error: {e}")
 
 
 def set_checkin_reminders_enabled(user_id: str, enabled: bool) -> bool:
@@ -280,7 +307,7 @@ def set_checkin_reminders_enabled(user_id: str, enabled: bool) -> bool:
         }).eq('user_id', str(user_id)).execute()
         return True
     except Exception as e:
-        print(f"set_checkin_reminders_enabled error: {e}")
+        logger.exception(f"set_checkin_reminders_enabled error: {e}")
         return False
 
 
@@ -330,7 +357,7 @@ def create_checkin(patient_id, date_str, time_of_day, mood_score, medications, s
         print(f"create_checkin: insert returned no data. Response: {response}")
         return None
     except Exception as e:
-        print(f"Error creating checkin: {e}")
+        logger.exception(f"Error creating checkin: {e}")
         raise  # re-raise so app.py can surface the real error
 
 
@@ -340,7 +367,7 @@ def update_checkin_insights(checkin_id, insights_text):
         supabase_admin.table('checkins').update({'ai_insights': insights_text}).eq('id', str(checkin_id)).execute()
         return True
     except Exception as e:
-        print(f"Error updating checkin insights: {e}")
+        logger.exception(f"Error updating checkin insights: {e}")
         return False
 
 
@@ -407,7 +434,7 @@ def get_checkin_baseline(patient_id, days=7):
             'count':    len(rows),
         }
     except Exception as e:
-        print(f"Error getting checkin baseline: {e}")
+        logger.debug(f"Error getting checkin baseline: {e}")
         return {
             'avgMood': 6.8, 'avgEnergy': 6.5, 'avgAnxiety': 3.2,
             'avgSleepHours': 5.9, 'avgSleepQuality': 6.2, 'avgCaffeineMg': 0.0,
@@ -423,8 +450,8 @@ def get_checkins(patient_id, days=30):
         response = supabase_admin.table('checkins').select('*').gte('checkin_date', cutoff_date).eq('user_id', str(patient_id)).order('checkin_date', desc=True).execute()
         return response.data if response.data else []
     except Exception as e:
-        print(f"Error getting checkins: {e}")
-        return []
+        logger.exception(f"Error getting checkins: {e}")
+        raise DataUnavailableError(f"Error getting checkins", source="get_checkins")
 
 
 def get_checkins_in_range(patient_id, start_date: str, end_date: str):
@@ -437,8 +464,8 @@ def get_checkins_in_range(patient_id, start_date: str, end_date: str):
                     .order('checkin_date', desc=False).execute())
         return response.data if response.data else []
     except Exception as e:
-        print(f"Error getting checkins in range: {e}")
-        return []
+        logger.exception(f"Error getting checkins in range: {e}")
+        raise DataUnavailableError(f"Error getting checkins in range", source="get_checkins_in_range")
 
 
 def get_journals_in_range(patient_id, start_date: str, end_date: str, shared_only=False):
@@ -453,7 +480,7 @@ def get_journals_in_range(patient_id, start_date: str, end_date: str, shared_onl
         response = query.order('entry_date', desc=False).execute()
         return response.data if response.data else []
     except Exception as e:
-        print(f"Error getting journals in range: {e}")
+        logger.exception(f"Error getting journals in range: {e}")
         return []
 
 
@@ -492,8 +519,8 @@ def get_checkin_streak(patient_id):
                 break
         return streak
     except Exception as e:
-        print(f"Error getting checkin streak: {e}")
-        return 0
+        logger.exception(f"Error getting checkin streak: {e}")
+        raise DataUnavailableError(f"Error getting checkin streak", source="get_checkin_streak")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -519,7 +546,7 @@ def create_journal(patient_id, entry_type, raw_entry, ai_analysis=None, share_wi
             return response.data[0]['id']
         return None
     except Exception as e:
-        print(f"Error creating journal: {e}")
+        logger.exception(f"Error creating journal: {e}")
         return None
 
 
@@ -534,7 +561,7 @@ def get_journals(patient_id, limit=20, shared_only=False):
         response = query.order('entry_date', desc=True).limit(limit).execute()
         return response.data if response.data else []
     except Exception as e:
-        print(f"Error getting journals: {e}")
+        logger.exception(f"Error getting journals: {e}")
         return []
 
 
@@ -575,7 +602,7 @@ def create_summary(patient_id, summary_text, date_range_start, date_range_end, r
                 return response.data[0]['id']
         return None
     except Exception as e:
-        print(f"Error creating summary: {e}")
+        logger.exception(f"Error creating summary: {e}")
         return None
 
 
@@ -596,8 +623,8 @@ def get_summary_by_id(summary_id: str, patient_id: str | None = None) -> dict | 
             row['summary_text'] = row.get('content', '')
         return row
     except Exception as e:
-        print(f'[db] get_summary_by_id error: {e}')
-        return None
+        logger.exception(f'[db] get_summary_by_id error: {e}')
+        raise DataUnavailableError(f'[db] get_summary_by_id error', source="get_summary_by_id")
 
 
 def get_summaries(patient_id):
@@ -619,7 +646,7 @@ def get_summaries(patient_id):
                     r['date_range_start'] = ''
         return rows
     except Exception as e:
-        print(f"Error getting summaries: {e}")
+        logger.exception(f"Error getting summaries: {e}")
         return []
 
 
@@ -629,7 +656,7 @@ def delete_summary(patient_id, summary_id):
         supabase_admin.table('summaries').delete().eq('id', str(summary_id)).eq('user_id', str(patient_id)).execute()
         return True
     except Exception as e:
-        print(f"Error deleting summary: {e}")
+        logger.exception(f"Error deleting summary: {e}")
         return False
 
 
@@ -641,8 +668,8 @@ def get_latest_summary(patient_id):
             return response.data[0]
         return None
     except Exception as e:
-        print(f"Error getting latest summary: {e}")
-        return None
+        logger.exception(f"Error getting latest summary: {e}")
+        raise DataUnavailableError(f"Error getting latest summary", source="get_latest_summary")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -669,7 +696,7 @@ def create_medication(user_id: str, name: str, category: str, standard_dose: flo
         result = supabase_admin.table('medications').insert(insert_data).execute()
         return result.data[0] if result.data else None
     except Exception as e:
-        print(f"Error creating medication: {e}")
+        logger.exception(f"Error creating medication: {e}")
         return None
 
 def get_user_medications(user_id: str, active_only: bool = True):
@@ -681,8 +708,8 @@ def get_user_medications(user_id: str, active_only: bool = True):
         result = query.execute()
         return result.data or []
     except Exception as e:
-        print(f"Error fetching medications: {e}")
-        return []
+        logger.exception(f"Error fetching medications: {e}")
+        raise DataUnavailableError(f"Error fetching medications", source="get_user_medications")
 
 def find_or_create_profile_medication(user_id: str, name: str, dose_str: str = None) -> str | None:
     """Return the medications.id for a profile-based current_medication entry.
@@ -710,7 +737,7 @@ def find_or_create_profile_medication(user_id: str, name: str, dose_str: str = N
         ins = supabase_admin.table('medications').insert(ins_data).execute()
         return ins.data[0]['id'] if ins.data else None
     except Exception as e:
-        print(f"Error finding/creating profile medication: {e}")
+        logger.exception(f"Error finding/creating profile medication: {e}")
         return None
 
 
@@ -742,7 +769,7 @@ def get_today_dose_logs(user_id: str, today: str = None) -> list:
             })
         return logs
     except Exception as e:
-        print(f"Error getting today dose logs: {e}")
+        logger.exception(f"Error getting today dose logs: {e}")
         return []
 
 
@@ -753,7 +780,7 @@ def delete_medication_event(user_id: str, event_id: str) -> bool:
             .eq('id', event_id).eq('user_id', user_id).execute()
         return True
     except Exception as e:
-        print(f"Error deleting medication event: {e}")
+        logger.exception(f"Error deleting medication event: {e}")
         return False
 
 
@@ -771,7 +798,7 @@ def log_medication_event(user_id: str, medication_id: str, event_date: str, actu
         }).execute()
         return result.data[0] if result.data else None
     except Exception as e:
-        print(f"Error logging medication event: {e}")
+        logger.exception(f"Error logging medication event: {e}")
         return None
 
 def get_medication_events(user_id: str, medication_id: str = None, days: int = 30):
@@ -784,8 +811,8 @@ def get_medication_events(user_id: str, medication_id: str = None, days: int = 3
         result = query.execute()
         return result.data or []
     except Exception as e:
-        print(f"Error fetching medication events: {e}")
-        return []
+        logger.exception(f"Error fetching medication events: {e}")
+        raise DataUnavailableError(f"Error fetching medication events", source="get_medication_events")
 
 def get_medication_names() -> list:
     """Return a sorted list of all medication names from the reference table."""
@@ -793,8 +820,8 @@ def get_medication_names() -> list:
         result = supabase_admin.table('medication_reference').select('name').execute()
         return sorted({row['name'] for row in result.data}) if result.data else []
     except Exception as e:
-        print(f"Error fetching medication names: {e}")
-        return []
+        logger.exception(f"Error fetching medication names: {e}")
+        raise DataUnavailableError(f"Error fetching medication names", source="get_medication_names")
 
 def get_medication_info(name: str):
     """Get full reference info for a single medication by name (case-insensitive).
@@ -829,8 +856,8 @@ def get_medication_info(name: str):
         # Return whatever we found even if unenriched
         return locals().get('_fallback') or (result.data[0] if result.data else None)
     except Exception as e:
-        print(f"Error fetching medication info: {e}")
-        return None
+        logger.exception(f"Error fetching medication info: {e}")
+        raise DataUnavailableError(f"Error fetching medication info", source="get_medication_info")
 
 
 # ── Module-level interaction table (shared by patient and comparator checks) ──
@@ -1039,8 +1066,8 @@ def check_medication_interactions(patient_id) -> list:
             return []
         return _run_interaction_check(med_names)
     except Exception as e:
-        print(f"Error checking medication interactions: {e}")
-        return []
+        logger.exception(f"Error checking medication interactions: {e}")
+        raise DataUnavailableError(f"Error checking medication interactions", source="check_medication_interactions")
 
 
 def check_interactions_for_names(names: list) -> list:
@@ -1056,8 +1083,8 @@ def search_medication_reference(search_term: str):
         result = supabase_admin.table('medication_reference').select('*').ilike('name', f'%{search_term}%').execute()
         return result.data or []
     except Exception as e:
-        print(f"Error searching medication reference: {e}")
-        return []
+        logger.exception(f"Error searching medication reference: {e}")
+        raise DataUnavailableError(f"Error searching medication reference", source="search_medication_reference")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -1103,7 +1130,7 @@ def get_suicide_risk_context(user_id: str, days: int = 7, since: str = None) -> 
                     'text': text[:600],
                 })
     except Exception as e:
-        print(f"get_suicide_risk_context error for user {user_id}: {e}")
+        logger.exception(f"get_suicide_risk_context error for user {user_id}: {e}")
     return results
 
 
@@ -1150,7 +1177,7 @@ def get_crisis_history(user_id: str) -> list:
                     'resolved': bool(resolved_at and d <= resolved_at),
                 })
     except Exception as e:
-        print(f"get_crisis_history error for user {user_id}: {e}")
+        logger.exception(f"get_crisis_history error for user {user_id}: {e}")
     results.sort(key=lambda x: x['date'], reverse=True)
     return results
 
@@ -1164,8 +1191,8 @@ def resolve_crisis_risk(patient_id: str) -> bool:
         ).eq('user_id', str(patient_id)).execute()
         return True
     except Exception as e:
-        print(f"resolve_crisis_risk error for patient {patient_id}: {e}")
-        return False
+        logger.exception(f"resolve_crisis_risk error for patient {patient_id}: {e}")
+        raise DataUnavailableError(f"resolve_crisis_risk error for patient {patient_id}", source="resolve_crisis_risk")
 
 
 def get_provider_patients(provider_id):
@@ -1226,7 +1253,7 @@ def get_provider_patients(provider_id):
 
         return patients
     except Exception as e:
-        print(f"Error getting provider patients: {e}")
+        logger.exception(f"Error getting provider patients: {e}")
         return []
 
 
@@ -1292,7 +1319,7 @@ def get_patient_detail(patient_id, days=30):
             'latest_summary':   latest_summary,
         }
     except Exception as e:
-        print(f"Error getting patient detail: {e}")
+        logger.debug(f"Error getting patient detail: {e}")
         return None
 
 
@@ -1579,6 +1606,7 @@ def get_trends_data(user_id: str, days: int = 30):
                 if (m.get('frequency') or '').lower() in ('as_needed', 'prn')
             }
         except Exception:
+            logger.exception("_empty_metric_ts failed")
             prn_names = set()
 
         _EXT_FIELDS = [
@@ -1726,7 +1754,7 @@ def get_trends_data(user_id: str, days: int = 30):
             'workload_friction': _make_ts(workload_pairs),
         }
     except Exception as e:
-        print(f"Error getting trends: {e}")
+        logger.debug(f"Error getting trends: {e}")
         return None
 
 
@@ -1790,7 +1818,7 @@ def get_paired_values(patient_id, var_a, var_b, days=60, _checkins=None):
                 pairs.append((c.get('checkin_date', ''), val_a, val_b))
         return pairs
     except Exception as e:
-        print(f"Error getting paired values: {e}")
+        logger.debug(f"Error getting paired values: {e}")
         return []
 
 
@@ -1917,7 +1945,7 @@ def save_hypothesis_result(patient_id, var_a, var_b, user_direction, result):
             return response.data[0]['id']
         return None
     except Exception as e:
-        print(f"Error saving hypothesis result: {e}")
+        logger.exception(f"Error saving hypothesis result: {e}")
         return None
 
 
@@ -1974,7 +2002,7 @@ def get_hypothesis_history(patient_id, limit=20):
 
         return normalized
     except Exception as e:
-        print(f"Error getting hypothesis history: {e}")
+        logger.exception(f"Error getting hypothesis history: {e}")
         return []
 
 
@@ -1992,7 +2020,7 @@ def get_tested_pairs(patient_id):
         
         return list(pairs)
     except Exception as e:
-        print(f"Error getting tested pairs: {e}")
+        logger.exception(f"Error getting tested pairs: {e}")
         return []
 
 
@@ -2039,6 +2067,7 @@ def get_medication_timing_stats(patient_id, days=30):
                 parts = str(t).split(':')
                 return int(parts[0]) * 60 + int(parts[1])
             except Exception:
+                logger.exception("_time_to_min failed")
                 return None
 
         def _avg(v):
@@ -2107,7 +2136,7 @@ def get_medication_timing_stats(patient_id, days=30):
             'sample_size':               len(checkins),
         }
     except Exception as e:
-        print(f"Error getting medication timing stats: {e}")
+        logger.debug(f"Error getting medication timing stats: {e}")
         return _empty
 
 
@@ -2188,7 +2217,7 @@ def find_unexpected_pattern(patient_id, days=30):
 
         return best
     except Exception as e:
-        print(f"Error finding unexpected pattern: {e}")
+        logger.exception(f"Error finding unexpected pattern: {e}")
         return None
 
 
@@ -2259,7 +2288,7 @@ def find_top_patterns(patient_id, days=30, limit=5):
         candidates.sort(key=lambda x: abs(x['r']), reverse=True)
         return candidates[:limit]
     except Exception as e:
-        print(f"Error finding top patterns: {e}")
+        logger.exception(f"Error finding top patterns: {e}")
         return []
 
 
@@ -2274,6 +2303,7 @@ def _to_float(v):
     try:
         return float(v)
     except (TypeError, ValueError):
+        logger.exception("_to_float failed")
         return None
 
 
@@ -2351,7 +2381,7 @@ def _check_medication_context(patient_id, reference_date_str, window_days=14):
         return None
 
     except Exception as e:
-        print(f"Error checking medication context: {e}")
+        logger.exception(f"Error checking medication context: {e}")
         return None
 
 
@@ -2509,8 +2539,8 @@ def find_symptom_correlations(patient_id, days=60):
         return results
 
     except Exception as e:
-        print(f"Error finding symptom correlations: {e}")
-        return []
+        logger.exception(f"Error finding symptom correlations: {e}")
+        raise DataUnavailableError(f"Error finding symptom correlations", source="find_symptom_correlations")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -2792,7 +2822,7 @@ def check_substance_patterns(patient_id, days=30):
         }
 
     except Exception as e:
-        print(f"Error checking substance patterns: {e}")
+        logger.debug(f"Error checking substance patterns: {e}")
         return None
 
 
@@ -2858,7 +2888,7 @@ def check_safety_signals(patient_id, days=60):
         }
 
     except Exception as e:
-        print(f"Error checking safety signals: {e}")
+        logger.exception(f"Error checking safety signals: {e}")
         return {'signals_found': False, 'alert_level': None}
 
 
@@ -2940,7 +2970,7 @@ def _get_engagement_flags(patient_id, days=14):
             'max_consecutive_gap':     stats.get('max_consecutive_gap', 0),
         }
     except Exception as e:
-        print(f"Error computing engagement flags for {patient_id}: {e}")
+        logger.exception(f"Error computing engagement flags for {patient_id}: {e}")
         return None
 
 
@@ -2991,7 +3021,7 @@ def log_ai_feedback(user_id: str, content_type: str, content_id: str, rating: st
         ).execute()
         return True
     except Exception as e:
-        print(f"Error logging AI feedback: {e}")
+        logger.exception(f"Error logging AI feedback: {e}")
         return False
 
 
@@ -3021,7 +3051,7 @@ def create_provider_appointment(provider_id: str, patient_id: str, period_days: 
         resp = supabase_admin.table('provider_appointments').insert(row).execute()
         return resp.data[0] if resp.data else None
     except Exception as e:
-        print(f"Error creating appointment: {e}")
+        logger.exception(f"Error creating appointment: {e}")
         return None
 
 
@@ -3042,7 +3072,7 @@ def get_provider_appointment(appt_id: str, provider_id: str) -> dict | None:
                     row[field] = []
         return row
     except Exception as e:
-        print(f"Error fetching appointment: {e}")
+        logger.exception(f"Error fetching appointment: {e}")
         return None
 
 
@@ -3063,7 +3093,7 @@ def get_patient_appointments(provider_id: str, patient_id: str) -> list:
                         row[field] = []
         return rows
     except Exception as e:
-        print(f"Error fetching patient appointments: {e}")
+        logger.exception(f"Error fetching patient appointments: {e}")
         return []
 
 
@@ -3087,7 +3117,7 @@ def update_provider_appointment(appt_id: str, provider_id: str, updates: dict) -
             'id', appt_id).eq('provider_id', str(provider_id)).execute()
         return True
     except Exception as e:
-        print(f"Error updating appointment: {e}")
+        logger.exception(f"Error updating appointment: {e}")
         return False
 
 
@@ -3122,7 +3152,7 @@ def get_provider_calendar_appointments(provider_id: str, patient_id: str) -> lis
             })
         return events
     except Exception as e:
-        print(f"[db] get_provider_calendar_appointments error: {e}", flush=True)
+        logger.exception(f"[db] get_provider_calendar_appointments error: {e}")
         return []
 
 
@@ -3146,7 +3176,7 @@ def create_calendar_appointment(provider_id: str, patient_id: str, event_date: s
         resp = supabase_admin.table('provider_appointments').insert(row).execute()
         return (resp.data or [None])[0]
     except Exception as e:
-        print(f"[db] create_calendar_appointment error: {e}", flush=True)
+        logger.exception(f"[db] create_calendar_appointment error: {e}")
         return None
 
 
@@ -3168,7 +3198,7 @@ def update_calendar_appointment(appt_id: str, provider_id: str, event_date: str,
             'status', 'scheduled').execute()
         return True
     except Exception as e:
-        print(f"[db] update_calendar_appointment error: {e}", flush=True)
+        logger.exception(f"[db] update_calendar_appointment error: {e}")
         return False
 
 
@@ -3180,7 +3210,7 @@ def delete_calendar_appointment(appt_id: str, provider_id: str) -> bool:
             'status', 'scheduled').execute()
         return True
     except Exception as e:
-        print(f"[db] delete_calendar_appointment error: {e}", flush=True)
+        logger.exception(f"[db] delete_calendar_appointment error: {e}")
         return False
 
 
@@ -3207,7 +3237,7 @@ def get_all_provider_appointments(provider_id: str, from_date: str = None, to_da
             r['patient_name'] = names.get(str(r.get('patient_id', '')), 'Unknown')
         return rows
     except Exception as e:
-        print(f"[db] get_all_provider_appointments error: {e}", flush=True)
+        logger.exception(f"[db] get_all_provider_appointments error: {e}")
         return []
 
 
@@ -3255,6 +3285,7 @@ def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
         ).eq('status', 'completed').order('started_at', desc=True).limit(1).execute()
         appt = ar.data[0] if ar.data else None
     except Exception:
+        logger.exception("get_between_session_brief failed")
         appt = None
 
     if appt:
@@ -3298,6 +3329,7 @@ def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
         ).eq('user_id', str(patient_id)).gte('checkin_date', since_iso).execute()
         period_rows = ci_resp.data or []
     except Exception:
+        logger.exception("get_between_session_brief failed")
         period_rows = []
 
     # ── Baseline check-ins ────────────────────────────────────────────────────
@@ -3309,6 +3341,7 @@ def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
         ).lt('checkin_date', since_iso).execute()
         baseline_rows = bl_resp.data or []
     except Exception:
+        logger.exception("get_between_session_brief failed")
         baseline_rows = []
 
     def _avg(rows, field):
@@ -3343,6 +3376,7 @@ def get_between_session_brief(patient_id: str, provider_id: str) -> dict:
         try:
             days_since_checkin = (today - date.fromisoformat(last_checkin)).days
         except Exception:
+            logger.exception("_delta_dir failed")
             pass
 
     # ── Crisis flag ───────────────────────────────────────────────────────────
@@ -3528,6 +3562,7 @@ def get_provider_patients_with_stats(provider_id: str) -> list:
         ).eq('provider_id', str(provider_id)).eq('status', 'active').execute()
         ct_roles = {str(r['patient_id']): r['role'] for r in (ct_resp.data or [])}
     except Exception:
+        logger.exception("get_provider_patients_with_stats failed")
         ct_roles = {}
 
     # ── Add care-team-only patients not already in base ───────────────────────
@@ -3705,6 +3740,7 @@ def get_behavioral_data(patient_id: str, days: int = 30) -> dict:
         ).eq('user_id', str(patient_id)).gte('checkin_date', cutoff).execute()
         rows = ci.data or []
     except Exception:
+        logger.exception("get_behavioral_data failed")
         return _empty
 
     social_vals, workload_vals, exercise_vals = [], [], []
@@ -3764,6 +3800,7 @@ def get_care_team_member_role(provider_id: str, patient_id: str):
             return res.data[0].get('role')
         return None
     except Exception:
+        logger.exception("get_care_team_member_role failed")
         return None
 
 
@@ -3814,6 +3851,7 @@ def create_patient_invite(provider_id: str, patient_email: str,
         row = res.data[0] if res.data else {}
         return {'ok': True, 'token': row.get('token'), 'invite_id': row.get('id')}
     except Exception as e:
+        logger.exception("create_patient_invite failed")
         return {'ok': False, 'error': f'Could not create invite: {e}'}
 
 
@@ -3830,6 +3868,7 @@ def get_patient_invite_by_token(token: str) -> dict | None:
         row['provider_name'] = pf.get('full_name', 'Your provider')
         return row
     except Exception:
+        logger.exception("get_patient_invite_by_token failed")
         return None
 
 
@@ -3879,7 +3918,7 @@ def process_pending_invites(patient_email: str, patient_id: str) -> int:
                 {'status': 'accepted'}).eq('id', invite['id']).execute()
         return created
     except Exception as e:
-        print(f"[db] process_pending_invites error: {e}", flush=True)
+        logger.exception(f"[db] process_pending_invites error: {e}")
         return 0
 
 
@@ -3915,7 +3954,7 @@ def get_patient_appointment_list(patient_id: str) -> list:
             })
         return result
     except Exception as e:
-        print(f"[db] get_patient_appointment_list error: {e}", flush=True)
+        logger.exception(f"[db] get_patient_appointment_list error: {e}")
         return []
 
 
@@ -3944,6 +3983,7 @@ def get_patient_next_scheduled_appointment(patient_id: str) -> dict | None:
             date_display = d.strftime('%A, %B %d, %Y').replace(' 0', ' ')
             days_until = (d.date() - date.today()).days
         except Exception:
+            logger.exception("_build_result failed")
             date_display = appt_date_str
             days_until = None
         time_display = ''
@@ -3999,7 +4039,7 @@ def get_patient_next_scheduled_appointment(patient_id: str) -> dict | None:
 
         return None
     except Exception as e:
-        print(f"[db] get_patient_next_scheduled_appointment error: {e}", flush=True)
+        logger.debug(f"[db] get_patient_next_scheduled_appointment error: {e}")
         return None
 
 
@@ -4020,6 +4060,7 @@ def send_care_team_request(provider_id: str, patient_email: str, role: str = 'ps
             raise Exception('not found')
         patient_id = pr.data['id']
     except Exception:
+        logger.exception("send_care_team_request failed")
         # Patient has no account — create a pre-registration invite
         result = create_patient_invite(provider_id, patient_email, role, message)
         if result.get('ok'):
@@ -4053,6 +4094,7 @@ def send_care_team_request(provider_id: str, patient_email: str, role: str = 'ps
                 }).eq('id', rec['id']).execute()
                 return {'ok': True, 'member_id': rec['id'], 'patient_name': pr.data.get('full_name'), 'method': 'request'}
     except Exception:
+        logger.exception("send_care_team_request failed")
         pass
 
     # Create new pending request
@@ -4070,6 +4112,7 @@ def send_care_team_request(provider_id: str, patient_email: str, role: str = 'ps
         member_id = res.data[0]['id'] if res.data else None
         return {'ok': True, 'member_id': member_id, 'patient_name': pr.data.get('full_name'), 'method': 'request'}
     except Exception as e:
+        logger.exception("send_care_team_request failed")
         return {'ok': False, 'error': f'Could not create request: {e}'}
 
 
@@ -4089,6 +4132,7 @@ def send_patient_care_request(patient_id: str, provider_email: str,
             return {'ok': False, 'error': 'No provider account found with that email.'}
         provider_id = pr.data['id']
     except Exception:
+        logger.exception("send_patient_care_request failed")
         return {'ok': False, 'error': 'No provider account found with that email.'}
 
     if str(provider_id) == str(patient_id):
@@ -4116,6 +4160,7 @@ def send_patient_care_request(patient_id: str, provider_email: str,
                 }).eq('id', rec['id']).execute()
                 return {'ok': True, 'member_id': rec['id'], 'provider_name': pr.data.get('full_name')}
     except Exception:
+        logger.exception("send_patient_care_request failed")
         pass
 
     try:
@@ -4148,6 +4193,7 @@ def send_patient_care_request(patient_id: str, provider_email: str,
 
         return {'ok': True, 'member_id': member_id, 'provider_name': pr.data.get('full_name')}
     except Exception as e:
+        logger.exception("send_patient_care_request failed")
         return {'ok': False, 'error': f'Could not send invite: {e}'}
 
 
@@ -4184,6 +4230,7 @@ def get_pending_care_requests(patient_id: str) -> list:
             })
         return requests
     except Exception:
+        logger.exception("get_pending_care_requests failed")
         return []
 
 
@@ -4215,6 +4262,7 @@ def approve_care_request(patient_id: str, member_id: str,
         supabase_admin.table('care_team_members').update(update).eq('id', str(member_id)).execute()
         return {'ok': True}
     except Exception as e:
+        logger.exception("approve_care_request failed")
         return {'ok': False, 'error': str(e)}
 
 
@@ -4234,6 +4282,7 @@ def deny_care_request(patient_id: str, member_id: str) -> dict:
         }).eq('id', str(member_id)).execute()
         return {'ok': True}
     except Exception as e:
+        logger.exception("deny_care_request failed")
         return {'ok': False, 'error': str(e)}
 
 
@@ -4253,6 +4302,7 @@ def revoke_care_member(patient_id: str, member_id: str) -> dict:
         }).eq('id', str(member_id)).execute()
         return {'ok': True}
     except Exception as e:
+        logger.exception("revoke_care_member failed")
         return {'ok': False, 'error': str(e)}
 
 
@@ -4267,6 +4317,7 @@ def get_patient_care_team(patient_id: str) -> dict:
         ).eq('patient_id', str(patient_id)).in_('status', ['active', 'pending']).execute()
         records = res.data or []
     except Exception:
+        logger.exception("get_patient_care_team failed")
         return {'active': [], 'pending': []}
 
     active, pending = [], []
@@ -4312,7 +4363,7 @@ def get_care_team_permissions(patient_id: str, provider_id: str) -> dict | None:
             return res.data[0].get('data_permissions') or _DEFAULT_PERMISSIONS
         return None
     except Exception as e:
-        print(f"[db] get_care_team_permissions error: {e}", flush=True)
+        logger.exception(f"[db] get_care_team_permissions error: {e}")
         return None
 
 
@@ -4358,7 +4409,7 @@ def ensure_legacy_care_team_row(patient_id: str, provider_id: str) -> dict:
               f"patient={patient_id} provider={provider_id}", flush=True)
         return _DEFAULT_PERMISSIONS
     except Exception as e:
-        print(f"[care_team] ensure_legacy_care_team_row error: {e}", flush=True)
+        logger.exception(f"[care_team] ensure_legacy_care_team_row error: {e}")
         return _DEFAULT_PERMISSIONS
 
 
@@ -4401,6 +4452,7 @@ def get_provider_outbound_requests(provider_id: str) -> list:
             })
         return out
     except Exception:
+        logger.exception("get_provider_outbound_requests failed")
         return []
 
 
@@ -4434,6 +4486,7 @@ def get_provider_inbound_requests(provider_id: str) -> list:
             })
         return out
     except Exception:
+        logger.exception("get_provider_inbound_requests failed")
         return []
 
 
@@ -4451,6 +4504,7 @@ def accept_inbound_care_request(provider_id: str, member_id: str) -> dict:
         }).eq('id', str(member_id)).execute()
         return {'ok': True}
     except Exception as e:
+        logger.exception("accept_inbound_care_request failed")
         return {'ok': False, 'error': str(e)}
 
 
@@ -4468,6 +4522,7 @@ def decline_inbound_care_request(provider_id: str, member_id: str) -> dict:
         }).eq('id', str(member_id)).execute()
         return {'ok': True}
     except Exception as e:
+        logger.exception("decline_inbound_care_request failed")
         return {'ok': False, 'error': str(e)}
 
 
@@ -4488,7 +4543,7 @@ def update_care_permissions(patient_id: str, member_id: str, permissions: dict) 
         print(f"[perms] SAVED member={member_id} permissions={merged}", flush=True)
         return {'ok': True}
     except Exception as e:
-        print(f"[perms] SAVE FAILED member={member_id} error={e}", flush=True)
+        logger.exception(f"[perms] SAVE FAILED member={member_id} error={e}")
         return {'ok': False, 'error': str(e)}
 
 
@@ -4544,6 +4599,7 @@ def create_care_flag(author_provider_id: str, patient_id: str,
         res = supabase_admin.table('care_flags').insert(insert_data).execute()
         flag_row = res.data[0] if res.data else {}
     except Exception as e:
+        logger.exception("create_care_flag failed")
         return {'ok': False, 'error': str(e)}
 
     # ── Notify other active care team providers ───────────────────────────────
@@ -4602,9 +4658,9 @@ def create_care_flag(author_provider_id: str, patient_id: str,
                     flag_body=body,
                 )
             except Exception as email_err:
-                print(f"care flag email failed for {prov['email']}: {email_err}")
+                logger.debug(f"care flag email failed for {prov['email']}: {email_err}")
     except Exception as notify_err:
-        print(f"care flag notify error (non-fatal): {notify_err}")
+        logger.exception(f"care flag notify error (non-fatal): {notify_err}")
 
     return {'ok': True, 'flag': flag_row}
 
@@ -4683,8 +4739,8 @@ def get_care_flags_for_provider(viewing_provider_id: str, patient_id: str) -> li
 
         return flags
     except Exception as e:
-        print(f"get_care_flags_for_provider error: {e}")
-        return []
+        logger.exception(f"get_care_flags_for_provider error: {e}")
+        raise DataUnavailableError(f"get_care_flags_for_provider error", source="get_care_flags_for_provider")
 
 
 def get_my_care_flags(author_provider_id: str, patient_id: str) -> list:
@@ -4700,8 +4756,8 @@ def get_my_care_flags(author_provider_id: str, patient_id: str) -> list:
         ).is_('resolved_at', 'null').order('created_at', desc=True).execute()
         return res.data or []
     except Exception as e:
-        print(f"get_my_care_flags error: {e}")
-        return []
+        logger.exception(f"get_my_care_flags error: {e}")
+        raise DataUnavailableError(f"get_my_care_flags error", source="get_my_care_flags")
 
 
 def resolve_care_flag(flag_id: str, resolving_provider_id: str, patient_id: str) -> dict:
@@ -4724,6 +4780,7 @@ def resolve_care_flag(flag_id: str, resolving_provider_id: str, patient_id: str)
         }).eq('id', str(flag_id)).execute()
         return {'ok': True}
     except Exception as e:
+        logger.exception("resolve_care_flag failed")
         return {'ok': False, 'error': str(e)}
 
 
@@ -4771,8 +4828,8 @@ def get_all_care_flags_for_hub(patient_id: str) -> list:
             })
         return out
     except Exception as e:
-        print(f"get_all_care_flags_for_hub error: {e}")
-        return []
+        logger.exception(f"get_all_care_flags_for_hub error: {e}")
+        raise DataUnavailableError(f"get_all_care_flags_for_hub error", source="get_all_care_flags_for_hub")
 
 
 def get_unresolved_flag_counts(provider_id: str, patient_ids: list) -> dict:
@@ -4797,8 +4854,8 @@ def get_unresolved_flag_counts(provider_id: str, patient_ids: list) -> dict:
             counts[pid] = counts.get(pid, 0) + 1
         return counts
     except Exception as e:
-        print(f"get_unresolved_flag_counts error: {e}")
-        return {}
+        logger.exception(f"get_unresolved_flag_counts error: {e}")
+        raise DataUnavailableError(f"get_unresolved_flag_counts error", source="get_unresolved_flag_counts")
 
 
 def get_care_team_for_provider(provider_id: str, patient_id: str) -> list:
@@ -4830,7 +4887,7 @@ def get_care_team_for_provider(provider_id: str, patient_id: str) -> list:
             for m in members
         ]
     except Exception as e:
-        print(f"get_care_team_for_provider error: {e}")
+        logger.exception(f"get_care_team_for_provider error: {e}")
         return []
 
 
@@ -4862,7 +4919,7 @@ def get_care_team_for_patient(patient_id: str) -> list:
             for m in members
         ]
     except Exception as e:
-        print(f"[db] get_care_team_for_patient error: {e}", flush=True)
+        logger.exception(f"[db] get_care_team_for_patient error: {e}")
         return []
 
 
@@ -4906,6 +4963,7 @@ def create_flag_response(flag_id: str, author_provider_id: str,
         }).execute()
         return {'ok': True, 'response': res.data[0] if res.data else {}}
     except Exception as e:
+        logger.exception("create_flag_response failed")
         return {'ok': False, 'error': str(e)}
 
 
@@ -4937,8 +4995,8 @@ def get_flag_responses(flag_id: str, patient_id: str) -> list:
             r['author_role'] = _ROLE_LABELS.get(role_map.get(aid, ''), 'Provider')
         return responses
     except Exception as e:
-        print(f"get_flag_responses error: {e}")
-        return []
+        logger.exception(f"get_flag_responses error: {e}")
+        raise DataUnavailableError(f"get_flag_responses error", source="get_flag_responses")
 
 
 def add_medication_by_psychiatrist(provider_id: str, patient_id: str,
@@ -4974,6 +5032,7 @@ def add_medication_by_psychiatrist(provider_id: str, patient_id: str,
         if dose <= 0:
             raise ValueError
     except (TypeError, ValueError):
+        logger.exception("add_medication_by_psychiatrist failed")
         return {'ok': False, 'error': 'Dose must be a positive number.'}
 
     med = create_medication(
@@ -5028,6 +5087,7 @@ def _recently_fired(patient_id: str, pattern_type: str) -> bool:
                .execute())
         return bool(res.data)
     except Exception:
+        logger.exception("_recently_fired failed")
         return False
 
 
@@ -5158,7 +5218,7 @@ def save_proactive_insight(patient_id: str, pattern_type: str,
         }).execute())
         return res.data[0]['id'] if res.data else None
     except Exception as e:
-        print(f"Error saving proactive insight: {e}")
+        logger.exception(f"Error saving proactive insight: {e}")
         return None
 
 
@@ -5174,7 +5234,7 @@ def get_unseen_proactive_insights(patient_id: str) -> list:
                .execute())
         return res.data if res.data else []
     except Exception as e:
-        print(f"Error fetching proactive insights: {e}")
+        logger.exception(f"Error fetching proactive insights: {e}")
         return []
 
 
@@ -5186,7 +5246,7 @@ def mark_proactive_insight_seen(patient_id: str, insight_id: str) -> bool:
         }).eq('id', insight_id).eq('patient_id', str(patient_id)).is_('seen_at', 'null').execute()
         return True
     except Exception as e:
-        print(f"Error marking insight seen: {e}")
+        logger.exception(f"Error marking insight seen: {e}")
         return False
 
 
@@ -5198,7 +5258,7 @@ def dismiss_proactive_insight(patient_id: str, insight_id: str) -> bool:
         }).eq('id', insight_id).eq('patient_id', str(patient_id)).execute()
         return True
     except Exception as e:
-        print(f"Error dismissing proactive insight: {e}")
+        logger.exception(f"Error dismissing proactive insight: {e}")
         return False
 
 
@@ -5215,7 +5275,7 @@ def get_proactive_insights_for_provider(patient_id: str, days: int = 7) -> list:
                .execute())
         return res.data if res.data else []
     except Exception as e:
-        print(f"Error fetching provider proactive insights: {e}")
+        logger.exception(f"Error fetching provider proactive insights: {e}")
         return []
 
 
@@ -5275,6 +5335,7 @@ def _extract_what_worked_value(row: dict, key: str, source: str):
     try:
         return float(v)
     except (TypeError, ValueError):
+        logger.exception("_extract_what_worked_value failed")
         return None
 
 
@@ -5373,7 +5434,7 @@ def get_what_worked_patterns(patient_id: str, days: int = 60) -> dict | None:
         }
 
     except Exception as e:
-        print(f"Error in get_what_worked_patterns: {e}")
+        logger.exception(f"Error in get_what_worked_patterns: {e}")
         return None
 
 
@@ -5484,6 +5545,7 @@ def get_appointment_synthesis(patient_id: str, appt_id: str) -> dict | None:
             try:
                 raw_qa = json.loads(raw_qa)
             except Exception:
+                logger.exception("_avg_window failed")
                 raw_qa = []
         answered_qa = [
             item for item in (raw_qa if isinstance(raw_qa, list) else [])
@@ -5504,7 +5566,7 @@ def get_appointment_synthesis(patient_id: str, appt_id: str) -> dict | None:
         }
 
     except Exception as e:
-        print(f"Error in get_appointment_synthesis: {e}")
+        logger.debug(f"Error in get_appointment_synthesis: {e}")
         return None
 
 
@@ -5565,7 +5627,7 @@ def store_clinical_session(
         print(f"Error in store_clinical_session: insert returned no data row={log_row}")
         return None
     except Exception as e:
-        print(f"Error in store_clinical_session: {e} row={log_row}")
+        logger.exception(f"Error in store_clinical_session: {e} row={log_row}")
         return None
 
 
@@ -5621,7 +5683,7 @@ def store_session_features(
 
         return True
     except Exception as e:
-        print(f"Error in store_session_features: {e}")
+        logger.exception(f"Error in store_session_features: {e}")
         return False
 
 
@@ -5662,7 +5724,7 @@ def get_voice_baseline(patient_id: str) -> dict | None:
             .execute()
         return result.data[0] if result.data else None
     except Exception as e:
-        print(f"Error in get_voice_baseline: {e}")
+        logger.exception(f"Error in get_voice_baseline: {e}")
         return None
 
 
@@ -5728,7 +5790,7 @@ def create_voice_baseline_from_anchor(
             return str(result.data[0]['id'])
         return None
     except Exception as e:
-        print(f"Error in create_voice_baseline_from_anchor: {e}")
+        logger.exception(f"Error in create_voice_baseline_from_anchor: {e}")
         return None
 
 
@@ -5752,7 +5814,7 @@ def _verify_anchor_state(patient_id: str, recorded_at: str) -> tuple:
             return None, False
         return float(score), float(score) >= 7.0
     except Exception as e:
-        print(f"Error in _verify_anchor_state: {e}")
+        logger.exception(f"Error in _verify_anchor_state: {e}")
         return None, False
 
 
@@ -5804,7 +5866,7 @@ def add_baseline_training_recording(
         _tag_session_voice_role(session_id, 'voice_memo_baseline')
         return 'voice_memo_baseline', promoted
     except Exception as e:
-        print(f"Error in add_baseline_training_recording: {e}")
+        logger.exception(f"Error in add_baseline_training_recording: {e}")
         return 'voice_memo_excluded', False
 
 
@@ -5914,8 +5976,8 @@ def flag_baseline_stale(patient_id: str, reason: str,
             .execute()
         return True
     except Exception as e:
-        print(f"Error in flag_baseline_stale: {e}")
-        return False
+        logger.exception(f"Error in flag_baseline_stale: {e}")
+        raise DataUnavailableError(f"Error in flag_baseline_stale", source="flag_baseline_stale")
 
 
 def check_medication_event_for_baseline_impact(
@@ -6003,7 +6065,7 @@ def _tag_session_voice_role(session_id: str, role: str) -> None:
             .eq('id', session_id) \
             .execute()
     except Exception as e:
-        print(f"Error tagging session voice role ({session_id} → {role}): {e}")
+        logger.exception(f"Error tagging session voice role ({session_id} → {role}): {e}")
 
 
 def _parse_baseline_dt(value):
@@ -6013,6 +6075,7 @@ def _parse_baseline_dt(value):
     try:
         return datetime.fromisoformat(str(value).replace('Z', '+00:00'))
     except (ValueError, AttributeError):
+        logger.exception("_parse_baseline_dt failed")
         return None
 
 
@@ -6043,7 +6106,7 @@ def get_patients_needing_anchor_recording() -> list:
             patients.append({'patient_id': pid, 'phone': phone})
         return patients
     except Exception as e:
-        print(f"Error in get_patients_needing_anchor_recording: {e}")
+        logger.exception(f"Error in get_patients_needing_anchor_recording: {e}")
         return []
 
 
@@ -6106,7 +6169,7 @@ def get_clinical_sessions_for_period(
             })
         return out
     except Exception as e:
-        print(f"Error in get_clinical_sessions_for_period: {e}")
+        logger.exception(f"Error in get_clinical_sessions_for_period: {e}")
         return []
 
 
@@ -6158,7 +6221,7 @@ def store_provider_brief(
             return str(data[0]['id'])
         return None
     except Exception as e:
-        print(f"Error in store_provider_brief: {e}")
+        logger.exception(f"Error in store_provider_brief: {e}")
         return None
 
 
@@ -6200,8 +6263,8 @@ def get_provider_briefs_for_patient(
             })
         return out
     except Exception as e:
-        print(f"Error in get_provider_briefs_for_patient: {e}")
-        return []
+        logger.exception(f"Error in get_provider_briefs_for_patient: {e}")
+        raise DataUnavailableError(f"Error in get_provider_briefs_for_patient", source="get_provider_briefs_for_patient")
 
 
 def record_brief_view(brief_id: str, provider_id: str) -> bool:
@@ -6217,7 +6280,7 @@ def record_brief_view(brief_id: str, provider_id: str) -> bool:
         }).execute()
         return True
     except Exception as e:
-        print(f"Error in record_brief_view: {e}")
+        logger.exception(f"Error in record_brief_view: {e}")
         return False
 
 
@@ -6242,8 +6305,8 @@ def get_provider_brief_by_id(brief_id: str, provider_id: str) -> dict | None:
             record_brief_view(brief_id, provider_id)
         return row
     except Exception as e:
-        print(f"Error in get_provider_brief_by_id: {e}")
-        return None
+        logger.exception(f"Error in get_provider_brief_by_id: {e}")
+        raise DataUnavailableError(f"Error in get_provider_brief_by_id", source="get_provider_brief_by_id")
 
 
 def get_intel_patients_for_provider(provider_id: str) -> list[dict]:
@@ -6285,7 +6348,7 @@ def get_intel_patients_for_provider(provider_id: str) -> list[dict]:
 
         return list(seen.values())
     except Exception as e:
-        print(f"Error in get_intel_patients_for_provider: {e}")
+        logger.exception(f"Error in get_intel_patients_for_provider: {e}")
         return []
 
 
@@ -6322,7 +6385,7 @@ def get_clinical_session_by_id(session_id: str) -> dict | None:
             'scores':            feat_row.get('scores') or {},
         }
     except Exception as e:
-        print(f"Error in get_clinical_session_by_id: {e}")
+        logger.exception(f"Error in get_clinical_session_by_id: {e}")
         return None
 
 
@@ -6344,7 +6407,7 @@ def update_clinical_session_status(
         supabase_admin.table('clinical_sessions').update(payload).eq('id', session_id).execute()
         return True
     except Exception as e:
-        print(f"Error in update_clinical_session_status: {e}")
+        logger.exception(f"Error in update_clinical_session_status: {e}")
         return False
 
 
@@ -6365,7 +6428,7 @@ def store_session_transcript(
         supabase_admin.table('clinical_sessions').update(payload).eq('id', session_id).execute()
         return True
     except Exception as e:
-        print(f"Error in store_session_transcript: {e}")
+        logger.exception(f"Error in store_session_transcript: {e}")
         return False
 
 
@@ -6379,7 +6442,7 @@ def get_voice_notes_for_appointment(patient_id: str, appointment_id: str) -> lis
         ).eq('appointment_id', appointment_id).order('created_at', desc=True).execute()
         return res.data or []
     except Exception as e:
-        print(f'[db] get_voice_notes_for_appointment error: {e}')
+        logger.exception(f'[db] get_voice_notes_for_appointment error: {e}')
         return []
 
 
@@ -6391,7 +6454,7 @@ def get_voice_notes_for_patient(patient_id: str, limit: int = 10) -> list:
         ).order('created_at', desc=True).limit(limit).execute()
         return res.data or []
     except Exception as e:
-        print(f'[db] get_voice_notes_for_patient error: {e}')
+        logger.exception(f'[db] get_voice_notes_for_patient error: {e}')
         return []
 
 
@@ -6425,7 +6488,7 @@ def get_voice_notes_for_period(
         res = q.execute()
         return res.data or []
     except Exception as e:
-        print(f'[db] get_voice_notes_for_period error: {e}')
+        logger.exception(f'[db] get_voice_notes_for_period error: {e}')
         return []
 
 
@@ -6443,7 +6506,7 @@ def update_voice_note_transcript(
         supabase_admin.table('voice_notes').update(updates).eq('id', voice_note_id).execute()
         return True
     except Exception as e:
-        print(f'[db] update_voice_note_transcript error: {e}')
+        logger.exception(f'[db] update_voice_note_transcript error: {e}')
 
 
 def update_medication_by_provider(provider_id: str, patient_id: str, med_id: str, updates: dict) -> dict:
@@ -6468,7 +6531,7 @@ def update_medication_by_provider(provider_id: str, patient_id: str, med_id: str
         supabase_admin.table('medications').update(payload).eq('id', med_id).eq('user_id', patient_id).execute()
         return {'ok': True}
     except Exception as e:
-        print(f'[db] update_medication_by_provider error: {e}')
+        logger.exception(f'[db] update_medication_by_provider error: {e}')
         return {'ok': False, 'error': 'Update failed.'}
 
 
@@ -6478,7 +6541,7 @@ def deactivate_medication_by_provider(provider_id: str, patient_id: str, med_id:
         supabase_admin.table('medications').update({'is_active': False}).eq('id', med_id).eq('user_id', patient_id).execute()
         return True
     except Exception as e:
-        print(f'[db] deactivate_medication_by_provider error: {e}')
+        logger.exception(f'[db] deactivate_medication_by_provider error: {e}')
         return False
 
 
@@ -6488,7 +6551,7 @@ def delete_voice_note(patient_id: str, note_id: str) -> bool:
         supabase_admin.table('voice_notes').delete().eq('id', note_id).eq('patient_id', patient_id).execute()
         return True
     except Exception as e:
-        print(f'[db] delete_voice_note error: {e}')
+        logger.exception(f'[db] delete_voice_note error: {e}')
         return False
 
 
@@ -6498,7 +6561,7 @@ def delete_clinical_session(patient_id: str, session_id: str) -> bool:
         supabase_admin.table('clinical_sessions').delete().eq('id', session_id).eq('patient_id', patient_id).execute()
         return True
     except Exception as e:
-        print(f'[db] delete_clinical_session error: {e}')
+        logger.exception(f'[db] delete_clinical_session error: {e}')
         return False
 
 
@@ -6508,7 +6571,7 @@ def delete_provider_brief(provider_id: str, brief_id: str) -> bool:
         supabase_admin.table('provider_briefs').delete().eq('id', brief_id).eq('provider_id', provider_id).execute()
         return True
     except Exception as e:
-        print(f'[db] delete_provider_brief error: {e}')
+        logger.exception(f'[db] delete_provider_brief error: {e}')
         return False
 
 
@@ -6549,7 +6612,7 @@ def create_sms_token(
         }).execute()
         return token
     except Exception as e:
-        print(f'[db] create_sms_token error: {e}')
+        logger.exception(f'[db] create_sms_token error: {e}')
         return None
 
 
@@ -6607,7 +6670,7 @@ def validate_and_consume_token(token: str) -> dict | None:
         }
 
     except Exception as e:
-        print(f'[db] validate_and_consume_token error: {e}')
+        logger.exception(f'[db] validate_and_consume_token error: {e}')
         return None
 
 
@@ -6660,7 +6723,7 @@ def validate_sms_token_readonly(token: str) -> dict | None:
         }
 
     except Exception as e:
-        print(f'[db] validate_sms_token_readonly error: {e}')
+        logger.exception(f'[db] validate_sms_token_readonly error: {e}')
         return None
 
 
@@ -6716,7 +6779,7 @@ def log_medication_adherence_from_sms(
         return True
 
     except Exception as e:
-        print(f'[db] log_medication_adherence_from_sms error: {e}')
+        logger.exception(f'[db] log_medication_adherence_from_sms error: {e}')
         return False
 
 
@@ -6748,7 +6811,7 @@ def _check_consecutive_non_adherence(patient_id: str, medication_id: str | None)
             print(f'[db] Consecutive non-adherence flag set for patient={patient_id!r}')
 
     except Exception as e:
-        print(f'[db] _check_consecutive_non_adherence error: {e}')
+        logger.exception(f'[db] _check_consecutive_non_adherence error: {e}')
 
 
 def log_checkin_from_sms(
@@ -6832,7 +6895,7 @@ def log_checkin_from_sms(
         return None
 
     except Exception as e:
-        print(f'[db] log_checkin_from_sms error: {e}')
+        logger.exception(f'[db] log_checkin_from_sms error: {e}')
         return None
 
 
@@ -6858,7 +6921,7 @@ def set_checkin_flags(checkin_id: str, flags: dict) -> bool:
         return True
 
     except Exception as e:
-        print(f'[db] set_checkin_flags error: {e}')
+        logger.exception(f'[db] set_checkin_flags error: {e}')
         return False
 
 
@@ -6940,8 +7003,8 @@ def get_patients_due_medication_sms(window_start: str, window_end: str) -> list:
         return [p for p in patients if p['phone']]  # exclude patients without phone
 
     except Exception as e:
-        print(f'[db] get_patients_due_medication_sms error: {e}')
-        return []
+        logger.exception(f'[db] get_patients_due_medication_sms error: {e}')
+        raise DataUnavailableError(f'[db] get_patients_due_medication_sms error', source="get_patients_due_medication_sms")
 
 
 def get_patients_due_checkin_sms(check_in_type: str, target_date: date | None = None) -> list:
@@ -7029,8 +7092,8 @@ def get_patients_due_checkin_sms(check_in_type: str, target_date: date | None = 
         return []
 
     except Exception as e:
-        print(f'[db] get_patients_due_checkin_sms error: {e}')
-        return []
+        logger.exception(f'[db] get_patients_due_checkin_sms error: {e}')
+        raise DataUnavailableError(f'[db] get_patients_due_checkin_sms error', source="get_patients_due_checkin_sms")
 
 
 def get_patients_due_voice_sms(target_date: date | None = None) -> list:
@@ -7089,7 +7152,7 @@ def get_patients_due_voice_sms(target_date: date | None = None) -> list:
         return patients
 
     except Exception as e:
-        print(f'[db] get_patients_due_voice_sms error: {e}')
+        logger.exception(f'[db] get_patients_due_voice_sms error: {e}')
         return []
 
 
@@ -7105,7 +7168,7 @@ def mark_appointment_checkin_triggered(appt_id: str) -> bool:
             .execute()
         return True
     except Exception as e:
-        print(f'[db] mark_appointment_checkin_triggered error: {e}')
+        logger.exception(f'[db] mark_appointment_checkin_triggered error: {e}')
         return False
 
 
@@ -7177,7 +7240,7 @@ def compute_lexical_diversity(patient_id: str, days: int = 30) -> dict:
             'delta': delta,
         }
     except Exception as e:
-        print(f'compute_lexical_diversity error: {e}')
+        logger.debug(f'compute_lexical_diversity error: {e}')
         return {
             'type_token_ratio': None,
             'trend': 'insufficient_data',
@@ -7265,7 +7328,7 @@ def compute_readability(patient_id: str, days: int = 30) -> dict:
             'entries_analyzed': len(entries),
         }
     except Exception as e:
-        print(f'compute_readability error: {e}')
+        logger.debug(f'compute_readability error: {e}')
         return {
             'avg_grade_level': None,
             'trend': 'insufficient_data',
@@ -7641,8 +7704,8 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
         }
 
     except Exception as e:
-        print(f'compute_engagement_stats error: {e}')
-        return None
+        logger.exception(f'compute_engagement_stats error: {e}')
+        raise DataUnavailableError(f'compute_engagement_stats error', source="compute_engagement_stats")
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -7661,7 +7724,7 @@ def get_sms_session(patient_id: str) -> dict | None:
             .execute()
         return res.data[0] if res.data else None
     except Exception as e:
-        print(f'[db] get_sms_session error: {e}')
+        logger.exception(f'[db] get_sms_session error: {e}')
         return None
 
 
@@ -7686,7 +7749,7 @@ def set_sms_session(patient_id: str, session_type: str,
         res = supabase_admin.table('sms_checkin_sessions').insert(row).execute()
         return res.data[0] if res.data else None
     except Exception as e:
-        print(f'[db] set_sms_session error: {e}')
+        logger.exception(f'[db] set_sms_session error: {e}')
         return None
 
 
@@ -7699,7 +7762,7 @@ def resolve_sms_session(patient_id: str) -> None:
             .is_('resolved_at', 'null') \
             .execute()
     except Exception as e:
-        print(f'[db] resolve_sms_session error: {e}')
+        logger.exception(f'[db] resolve_sms_session error: {e}')
 
 
 def log_sms_crisis(patient_id: str, source: str) -> str | None:
@@ -7712,7 +7775,7 @@ def log_sms_crisis(patient_id: str, source: str) -> str | None:
         }).execute()
         return res.data[0]['id'] if res.data else None
     except Exception as e:
-        print(f'[db] log_sms_crisis error: {e}')
+        logger.exception(f'[db] log_sms_crisis error: {e}')
         return None
 
 
@@ -7727,7 +7790,7 @@ def mark_provider_notified(crisis_event_id: str, sms_sid: str | None = None) -> 
             .eq('id', str(crisis_event_id)) \
             .execute()
     except Exception as e:
-        print(f'[db] mark_provider_notified error: {e}')
+        logger.exception(f'[db] mark_provider_notified error: {e}')
 
 
 def get_sms_crisis_events(patient_id: str, limit: int = 10) -> list:
@@ -7741,8 +7804,8 @@ def get_sms_crisis_events(patient_id: str, limit: int = 10) -> list:
             .execute()
         return res.data or []
     except Exception as e:
-        print(f'[db] get_sms_crisis_events error: {e}')
-        return []
+        logger.exception(f'[db] get_sms_crisis_events error: {e}')
+        raise DataUnavailableError(f'[db] get_sms_crisis_events error', source="get_sms_crisis_events")
 
 
 def get_provider_for_patient(patient_id: str) -> dict | None:
@@ -7765,7 +7828,7 @@ def get_provider_for_patient(patient_id: str) -> dict | None:
             .execute()
         return prof.data or None
     except Exception as e:
-        print(f'[db] get_provider_for_patient error: {e}')
+        logger.exception(f'[db] get_provider_for_patient error: {e}')
         return None
 
 
@@ -7798,7 +7861,7 @@ def set_provider_focus_config(provider_id: str, patient_id: str,
         ).execute()
         return res.data[0] if res.data else None
     except Exception as e:
-        print(f'[db] set_provider_focus_config error: {e}')
+        logger.exception(f'[db] set_provider_focus_config error: {e}')
         return None
 
 
@@ -7819,7 +7882,7 @@ def get_provider_focus_config(provider_id: str, patient_id: str) -> dict | None:
             .execute()
         return res.data[0] if res.data else None
     except Exception as e:
-        print(f'[db] get_provider_focus_config error: {e}')
+        logger.exception(f'[db] get_provider_focus_config error: {e}')
         return None
 
 
@@ -7839,7 +7902,7 @@ def get_all_focus_configs_for_patient(patient_id: str) -> list:
             .execute()
         return res.data or []
     except Exception as e:
-        print(f'[db] get_all_focus_configs_for_patient error: {e}')
+        logger.exception(f'[db] get_all_focus_configs_for_patient error: {e}')
         return []
 
 
@@ -7853,7 +7916,7 @@ def clear_provider_focus_config(provider_id: str, patient_id: str) -> bool:
             .execute()
         return True
     except Exception as e:
-        print(f'[db] clear_provider_focus_config error: {e}')
+        logger.exception(f'[db] clear_provider_focus_config error: {e}')
         return False
 
 
@@ -7874,8 +7937,8 @@ def get_patient_sms_checkin_count(patient_id: str) -> int:
             .execute()
         return res.count or 0
     except Exception as e:
-        print(f'[db] get_patient_sms_checkin_count error: {e}')
-        return 0
+        logger.exception(f'[db] get_patient_sms_checkin_count error: {e}')
+        raise DataUnavailableError(f'[db] get_patient_sms_checkin_count error', source="get_patient_sms_checkin_count")
 
 
 def update_checkin_extended_data(checkin_id: str, field_dict: dict) -> bool:
@@ -7904,7 +7967,7 @@ def update_checkin_extended_data(checkin_id: str, field_dict: dict) -> bool:
             .execute()
         return True
     except Exception as e:
-        print(f'[db] update_checkin_extended_data error: {e}')
+        logger.exception(f'[db] update_checkin_extended_data error: {e}')
         return False
 
 
@@ -7932,7 +7995,7 @@ def get_active_focus_domains_for_patient(patient_id: str) -> list:
                     combined.append(domain)
         return combined
     except Exception as e:
-        print(f'[db] get_active_focus_domains_for_patient error: {e}')
+        logger.exception(f'[db] get_active_focus_domains_for_patient error: {e}')
         return []
 
 
@@ -7999,7 +8062,7 @@ def get_briefing_data(patient_id: str) -> dict:
     try:
         trends = get_trends_data(patient_id, days=14)
     except Exception as e:
-        print(f'[db] get_briefing_data: get_trends_data failed: {e}')
+        logger.debug(f'[db] get_briefing_data: get_trends_data failed: {e}')
         trends = None
 
     if not trends:
@@ -8017,13 +8080,13 @@ def get_briefing_data(patient_id: str) -> dict:
             full = (prof.data[0]['full_name'] or '').strip()
             first_name = full.split()[0] if full else 'there'
     except Exception as e:
-        print(f'[db] get_briefing_data: profile lookup failed: {e}')
+        logger.debug(f'[db] get_briefing_data: profile lookup failed: {e}')
 
     # ── 3. Monitoring targets ────────────────────────────────────
     try:
         raw_domains = get_active_focus_domains_for_patient(patient_id) or []
     except Exception as e:
-        print(f'[db] get_briefing_data: focus domains failed: {e}')
+        logger.debug(f'[db] get_briefing_data: focus domains failed: {e}')
         raw_domains = []
 
     monitoring_targets = []
@@ -8123,7 +8186,7 @@ def get_all_patients_for_weekly_voice() -> list:
             if r['user_id'] not in already_sent and r.get('phone_number')
         ]
     except Exception as e:
-        print(f'[db] get_all_patients_for_weekly_voice error: {e}')
+        logger.exception(f'[db] get_all_patients_for_weekly_voice error: {e}')
         return []
 
 
@@ -8162,8 +8225,8 @@ def get_all_patients_for_weekly_briefing() -> list:
             if r['user_id'] not in already_sent and r.get('phone_number')
         ]
     except Exception as e:
-        print(f'[db] get_all_patients_for_weekly_briefing error: {e}')
-        return []
+        logger.exception(f'[db] get_all_patients_for_weekly_briefing error: {e}')
+        raise DataUnavailableError(f'[db] get_all_patients_for_weekly_briefing error', source="get_all_patients_for_weekly_briefing")
 
 
 def get_target_trend_for_voice(patient_id: str, focus_domains: list) -> str:
@@ -8254,5 +8317,5 @@ def get_target_trend_for_voice(patient_id: str, focus_domains: list) -> str:
         return 'stable'
 
     except Exception as e:
-        print(f'[db] get_target_trend_for_voice error: {e}')
+        logger.debug(f'[db] get_target_trend_for_voice error: {e}')
         return 'stable'

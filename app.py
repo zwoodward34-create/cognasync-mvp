@@ -61,6 +61,52 @@ def internal_error(e):
     return jsonify({'error': 'An internal error occurred'}), 500
 
 
+@app.errorhandler(db.DataUnavailableError)
+def data_unavailable(e):
+    """A clinically load-bearing read failed somewhere in this request.
+
+    Safety net for the data layer: rather than let a failed read surface as a
+    silently-empty section in a clinical view (the exact failure mode this
+    handler exists to prevent), we fail loudly and visibly. The read error is
+    logged with its full traceback, and the user is told the data is
+    temporarily unavailable — never shown an authoritative-looking view that is
+    quietly missing data. 503 signals a transient/retryable condition.
+    """
+    app.logger.exception("DataUnavailableError (source=%s)", getattr(e, 'source', None))
+    wants_json = (
+        request.path.startswith('/api/')
+        or 'application/json' in (request.headers.get('Accept') or '')
+    )
+    if wants_json:
+        return jsonify({
+            'error': 'clinical_data_unavailable',
+            'message': 'Some data could not be loaded right now. Please retry in a moment.',
+            'source': getattr(e, 'source', None),
+        }), 503
+    return render_template('error_data_unavailable.html'), 503
+
+
+def _safe_section(label, fn, *args, **kwargs):
+    """Run a non-critical clinical *enrichment* read with graceful degradation.
+
+    Returns ``(value, failed_label)``. On a DataUnavailableError the value is
+    None and failed_label is ``label``, so the caller can render an explicit
+    "this section could not be loaded" marker instead of silently omitting it
+    (which a reader would interpret as 'no data for this patient' — the precise
+    misleading state we are eliminating).
+
+    Use this only for secondary sections the view can render without. Primary
+    reads the whole view depends on should NOT be wrapped — let them propagate
+    to the DataUnavailableError handler so the view fails loudly rather than
+    rendering a hollow shell.
+    """
+    try:
+        return fn(*args, **kwargs), None
+    except db.DataUnavailableError:
+        app.logger.exception("clinical section unavailable: %s", label)
+        return None, label
+
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _session_token():
@@ -1051,6 +1097,7 @@ def provider_summary_print(patient_id):
     summary_text = None
     error_msg    = None
     chart_data   = None
+    degraded     = []  # clinical sections that failed to load (shown to provider)
     provider_type = user.get('provider_type') or 'psychiatrist'
 
     # ── Fast path: render a previously saved brief by ID ─────────────────────
@@ -1083,7 +1130,9 @@ def provider_summary_print(patient_id):
 
         if checkins or journals:
             flags           = db.get_patient_flags(patient_id, days=days)
-            symptom_patterns = db.find_symptom_correlations(patient_id, days=days)
+            symptom_patterns, _f = _safe_section('symptom patterns', db.find_symptom_correlations, patient_id, days=days)
+            if _f:
+                degraded.append(_f)
             session_context = db.get_clinical_sessions_for_period(
                 patient_id=patient_id, period_start=period_start,
                 period_end=period_end, limit=10,
@@ -1100,10 +1149,13 @@ def provider_summary_print(patient_id):
             except Exception as _ve:
                 app.logger.warning(f'[print] voice note fallback: {_ve}')
 
-            engagement_data = db.compute_engagement_stats(
+            engagement_data, _f = _safe_section(
+                'engagement stats', db.compute_engagement_stats,
                 patient_id, days=days,
                 period_start=period_start, period_end=period_end,
             )
+            if _f:
+                degraded.append(_f)
 
             try:
                 focus_config = db.get_provider_focus_config(user['id'], patient_id)
@@ -1189,6 +1241,7 @@ def provider_summary_print(patient_id):
         generated_at=date.today().isoformat(),
         provider_type=provider_type,
         chart_data=chart_data,
+        degraded_sections=degraded,
     )
 
 
