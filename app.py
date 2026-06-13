@@ -276,7 +276,7 @@ def _require_provider():
 def home():
     user = _current_user()
     if not user:
-        return redirect(url_for('login_page'))
+        return render_template('landing.html')
     if user['role'] == 'provider':
         return redirect(url_for('provider_dashboard'))
 
