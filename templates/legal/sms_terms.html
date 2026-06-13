@@ -1,0 +1,35 @@
+{% extends "layout.html" %}
+{% block title %}SMS Terms — CognaSync{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+<div style="max-width:720px;margin:0 auto;padding:48px 24px 64px;line-height:1.65;color:var(--text);">
+  <a href="{{ url_for('login_page') }}" style="font-size:13px;color:var(--text-muted);">← Back to CognaSync</a>
+  <h1 style="font-family:var(--serif,'DM Serif Display',Georgia,serif);font-weight:400;font-size:32px;margin:18px 0 6px;">CognaSync SMS Terms</h1>
+  <p style="color:var(--text-muted);font-size:13px;margin-bottom:28px;">Last updated: {{ current_year if current_year else '2026' }}</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">Program description</h2>
+  <p>CognaSync sends care-related text messages to patients who opt in: appointment check-in links, recurring self check-in prompts, medication reminders, and voice-note invitations. These messages support your care between appointments. CognaSync does not send marketing or promotional text messages.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">How to opt in</h2>
+  <p>Enter your mobile number and check the SMS consent box in your CognaSync account settings. Consent is not a condition of using CognaSync.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">Message frequency</h2>
+  <p>Message frequency varies, up to approximately 3 messages per week, plus any medication reminders you have scheduled.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">Cost</h2>
+  <p>Message and data rates may apply, depending on your mobile carrier and plan.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">How to opt out</h2>
+  <p>Reply <strong>STOP</strong> to any message to unsubscribe. You will receive one confirmation message and then no further texts. Reply <strong>START</strong> to re-subscribe. You can also turn texts off any time in your account settings.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">Help</h2>
+  <p>Reply <strong>HELP</strong> to any message, or contact us at <a href="mailto:zwoodward@cognasync.com">zwoodward@cognasync.com</a>.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">Carriers</h2>
+  <p>Carriers are not liable for delayed or undelivered messages.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">Privacy</h2>
+  <p>Your information is handled according to our <a href="{{ url_for('privacy_page') }}">Privacy Policy</a>. We do not sell or share your mobile information or your consent to receive text messages with third parties for their marketing purposes.</p>
+</div>
+{% endblock %}

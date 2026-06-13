@@ -1,0 +1,31 @@
+{% extends "layout.html" %}
+{% block title %}Privacy Policy — CognaSync{% endblock %}
+{% block body_class %}auth-page{% endblock %}
+
+{% block content %}
+<div style="max-width:720px;margin:0 auto;padding:48px 24px 64px;line-height:1.65;color:var(--text);">
+  <a href="{{ url_for('login_page') }}" style="font-size:13px;color:var(--text-muted);">← Back to CognaSync</a>
+  <h1 style="font-family:var(--serif,'DM Serif Display',Georgia,serif);font-weight:400;font-size:32px;margin:18px 0 6px;">Privacy Policy</h1>
+  <p style="color:var(--text-muted);font-size:13px;margin-bottom:28px;">Last updated: {{ current_year if current_year else '2026' }}</p>
+
+  <p>CognaSync helps patients track behavioral-health information between appointments and share patterns with their providers. This policy explains what we collect, how we use it, and the choices you have. It is a starting template and should be reviewed by your own legal counsel before launch.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">Information we collect</h2>
+  <p>Account information you provide (name, email, and, if you choose, your mobile phone number); the health-related information you log in CognaSync (such as mood, sleep, stress, medication timing, journal entries, and check-in responses); and basic technical data needed to operate the service.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">How we use your information</h2>
+  <p>We use your information to provide CognaSync: to compute the scores and patterns shown in the app, to prepare summaries for you and the providers you are connected to, and, if you opt in, to send you care-related text messages. We do not use your information for advertising.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">Text messaging</h2>
+  <p>If you opt in to SMS, we use your mobile number only to send the care-related messages described in our <a href="{{ url_for('sms_terms_page') }}">SMS Terms</a>. <strong>We do not sell or share your mobile information, or your consent to receive text messages, with third parties or affiliates for their marketing purposes.</strong> You can opt out at any time by replying STOP or by turning texts off in your settings.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">How we share information</h2>
+  <p>We share your information only with the providers and care team members you are connected to within CognaSync, and with service providers that help us operate the platform (for example, secure hosting and messaging delivery) under appropriate confidentiality obligations. We do not sell your personal information.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">Your choices</h2>
+  <p>You can update your phone number, manage SMS consent, and disconnect from providers in your account settings. You can request access to or deletion of your information by contacting us.</p>
+
+  <h2 style="font-size:17px;margin:24px 0 6px;">Contact</h2>
+  <p>Questions about this policy or your data: <a href="mailto:zwoodward@cognasync.com">zwoodward@cognasync.com</a>.</p>
+</div>
+{% endblock %}

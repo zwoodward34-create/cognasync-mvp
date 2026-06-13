@@ -294,6 +294,18 @@ def home():
                            next_appt=next_appt)
 
 
+@app.route('/sms-terms')
+def sms_terms_page():
+    """Public SMS / messaging terms. Linked from the patient consent checkbox."""
+    return render_template('legal/sms_terms.html')
+
+
+@app.route('/privacy')
+def privacy_page():
+    """Public privacy policy. Linked from the patient consent checkbox."""
+    return render_template('legal/privacy.html')
+
+
 @app.route('/login')
 def login_page():
     if _current_user():
@@ -3074,6 +3086,12 @@ def api_update_profile():
 
     if updates:
         db.update_patient_profile(user['id'], **updates)
+
+    # SMS opt-in consent is persisted separately and defensively, so a missing
+    # sms_consent column can never block the phone/profile save above.
+    if 'sms_consent' in data:
+        db.set_patient_sms_consent(user['id'], bool(data.get('sms_consent')))
+
     return jsonify({'message': 'Profile updated'}), 200
 
 

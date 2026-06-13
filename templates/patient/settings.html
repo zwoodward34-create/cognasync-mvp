@@ -50,6 +50,27 @@
           Include country code (e.g. +1 for US/Canada).
         </p>
       </div>
+
+      <div class="form-group" style="margin-top:8px;">
+        <label for="sms_consent" style="display:flex;gap:10px;align-items:flex-start;font-size:13px;line-height:1.5;cursor:pointer;font-weight:400;">
+          <input type="checkbox" id="sms_consent" name="sms_consent"
+                 {% if profile and profile.sms_consent %}checked{% endif %}
+                 style="margin-top:3px;flex:none;width:16px;height:16px;">
+          <span>
+            I agree to receive recurring care-related text messages from CognaSync at the
+            number above (appointment check-ins, medication reminders, and check-in links).
+            Message frequency varies, up to about 3 messages per week plus medication
+            reminders. Message &amp; data rates may apply. Reply <strong>STOP</strong> to
+            unsubscribe or <strong>HELP</strong> for help. See our
+            <a href="{{ url_for('sms_terms_page') }}" target="_blank" rel="noopener">SMS Terms</a>
+            and <a href="{{ url_for('privacy_page') }}" target="_blank" rel="noopener">Privacy Policy</a>.
+          </span>
+        </label>
+        <p class="label-hint" style="margin-top:6px;font-size:12px;color:var(--text-muted);">
+          Consent is not required to use CognaSync. You can turn texts off any time here or by replying STOP.
+        </p>
+      </div>
+
       <button type="submit" class="btn btn-primary btn-sm">Save</button>
       <span id="phone-msg" style="display:none;font-size:12px;margin-left:10px;"></span>
     </form>
@@ -265,12 +286,13 @@ function toggleLinkForm(show) {
 document.getElementById('phone-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   const phone = document.getElementById('phone_number').value.trim();
+  const smsConsent = document.getElementById('sms_consent').checked;
   const msg = document.getElementById('phone-msg');
   msg.style.display = 'inline';
   msg.style.color = 'var(--text-muted)';
   msg.textContent = 'Saving…';
   try {
-    await apiPost('/api/settings/profile', { phone_number: phone });
+    await apiPost('/api/settings/profile', { phone_number: phone, sms_consent: smsConsent });
     msg.textContent = 'Saved.';
     msg.style.color = 'var(--green)';
     setTimeout(() => { msg.style.display = 'none'; }, 2500);

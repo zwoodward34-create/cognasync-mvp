@@ -167,6 +167,30 @@ def update_patient_profile(user_id, **kwargs):
         return False
 
 
+def set_patient_sms_consent(user_id, consent: bool) -> bool:
+    """Persist a patient's SMS opt-in consent and the time it was given.
+
+    Written as an isolated upsert so that a missing sms_consent column (e.g.
+    before migrations/add_sms_consent.sql has been applied) cannot break the
+    phone-number / profile save that happens in the same request. Returns True
+    on success, False if the columns aren't present yet (logged as a warning,
+    not an exception).
+    """
+    try:
+        data = {'user_id': str(user_id), 'sms_consent': bool(consent)}
+        if consent:
+            from datetime import datetime, timezone
+            data['sms_consent_at'] = datetime.now(timezone.utc).isoformat()
+        supabase_admin.table('patient_profiles').upsert(data, on_conflict='user_id').execute()
+        return True
+    except Exception as e:
+        logger.warning(
+            f"Could not persist SMS consent for {user_id} "
+            f"(has migrations/add_sms_consent.sql been applied?): {e}"
+        )
+        return False
+
+
 def get_patient_population_flags(patient_user_id: str) -> dict:
     """Return the population_flags JSONB dict for a patient.
 
