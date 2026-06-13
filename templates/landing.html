@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CognaSync — Understand your mind. Improve your care.</title>
+<meta name="description" content="CognaSync tracks what you do and feel between appointments, finds the patterns, and reads them back in plain language for you and your provider.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=DM+Sans:opsz,wght@9..40,400;9..40,500&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --bg:          #F4F2ED;
+    --surface:     #FAFAF8;
+    --inset:       #EDEBE6;
+    --border:      #D3D1C7;
+    --hairline:    rgba(26,26,24,0.10);
+
+    --text:        #1A1A18;
+    --text-mid:    #2C2C2A;
+    --text-muted:  #5F5E5A;
+    --text-faint:  #888780;
+
+    --reed:        #0F6E56;
+    --reed-mid:    #1D9E75;
+    --reed-deep:   #085041;
+    --reed-darkest:#04342C;
+    --reed-light:  #9FE1CB;
+    --reed-faint:  #E1F5EE;
+
+    --hi:          #F7CE5B;
+    --hi-soft:     #FBE39A;
+    --hi-deep:     #8A6410;
+
+    --shadow-rest:     0 1px 2px rgba(26,26,24,0.05), 0 1px 3px rgba(26,26,24,0.04);
+    --shadow-lift:     0 2px 8px rgba(26,26,24,0.08), 0 4px 16px rgba(26,26,24,0.05);
+    --shadow-elev:     0 8px 32px rgba(26,26,24,0.12), 0 16px 48px rgba(26,26,24,0.06);
+
+    --serif: "DM Serif Display", Georgia, serif;
+    --sans:  "DM Sans", system-ui, -apple-system, sans-serif;
+    --mono:  "JetBrains Mono", "SF Mono", monospace;
+
+    --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  *{ box-sizing:border-box; margin:0; padding:0; }
+  html{ scroll-behavior:smooth; }
+
+  body{
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 15px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+    background-image:
+      linear-gradient(to bottom, rgba(15,110,86,0.025) 1px, transparent 1px);
+    background-size: 100% 34px;
+  }
+
+  a{ color: var(--reed); text-decoration: none; }
+  ::selection{ background: var(--hi-soft); color: var(--text); }
+
+  .wrap{ width:100%; max-width:1140px; margin:0 auto; padding:0 28px; }
+
+  .mark{ position:relative; white-space:nowrap; }
+  .mark::after{
+    content:""; position:absolute; left:-2px; right:-2px; bottom:0.08em;
+    height:0.42em; background: var(--hi); opacity:0.55; z-index:-1;
+    border-radius:2px; transform: rotate(-0.6deg);
+  }
+
+  header.nav{
+    position:sticky; top:0; z-index:50;
+    background: rgba(250,250,248,0.86);
+    backdrop-filter: saturate(120%) blur(6px);
+    border-bottom:1px solid transparent;
+    transition: border-color .2s, box-shadow .2s;
+  }
+  header.nav.scrolled{ border-bottom-color: var(--hairline); box-shadow: var(--shadow-rest); }
+  .nav-inner{ display:flex; align-items:center; justify-content:space-between; height:64px; }
+  .brand{ display:flex; align-items:center; gap:11px; }
+  .logo{
+    width:34px; height:34px; border-radius:9px;
+    background: var(--reed); color: var(--surface);
+    display:grid; place-items:center;
+    font-family:var(--serif); font-size:15px; letter-spacing:.02em;
+    box-shadow: var(--shadow-rest);
+  }
+  .wordmark{ font-family:var(--serif); font-size:20px; letter-spacing:-0.01em; color:var(--text); }
+  .nav-actions{ display:flex; align-items:center; gap:18px; }
+  .nav-link{ color:var(--text-muted); font-weight:500; font-size:14px; }
+  .nav-link:hover{ color:var(--text); }
+
+  .btn{
+    display:inline-flex; align-items:center; justify-content:center; gap:8px;
+    font-family:var(--sans); font-weight:500; font-size:14px;
+    padding:11px 20px; border-radius:10px; border:1px solid transparent;
+    cursor:pointer; transition: opacity .14s var(--ease), background .14s, transform .06s, border-color .14s;
+    text-decoration:none; line-height:1;
+  }
+  .btn:active{ transform: scale(0.98); }
+  .btn-primary{ background:var(--reed); color:var(--surface); border-color:var(--reed); box-shadow:var(--shadow-rest); }
+  .btn-primary:hover{ background:var(--reed-deep); border-color:var(--reed-deep); }
+  .btn-secondary{ background:transparent; color:var(--reed); border-color:var(--reed); }
+  .btn-secondary:hover{ opacity:.82; }
+  .btn-lg{ padding:14px 24px; font-size:15px; border-radius:11px; }
+  .btn .arrow{ transition: transform .2s var(--ease); }
+  .btn:hover .arrow{ transform: translateX(3px); }
+
+  .hero{ padding: clamp(52px, 8vw, 96px) 0 clamp(48px, 7vw, 84px); }
+  .hero-grid{ display:grid; grid-template-columns: 1.05fr 0.95fr; gap: clamp(36px, 5vw, 72px); align-items:center; }
+  .kicker{
+    display:inline-flex; align-items:center; gap:9px;
+    font-size:12px; font-weight:500; letter-spacing:.04em;
+    color:var(--text-muted); margin-bottom:22px;
+  }
+  .kicker .dot{ width:7px; height:7px; border-radius:50%; background:var(--reed-mid); box-shadow:0 0 0 4px var(--reed-faint); }
+  h1.hero-title{
+    font-family:var(--serif); font-weight:400;
+    font-size: clamp(38px, 6vw, 60px); line-height:1.05; letter-spacing:-0.02em;
+    color:var(--text);
+  }
+  .hero-sub{
+    margin-top:22px; max-width:48ch;
+    font-size: clamp(16px, 1.6vw, 18px); line-height:1.62; color:var(--text-mid);
+  }
+  .hero-cta{ margin-top:34px; display:flex; flex-wrap:wrap; gap:13px; }
+  .hero-note{ margin-top:18px; font-size:13px; color:var(--text-faint); display:flex; align-items:center; gap:8px; }
+  .hero-note svg{ flex:none; }
+
+  .specimen{
+    position:relative; background:var(--surface);
+    border:1px solid var(--hairline); border-radius:18px;
+    box-shadow:var(--shadow-elev); padding:24px 24px 22px;
+  }
+  .specimen::before{
+    content:"PRE-APPOINTMENT SUMMARY";
+    position:absolute; top:-11px; left:24px;
+    background:var(--reed); color:var(--surface);
+    font-size:10px; font-weight:500; letter-spacing:.1em;
+    padding:4px 11px; border-radius:20px;
+  }
+  .spec-head{ display:flex; align-items:baseline; justify-content:space-between; margin-top:8px; }
+  .spec-name{ font-family:var(--serif); font-size:22px; }
+  .spec-range{ font-family:var(--mono); font-size:12px; color:var(--text-faint); }
+  .spec-line{ height:1px; background:var(--hairline); margin:16px 0; }
+  .spec-quote{ font-size:14px; line-height:1.6; color:var(--text-mid); }
+  .spec-quote b{ font-weight:500; color:var(--text); }
+  .scores{ display:grid; grid-template-columns:repeat(3,1fr); gap:10px; margin-top:18px; }
+  .score{ background:var(--surface); border:1px solid var(--hairline); border-radius:10px; padding:11px 12px; }
+  .score .lbl{ font-size:9.5px; letter-spacing:.07em; color:var(--text-faint); text-transform:uppercase; }
+  .score .val{ font-family:var(--mono); font-size:19px; font-weight:500; color:var(--text); margin-top:5px; }
+  .score .bar{ height:3px; border-radius:2px; background:var(--inset); margin-top:9px; overflow:hidden; }
+  .score .bar i{ display:block; height:100%; border-radius:2px; }
+  .badge{
+    display:inline-flex; align-items:center; gap:6px;
+    font-size:10px; font-weight:500; letter-spacing:.06em; text-transform:uppercase;
+    padding:4px 10px; border-radius:20px; margin-top:16px;
+    background:var(--reed-faint); color:var(--reed-darkest);
+  }
+  .badge .d{ width:6px; height:6px; border-radius:50%; background:var(--reed); }
+
+  section{ padding: clamp(54px, 8vw, 92px) 0; }
+  .sec-kicker{
+    font-family:var(--mono); font-size:11px; letter-spacing:.12em; text-transform:uppercase;
+    color:var(--reed); margin-bottom:14px;
+  }
+  h2.sec-title{
+    font-family:var(--serif); font-weight:400;
+    font-size: clamp(27px, 3.6vw, 40px); line-height:1.12; letter-spacing:-0.015em; color:var(--text);
+    max-width:18ch;
+  }
+  .sec-lead{ margin-top:18px; max-width:58ch; font-size:16px; line-height:1.62; color:var(--text-mid); }
+
+  .statement{ background:var(--reed-darkest); color:#F4F2ED; }
+  .statement .wrap{ padding-top:clamp(60px,8vw,96px); padding-bottom:clamp(60px,8vw,96px); }
+  .statement .sec-kicker{ color:var(--reed-light); }
+  .statement h2{
+    font-family:var(--serif); font-weight:400;
+    font-size:clamp(28px,4.2vw,46px); line-height:1.18; letter-spacing:-0.01em;
+    max-width:24ch; color:#FBFBF9;
+  }
+  .statement .em{ color:var(--hi); }
+  .statement p{ margin-top:22px; max-width:56ch; color:rgba(244,242,237,0.78); font-size:16px; }
+
+  .steps{ margin-top:46px; display:grid; gap:0; }
+  .step{
+    display:grid; grid-template-columns: 96px 1fr; gap:28px;
+    padding:30px 0; border-top:1px solid var(--hairline); align-items:start;
+  }
+  .step:last-child{ border-bottom:1px solid var(--hairline); }
+  .step-num{ font-family:var(--mono); font-size:14px; color:var(--reed); padding-top:4px; }
+  .step-num .big{ display:block; font-family:var(--serif); font-size:34px; color:var(--text); line-height:1; margin-top:6px; }
+  .step h3{ font-family:var(--serif); font-weight:400; font-size:21px; letter-spacing:-0.01em; }
+  .step p{ margin-top:9px; max-width:54ch; color:var(--text-muted); font-size:15px; }
+
+  .aud{ display:grid; grid-template-columns:1fr 1fr; gap:22px; margin-top:46px; }
+  .panel{ border-radius:18px; padding:30px 28px; border:1px solid var(--hairline); }
+  .panel-patient{ background:var(--surface); }
+  .panel-provider{ background:var(--reed-darkest); color:#F4F2ED; border-color:transparent; }
+  .panel .tag{
+    font-family:var(--mono); font-size:11px; letter-spacing:.1em; text-transform:uppercase;
+    color:var(--text-faint); margin-bottom:16px;
+  }
+  .panel-provider .tag{ color:var(--reed-light); }
+  .panel h3{ font-family:var(--serif); font-weight:400; font-size:24px; letter-spacing:-0.01em; }
+  .panel p{ margin-top:12px; font-size:15px; line-height:1.6; color:var(--text-muted); }
+  .panel-provider p{ color:rgba(244,242,237,0.76); }
+  .panel ul{ list-style:none; margin-top:20px; display:grid; gap:11px; }
+  .panel li{ display:flex; gap:11px; align-items:flex-start; font-size:14.5px; color:var(--text-mid); }
+  .panel-provider li{ color:rgba(244,242,237,0.86); }
+  .tick{ flex:none; margin-top:2px; }
+
+  .final{ text-align:center; }
+  .final h2{ margin:0 auto; }
+  .final .sec-lead{ margin:18px auto 0; }
+  .final-cta{ margin-top:32px; display:flex; gap:14px; justify-content:center; flex-wrap:wrap; }
+
+  footer{ border-top:1px solid var(--hairline); padding:34px 0 44px; }
+  .foot-inner{ display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:18px; }
+  .foot-brand{ display:flex; align-items:center; gap:10px; color:var(--text-muted); font-size:13px; }
+  .foot-links{ display:flex; gap:22px; }
+  .foot-links a{ color:var(--text-muted); font-size:13px; }
+  .foot-links a:hover{ color:var(--text); }
+  .foot-fine{ margin-top:20px; font-size:12px; color:var(--text-faint); max-width:70ch; }
+
+  .reveal{ opacity:0; transform: translateY(16px); transition: opacity .7s var(--ease), transform .7s var(--ease); }
+  .reveal.in{ opacity:1; transform:none; }
+  .d1{ transition-delay:.06s; } .d2{ transition-delay:.14s; } .d3{ transition-delay:.22s; } .d4{ transition-delay:.30s; }
+
+  @media (max-width: 880px){
+    .hero-grid{ grid-template-columns:1fr; gap:40px; }
+    .specimen{ max-width:440px; }
+    .aud{ grid-template-columns:1fr; }
+    .nav-link.hide-sm{ display:none; }
+  }
+  @media (max-width: 560px){
+    .wrap{ padding:0 20px; }
+    .step{ grid-template-columns:1fr; gap:10px; }
+    .step-num{ display:flex; align-items:baseline; gap:12px; }
+    .step-num .big{ margin-top:0; font-size:28px; }
+    .hero-cta .btn{ flex:1 1 auto; }
+  }
+  @media (prefers-reduced-motion: reduce){
+    .reveal{ opacity:1; transform:none; transition:none; }
+    html{ scroll-behavior:auto; }
+    .btn:hover .arrow{ transform:none; }
+  }
+</style>
+</head>
+<body>
+
+<header class="nav" id="nav">
+  <div class="wrap nav-inner">
+    <div class="brand">
+      <div class="logo">CS</div>
+      <span class="wordmark">CognaSync</span>
+    </div>
+    <nav class="nav-actions">
+      <a class="nav-link hide-sm" href="#how">How it works</a>
+      <a class="nav-link hide-sm" href="#who">Who it's for</a>
+      <a class="nav-link" href="{{ url_for('login_page') }}">Sign in</a>
+      <a class="btn btn-primary" href="{{ url_for('login_page') }}">Log in</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div>
+      <span class="kicker reveal in"><span class="dot"></span> Behavioral intelligence for mental health</span>
+      <h1 class="hero-title reveal in d1">
+        Understand your mind. <span class="mark">Improve your care.</span>
+      </h1>
+      <p class="hero-sub reveal in d2">
+        CognaSync tracks what you do and feel between appointments, finds the patterns in it, and reads them back in plain language, for you and your provider to talk about.
+      </p>
+      <div class="hero-cta reveal in d3">
+        <a class="btn btn-primary btn-lg" href="{{ url_for('login_page') }}">Patient log in <span class="arrow">→</span></a>
+        <a class="btn btn-secondary btn-lg" href="{{ url_for('login_page') }}">Provider log in <span class="arrow">→</span></a>
+      </div>
+      <p class="hero-note reveal in d4">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5F5E5A" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        The same secure sign-in for patients and providers.
+      </p>
+    </div>
+
+    <div class="specimen reveal in d3" aria-label="Example pre-appointment summary">
+      <div class="spec-head">
+        <span class="spec-name">This period</span>
+        <span class="spec-range">14 days · 12 check-ins</span>
+      </div>
+      <div class="spec-line"></div>
+      <p class="spec-quote">
+        Mood averaged <b>6.4 / 10</b>, up from a 5.1 baseline. Sleep held steady near <b>7 hours</b> on most nights. Focus came in highest in the back half of the period.
+      </p>
+      <div class="scores">
+        <div class="score">
+          <div class="lbl">Stability</div>
+          <div class="val">7.2</div>
+          <div class="bar"><i style="width:72%;background:var(--reed);"></i></div>
+        </div>
+        <div class="score">
+          <div class="lbl">Sleep</div>
+          <div class="val">6.9</div>
+          <div class="bar"><i style="width:69%;background:var(--reed-mid);"></i></div>
+        </div>
+        <div class="score">
+          <div class="lbl">NS Load</div>
+          <div class="val">3.4</div>
+          <div class="bar"><i style="width:34%;background:var(--hi);"></i></div>
+        </div>
+      </div>
+      <span class="badge"><span class="d"></span> Stable · trending up</span>
+    </div>
+  </div>
+</section>
+
+<section class="statement" id="what">
+  <div class="wrap">
+    <p class="sec-kicker reveal">What CognaSync is</p>
+    <h2 class="reveal d1">The bridge between what you track and the conversation in the room. <span class="em">The AI explains patterns. You and your clinician make the decisions.</span></h2>
+    <p class="reveal d2">
+      It is not a therapist, a diagnosis, or a replacement for your care. It is a quiet layer that notices what changed, says it clearly, and hands it to the people who can act on it.
+    </p>
+  </div>
+</section>
+
+<section id="how">
+  <div class="wrap">
+    <p class="sec-kicker reveal">How it works</p>
+    <h2 class="sec-title reveal d1">Three steps, one honest picture.</h2>
+
+    <div class="steps">
+      <div class="step reveal">
+        <div class="step-num">STEP<span class="big">01</span></div>
+        <div>
+          <h3>You log the ordinary days</h3>
+          <p>Mood, sleep, stress, medication timing, a short journal. A minute at a time, on your phone, in private. No streaks to keep, no judgment for an off day.</p>
+        </div>
+      </div>
+      <div class="step reveal d1">
+        <div class="step-num">STEP<span class="big">02</span></div>
+        <div>
+          <h3>CognaSync finds the patterns</h3>
+          <p>Scores and trends are computed from your own numbers, not guessed at. When several signals point the same way, it surfaces them. When they disagree, it says so.</p>
+        </div>
+      </div>
+      <div class="step reveal d2">
+        <div class="step-num">STEP<span class="big">03</span></div>
+        <div>
+          <h3>You walk in prepared</h3>
+          <p>A plain-language summary is ready before each appointment, for you to read and for your provider to scan. The visit starts further along than it used to.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section id="who">
+  <div class="wrap">
+    <p class="sec-kicker reveal">Who it's for</p>
+    <h2 class="sec-title reveal d1">Two people, one shared picture.</h2>
+
+    <div class="aud">
+      <div class="panel panel-patient reveal d1">
+        <div class="tag">For patients</div>
+        <h3>A tool you carry, not a chart you manage.</h3>
+        <p>Track in the moments that matter and arrive at your appointment understood instead of starting from zero.</p>
+        <ul>
+          <li><span class="tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F6E56" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg></span>Quick daily check-ins, built for real life</li>
+          <li><span class="tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F6E56" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg></span>Warm, specific insight after each one</li>
+          <li><span class="tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#0F6E56" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg></span>A summary you can bring to your visit</li>
+        </ul>
+      </div>
+
+      <div class="panel panel-provider reveal d2">
+        <div class="tag">For providers</div>
+        <h3>Signal, not sentiment, before you sit down.</h3>
+        <p>Scan your panel, see who needs attention, and open each visit already knowing what changed.</p>
+        <ul>
+          <li><span class="tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg></span>Structured, flagged-first clinical briefs</li>
+          <li><span class="tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg></span>Trends, deltas, and timing at a glance</li>
+          <li><span class="tick"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9FE1CB" stroke-width="2.2"><path d="M20 6 9 17l-5-5"/></svg></span>Every number traceable to its source</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="final" id="start">
+  <div class="wrap">
+    <p class="sec-kicker reveal">Ready when you are</p>
+    <h2 class="sec-title reveal d1" style="max-width:20ch;">Pick up where your <span class="mark">last visit</span> left off.</h2>
+    <p class="sec-lead reveal d2">One sign-in for patients and providers. Your account knows which view to show you.</p>
+    <div class="final-cta reveal d3">
+      <a class="btn btn-primary btn-lg" href="{{ url_for('login_page') }}">Patient log in <span class="arrow">→</span></a>
+      <a class="btn btn-secondary btn-lg" href="{{ url_for('login_page') }}">Provider log in <span class="arrow">→</span></a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <div class="foot-inner">
+      <div class="foot-brand">
+        <div class="logo" style="width:26px;height:26px;border-radius:7px;font-size:12px;">CS</div>
+        CognaSync
+      </div>
+      <nav class="foot-links">
+        <a href="#what">What it is</a>
+        <a href="#how">How it works</a>
+        <a href="#who">Who it's for</a>
+        <a href="{{ url_for('login_page') }}">Sign in</a>
+      </nav>
+    </div>
+    <p class="foot-fine">
+      CognaSync surfaces patterns in self-tracked data to support clinical conversations. It does not diagnose, prescribe, or replace professional care. If you are in crisis, call or text 988 (US Suicide &amp; Crisis Lifeline).
+    </p>
+  </div>
+</footer>
+
+<script>
+  const nav = document.getElementById('nav');
+  const onScroll = () => nav.classList.toggle('scrolled', window.scrollY > 8);
+  onScroll();
+  window.addEventListener('scroll', onScroll, { passive:true });
+
+  const io = new IntersectionObserver((entries) => {
+    entries.forEach(e => { if (e.isIntersecting){ e.target.classList.add('in'); io.unobserve(e.target); } });
+  }, { threshold: 0.12, rootMargin: '0px 0px -8% 0px' });
+  document.querySelectorAll('.reveal:not(.in)').forEach(el => io.observe(el));
+</script>
+</body>
+</html>
