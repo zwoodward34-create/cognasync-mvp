@@ -1,0 +1,23 @@
+name: repo-integrity
+
+# Hard gate: fails the check (and surfaces on the commit/PR) if a file the app
+# references has gone missing — e.g. a stale-tree commit silently deleted a
+# template or a core module. Stdlib-only, so it needs no secrets and no deps.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Static repo-integrity check (templates + critical modules)
+        run: python3 scripts/check_repo_integrity.py
+      - name: Byte-compile core modules (syntax check)
+        run: python3 -m py_compile app.py database.py claude_api.py supabase_auth.py sms_engine.py

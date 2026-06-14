@@ -1,0 +1,37 @@
+#!/usr/bin/env bash
+# Pre-commit guard against the stale-tree deletion class.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+#
+# 1. BLOCKS any commit that deletes tracked files unless you opt in explicitly.
+#    Stale-tree / accidental `git add -A` commits silently delete files
+#    (this repo lost templates/landing.html and sms_engine.py that way).
+#    To delete files on purpose:   ALLOW_DELETIONS=1 git commit ...
+# 2. Warns (does not block) if the static integrity check finds a missing
+#    template/module — CI is the hard gate for that.
+set -euo pipefail
+
+deleted="$(git diff --cached --name-only --diff-filter=D || true)"
+
+if [ -n "$deleted" ]; then
+  if [ "${ALLOW_DELETIONS:-0}" = "1" ]; then
+    echo "pre-commit: deletions explicitly allowed (ALLOW_DELETIONS=1):"
+    echo "$deleted" | sed 's/^/  - /'
+  else
+    echo "✋ pre-commit BLOCKED — this commit deletes tracked file(s):"
+    echo "$deleted" | sed 's/^/  - /'
+    echo
+    echo "If intentional:   ALLOW_DELETIONS=1 git commit ..."
+    echo "If NOT: you may be committing from a stale tree. Run 'git status' and"
+    echo "'git pull --rebase' first, then commit only the files you meant to change."
+    exit 1
+  fi
+fi
+
+# Non-blocking integrity warning (CI enforces the hard fail).
+if command -v python3 >/dev/null 2>&1 && [ -f scripts/check_repo_integrity.py ]; then
+  python3 scripts/check_repo_integrity.py || \
+    echo "pre-commit WARNING: integrity check failed (above). CI will block this on push."
+fi
+
+exit 0
