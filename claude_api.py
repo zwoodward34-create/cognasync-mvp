@@ -1,6 +1,8 @@
 import logging
 import os
+import re
 import json
+import unicodedata
 import anthropic
 
 logger = logging.getLogger(__name__)
@@ -34,6 +36,9 @@ CRISIS_KEYWORDS = [
     'world would be better without me', 'burden to everyone',
     # Algospeak / platform-evasion variants (research taxonomy)
     'unalive', 'unaliving', 'kms', 'sewerslide',
+    # High-signal phrasings not literally covered above
+    'ending it all', 'end it all', 'no point in living', 'no point living',
+    'no reason to go on', "can't go on anymore",
 ]
 
 # ── Graduated crisis scoring — five-level system ──────────────────────────
@@ -384,9 +389,52 @@ FORBIDDEN_PATTERNS = [
 ]
 
 
+# Leetspeak / homoglyph folding applied before crisis matching so that basic
+# evasion ("d1e", "su1c1de", "k!ll myself") still trips detection (spec §10).
+_LEET_MAP = str.maketrans({
+    '1': 'i', '0': 'o', '3': 'e', '4': 'a', '5': 's', '7': 't',
+    '@': 'a', '$': 's', '!': 'i', '|': 'i',
+})
+
+
+def _normalize_for_crisis(text):
+    """Normalize text for evasion-resistant crisis keyword matching.
+
+    NFKC-folds Unicode, lowercases, folds common leetspeak substitutions,
+    strips punctuation/separators, and collapses whitespace. Applied to BOTH
+    the input text and the keyword list so matching is symmetric. Biased
+    toward over-triggering: on a patient-safety channel a false positive is
+    acceptable, a false negative is not.
+    """
+    if not text:
+        return ''
+    t = unicodedata.normalize('NFKC', text).lower()
+    t = t.translate(_LEET_MAP)
+    t = re.sub(r'[^a-z\s]', '', t)        # keep only letters + whitespace
+    t = re.sub(r'\s+', ' ', t).strip()    # collapse whitespace runs
+    return t
+
+
+# Pre-normalized canonical keyword list (computed once at import).
+_CRISIS_KEYWORDS_NORMALIZED = [
+    nk for nk in (_normalize_for_crisis(kw) for kw in CRISIS_KEYWORDS) if nk
+]
+
+
 def _check_crisis(text):
-    lower = text.lower()
-    return any(kw in lower for kw in CRISIS_KEYWORDS)
+    """Evasion-resistant binary crisis detection for patient-facing channels.
+
+    Normalizes the text (Unicode / leetspeak / punctuation / whitespace) before
+    substring-matching the canonical keyword list. Spec §10: maximum caution,
+    bias toward over-triggering. The single source of truth for crisis keyword
+    detection — patient channels (journal, check-in, SMS) all route here.
+    """
+    if not text:
+        return False
+    normalized = _normalize_for_crisis(text)
+    if not normalized:
+        return False
+    return any(kw in normalized for kw in _CRISIS_KEYWORDS_NORMALIZED)
 
 
 def check_crisis(text):
@@ -1130,6 +1178,19 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         if content:
             journal_rows.append({'date': entry_date, 'content': content[:600]})
 
+    # ── Crisis interception on journal content (C-3) ──────────────────────────
+    # Spec §10: crisis detection must run on ALL user-provided text before any
+    # model invocation. The psychiatry path previously skipped this scan — a
+    # self-harm disclosure in a journal reached the psychiatrist's brief with no
+    # flag. This summary is provider-facing only, so (like Mode C) we inject the
+    # urgent provider crisis flag rather than returning patient crisis resources.
+    _journal_crisis = False
+    for _j in journal_data:
+        _jc = _j.get('content') or _j.get('raw_entry') or ''
+        if _jc and _check_crisis(_jc):
+            _journal_crisis = True
+            break
+
     # ── Symptom section ───────────────────────────────────────────────────────
     symptom_section = ''
     if symptom_patterns:
@@ -1637,6 +1698,17 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         )
 
     psych_system = _PSYCHIATRY_SYSTEM + psych_system_addon + focus_addon
+
+    # Inject the crisis warning when journal content tripped detection (C-3).
+    if _journal_crisis:
+        psych_system = (
+            "⚠️ CRISIS SIGNAL IN JOURNAL DATA: One or more journal entries from this patient "
+            "contain language associated with self-harm or suicidal ideation. "
+            "This is your MOST URGENT FLAG. Begin your response with a clearly marked "
+            "'🔴 Crisis Signal' section before any other content. "
+            "Do NOT reproduce the exact patient phrasing.\n\n"
+        ) + psych_system
+
     raw   = _call_claude(psych_system, user_content, max_tokens=2000)
     clean = _sanitize_output(raw)
     if clean is None:

@@ -3,6 +3,7 @@ import uuid
 import time
 import hmac
 import hashlib
+import logging
 import jwt
 from supabase import create_client, Client
 from functools import wraps
@@ -318,13 +319,30 @@ def login_user(email, password):
         })
 
         user_data = supabase_admin.table('profiles').select('*').eq('id', response.user.id).execute()
-        profile = user_data.data[0] if user_data.data else {}
+        profile = user_data.data[0] if user_data.data else None
 
-        status = profile.get('status', 'approved')
+        # Fail closed (H-1): a successful Supabase Auth login is NOT sufficient.
+        # If the profile row is missing (orphaned auth user) or its status is
+        # absent/unrecognized, deny access rather than defaulting to 'approved'.
+        # Only an explicit status of 'approved' may proceed.
+        if not profile:
+            logging.getLogger(__name__).warning(
+                'login_user: authenticated user %s has no profile row — denying access',
+                response.user.id,
+            )
+            return None, 'Your account is not fully set up yet. Please contact support.'
+
+        status = profile.get('status')
         if status == 'pending_email':
             return None, 'Please verify your email address before signing in. Check your inbox for the verification link.'
         if status == 'pending_approval':
             return None, 'Your account is pending administrator approval. You will receive an email when approved.'
+        if status != 'approved':
+            logging.getLogger(__name__).warning(
+                'login_user: user %s has non-approved status %r — denying access',
+                response.user.id, status,
+            )
+            return None, 'Your account is not active. Please contact support.'
 
         return {
             'session_token':  response.session.access_token,

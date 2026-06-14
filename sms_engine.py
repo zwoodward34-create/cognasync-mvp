@@ -377,9 +377,10 @@ def send_medication_sms(
 
 # ── Reply parsing ─────────────────────────────────────────────────────────────
 
-# Crisis keywords — any match halts normal processing (patient-facing channel).
-# Aligned with CLAUDE.md §10 Detection list.
-_CRISIS_KEYWORDS = (
+# Fallback crisis keywords — only used if the canonical matcher can't be
+# imported. The authoritative, evasion-resistant list and normalization live in
+# claude_api (single source of truth, spec §10). See detect_crisis_keywords.
+_CRISIS_KEYWORDS_FALLBACK = (
     'suicide', 'suicidal', 'kill myself', 'end my life', 'ending my life',
     "don't want to live", "dont want to live", "don't want to be alive",
     "dont want to be alive", 'want to die', 'better off dead',
@@ -388,9 +389,20 @@ _CRISIS_KEYWORDS = (
 
 
 def detect_crisis_keywords(body: str) -> bool:
-    """Return True if body contains any crisis signal phrase."""
-    lower = body.lower()
-    return any(kw in lower for kw in _CRISIS_KEYWORDS)
+    """Return True if body contains any crisis signal phrase.
+
+    Delegates to claude_api.check_crisis — the single, evasion-resistant matcher
+    shared across all patient-facing channels (H-7). Falls back to a local list
+    only if the import fails, so the SMS channel never silently loses detection.
+    """
+    if not body:
+        return False
+    try:
+        import claude_api
+        return claude_api.check_crisis(body)
+    except Exception:
+        lower = body.lower()
+        return any(kw in lower for kw in _CRISIS_KEYWORDS_FALLBACK)
 
 
 def parse_medication_reply(body: str) -> bool | None:

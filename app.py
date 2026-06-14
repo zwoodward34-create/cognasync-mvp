@@ -4281,6 +4281,7 @@ def api_voice_submit(token_str):
 
 
 @app.route('/api/sms/inbound', methods=['POST'])
+@limiter.limit('500/hour')
 def api_sms_inbound():
     """Twilio inbound SMS webhook — full 8-priority routing table.
 
@@ -4294,6 +4295,14 @@ def api_sms_inbound():
       7. HELP or ?           → open help branch, suspend current session
       8. Unrecognised        → context-aware hint or silent ignore
     """
+    # ── Authenticate the webhook (C-1) ────────────────────────────────────────
+    # Without this, anyone who knows a patient's phone number can POST a spoofed
+    # `From`/`Body` and inject check-ins, falsify medication logs, or fire false
+    # crisis alerts. Mirror the validation used by the other Twilio webhooks.
+    valid, err = _validate_twilio_signature()
+    if not valid:
+        return err
+
     from_number = request.form.get('From', '').strip()
     body        = request.form.get('Body', '').strip()
 
