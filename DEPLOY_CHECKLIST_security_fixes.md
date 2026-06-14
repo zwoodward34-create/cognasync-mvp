@@ -74,15 +74,15 @@ select
 `auth.uid()`-scoped SELECT policies on 23 of the 25 PHI tables, plus a `can_access_patient()`
 helper. `checkin_tokens` and `sms_tokens` stay deny-all by design. The policies are **inert today**
 (client roles have no table grants), so they changed nothing functionally — they're defense-in-depth
-for any future direct-to-Supabase client. Two assumptions were accepted as-is and are worth a
-retroactive sign-off:
-- [ ] `can_access_patient()` treats an active care-team link as `revoked_at IS NULL`. If your model
-      also gates on a `status` column, add that condition (`create or replace function` is idempotent).
-- [ ] Patients can read provider-authored rows (`provider_briefs`, `provider_appointments`) via the
-      care-team link. If providers' notes should be hidden from patients, tighten those three policies
-      (`provider_appointments`, `provider_briefs`, `voice_notes`) to `provider_id = auth.uid()` only.
-- [ ] Functional enforcement is not runtime-tested because the tables are correctly grant-less today;
-      re-test if/when a client role is ever granted access.
+for any future direct-to-Supabase client. The two open assumptions were RESOLVED 2026-06-14 in
+`migrations/20260614_rls_refine_access_model.sql` (applied to prod):
+- [x] `can_access_patient()` now requires `status = 'active' AND revoked_at IS NULL` — matches the
+      app's own care-team check; a pending/unapproved link no longer grants access.
+- [x] Clinician work product (`provider_appointments`, `provider_briefs`) is now **provider-only**.
+      `voice_notes` was kept patient-visible because it is patient-recorded audio shown back to the
+      patient (`patient/voice_notes.html`), not a clinician note.
+- [ ] Functional enforcement is still not runtime-tested because the tables are correctly grant-less
+      today; re-test if/when a client role is ever granted direct access.
 
 ## 6. Rollback notes
 
