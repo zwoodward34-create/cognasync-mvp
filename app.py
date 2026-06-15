@@ -5290,13 +5290,39 @@ def _validate_twilio_signature():
     Uses the full request URL as seen by Twilio (including https scheme).
     """
     sig = request.headers.get('X-Twilio-Signature', '')
-    url = request.url
     params = request.form.to_dict()
 
-    if not _twilio.validate_webhook_signature(url, params, sig):
-        app.logger.warning(f"[twilio] Invalid webhook signature from {request.remote_addr}")
-        return False, (jsonify({'error': 'Invalid Twilio signature'}), 403)
-    return True, None
+    # Behind Render's TLS-terminating proxy, request.url can report http:// and a
+    # proxy host while Twilio signed the external https:// URL. The HMAC is over
+    # (url + params), so a scheme/host mismatch fails validation with a 403 even
+    # for legitimate inbound texts (documented in DEPLOY_CHECKLIST). Reconstruct
+    # the external URL from forwarded headers and try candidates — security is
+    # preserved because each candidate still requires a valid signature.
+    from urllib.parse import urlsplit, urlunsplit
+    parts = urlsplit(request.url)
+    candidates = []
+    fwd_proto = request.headers.get('X-Forwarded-Proto', '').split(',')[0].strip()
+    fwd_host  = (request.headers.get('X-Forwarded-Host')
+                 or request.headers.get('Host') or parts.netloc).split(',')[0].strip()
+    if fwd_proto and fwd_host:
+        candidates.append(urlunsplit((fwd_proto, fwd_host, parts.path, parts.query, '')))
+    if parts.scheme == 'http':
+        candidates.append(urlunsplit(('https', fwd_host or parts.netloc,
+                                       parts.path, parts.query, '')))
+    candidates.append(request.url)
+
+    seen = set()
+    for url in candidates:
+        if url in seen:
+            continue
+        seen.add(url)
+        if _twilio.validate_webhook_signature(url, params, sig):
+            return True, None
+
+    app.logger.warning(
+        f"[twilio] Invalid webhook signature from {request.remote_addr}; "
+        f"tried {list(seen)}")
+    return False, (jsonify({'error': 'Invalid Twilio signature'}), 403)
 
 
 def _validate_internal_secret():
