@@ -361,6 +361,27 @@ def send_checkin_sms(
     return result
 
 
+def send_voice_invite_sms(
+    to_number: str,
+    patient_name: str,
+    token: str,
+    voice_prompt: str,
+) -> dict:
+    """Send a standalone, CognaSync-branded voice-note invite (link only).
+
+    Used by the provider hub "Voice Question" action. Sends only the voice
+    prompt — no check-in link — so the two flows stay distinct.
+    """
+    first = patient_name.split()[0] if patient_name else 'there'
+    voice_url = f'{APP_BASE_URL}/voice/{token}'
+    body = (
+        f'CognaSync: Hi {first}, your provider has a question for you:\n\n'
+        f'"{voice_prompt}"\n\n'
+        f'Record a quick voice note here: {voice_url}'
+    )
+    return send_sms(to_number, body)
+
+
 def send_medication_sms(
     to_number: str,
     patient_name: str,

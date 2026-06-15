@@ -1525,13 +1525,8 @@
     <div class="ch-header-actions">
       <button class="ch-action-btn ch-action-btn--primary" id="btn-generate-brief" onclick="generateBrief()">✦ Generate Brief</button>
       <div class="ch-sms-group">
-        <button class="ch-action-btn" id="btn-short-sms" onclick="sendSMS('short')">Send SMS</button>
-        <button class="ch-sms-caret" onclick="toggleSmsDropdown(event)" aria-label="More SMS options">▾</button>
-        <div class="ch-sms-dropdown" id="ch-sms-dropdown">
-          <button class="ch-sms-opt" onclick="sendSMS('short');closeSmsDropdown()">Short check-in</button>
-          <button class="ch-sms-opt" id="btn-full-sms" onclick="sendSMS('full');closeSmsDropdown()">Full check-in</button>
-          <button class="ch-sms-opt" id="btn-voice-sms" onclick="sendVoiceSMS();closeSmsDropdown()">Voice question</button>
-        </div>
+        <button class="ch-action-btn" id="btn-checkin-sms" onclick="sendSMS('checkin')">Send SMS Check-In</button>
+        <button class="ch-action-btn" id="btn-voice-sms" onclick="sendVoiceSMS()">Voice Question</button>
       </div>
       <button class="ch-action-btn" id="btn-reminder" onclick="sendReminder()">Reminder</button>
     </div>
@@ -2910,8 +2905,7 @@ async function deleteMed(medId) {
 
 // ── SMS helpers ───────────────────────────────────────────────────────────────
 async function sendSMS(type) {
-  const btnId = type === 'short' ? 'btn-short-sms' : 'btn-full-sms';
-  const btn = document.getElementById(btnId);
+  const btn = document.getElementById('btn-checkin-sms');
   btn.disabled = true;
   const orig = btn.textContent;
   btn.textContent = 'Sending…';

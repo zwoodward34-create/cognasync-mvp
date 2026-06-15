@@ -4280,6 +4280,57 @@ def api_voice_submit(token_str):
     return jsonify({'ok': True, 'voice_note_id': voice_note_id}), 201
 
 
+def _phone_variants(raw: str) -> list:
+    """Return candidate string forms of a phone number for matching.
+
+    Patient phones are stored inconsistently (e.g. '16027931660' with no '+'),
+    while Twilio delivers inbound 'From' in E.164 ('+16027931660'). Generate the
+    common US variants so a stored number matches regardless of formatting.
+    """
+    import re as _re
+    digits = _re.sub(r'\D', '', raw or '')
+    if not digits:
+        return []
+    variants = {raw.strip(), digits, '+' + digits}
+    if len(digits) == 11 and digits.startswith('1'):
+        ten = digits[1:]
+        variants.update({ten, '1' + ten, '+1' + ten})
+    elif len(digits) == 10:
+        variants.update({'1' + digits, '+1' + digits})
+    return [v for v in variants if v]
+
+
+def _resolve_patient_by_phone(from_number: str) -> dict | None:
+    """Resolve {'id', 'full_name'} for an inbound SMS sender.
+
+    Checks patient_profiles.phone_number first (the canonical location where the
+    app stores patient phones) and falls back to profiles.phone_number. Matches
+    across phone-format variants so '+16027931660' finds a stored '16027931660'.
+    """
+    variants = _phone_variants(from_number)
+    if not variants:
+        return None
+    try:
+        pp = db.supabase_admin.table('patient_profiles').select(
+            'user_id').in_('phone_number', variants).limit(1).execute()
+        if pp.data:
+            uid = pp.data[0]['user_id']
+            prof = db.supabase_admin.table('profiles').select(
+                'id, full_name').eq('id', uid).limit(1).execute()
+            if prof.data:
+                return prof.data[0]
+    except Exception as e:
+        app.logger.error(f'[sms_inbound] patient_profiles lookup error: {e}')
+    try:
+        pr = db.supabase_admin.table('profiles').select(
+            'id, full_name').in_('phone_number', variants).limit(1).execute()
+        if pr.data:
+            return pr.data[0]
+    except Exception as e:
+        app.logger.error(f'[sms_inbound] profiles lookup error: {e}')
+    return None
+
+
 @app.route('/api/sms/inbound', methods=['POST'])
 @limiter.limit('500/hour')
 def api_sms_inbound():
@@ -4310,16 +4361,13 @@ def api_sms_inbound():
         return _twiml_empty()
 
     # ── Resolve patient from phone number ─────────────────────────────────────
-    try:
-        prof_res = db.supabase_admin.table('profiles').select(
-            'id, full_name').eq('phone_number', from_number).limit(1).execute()
-        if not prof_res.data:
-            return _twiml_empty()
-        patient_id   = prof_res.data[0]['id']
-        patient_name = prof_res.data[0].get('full_name', 'Your patient')
-    except Exception as e:
-        app.logger.error(f'[sms_inbound] profile lookup error: {e}')
+    # Matches patient_profiles.phone_number (canonical) and profiles.phone_number
+    # across format variants, so '+16027931660' resolves a stored '16027931660'.
+    patient = _resolve_patient_by_phone(from_number)
+    if not patient:
         return _twiml_empty()
+    patient_id   = patient['id']
+    patient_name = patient.get('full_name', 'Your patient')
 
     cleaned = body.strip()
     upper   = cleaned.upper()
@@ -4706,12 +4754,22 @@ def api_send_patient_checkin_sms(patient_id):
     if not phone:
         return jsonify({'error': 'Patient has no phone number on file'}), 400
 
-    token = _sms.create_checkin_token(
-        patient_id=patient_id,
-        provider_id=provider['id'],
-        voice_prompt=voice_prompt,
-    )
-    result = _sms.send_checkin_sms(phone, name, token, voice_prompt=voice_prompt)
+    if voice_prompt:
+        # Voice path: send only the branded voice-note invite (link).
+        token = _sms.create_checkin_token(
+            patient_id=patient_id,
+            provider_id=provider['id'],
+            voice_prompt=voice_prompt,
+        )
+        result = _sms.send_voice_invite_sms(phone, name, token, voice_prompt)
+    else:
+        # Check-in path: send the M·E·S·Q·H question prompt and open a
+        # checkin_pending session so the patient's numeric reply is captured
+        # by the /api/sms/inbound webhook (priority 5) and written as a check-in.
+        result = _sms.send_daily_checkin_prompt(phone)
+        if result.get('ok'):
+            db.set_sms_session(patient_id, 'checkin_pending')
+
     print(f'[sms_route] result={result}', flush=True)
 
     if not result.get('ok'):
