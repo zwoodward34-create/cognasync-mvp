@@ -5443,31 +5443,46 @@ def twilio_checkin():
     }
 
     # Crisis detection on ALL free-text fields before storage
-    free_text_fields = ['follow_up_note', 'medication_note', 'agenda_note']
-    for field in free_text_fields:
+    crisis_detected = False
+    for field in ['follow_up_note', 'medication_note', 'agenda_note']:
         text = data.get(field)
-        if text:
-            crisis = claude_api._check_crisis(text)
-            if crisis:
-                app.logger.critical(
-                    f"[twilio/checkin] CRISIS DETECTED patient={patient_id!r} field={field!r}"
-                )
-                # Notify provider immediately — crisis takes priority over normal flow
-                # (Provider notification implemented in claude_api or a dedicated alert fn)
-                # Store the check-in anyway so the provider sees it in context
-                break
+        if text and claude_api._check_crisis(text):
+            crisis_detected = True
+            app.logger.critical(
+                f"[twilio/checkin] CRISIS DETECTED patient={patient_id!r} field={field!r}"
+            )
+            break
 
+    # Store the check-in regardless, so the provider sees it in context.
     checkin_id = db.log_checkin_from_sms(
         patient_id=patient_id,
         data=data,
         check_in_type=check_in_type,
     )
-
     app.logger.info(
         f"[twilio/checkin] stored id={checkin_id!r} type={check_in_type!r} patient={patient_id!r}"
     )
 
-    # ── Rotating question follow-up ───────────────────────────────────────────
+    # On crisis: escalate immediately via the shared handler — sends the patient
+    # crisis resources, SMS-alerts the provider, and writes a care_flags row — then
+    # SKIP the rotating follow-up (a routine prompt is inappropriate right after a
+    # crisis disclosure). This replaces a prior stub that only logged the event.
+    if crisis_detected:
+        try:
+            prof = db.supabase_admin.table('profiles').select(
+                'full_name, phone_number').eq('id', str(patient_id)).limit(1).execute()
+            pdata = prof.data[0] if prof.data else {}
+            _handle_sms_crisis(
+                patient_id=patient_id,
+                patient_name=pdata.get('full_name') or 'Your patient',
+                from_number=pdata.get('phone_number') or '',
+                source='checkin',
+            )
+        except Exception as e:
+            app.logger.error(f'[twilio/checkin] crisis escalation error: {e}')
+        return jsonify({'ok': True, 'checkin_id': checkin_id, 'alert': 'crisis'})
+
+    # ── Rotating question follow-up (normal path only) ────────────────────────
     if checkin_id:
         _trigger_rotating_followup(patient_id, checkin_id)
 
