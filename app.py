@@ -4447,10 +4447,22 @@ def api_sms_inbound():
 
         db.resolve_sms_session(patient_id)
 
-        # Suicidality alert: any non-zero score → immediate provider notification
+        # Suicidality numeric signal → escalate by severity:
+        #   >= CRISIS_SUICIDALITY_MIN : full crisis escalation (patient resources + provider 🔴)
+        #   == 1 (below threshold)    : provider watch alert only (🟡)
         suicidality_score = parsed_rotating.get('suicidality_score')
         if suicidality_score is not None and suicidality_score > 0:
-            _handle_suicidality_alert(patient_id, patient_name, suicidality_score)
+            if suicidality_score >= CRISIS_SUICIDALITY_MIN:
+                app.logger.critical(
+                    f"[rotating] SUICIDALITY CRISIS score={suicidality_score} "
+                    f"patient={patient_id!r}"
+                )
+                _sms.escalate_crisis(
+                    db, patient_id, source='checkin',
+                    patient_name=patient_name, from_number=from_number,
+                )
+            else:
+                _handle_suicidality_alert(patient_id, patient_name, suicidality_score)
 
         _sms.send_sms(from_number, '✓ Noted. Thank you.')
         return _twiml_empty()
@@ -4534,6 +4546,15 @@ def _twiml_empty():
         '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
         mimetype='text/xml',
     )
+
+
+# ── Clinical thresholds for real-time numeric escalation ────────────────────
+# These are CLINICIAN-OWNED settings — adjust with clinical input. Patient-facing
+# crisis resources (988) are reserved for explicit self-harm signals and a high
+# suicidality score; a low mood number alone gets a provider watch, not a 988,
+# to avoid over-triggering and alert fatigue.
+CRISIS_SUICIDALITY_MIN = 2   # suicidality score (0-3) >= this → full crisis escalation
+CATASTROPHIC_MOOD_MAX  = 1   # structured check-in mood (1-10) <= this → provider watch
 
 
 def _handle_sms_crisis(patient_id: str, patient_name: str,
@@ -4645,6 +4666,38 @@ def _handle_suicidality_alert(patient_id: str, patient_name: str,
     except Exception as e:
         import logging
         logging.getLogger(__name__).error(f'[suicidality_alert] error: {e}')
+
+
+def _handle_low_mood_watch(patient_id: str, mood_score: int) -> None:
+    """Provider watch alert for a rock-bottom structured mood score.
+
+    Deliberately NOT a patient-facing crisis response — a low mood number alone
+    is not an explicit self-harm signal, so a 988 push would over-trigger. This
+    surfaces the signal to the provider for same-day review (SMS + 🟡 care flag).
+    """
+    try:
+        prof = db.supabase_admin.table('profiles').select('full_name').eq(
+            'id', str(patient_id)).limit(1).execute()
+        patient_name = (prof.data[0].get('full_name') if prof.data else None) or 'Your patient'
+        provider = db.get_provider_for_patient(patient_id)
+        if not provider:
+            return
+        if provider.get('phone_number'):
+            _sms.send_sms(
+                provider['phone_number'],
+                f'CognaSync: {patient_name} reported a very low mood '
+                f'({mood_score}/10) on today\'s check-in. Same-day review recommended.'
+            )
+        db.supabase_admin.table('care_flags').insert({
+            'patient_id':         str(patient_id),
+            'author_provider_id': str(provider['id']),
+            'flag_type':          'concern',
+            'body': (f'🟡 Low-mood watch — {patient_name} rated mood {mood_score}/10 '
+                     f"on today's check-in. Same-day review recommended."),
+            'visibility':         'care_team',
+        }).execute()
+    except Exception as e:
+        app.logger.error(f'[low_mood_watch] error: {e}')
 
 
 @app.route('/api/internal/send-appointment-sms', methods=['POST', 'GET'])
@@ -5452,6 +5505,13 @@ def twilio_checkin():
         except Exception as e:
             app.logger.error(f'[twilio/checkin] crisis escalation error: {e}')
         return jsonify({'ok': True, 'checkin_id': checkin_id, 'alert': 'crisis'})
+
+    # Catastrophic structured signal → provider WATCH (not a patient 988, which is
+    # reserved for explicit self-harm signals). A rock-bottom mood warrants
+    # same-day provider eyes. Threshold is clinician-owned (CATASTROPHIC_MOOD_MAX).
+    mood_val = data.get('mood')
+    if mood_val is not None and mood_val <= CATASTROPHIC_MOOD_MAX:
+        _handle_low_mood_watch(patient_id, mood_val)
 
     # ── Rotating question follow-up (normal path only) ────────────────────────
     if checkin_id:
