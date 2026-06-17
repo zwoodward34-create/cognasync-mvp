@@ -4538,43 +4538,14 @@ def _twiml_empty():
 
 def _handle_sms_crisis(patient_id: str, patient_name: str,
                         from_number: str, source: str) -> None:
-    """Shared crisis handler: send patient resources, log event, alert provider."""
-    # 1. Send patient crisis resources immediately
-    _sms.send_crisis_sms_to_patient(from_number)
-
-    # 2. Log the event (no patient text stored)
-    event_id = db.log_sms_crisis(patient_id, source=source)
-
-    # 3. Resolve any open session
-    db.resolve_sms_session(patient_id)
-
-    # 4. Alert provider via SMS + insert care_flags row (Clinical Alerts)
-    try:
-        provider = db.get_provider_for_patient(patient_id)
-        if provider:
-            # SMS the provider
-            if provider.get('phone_number'):
-                result = _sms.send_provider_crisis_alert(
-                    provider['phone_number'], patient_name)
-                if event_id and result.get('ok'):
-                    db.mark_provider_notified(event_id, sms_sid=result.get('sid'))
-
-            # Insert into care_flags (surfaces as "Clinical Alerts" on the hub)
-            # flag_type='concern', author = patient's provider, body = crisis notice
-            source_label = source.replace('_', ' ')  # 'keyword' or 'help branch'
-            flag_body = (
-                f'🔴 SMS crisis signal ({source_label}) — {patient_name} reached out '
-                f'via SMS and may need immediate support. Please check in directly.'
-            )
-            db.supabase_admin.table('care_flags').insert({
-                'patient_id':         str(patient_id),
-                'author_provider_id': str(provider['id']),
-                'flag_type':          'concern',
-                'body':               flag_body,
-                'visibility':         'care_team',
-            }).execute()
-    except Exception as e:
-        app.logger.error(f'[sms_inbound] provider alert/flag error: {e}')
+    """Shared crisis handler — delegates to the single, channel-agnostic
+    escalation in sms_engine.escalate_crisis (also used by the voice pipeline)
+    so crisis-response logic lives in exactly one place."""
+    _sms.escalate_crisis(
+        db, patient_id, source,
+        patient_name=patient_name,
+        from_number=from_number,
+    )
 
 
 def _trigger_rotating_followup(patient_id: str, checkin_id: str,

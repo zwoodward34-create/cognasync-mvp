@@ -1007,6 +1007,28 @@ def process_voice_note(
         )
         _merge_acoustic_into_extraction(extraction, acoustic_result, session_id)
 
+        # ── 6.5 Crisis escalation (patient-facing safety net) ────────────────
+        # Voice is async and patient-initiated, so a self-harm disclosure here
+        # previously surfaced only as a delayed provider-side flag. Run the binary
+        # patient-channel check (maximum caution) AND honor the graduated scorer's
+        # blocking decision, then escalate via the shared handler: crisis SMS to
+        # the patient + provider alert + care flag. Guarded so it never breaks the
+        # pipeline.
+        try:
+            from claude_api import _check_crisis as _binary_crisis
+            import sms_engine as _sms_mod
+            if _binary_crisis(transcript_text or '') or extraction.get('crisis_detected'):
+                logger.critical(
+                    "Voice-note CRISIS detected: patient=%s session=%s",
+                    patient_id, session_id,
+                )
+                _sms_mod.escalate_crisis(db, patient_id, source='voice')
+        except Exception as _ce:
+            logger.error(
+                "Voice-note crisis escalation error: patient=%s err=%s",
+                patient_id, _ce,
+            )
+
         # ── 7. Persist features + link voice note to its clinical session ────
         features_stored = db.store_session_features(
             session_id=session_id,

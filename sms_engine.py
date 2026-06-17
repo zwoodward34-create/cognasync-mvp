@@ -581,6 +581,77 @@ def send_provider_crisis_alert(provider_number: str, patient_name: str) -> dict:
     return send_sms(provider_number, body)
 
 
+def escalate_crisis(db, patient_id, source, patient_name=None, from_number=None):
+    """Unified crisis escalation shared by every patient-facing channel
+    (inbound SMS, SMS check-in, voice note).
+
+    Sends the patient crisis resources, logs the event, resolves any open SMS
+    session, and alerts the patient's provider (SMS + a care_flags row). `db` is
+    injected so this module needs no database import and is safe to call from the
+    background voice-processing thread. Patient name/phone are looked up from the
+    profile when not supplied. Every step is independently guarded so one failure
+    (e.g. no phone on file) never prevents the others — escalation must be robust.
+
+    `source` must be one of the values allowed by the sms_crisis_events CHECK
+    constraint: 'keyword', 'help_branch', 'checkin', 'voice'.
+    """
+    if not from_number or not patient_name:
+        try:
+            res = db.supabase_admin.table('profiles').select(
+                'full_name, phone_number').eq('id', str(patient_id)).limit(1).execute()
+            prof = res.data[0] if res.data else {}
+            patient_name = patient_name or prof.get('full_name') or 'Your patient'
+            from_number  = from_number or prof.get('phone_number') or ''
+        except Exception as e:
+            logger.error('[crisis] profile lookup failed for %s: %s', patient_id, e)
+            patient_name = patient_name or 'Your patient'
+
+    # 1. Patient-facing resources (only if we have a number to reach them)
+    if from_number:
+        try:
+            send_crisis_sms_to_patient(from_number)
+        except Exception as e:
+            logger.error('[crisis] patient SMS failed for %s: %s', patient_id, e)
+
+    # 2. Log the event (no patient text stored)
+    event_id = None
+    try:
+        event_id = db.log_sms_crisis(patient_id, source=source)
+    except Exception as e:
+        logger.error('[crisis] log_sms_crisis failed for %s: %s', patient_id, e)
+
+    # 3. Resolve any open session
+    try:
+        db.resolve_sms_session(patient_id)
+    except Exception:
+        pass
+
+    # 4. Alert the provider via SMS + insert a care_flags row (Clinical Alerts)
+    try:
+        provider = db.get_provider_for_patient(patient_id)
+        if provider:
+            if provider.get('phone_number'):
+                result = send_provider_crisis_alert(provider['phone_number'], patient_name)
+                if event_id and result.get('ok'):
+                    db.mark_provider_notified(event_id, sms_sid=result.get('sid'))
+            source_label = source.replace('_', ' ')
+            flag_body = (
+                f'🔴 Crisis signal ({source_label}) — {patient_name} may need immediate '
+                f'support. Please check in directly.'
+            )
+            db.supabase_admin.table('care_flags').insert({
+                'patient_id':         str(patient_id),
+                'author_provider_id': str(provider['id']),
+                'flag_type':          'concern',
+                'body':               flag_body,
+                'visibility':         'care_team',
+            }).execute()
+    except Exception as e:
+        logger.error('[crisis] provider alert/flag failed for %s: %s', patient_id, e)
+
+    return event_id
+
+
 def send_daily_checkin_prompt(to_number: str) -> dict:
     """Send the short recurring check-in prompt (3x/week)."""
     return send_sms(to_number, MSG_CHECKIN_PROMPT)
