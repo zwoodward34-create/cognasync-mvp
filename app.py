@@ -5639,7 +5639,7 @@ def _maybe_send_med_followup_now(patient_id, phone):
     if today is a follow-up day and it hasn't already gone out (one per day)."""
     try:
         import pytz
-        from datetime import timezone as _tz
+        from datetime import datetime, timezone as _tz
         sched = db.get_patient_schedule(patient_id)
         if not sched:
             return
@@ -5670,7 +5670,7 @@ def internal_trigger_medication_sms():
     if not valid:
         return err
 
-    from datetime import timezone as _tz
+    from datetime import datetime, timezone as _tz, timedelta
     import pytz
 
     now_utc = datetime.now(_tz.utc)
