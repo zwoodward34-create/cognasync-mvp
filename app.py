@@ -4402,6 +4402,9 @@ def api_sms_inbound():
                         'raw_reply':  cleaned[:200],
                     }).eq('id', log_res.data[0]['id']).execute()
                 db.resolve_sms_session(patient_id)
+                # Chain today's follow-up immediately after the reply (one per day;
+                # the cron fallback covers patients who never reply).
+                _maybe_send_med_followup_now(patient_id, from_number)
             except Exception as e:
                 app.logger.error(f'[sms_inbound] med reply error: {e}')
         return _twiml_empty()
@@ -4811,12 +4814,16 @@ def api_send_patient_checkin_sms(patient_id):
     })
 
 
-@app.route('/api/provider/patient/<patient_id>/medication-reminder', methods=['POST'])
+@app.route('/api/provider/patient/<patient_id>/medication-reminder', methods=['GET', 'POST'])
 def api_set_medication_reminder(patient_id):
-    """Set or clear a patient's daily medication-reminder time.
+    """Get, set, or clear a patient's daily medication-reminder schedule.
 
-    Body: {"dose_time": "HH:MM" | "", "timezone": "America/..."}.
-    An empty dose_time clears the schedule (disables the daily reminder).
+    GET returns the current schedule so the provider UI can preload it.
+
+    Body: {"dose_time": "HH:MM" | "", "timezone": "America/...",
+           "checkin_days": [0,2,4], "voice_days": [5]}
+    Weekdays are Mon=0..Sun=6. An empty dose_time clears the schedule (disables
+    the daily reminder and its follow-ups).
     """
     provider, err = _api_user('provider')
     if err:
@@ -4824,9 +4831,36 @@ def api_set_medication_reminder(patient_id):
     if not _provider_owns_patient(provider['id'], patient_id):
         return jsonify({'error': 'Patient not found'}), 404
 
+    if request.method == 'GET':
+        sched = db.get_patient_schedule(patient_id) or {}
+        dose = sched.get('dose_time_local')
+        return jsonify({
+            'ok': True,
+            'dose_time':    dose[:5] if dose else '',
+            'timezone':     sched.get('timezone') or 'America/New_York',
+            'checkin_days': sched.get('checkin_days') or [],
+            'voice_days':   sched.get('voice_days') or [],
+        })
+
     data      = request.get_json(silent=True) or {}
     dose_time = (data.get('dose_time') or '').strip()
     timezone  = (data.get('timezone') or 'America/New_York').strip()
+
+    def _clean_days(raw):
+        out = []
+        for d in (raw or []):
+            try:
+                n = int(d)
+            except (TypeError, ValueError):
+                continue
+            if 0 <= n <= 6 and n not in out:
+                out.append(n)
+        return sorted(out)
+
+    checkin_days = _clean_days(data.get('checkin_days'))
+    voice_days   = _clean_days(data.get('voice_days'))
+    # Enforce one follow-up per day: a weekday can't be both check-in and voice.
+    voice_days   = [d for d in voice_days if d not in checkin_days]
 
     if dose_time:
         if not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', dose_time):
@@ -4835,12 +4869,14 @@ def api_set_medication_reminder(patient_id):
     else:
         dose_val = None  # clears the schedule → disables the reminder
 
-    ok = db.upsert_medication_schedule(patient_id, dose_val, timezone)
+    ok = db.upsert_medication_schedule(patient_id, dose_val, timezone,
+                                       checkin_days=checkin_days, voice_days=voice_days)
     if not ok:
         return jsonify({'error': 'Could not save medication reminder'}), 500
 
     return jsonify({'ok': True, 'enabled': dose_val is not None,
-                    'dose_time': dose_val, 'timezone': timezone})
+                    'dose_time': dose_val, 'timezone': timezone,
+                    'checkin_days': checkin_days, 'voice_days': voice_days})
 
 @app.route('/api/provider/patient/<patient_id>/upload-voice-note', methods=['POST'])
 def api_provider_upload_voice_note(patient_id):
@@ -5564,12 +5600,71 @@ def twilio_checkin():
 # Protected by INTERNAL_SECRET header (set as Render env var on cron service).
 # ═══════════════════════════════════════════════════════════════════════════════
 
+MED_FOLLOWUP_DELAY_MIN = 60  # cron fallback fires this long after the dose time
+
+
+def _med_followup_type(weekday: int, checkin_days, voice_days):
+    """Return 'checkin', 'voice', or None for this weekday (Mon=0..Sun=6).
+    Check-in takes priority if a weekday appears in both lists (one per day)."""
+    if weekday in (checkin_days or []):
+        return 'checkin'
+    if weekday in (voice_days or []):
+        return 'voice'
+    return None
+
+
+def _send_med_followup(patient_id, phone, follow_type, patient_name=''):
+    """Send the chained follow-up after a medication reminder.
+
+    'checkin' → M·E·S·Q·H prompt + checkin_pending session (reply captured as a check-in).
+    'voice'   → branded voice-note invite link.
+    Returns True on a successful send.
+    """
+    if follow_type == 'checkin':
+        result = _sms.send_daily_checkin_prompt(phone)
+        if result.get('ok'):
+            db.set_sms_session(patient_id, 'checkin_pending')
+        return result.get('ok', False)
+    if follow_type == 'voice':
+        token = _sms.create_checkin_token(
+            patient_id=patient_id, voice_prompt=_sms.GENERIC_WEEKLY_VOICE_PROMPT)
+        result = _sms.send_voice_invite_sms(
+            phone, patient_name, token, _sms.GENERIC_WEEKLY_VOICE_PROMPT)
+        return result.get('ok', False)
+    return False
+
+
+def _maybe_send_med_followup_now(patient_id, phone):
+    """Immediately after a medication reply, send today's check-in/voice follow-up
+    if today is a follow-up day and it hasn't already gone out (one per day)."""
+    try:
+        import pytz
+        from datetime import timezone as _tz
+        sched = db.get_patient_schedule(patient_id)
+        if not sched:
+            return
+        local_now = datetime.now(_tz.utc).astimezone(pytz.timezone(sched['timezone']))
+        today = local_now.date().isoformat()
+        ftype = _med_followup_type(local_now.weekday(),
+                                   sched['checkin_days'], sched['voice_days'])
+        if not ftype or db.has_daily_send(patient_id, ftype, today):
+            return
+        if _send_med_followup(patient_id, phone, ftype):
+            db.record_daily_send(patient_id, ftype, today)
+    except Exception as e:
+        app.logger.error(f'[sms_inbound] followup chain error: {e}')
+
+
 @app.route('/api/internal/trigger-medication-sms', methods=['POST'])
 def internal_trigger_medication_sms():
-    """
-    Called every 15 minutes by Render cron.
-    Finds patients whose medication dose time falls in the current window
-    and fires Twilio Flow 1 for each.
+    """Daily SMS cadence — called every 15 minutes by Render cron.
+
+    For each patient with a daily medication time:
+      • Medication reminder: sent once per day at the first tick at/after the dose
+        time (catch-up, deduped via daily_sms_sends — robust to exact tick timing).
+      • Follow-up fallback: on configured check-in/voice weekdays, if the patient
+        hasn't already received that day's follow-up (e.g. via the immediate
+        post-reply path), send it once the dose time + delay has passed.
     """
     valid, err = _validate_internal_secret()
     if not valid:
@@ -5579,61 +5674,57 @@ def internal_trigger_medication_sms():
     import pytz
 
     now_utc = datetime.now(_tz.utc)
-    window_start = now_utc
-    window_end = now_utc + timedelta(minutes=15)
+    patients = db.get_scheduled_med_patients()
 
-    patients = db.get_patients_due_medication_sms(
-        window_start=window_start.strftime('%H:%M'),
-        window_end=window_end.strftime('%H:%M'),
-    )
-
-    triggered = 0
-    skipped = 0
+    med_sent = followups_sent = skipped = 0
 
     for patient in patients:
-        # Convert patient's dose time to UTC for accurate comparison
+        pid = patient['patient_id']
         try:
             tz = pytz.timezone(patient['timezone'])
-            dose_local = datetime.strptime(patient['dose_time_local'], '%H:%M').time()
-            # Build a full datetime in patient's local tz for today
             local_now = now_utc.astimezone(tz)
-            dose_dt_local = tz.localize(
-                datetime(local_now.year, local_now.month, local_now.day,
-                         dose_local.hour, dose_local.minute)
-            )
-            dose_dt_utc = dose_dt_local.astimezone(_tz.utc)
-
-            # Skip if dose time not in this 15-min window
-            if not (window_start <= dose_dt_utc < window_end):
-                skipped += 1
-                continue
+            today   = local_now.date().isoformat()
+            weekday = local_now.weekday()  # Mon=0 .. Sun=6
+            dose_str = patient['dose_time_local']            # 'HH:MM' or 'HH:MM:SS'
+            dose_t   = datetime.strptime(dose_str[:5], '%H:%M').time()
+            dose_dt  = tz.localize(datetime(local_now.year, local_now.month,
+                                            local_now.day, dose_t.hour, dose_t.minute))
         except Exception as e:
-            app.logger.warning(f"[internal/med] TZ error patient={patient['patient_id']!r}: {e}")
+            app.logger.warning(f"[internal/med] schedule error patient={pid!r}: {e}")
             skipped += 1
             continue
 
-        # Direct send (no Studio Flow). Log a pending row + open a med_pending
-        # session so the inbound Y/N webhook records adherence against it.
-        db.log_medication_sms_sent(
-            patient_id=patient['patient_id'],
-            medication_name=patient['medication_name'],
-            scheduled_time=patient['dose_time_local'],
-            phone_number=patient['phone'],
-        )
-        db.set_sms_session(patient['patient_id'], 'med_pending')
-        result = _sms.send_medication_sms(
-            patient['phone'],
-            '',  # patient_name — not used in the message body
-            patient['medication_name'],
-            patient.get('dose_str', ''),
-        )
-        if result.get('ok'):
-            triggered += 1
-        else:
-            skipped += 1
+        med_already_sent = db.has_daily_send(pid, 'medication', today)
 
-    app.logger.info(f"[internal/med] triggered={triggered} skipped={skipped}")
-    return jsonify({'ok': True, 'triggered': triggered, 'skipped': skipped})
+        # ── Daily medication reminder (catch-up: first tick at/after dose time) ──
+        if local_now >= dose_dt and not med_already_sent:
+            db.log_medication_sms_sent(
+                patient_id=pid, medication_name=patient['medication_name'],
+                scheduled_time=dose_str, phone_number=patient['phone'])
+            db.set_sms_session(pid, 'med_pending')
+            result = _sms.send_medication_sms(
+                patient['phone'], '', patient['medication_name'],
+                patient.get('dose_str', ''))
+            if result.get('ok'):
+                db.record_daily_send(pid, 'medication', today)
+                med_sent += 1
+            else:
+                skipped += 1
+
+        # ── Follow-up fallback (only after the med was sent on a prior tick, so a
+        #    same-run race never clobbers the med_pending session) ──
+        follow_type = _med_followup_type(weekday, patient['checkin_days'], patient['voice_days'])
+        if (follow_type and med_already_sent
+                and local_now >= dose_dt + timedelta(minutes=MED_FOLLOWUP_DELAY_MIN)
+                and not db.has_daily_send(pid, follow_type, today)):
+            if _send_med_followup(pid, patient['phone'], follow_type):
+                db.record_daily_send(pid, follow_type, today)
+                followups_sent += 1
+
+    app.logger.info(f"[internal/med] med_sent={med_sent} "
+                    f"followups_sent={followups_sent} skipped={skipped}")
+    return jsonify({'ok': True, 'med_sent': med_sent,
+                    'followups_sent': followups_sent, 'skipped': skipped})
 
 
 @app.route('/api/internal/trigger-checkin-sms', methods=['POST'])

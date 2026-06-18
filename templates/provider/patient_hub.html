@@ -1574,6 +1574,15 @@
           </select>
         </div>
       </div>
+      <div style="margin-top:14px;">
+        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:5px;">Check-in follow-up days (~3/week)</label>
+        <div id="mr-checkin-days" style="display:flex;gap:5px;"></div>
+      </div>
+      <div style="margin-top:12px;">
+        <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:5px;">Voice-recording follow-up days (~1–2/week)</label>
+        <div id="mr-voice-days" style="display:flex;gap:5px;"></div>
+      </div>
+      <p style="font-size:0.72rem;color:var(--text-muted);margin:9px 0 0;line-height:1.45;">Follow-ups go out right after the patient replies to the med text — and ~1 hour later if they don't reply. A day can be check-in or voice, not both.</p>
       <div id="med-reminder-err" style="font-size:0.78rem;color:#c0392b;margin-top:8px;display:none;"></div>
       <div style="display:flex;gap:8px;margin-top:16px;justify-content:space-between;align-items:center;">
         <button class="hub-action-btn" onclick="disableMedReminder()" style="color:#c0392b;">Turn off</button>
@@ -3007,9 +3016,55 @@ async function confirmVoiceSMS() {
 }
 
 // ── Daily medication reminder ──────────────────────────────────────────────────
-function openMedReminder() {
+var MR_DAY_LABELS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];  // Mon=0 .. Sun=6
+
+function _mrBuildDays(containerId, selected) {
+  var c = document.getElementById(containerId);
+  c.innerHTML = '';
+  for (var d = 0; d < 7; d++) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.textContent = MR_DAY_LABELS[d];
+    b.dataset.day = d;
+    var on = (selected || []).indexOf(d) !== -1;
+    b.dataset.on = on ? '1' : '0';
+    _mrPaintDay(b);
+    b.onclick = function () { _mrToggleDay(this); };
+    c.appendChild(b);
+  }
+}
+function _mrPaintDay(b) {
+  var on = b.dataset.on === '1';
+  b.style.cssText = 'flex:1;padding:7px 0;border-radius:6px;cursor:pointer;font-size:0.78rem;font-family:inherit;border:1px solid '
+    + (on ? 'var(--accent);background:var(--accent);color:#fff;' : 'var(--border);background:var(--bg);color:var(--text);');
+}
+function _mrToggleDay(btn) {
+  btn.dataset.on = btn.dataset.on === '1' ? '0' : '1';
+  _mrPaintDay(btn);
+}
+function _mrCollect(containerId) {
+  var days = [];
+  document.querySelectorAll('#' + containerId + ' button').forEach(function (b) {
+    if (b.dataset.on === '1') days.push(parseInt(b.dataset.day, 10));
+  });
+  return days;
+}
+async function openMedReminder() {
   document.getElementById('med-reminder-err').style.display = 'none';
+  document.getElementById('med-reminder-time').value = '';
+  _mrBuildDays('mr-checkin-days', []);
+  _mrBuildDays('mr-voice-days', []);
   document.getElementById('med-reminder-modal').style.display = 'flex';
+  try {
+    const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/medication-reminder', { credentials: 'same-origin' });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      if (data.dose_time) document.getElementById('med-reminder-time').value = data.dose_time;
+      if (data.timezone)  document.getElementById('med-reminder-tz').value = data.timezone;
+      _mrBuildDays('mr-checkin-days', data.checkin_days || []);
+      _mrBuildDays('mr-voice-days', data.voice_days || []);
+    }
+  } catch (_) { /* leave blank on load error */ }
 }
 function closeMedReminder() {
   document.getElementById('med-reminder-modal').style.display = 'none';
@@ -3024,7 +3079,12 @@ async function _saveMedReminder(doseTime) {
     const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/medication-reminder', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ dose_time: doseTime, timezone: tz }),
+      body: JSON.stringify({
+        dose_time: doseTime,
+        timezone: tz,
+        checkin_days: _mrCollect('mr-checkin-days'),
+        voice_days: _mrCollect('mr-voice-days'),
+      }),
       credentials: 'same-origin',
     });
     const data = await res.json();
@@ -3044,7 +3104,7 @@ function saveMedReminder() {
   const t = document.getElementById('med-reminder-time').value;  // 'HH:MM' or ''
   if (!t) {
     const errEl = document.getElementById('med-reminder-err');
-    errEl.textContent = 'Pick a time, or use “Turn off” to disable.';
+    errEl.textContent = 'Pick a time, or use "Turn off" to disable.';
     errEl.style.display = '';
     return;
   }

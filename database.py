@@ -7034,11 +7034,17 @@ def get_patients_due_medication_sms(window_start: str, window_end: str) -> list:
 
 
 def upsert_medication_schedule(patient_id: str, dose_time: str | None,
-                               timezone: str = 'America/New_York') -> bool:
-    """Set (or clear) a patient's daily medication reminder time.
+                               timezone: str = 'America/New_York',
+                               checkin_days: list | None = None,
+                               voice_days: list | None = None) -> bool:
+    """Set (or clear) a patient's daily medication reminder + follow-up cadence.
 
-    dose_time: 'HH:MM' string to enable the daily reminder, or None to disable it
-               (a null medication_dose_time excludes the patient from the send query).
+    dose_time:    'HH:MM' string to enable the daily reminder, or None to disable it
+                  (a null medication_dose_time excludes the patient from the send query).
+    checkin_days: list of weekday ints (Mon=0..Sun=6) on which a check-in follow-up
+                  is sent after the med text. None leaves the column unchanged.
+    voice_days:   list of weekday ints on which a voice follow-up is sent. None leaves
+                  the column unchanged.
     Upserts the patient's checkin_schedules row, keyed on patient_id.
     """
     try:
@@ -7048,11 +7054,113 @@ def upsert_medication_schedule(patient_id: str, dose_time: str | None,
             'timezone':             timezone or 'America/New_York',
             'updated_at':           datetime.utcnow().isoformat(),
         }
+        if checkin_days is not None:
+            row['short_checkin_days'] = [int(d) for d in checkin_days]
+        if voice_days is not None:
+            row['voice_days'] = [int(d) for d in voice_days]
         supabase_admin.table('checkin_schedules').upsert(
             row, on_conflict='patient_id').execute()
         return True
     except Exception as e:
         logger.exception(f'[db] upsert_medication_schedule error: {e}')
+        return False
+
+
+def get_scheduled_med_patients() -> list:
+    """Return every patient with a daily medication reminder configured.
+
+    Returns dicts with the full daily-cadence schedule so the trigger can decide
+    what to send:
+      {patient_id, phone, medication_name, dose_str, dose_time_local,
+       timezone, checkin_days, voice_days}
+    Patients without a phone number are excluded.
+    """
+    try:
+        result = supabase_admin.table('checkin_schedules') \
+            .select(
+                'patient_id, medication_dose_time, timezone, '
+                'short_checkin_days, voice_days, '
+                'patient_profiles!inner(phone_number, current_medications)'
+            ) \
+            .not_.is_('medication_dose_time', 'null') \
+            .execute()
+
+        patients = []
+        for row in (result.data or []):
+            profile = row.get('patient_profiles') or {}
+            if not profile.get('phone_number'):
+                continue
+            meds = profile.get('current_medications') or []
+            patients.append({
+                'patient_id':      row['patient_id'],
+                'phone':           profile.get('phone_number'),
+                'medication_name': meds[0].get('name', 'medication') if meds else 'medication',
+                'dose_str':        meds[0].get('dose', '') if meds else '',
+                'dose_time_local': row['medication_dose_time'],
+                'timezone':        row['timezone'],
+                'checkin_days':    row.get('short_checkin_days') or [],
+                'voice_days':      row.get('voice_days') or [],
+            })
+        return patients
+    except Exception as e:
+        logger.exception(f'[db] get_scheduled_med_patients error: {e}')
+        raise DataUnavailableError('[db] get_scheduled_med_patients error',
+                                   source='get_scheduled_med_patients')
+
+
+def get_patient_schedule(patient_id: str) -> dict | None:
+    """Return a single patient's daily-cadence schedule, or None if not set.
+
+    {dose_time_local, timezone, checkin_days, voice_days}
+    """
+    try:
+        res = supabase_admin.table('checkin_schedules').select(
+            'medication_dose_time, timezone, short_checkin_days, voice_days'
+        ).eq('patient_id', str(patient_id)).limit(1).execute()
+        if not res.data:
+            return None
+        row = res.data[0]
+        return {
+            'dose_time_local': row.get('medication_dose_time'),
+            'timezone':        row.get('timezone') or 'America/New_York',
+            'checkin_days':    row.get('short_checkin_days') or [],
+            'voice_days':      row.get('voice_days') or [],
+        }
+    except Exception as e:
+        logger.exception(f'[db] get_patient_schedule error: {e}')
+        return None
+
+
+def has_daily_send(patient_id: str, send_type: str, send_date: str) -> bool:
+    """True if a daily SMS of this type was already recorded for this date."""
+    try:
+        res = supabase_admin.table('daily_sms_sends').select('id') \
+            .eq('patient_id', str(patient_id)) \
+            .eq('send_type', send_type) \
+            .eq('send_date', send_date) \
+            .limit(1).execute()
+        return bool(res.data)
+    except Exception as e:
+        logger.exception(f'[db] has_daily_send error: {e}')
+        return False  # fail-open: better a possible duplicate than a missed dose
+
+
+def record_daily_send(patient_id: str, send_type: str, send_date: str) -> bool:
+    """Record that a daily SMS of this type was sent (idempotent via UNIQUE).
+
+    Returns True if a new row was inserted, False if it already existed (or error).
+    Use the return value to claim the slot before sending, avoiding double-sends
+    when the immediate-reply path and the cron fallback race.
+    """
+    try:
+        res = supabase_admin.table('daily_sms_sends').insert({
+            'patient_id': str(patient_id),
+            'send_type':  send_type,
+            'send_date':  send_date,
+        }).execute()
+        return bool(res.data)
+    except Exception:
+        # UNIQUE violation → already sent today; not an error worth raising
         return False
 
 
