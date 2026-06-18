@@ -4480,13 +4480,18 @@ def api_sms_inbound():
                     'dissociation_source':  'sms_default',
                     'checkin_source':       'sms',
                 }
+                from datetime import date as _date
                 checkin_id = db.create_checkin(
-                    user_id      = patient_id,
+                    patient_id   = patient_id,
+                    date_str     = _date.today().isoformat(),
+                    time_of_day  = 'self-prompted',
                     mood_score   = parsed['mood'],
-                    stress_score = parsed['stress'],
+                    medications  = [],
                     sleep_hours  = sleep_hrs,
+                    stress_score = parsed['stress'],
+                    symptoms     = '',
                     notes        = None,
-                    checkin_type = 'sms',
+                    checkin_type = 'short',
                     extended_data= ext,
                 )
                 db.resolve_sms_session(patient_id)
