@@ -794,7 +794,10 @@ _PSYCHIATRY_SYSTEM = (
     "- TREND VOCABULARY: Crash Risk, Nervous System Load, Sleep Disruption, Stim Load, and Mood "
     "Distortion are lower-is-better metrics. Never label them 'improving'/'worsening' alone — write "
     "the direction plus desirability: 'declining (favorable)' or 'rising (unfavorable)'. "
-    "Higher-is-better metrics (Mood, Stability, Energy) may use improving/declining.\n"
+    "Higher-is-better metrics (Mood, Stability, Energy) may use improving/declining. "
+    "Use the *_trend values from AGGREGATE STATS verbatim in the Trend column — if a trend "
+    "reads 'insufficient data', render exactly that and do NOT infer a direction from the "
+    "daily values yourself (too few observations to support a trend, per the N-gate).\n"
     "- SUICIDALITY-ADJACENT CONSOLIDATION: if two or more of the following co-occur in the period — "
     "(a) hopelessness/self-harm-adjacent language in voice notes or journals, (b) an engagement gap "
     "or non-response streak, (c) an active suicidality or mood monitoring target with no responses — "
@@ -1084,6 +1087,39 @@ def _compute_suicidality_escalation(session_context, journal_rows,
             'fold_targets': no_response_targets, 'consolidated_flag': flag}
 
 
+def _directional_trend(values, favorable_is_high, min_n=7, min_change=0.5):
+    """Deterministic trend label with a minimum-N gate and a noise band (spec §8/§9).
+
+    The previous estimator compared only the first and last value (`v[-1] vs v[0]`)
+    and gated only on `len < 2`, so two noisy endpoints over 5 logged days produced
+    'rising (unfavorable)' on a 1.83–2.5 range. This requires >= min_n observations
+    (§8's lowest bar for any trend/pattern claim is 7 logged days) AND a modeled
+    change across the window of >= min_change on the metric's own 0–10 scale before
+    naming a direction; otherwise 'insufficient data' or 'stable'.
+
+    favorable_is_high=True  → Mood / Stability / Energy (up = improving)
+    favorable_is_high=False → Crash Risk / NS Load (up = unfavorable)
+    """
+    vals = [float(v) for v in values if v is not None]
+    n = len(vals)
+    if n < min_n:
+        return 'insufficient data'
+    xs = list(range(n))
+    mx = sum(xs) / n
+    my = sum(vals) / n
+    denom = sum((x - mx) ** 2 for x in xs)
+    if denom == 0:
+        return 'stable'
+    slope = sum((x - mx) * (y - my) for x, y in zip(xs, vals)) / denom
+    projected = slope * (n - 1)          # modeled change across the full window
+    if abs(projected) < min_change:
+        return 'stable'
+    rising = projected > 0
+    if favorable_is_high:
+        return 'improving' if rising else 'declining'
+    return 'rising (unfavorable)' if rising else 'declining (favorable)'
+
+
 def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                                  period_start=None, period_end=None,
                                  appointment_date=None,
@@ -1228,15 +1264,10 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         if energy is not None: energy_vals.append(float(energy))
 
     def _avg(v): return round(sum(v) / len(v), 1) if v else None
-    def _trend(v):
-        if len(v) < 2: return 'insufficient data'
-        return 'improving' if v[-1] > v[0] else 'declining' if v[-1] < v[0] else 'stable'
-    def _trend_dir(v):
-        # Direction-only label for lower-is-better metrics (Crash Risk, NS Load):
-        # 'improving' would be ambiguous or misleading for these.
-        if len(v) < 2: return 'insufficient data'
-        return 'rising (unfavorable)' if v[-1] > v[0] else \
-               'declining (favorable)' if v[-1] < v[0] else 'stable'
+    # Higher-is-better metrics (Mood, Stability, Energy). N-gated + noise-banded.
+    def _trend(v):     return _directional_trend(v, favorable_is_high=True)
+    # Lower-is-better metrics (Crash Risk, NS Load): 'improving' would mislead.
+    def _trend_dir(v): return _directional_trend(v, favorable_is_high=False)
     def _std(v):
         if len(v) < 2: return None
         m = sum(v) / len(v)
@@ -1281,7 +1312,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         'mood_trend':           _trend(mood_vals),
         'mood_range':           [min(mood_vals), max(mood_vals)] if mood_vals else None,
         'avg_stress':           _avg(stress_vals),
-        'stress_trend':         _trend(stress_vals),
+        'stress_trend':         _directional_trend(stress_vals, favorable_is_high=False),
         'avg_sleep_hours':      _avg(sleep_vals),
         'sleep_range':          [min(sleep_vals), max(sleep_vals)] if sleep_vals else None,
         'avg_energy':           _avg(energy_vals),
@@ -2038,9 +2069,8 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         if energy is not None: energy_vals.append(float(energy))
 
     def _avg(v): return round(sum(v) / len(v), 1) if v else None
-    def _trend(v):
-        if len(v) < 2: return 'insufficient data'
-        return 'improving' if v[-1] > v[0] else 'declining' if v[-1] < v[0] else 'stable'
+    # N-gated, noise-banded trend (shared helper). Higher-is-better metrics.
+    def _trend(v): return _directional_trend(v, favorable_is_high=True)
 
     n = len(checkin_rows)
     stats = {
@@ -2049,7 +2079,7 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
         'avg_mood':           _avg(mood_vals),
         'mood_trend':         _trend(mood_vals),
         'avg_stress':         _avg(stress_vals),
-        'stress_trend':       _trend(stress_vals),
+        'stress_trend':       _directional_trend(stress_vals, favorable_is_high=False),
         'avg_sleep_hours':    _avg(sleep_vals),
         'avg_energy':         _avg(energy_vals),
         'checkins_with_meds': meds_logged,
@@ -3120,10 +3150,8 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         n += 1
 
     def _avg(v): return round(sum(v) / len(v), 1) if v else None
-    def _trend(v):
-        if len(v) < 2: return 'insufficient data'
-        return ('improving' if v[-1] > v[0] else
-                'declining' if v[-1] < v[0] else 'stable')
+    # N-gated, noise-banded trend (shared helper). Higher-is-better metrics.
+    def _trend(v): return _directional_trend(v, favorable_is_high=True)
 
     # Use behavioral_data if provided (pre-computed), else use parsed values
     if behavioral_data:
@@ -3219,7 +3247,7 @@ def generate_therapy_summary(checkin_data, journal_data, behavioral_data=None,
         'avg_mood':        _avg(mood_vals),
         'mood_trend':      _trend(mood_vals),
         'avg_stress':      _avg(stress_vals),
-        'stress_trend':    _trend(stress_vals),
+        'stress_trend':    _directional_trend(stress_vals, favorable_is_high=False),
         'avg_sleep_hours': _avg(sleep_vals),
         'avg_energy':      _avg(energy_vals),
     }

@@ -603,10 +603,10 @@ function changePeriod(days) {
       datasets: [
         { label: 'Mood', data: nullSafe(cd.mood),
           borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.08)',
-          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: true },
+          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: false },
         { label: 'Stability', data: nullSafe(cd.stability_score),
           borderColor: '#7c3aed', backgroundColor: 'rgba(124,58,237,0.06)',
-          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: true,
+          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: false,
           borderDash: [4, 3] },
       ]
     },
@@ -624,11 +624,11 @@ function changePeriod(days) {
       datasets: [
         { label: 'Crash Risk', data: nullSafe(cd.crash_risk),
           borderColor: '#dc2626', backgroundColor: 'rgba(220,38,38,0.08)',
-          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: true,
+          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: false,
           fill: true },
         { label: 'Stim Load', data: nullSafe(cd.stim_load),
           borderColor: '#d97706', backgroundColor: 'transparent',
-          borderWidth: 1.5, pointRadius: 2, tension: 0.3, spanGaps: true,
+          borderWidth: 1.5, pointRadius: 2, tension: 0.3, spanGaps: false,
           borderDash: [4, 3] },
       ]
     },
@@ -649,7 +649,7 @@ function changePeriod(days) {
         { label: 'Disruption', data: nullSafe(cd.sleep_disruption),
           type: 'line',
           borderColor: '#dc2626', backgroundColor: 'transparent',
-          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: true,
+          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: false,
           yAxisID: 'yScore' },
       ]
     },
@@ -681,7 +681,7 @@ function changePeriod(days) {
         { label: 'Energy', data: nullSafe(cd.energy),
           type: 'line',
           borderColor: '#16a34a', backgroundColor: 'transparent',
-          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: true },
+          borderWidth: 2, pointRadius: 2, tension: 0.3, spanGaps: false },
       ]
     },
     options: { ...baseOpts, scales: { ...baseOpts.scales,

@@ -160,6 +160,50 @@ def test_brief_guards_against_dropped_consolidation_flag():
     assert '2026-06-12' in text
 
 
+# ── P1 #4 — trend labels must not overclaim below minimum-N ──────────────────
+def test_trend_insufficient_data_below_min_n():
+    # The 2026-06-18 brief: Crash Risk over 5 logged days, range 1.83–2.5, was
+    # labeled "rising (unfavorable)". With < 7 observations it must abstain.
+    crash = [1.83, 2.1, 2.2, 2.4, 2.5]
+    assert ca._directional_trend(crash, favorable_is_high=False) == 'insufficient data'
+    assert ca._directional_trend([8.8, 9.0, 9.5, 8.0, 7.75],
+                                 favorable_is_high=True) == 'insufficient data'
+
+
+def test_trend_stable_when_change_is_noise():
+    # >= 7 observations but the modeled change across the window is trivial.
+    flat = [5.0, 5.1, 4.9, 5.0, 5.1, 4.9, 5.0]
+    assert ca._directional_trend(flat, favorable_is_high=True) == 'stable'
+    assert ca._directional_trend(flat, favorable_is_high=False) == 'stable'
+
+
+def test_trend_directions_when_supported():
+    rising = [1.0, 1.5, 2.5, 3.0, 4.0, 5.0, 6.0]   # clear upward slope, 7 pts
+    falling = list(reversed(rising))
+    # Lower-is-better (Crash Risk / NS Load)
+    assert ca._directional_trend(rising,  favorable_is_high=False) == 'rising (unfavorable)'
+    assert ca._directional_trend(falling, favorable_is_high=False) == 'declining (favorable)'
+    # Higher-is-better (Mood / Stability / Energy)
+    assert ca._directional_trend(rising,  favorable_is_high=True) == 'improving'
+    assert ca._directional_trend(falling, favorable_is_high=True) == 'declining'
+
+
+def test_trend_ignores_noisy_endpoints():
+    # Endpoint-only comparison (old bug) would call this 'improving' off v[0] vs
+    # v[-1]; the slope over 7 mostly-flat points is below the noise band → stable.
+    series = [5.0, 5.2, 5.0, 4.9, 5.1, 5.0, 5.2]
+    assert ca._directional_trend(series, favorable_is_high=True) == 'stable'
+
+
+# ── Guard: the weak estimator must not return to any summary function ─────────
+def test_no_endpoint_only_trend_estimator_remains():
+    src = open(os.path.join(_REPO, 'claude_api.py'), encoding='utf-8').read()
+    # The old first-vs-last comparison ('v[-1] > v[0]') had no N-gate or magnitude.
+    assert 'v[-1] > v[0]' not in src, "endpoint-only trend estimator reintroduced"
+    # Stress is lower-is-better; it must never run through the higher-is-better wrapper.
+    assert '_trend(stress_vals)' not in src, "stress routed through higher-is-better _trend"
+
+
 # ── Plain runner (no pytest dependency) ──────────────────────────────────────
 if __name__ == '__main__':
     tests = [v for k, v in sorted(globals().items()) if k.startswith('test_')]
