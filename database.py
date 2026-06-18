@@ -7014,12 +7014,14 @@ def get_patients_due_medication_sms(window_start: str, window_end: str) -> list:
         for row in (result.data or []):
             profile = row.get('patient_profiles') or {}
             meds = profile.get('current_medications') or []
-            primary_med = meds[0].get('name', 'medication') if meds else 'medication'
+            primary_med  = meds[0].get('name', 'medication') if meds else 'medication'
+            primary_dose = meds[0].get('dose', '') if meds else ''
 
             patients.append({
                 'patient_id':       row['patient_id'],
                 'phone':            profile.get('phone_number'),
                 'medication_name':  primary_med,
+                'dose_str':         primary_dose,
                 'timezone':         row['timezone'],
                 'dose_time_local':  row['medication_dose_time'],
             })
@@ -7029,6 +7031,49 @@ def get_patients_due_medication_sms(window_start: str, window_end: str) -> list:
     except Exception as e:
         logger.exception(f'[db] get_patients_due_medication_sms error: {e}')
         raise DataUnavailableError(f'[db] get_patients_due_medication_sms error', source="get_patients_due_medication_sms")
+
+
+def upsert_medication_schedule(patient_id: str, dose_time: str | None,
+                               timezone: str = 'America/New_York') -> bool:
+    """Set (or clear) a patient's daily medication reminder time.
+
+    dose_time: 'HH:MM' string to enable the daily reminder, or None to disable it
+               (a null medication_dose_time excludes the patient from the send query).
+    Upserts the patient's checkin_schedules row, keyed on patient_id.
+    """
+    try:
+        row = {
+            'patient_id':           str(patient_id),
+            'medication_dose_time': dose_time,   # None clears it (disables reminder)
+            'timezone':             timezone or 'America/New_York',
+            'updated_at':           datetime.utcnow().isoformat(),
+        }
+        supabase_admin.table('checkin_schedules').upsert(
+            row, on_conflict='patient_id').execute()
+        return True
+    except Exception as e:
+        logger.exception(f'[db] upsert_medication_schedule error: {e}')
+        return False
+
+
+def log_medication_sms_sent(patient_id: str, medication_name: str,
+                            scheduled_time: str, phone_number: str | None = None) -> str | None:
+    """Insert a medication_sms_logs row at send time (replied_at stays null).
+
+    The inbound Y/N handler later finds the most recent unreplied row for the
+    patient and fills in taken/replied_at. Returns the new row id or None.
+    """
+    try:
+        res = supabase_admin.table('medication_sms_logs').insert({
+            'patient_id':     str(patient_id),
+            'medication_name': medication_name,
+            'scheduled_time': scheduled_time,
+            'phone_number':   phone_number,
+        }).execute()
+        return res.data[0]['id'] if res.data else None
+    except Exception as e:
+        logger.exception(f'[db] log_medication_sms_sent error: {e}')
+        return None
 
 
 def get_patients_due_checkin_sms(check_in_type: str, target_date: date | None = None) -> list:

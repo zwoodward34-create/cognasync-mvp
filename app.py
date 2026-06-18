@@ -4810,6 +4810,38 @@ def api_send_patient_checkin_sms(patient_id):
         'sid': result.get('sid', ''),
     })
 
+
+@app.route('/api/provider/patient/<patient_id>/medication-reminder', methods=['POST'])
+def api_set_medication_reminder(patient_id):
+    """Set or clear a patient's daily medication-reminder time.
+
+    Body: {"dose_time": "HH:MM" | "", "timezone": "America/..."}.
+    An empty dose_time clears the schedule (disables the daily reminder).
+    """
+    provider, err = _api_user('provider')
+    if err:
+        return err
+    if not _provider_owns_patient(provider['id'], patient_id):
+        return jsonify({'error': 'Patient not found'}), 404
+
+    data      = request.get_json(silent=True) or {}
+    dose_time = (data.get('dose_time') or '').strip()
+    timezone  = (data.get('timezone') or 'America/New_York').strip()
+
+    if dose_time:
+        if not re.fullmatch(r'([01]\d|2[0-3]):[0-5]\d', dose_time):
+            return jsonify({'error': 'dose_time must be HH:MM (24-hour)'}), 400
+        dose_val = dose_time
+    else:
+        dose_val = None  # clears the schedule → disables the reminder
+
+    ok = db.upsert_medication_schedule(patient_id, dose_val, timezone)
+    if not ok:
+        return jsonify({'error': 'Could not save medication reminder'}), 500
+
+    return jsonify({'ok': True, 'enabled': dose_val is not None,
+                    'dose_time': dose_val, 'timezone': timezone})
+
 @app.route('/api/provider/patient/<patient_id>/upload-voice-note', methods=['POST'])
 def api_provider_upload_voice_note(patient_id):
     """Provider uploads a voice recording on behalf of a patient (e.g. in-session note)."""
@@ -5580,25 +5612,22 @@ def internal_trigger_medication_sms():
             skipped += 1
             continue
 
-        token = db.create_sms_token(
+        # Direct send (no Studio Flow). Log a pending row + open a med_pending
+        # session so the inbound Y/N webhook records adherence against it.
+        db.log_medication_sms_sent(
             patient_id=patient['patient_id'],
-            flow_type='medication',
-            metadata={'medication_name': patient['medication_name']},
+            medication_name=patient['medication_name'],
+            scheduled_time=patient['dose_time_local'],
+            phone_number=patient['phone'],
         )
-        if not token:
-            skipped += 1
-            continue
-
-        sid = _twilio.trigger_flow(
-            flow_type='medication',
-            to_phone=patient['phone'],
-            parameters={
-                'token':           token,
-                'medication_name': patient['medication_name'],
-                'patient_name':    '',  # optional — add to patient profile if desired
-            },
+        db.set_sms_session(patient['patient_id'], 'med_pending')
+        result = _sms.send_medication_sms(
+            patient['phone'],
+            '',  # patient_name — not used in the message body
+            patient['medication_name'],
+            patient.get('dose_str', ''),
         )
-        if sid:
+        if result.get('ok'):
             triggered += 1
         else:
             skipped += 1

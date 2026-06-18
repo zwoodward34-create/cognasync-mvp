@@ -1527,6 +1527,7 @@
       <div class="ch-sms-group">
         <button class="ch-action-btn" id="btn-checkin-sms" onclick="sendSMS('checkin')">Send SMS Check-In</button>
         <button class="ch-action-btn" id="btn-voice-sms" onclick="sendVoiceSMS()">Voice Question</button>
+        <button class="ch-action-btn" id="btn-med-reminder" onclick="openMedReminder()">Med Reminder</button>
       </div>
       <button class="ch-action-btn" id="btn-reminder" onclick="sendReminder()">Reminder</button>
     </div>
@@ -1546,6 +1547,40 @@
       <div style="display:flex;gap:8px;margin-top:12px;justify-content:flex-end;">
         <button class="hub-action-btn" onclick="closeVoiceModal()">Cancel</button>
         <button class="hub-action-btn hub-action-btn--primary" id="voice-modal-send-btn" onclick="confirmVoiceSMS()">Send</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Daily medication reminder modal -->
+  <div id="med-reminder-modal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.45);z-index:2000;align-items:center;justify-content:center;padding:16px;"
+       onclick="if(event.target===this)closeMedReminder()">
+    <div style="background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);width:100%;max-width:460px;padding:24px;font-family:'DM Sans',sans-serif;position:relative;">
+      <button onclick="closeMedReminder()" style="position:absolute;top:12px;right:14px;background:none;border:none;font-size:17px;cursor:pointer;color:var(--text-muted);">✕</button>
+      <h3 style="font-family:'DM Serif Display',serif;font-size:1.05rem;font-weight:400;margin:0 0 5px;">Daily Medication Reminder</h3>
+      <p style="font-size:0.8rem;color:var(--text-muted);margin:0 0 14px;line-height:1.5;">The patient gets one text per day at this time asking if they took their medication (they reply Y or N). Clear the time to turn it off.</p>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;">
+        <div style="flex:1;min-width:120px;">
+          <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:4px;">Time (patient local)</label>
+          <input id="med-reminder-time" type="time" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+        </div>
+        <div style="flex:1.4;min-width:160px;">
+          <label style="font-size:0.72rem;color:var(--text-muted);display:block;margin-bottom:4px;">Time zone</label>
+          <select id="med-reminder-tz" style="width:100%;box-sizing:border-box;font-family:'DM Sans',sans-serif;font-size:0.85rem;padding:8px 10px;border:1px solid var(--border);border-radius:6px;background:var(--bg);color:var(--text);">
+            <option value="America/New_York">Eastern (New York)</option>
+            <option value="America/Chicago">Central (Chicago)</option>
+            <option value="America/Denver">Mountain (Denver)</option>
+            <option value="America/Phoenix">Arizona (Phoenix)</option>
+            <option value="America/Los_Angeles">Pacific (Los Angeles)</option>
+          </select>
+        </div>
+      </div>
+      <div id="med-reminder-err" style="font-size:0.78rem;color:#c0392b;margin-top:8px;display:none;"></div>
+      <div style="display:flex;gap:8px;margin-top:16px;justify-content:space-between;align-items:center;">
+        <button class="hub-action-btn" onclick="disableMedReminder()" style="color:#c0392b;">Turn off</button>
+        <div style="display:flex;gap:8px;">
+          <button class="hub-action-btn" onclick="closeMedReminder()">Cancel</button>
+          <button class="hub-action-btn hub-action-btn--primary" id="med-reminder-save-btn" onclick="saveMedReminder()">Save</button>
+        </div>
       </div>
     </div>
   </div>
@@ -2969,6 +3004,54 @@ async function confirmVoiceSMS() {
     errEl.style.display = '';
   }
   btn.disabled = false; btn.textContent = 'Send';
+}
+
+// ── Daily medication reminder ──────────────────────────────────────────────────
+function openMedReminder() {
+  document.getElementById('med-reminder-err').style.display = 'none';
+  document.getElementById('med-reminder-modal').style.display = 'flex';
+}
+function closeMedReminder() {
+  document.getElementById('med-reminder-modal').style.display = 'none';
+}
+async function _saveMedReminder(doseTime) {
+  const errEl = document.getElementById('med-reminder-err');
+  const btn   = document.getElementById('med-reminder-save-btn');
+  const tz    = document.getElementById('med-reminder-tz').value;
+  errEl.style.display = 'none';
+  btn.disabled = true; btn.textContent = 'Saving…';
+  try {
+    const res = await fetch('/api/provider/patient/' + PATIENT_ID + '/medication-reminder', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ dose_time: doseTime, timezone: tz }),
+      credentials: 'same-origin',
+    });
+    const data = await res.json();
+    if (res.ok && data.ok) {
+      closeMedReminder();
+      showToast(data.enabled ? ('Daily reminder set for ' + data.dose_time) : 'Daily reminder turned off');
+    } else {
+      throw new Error(data.error || 'Save failed');
+    }
+  } catch (e) {
+    errEl.textContent = e.message || 'Failed — try again.';
+    errEl.style.display = '';
+  }
+  btn.disabled = false; btn.textContent = 'Save';
+}
+function saveMedReminder() {
+  const t = document.getElementById('med-reminder-time').value;  // 'HH:MM' or ''
+  if (!t) {
+    const errEl = document.getElementById('med-reminder-err');
+    errEl.textContent = 'Pick a time, or use “Turn off” to disable.';
+    errEl.style.display = '';
+    return;
+  }
+  _saveMedReminder(t);
+}
+function disableMedReminder() {
+  _saveMedReminder('');  // empty clears the schedule server-side
 }
 
 function toggleSmsDropdown(e) {
