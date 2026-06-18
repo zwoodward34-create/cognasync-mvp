@@ -7076,18 +7076,24 @@ def get_scheduled_med_patients() -> list:
     Patients without a phone number are excluded.
     """
     try:
-        result = supabase_admin.table('checkin_schedules') \
-            .select(
-                'patient_id, medication_dose_time, timezone, '
-                'short_checkin_days, voice_days, '
-                'patient_profiles!inner(phone_number, current_medications)'
-            ) \
-            .not_.is_('medication_dose_time', 'null') \
-            .execute()
+        # Two plain queries joined in Python — checkin_schedules has no FK to
+        # patient_profiles, so a PostgREST embed can't resolve the relationship.
+        sched = supabase_admin.table('checkin_schedules').select(
+            'patient_id, medication_dose_time, timezone, short_checkin_days, voice_days'
+        ).not_.is_('medication_dose_time', 'null').execute()
+        rows = sched.data or []
+        if not rows:
+            return []
+
+        ids = [r['patient_id'] for r in rows]
+        profs = supabase_admin.table('patient_profiles').select(
+            'user_id, phone_number, current_medications'
+        ).in_('user_id', ids).execute()
+        prof_map = {p['user_id']: p for p in (profs.data or [])}
 
         patients = []
-        for row in (result.data or []):
-            profile = row.get('patient_profiles') or {}
+        for row in rows:
+            profile = prof_map.get(row['patient_id']) or {}
             if not profile.get('phone_number'):
                 continue
             meds = profile.get('current_medications') or []
