@@ -915,6 +915,175 @@ def _build_chart_data(checkin_data, period_start=None, period_end=None):
     return chart
 
 
+# ── Hopelessness / crisis-adjacent lexical markers (provider channel only) ────
+# Used to join the voice/journal channel to the suicidality monitoring target so
+# a target is never rendered "no data to assess" while such language exists.
+_HOPELESSNESS_TERMS = (
+    'hopeless', 'no point', 'no reason to live', 'better off dead',
+    'better off without me', "can't go on", 'cant go on', 'give up', 'giving up',
+    'worthless', "what's the point", 'whats the point', 'end it all',
+    "don't want to be here", 'dont want to be here',
+)
+
+
+def _parse_iso_date(s):
+    """Parse the leading YYYY-MM-DD of a value; return a date or None."""
+    from datetime import date as _date
+    try:
+        return _date.fromisoformat(str(s)[:10])
+    except (ValueError, TypeError):
+        return None
+
+
+def _session_is_low_affect(s):
+    """True when a clinical session presents a low-affect / crisis speech cluster.
+
+    crisis_detected (from score_crisis() inside extract_features) ALWAYS counts —
+    a crisis voice note must never be treated as benign regardless of speech labels.
+    """
+    if s.get('crisis_detected'):
+        return True
+    sf = (s.get('features') or {}).get('speech_features') or {}
+    if sf.get('clinical_pattern_type') in ('depressive', 'crisis'):
+        return True
+    if sf.get('prosody') == 'flat' and sf.get('arousal') == 'low':
+        return True
+    if sf.get('vocal_affect') == 'flat' and sf.get('arousal') == 'low':
+        return True
+    return False
+
+
+def _compute_voice_divergence(session_context, checkin_rows,
+                              max_gap_days=7, high_mood_threshold=7):
+    """Deterministically pair a low-affect voice session with its NEAREST check-in.
+
+    The check-in score is never restated as same-day; both exact ISO dates are
+    pinned so the model cannot author a date (the 06-09/06-12 conflation class).
+    The gap window is 7 days, not 3 — a low-affect voice note four days from a
+    high-mood check-in, across an engagement gap, is exactly the divergence we
+    must surface, and the too-tight 3-day gate previously dropped it into the
+    unsafe model-freelance path (spec §12 context decay).
+    """
+    out = []
+    if not session_context or not checkin_rows:
+        return out
+    ci_dated = [(d, r) for r in checkin_rows
+                if r.get('mood') is not None and (d := _parse_iso_date(r.get('date')))]
+    if not ci_dated:
+        return out
+    for s in session_context[:10]:
+        if s.get('processing_status') != 'complete':
+            continue
+        sd = _parse_iso_date(s.get('session_date'))
+        if not sd or not _session_is_low_affect(s):
+            continue
+        nearest_d, nearest_r = min(ci_dated, key=lambda t: abs((t[0] - sd).days))
+        gap = abs((nearest_d - sd).days)
+        if gap <= max_gap_days and float(nearest_r['mood']) >= high_mood_threshold:
+            sf = (s.get('features') or {}).get('speech_features') or {}
+            out.append({
+                'session_date':         sd.isoformat(),
+                'voice_pattern':        sf.get('clinical_pattern_type')
+                                        or 'flat affect / low arousal',
+                'nearest_checkin_date': nearest_d.isoformat(),
+                'days_between':         gap,
+                'checkin_mood':         nearest_r['mood'],
+                'checkin_stability':    nearest_r.get('stability_score'),
+            })
+    return out
+
+
+def _compute_suicidality_escalation(session_context, journal_rows,
+                                    raw_voice_transcripts, focus_config,
+                                    checkin_rows, engagement_data):
+    """Join the voice/journal crisis channel to suicidality/mood monitoring targets.
+
+    Spec §22 convergent-signal consolidation. The suicidality target status was
+    previously computed only from check-in rotating fields, so it read "no data to
+    assess" even when a hopelessness voice note existed in the same period. This
+    aggregates across channels and, when a hopelessness/crisis signal co-occurs
+    with at least one other convergent signal (engagement gap or a no-response
+    target), returns a single deterministic 🔴 flag and the set of targets to
+    fold (so the benign per-target line is suppressed).
+
+    Returns: {signal_present, reasons, fold_targets, consolidated_flag}.
+    """
+    import re as _re
+    empty = {'signal_present': False, 'reasons': [], 'fold_targets': [],
+             'consolidated_flag': ''}
+
+    # (a) hopelessness / crisis language in the voice or journal channel
+    voice_hits = []
+    for s in (session_context or []):
+        if s.get('processing_status') not in (None, 'complete'):
+            continue
+        if s.get('crisis_detected'):
+            voice_hits.append((str(s.get('session_date'))[:10], 'crisis language'))
+        else:
+            sf = (s.get('features') or {}).get('speech_features') or {}
+            if sf.get('clinical_pattern_type') in ('crisis', 'depressive'):
+                voice_hits.append((str(s.get('session_date'))[:10],
+                                   f"{sf['clinical_pattern_type']} speech pattern"))
+    for vt in (raw_voice_transcripts or []):
+        t = (vt.get('transcript') or '').lower()
+        if any(term in t for term in _HOPELESSNESS_TERMS):
+            voice_hits.append((str(vt.get('date'))[:10], 'hopelessness language'))
+    journal_hit = any(
+        any(term in (j.get('content') or '').lower() for term in _HOPELESSNESS_TERMS)
+        for j in (journal_rows or [])
+    )
+    hopelessness_signal = bool(voice_hits) or journal_hit
+
+    # (c) active suicidality / mood target with no responses this period
+    _norm = lambda d: _re.sub(r'[\s/\-]+', '_', d.strip().lower())
+    active = {_norm(d) for d in ((focus_config or {}).get('focus_domains') or [])}
+    _field_for = {'suicidality': 'suicidality_score', 'mood': 'enjoyment'}
+    no_response_targets = [
+        key for key in ('suicidality', 'mood')
+        if key in active and not [r for r in (checkin_rows or []) if _field_for[key] in r]
+    ]
+
+    # (b) engagement gap / extended non-response
+    e = engagement_data or {}
+    gap_signal = (bool(e.get('extended_no_response'))
+                  or e.get('max_prompt_gap', 0) >= 5
+                  or e.get('max_consecutive_gap', 0) >= 5)
+
+    # Consolidate only when the safety-relevant hopelessness signal co-occurs with
+    # at least one other convergent signal (spec §22: ≥2 of a/b/c).
+    if not (hopelessness_signal and (bool(no_response_targets) or gap_signal)):
+        return empty
+
+    reasons = []
+    # One reason per voice date, keeping the most severe label for that date.
+    _rank = {'crisis language': 3, 'hopelessness language': 2}
+    best_by_date = {}
+    for d, kind in voice_hits:
+        r = _rank.get(kind, 1)
+        if d not in best_by_date or r > best_by_date[d][0]:
+            best_by_date[d] = (r, kind)
+    for d in sorted(best_by_date):
+        reasons.append(f"voice note {d}: {best_by_date[d][1]}")
+    if journal_hit:
+        reasons.append("journal entry references hopelessness")
+    if gap_signal:
+        segs = e.get('prompt_gap_segments') or e.get('gap_segments') or []
+        if segs:
+            reasons.append("engagement gap "
+                           + "; ".join(f"{g['start']}–{g['end']} ({g['days']}d)" for g in segs))
+        else:
+            reasons.append("extended non-response "
+                           f"({max(e.get('max_prompt_gap', 0), e.get('max_consecutive_gap', 0))}d)")
+    for key in no_response_targets:
+        reasons.append(f"{key} monitoring target active with no responses this period")
+
+    flag = ("🔴 Convergent suicidality-adjacent signals — "
+            + "; ".join(reasons)
+            + ". Convergent signals warrant direct clinical check-in.")
+    return {'signal_present': True, 'reasons': reasons,
+            'fold_targets': no_response_targets, 'consolidated_flag': flag}
+
+
 def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                                  period_start=None, period_end=None,
                                  appointment_date=None,
@@ -1554,6 +1723,16 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         'side_effects':       ('side_effect_burden',      'Side Effects target',       '0–10'),
         'sleep':              ('sleep_latency_min',       'Sleep target',              'count'),
     }
+    # Channel-aware suicidality escalation (spec §22). Computed BEFORE the target
+    # lines so a target that is folded into the consolidated 🔴 flag is never also
+    # rendered as a benign "No responses logged" line (the "no data to assess"
+    # contradiction). Available here: checkin_rows, session_context, journal_rows,
+    # raw_voice_transcripts, focus_config, engagement_data.
+    suic_escalation = _compute_suicidality_escalation(
+        session_context, journal_rows, raw_voice_transcripts,
+        focus_config, checkin_rows, engagement_data)
+    _folded = set(suic_escalation['fold_targets']) if suic_escalation['signal_present'] else set()
+
     monitoring_target_section = ''
     if focus_config and focus_config.get('focus_domains'):
         import re as _re
@@ -1568,7 +1747,16 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
             # Collect all values for this field from checkin rows
             vals = [r[field_name] for r in checkin_rows if field_name in r]
             if not vals:
-                target_lines.append(f"  {label}: No responses logged this period.")
+                if key in _folded:
+                    # Folded into the consolidated 🔴 flag — do NOT emit a benign
+                    # "no responses / no data to assess" line for this target.
+                    target_lines.append(
+                        f"  {label}: no direct responses, but a crisis-adjacent signal "
+                        f"is present this period — folded into the mandated 🔴 flag; "
+                        f"do NOT render this target as 'no data to assess'."
+                    )
+                else:
+                    target_lines.append(f"  {label}: No responses logged this period.")
             else:
                 avg_val = round(sum(vals) / len(vals), 1)
                 max_val = max(vals)
@@ -1591,45 +1779,7 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
     # a depressive/low-affect cluster while the nearest check-in mood is high,
     # that divergence is computed here and passed as data — not left for the
     # model to infer (and risk attributing scores to dateless days).
-    voice_divergence = []
-    if session_context and checkin_rows:
-        from datetime import date as _vd_date
-
-        def _parse_d(s):
-            try:
-                return _vd_date.fromisoformat(str(s)[:10])
-            except (ValueError, TypeError):
-                return None
-
-        ci_dated = [(d, r) for r in checkin_rows
-                    if r.get('mood') is not None and (d := _parse_d(r.get('date')))]
-        for s in session_context[:10]:
-            if s.get('processing_status') != 'complete':
-                continue
-            sd = _parse_d(s.get('session_date'))
-            if not sd:
-                continue
-            feat   = s.get('features') or {}
-            sf_obs = feat.get('speech_features') or {}
-            pattern = sf_obs.get('clinical_pattern_type')
-            low_affect = (
-                pattern in ('depressive', 'crisis')
-                or (sf_obs.get('prosody') == 'flat' and sf_obs.get('arousal') == 'low')
-                or (sf_obs.get('vocal_affect') == 'flat' and sf_obs.get('arousal') == 'low')
-            )
-            if not low_affect or not ci_dated:
-                continue
-            nearest_d, nearest_r = min(ci_dated, key=lambda t: abs((t[0] - sd).days))
-            gap = abs((nearest_d - sd).days)
-            if gap <= 3 and float(nearest_r['mood']) >= 7:
-                voice_divergence.append({
-                    'session_date':        sd.isoformat(),
-                    'voice_pattern':       pattern or 'flat affect / low arousal',
-                    'nearest_checkin_date': nearest_d.isoformat(),
-                    'days_between':        gap,
-                    'checkin_mood':        nearest_r['mood'],
-                    'checkin_stability':   nearest_r.get('stability_score'),
-                })
+    voice_divergence = _compute_voice_divergence(session_context, checkin_rows)
 
     checkin_dates_block = (
         "\n\nCHECK-IN DATES (authoritative — these are the ONLY dates with check-in data; "
@@ -1686,6 +1836,10 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
             "explicitly in the brief. If a target shows 'No responses logged this period', "
             "note it as a data gap in ## Flags (e.g., '🔵 Suicidality target active — "
             "no responses logged this period'). Never silently omit a selected target.\n"
+            "  EXCEPTION: if a MANDATED FLAG for convergent suicidality-adjacent signals "
+            "is supplied below, the suicidality and/or mood targets are FOLDED into it — "
+            "do NOT emit a separate target-gap line or any 'no data to assess' / "
+            "'no responses logged' phrasing for those folded targets.\n"
             "- In ## Flags, lower the threshold for these domains: surface at 🟡 Watch "
             "anything that would normally be informational-only. If a domain shows any "
             "notable deviation, flag it even if it does not cross a hard threshold.\n"
@@ -1698,6 +1852,21 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         )
 
     psych_system = _PSYCHIATRY_SYSTEM + psych_system_addon + focus_addon
+
+    # ── Mandated suicidality consolidation flag (spec §22) ────────────────────
+    # The consolidation is computed deterministically and mandated verbatim rather
+    # than left to the model — relying on the model to consolidate is exactly what
+    # produced "no data to assess" beside a hopelessness flag.
+    if suic_escalation['signal_present']:
+        psych_system += (
+            "\n\nMANDATED FLAG — place this EXACT line as the FIRST entry in "
+            "## 🚨 Flags, verbatim, before any other flag:\n"
+            + suic_escalation['consolidated_flag']
+            + "\nThe suicidality and mood monitoring targets are FOLDED into this "
+            "flag. Do NOT also emit a separate informational flag, target-gap line, "
+            "or any 'no data to assess' / 'no responses logged' phrasing for them. "
+            "Do NOT soften, reword, or split this flag.\n"
+        )
 
     # Inject the crisis warning when journal content tripped detection (C-3).
     if _journal_crisis:
@@ -1744,6 +1913,15 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
             "treat with caution:\n"
             + "\n".join(f"- {f}" for f in flagged[:5])
         )
+
+    # ── Defense-in-depth: guarantee the consolidation flag survived generation ─
+    # If a suicidality-adjacent signal was detected but the model dropped the
+    # routing line, prepend it. A crisis-adjacent signal must never be silently
+    # lost between the deterministic layer and the rendered brief.
+    if suic_escalation['signal_present'] and \
+            'direct clinical check-in' not in (clean or '').lower():
+        logger.warning("psychiatry brief missing mandated suicidality flag; prepending")
+        clean = suic_escalation['consolidated_flag'] + "\n\n" + (clean or '')
 
     return {'status': 'safe', 'text': clean, 'raw': raw, 'chart_data': chart_data}
 
