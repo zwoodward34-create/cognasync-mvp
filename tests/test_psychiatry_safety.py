@@ -123,16 +123,52 @@ def test_suicidality_escalation_consolidates_and_folds_targets():
     assert flag.count('voice note 2026-06-12') == 1
 
 
-def test_no_escalation_without_hopelessness_signal():
-    # Engagement gap + no-response targets alone must NOT escalate; the
-    # safety-relevant trigger is a hopelessness/crisis signal in voice or journal.
+def test_no_escalation_with_only_one_signal():
+    # Calm, responsive (no gap); a suicidality/mood target configured with no
+    # responses = exactly ONE signal. < 2 of 3 → must NOT escalate.
     calm = [{'session_date': '2026-06-12', 'processing_status': 'complete',
              'crisis_detected': False,
-             'features': {'speech_features': {'clinical_pattern_type': 'none_detected'}}}]
-    esc = ca._compute_suicidality_escalation(
-        calm, [], [{'date': '2026-06-12', 'transcript': 'Steady week, feeling fine.'}],
-        _FOCUS, _checkins(), _engagement_gap())
+             'features': {'patient_mood_description': 'Steady week, feeling fine.',
+                          'speech_features': {'clinical_pattern_type': 'none_detected'}}}]
+    no_gap = {'max_consecutive_gap': 1, 'max_prompt_gap': 1, 'extended_no_response': False}
+    esc = ca._compute_suicidality_escalation(calm, [], [], _FOCUS, _checkins(), no_gap)
     assert esc['signal_present'] is False
+
+
+def test_escalation_fires_on_production_session_shape():
+    # Regression for the live 06-19 miss: the hopeless note is a clinical SESSION,
+    # so its text lives in features.patient_mood_description — NOT in
+    # raw_voice_transcripts (the app excludes session-dated notes). crisis_detected
+    # is False and the pattern is not 'depressive'. The session-content scan must
+    # still catch the hopelessness signal.
+    prod = [{'session_date': '2026-06-12', 'processing_status': 'complete',
+             'crisis_detected': False,
+             'features': {
+                 'patient_mood_description': 'Overwhelmed, hopeless about job search, self-blaming.',
+                 'themes': ['job search distress', 'self-blame'],
+                 'clinical_pattern_type': 'none_detected',
+                 'speech_features': {'prosody': 'flat', 'arousal': 'low'}}}]
+    esc = ca._compute_suicidality_escalation(
+        prod, [], [], _FOCUS, _checkins(), _engagement_gap())   # raw_voice_transcripts EMPTY
+    assert esc['signal_present'] is True
+    assert 'suicidality' in esc['fold_targets'] and 'mood' in esc['fold_targets']
+    assert 'hopelessness language' in esc['consolidated_flag']
+    assert 'direct clinical check-in' in esc['consolidated_flag'].lower()
+    assert '2026-06-12' in esc['consolidated_flag']
+
+
+def test_escalation_fires_on_gap_plus_targets_without_hopelessness():
+    # Spec §22 is >= 2 of 3. Gap + two no-response targets = 2 signals even with no
+    # hopelessness anywhere — an unanswered suicidality target through a silent
+    # period is itself a convergent concern.
+    calm = [{'session_date': '2026-06-12', 'processing_status': 'complete',
+             'crisis_detected': False,
+             'features': {'patient_mood_description': 'Busy week, nothing notable.',
+                          'speech_features': {'clinical_pattern_type': 'none_detected'}}}]
+    esc = ca._compute_suicidality_escalation(calm, [], [], _FOCUS, _checkins(), _engagement_gap())
+    assert esc['signal_present'] is True
+    assert set(esc['fold_targets']) == {'suicidality', 'mood'}
+    assert 'direct clinical check-in' in esc['consolidated_flag'].lower()
 
 
 # ── End-to-end through the real generate_psychiatry_summary path ──────────────

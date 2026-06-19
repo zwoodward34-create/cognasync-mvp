@@ -996,6 +996,32 @@ def _compute_voice_divergence(session_context, checkin_rows,
     return out
 
 
+def _session_hopelessness_text(session):
+    """Lower-cased blob of a clinical session's free-text extracted fields.
+
+    A voice note that IS a clinical session is excluded from raw_voice_transcripts
+    by the caller (`vn_date not in known_dates`), so its hopelessness language lives
+    here — in patient_mood_description / themes / concerning_language / quotes — not
+    in the raw-transcript list. Scan these so the signal isn't missed.
+    """
+    feat = session.get('features') or {}
+    parts = []
+    for k in ('patient_mood_description', 'energy_description', 'stress_description',
+              'functional_status', 'session_notes'):
+        v = feat.get(k)
+        if isinstance(v, str):
+            parts.append(v)
+    for k in ('themes', 'concerning_language', 'stressors',
+              'symptoms_mentioned', 'patient_quotes'):
+        v = feat.get(k)
+        if isinstance(v, (list, tuple)):
+            parts.extend(str(x) for x in v)
+    sf = feat.get('speech_features') or {}
+    if isinstance(sf.get('severity_note'), str):
+        parts.append(sf['severity_note'])
+    return ' '.join(parts).lower()
+
+
 def _compute_suicidality_escalation(session_context, journal_rows,
                                     raw_voice_transcripts, focus_config,
                                     checkin_rows, engagement_data):
@@ -1015,18 +1041,25 @@ def _compute_suicidality_escalation(session_context, journal_rows,
     empty = {'signal_present': False, 'reasons': [], 'fold_targets': [],
              'consolidated_flag': ''}
 
-    # (a) hopelessness / crisis language in the voice or journal channel
+    # (a) hopelessness / crisis language in the voice or journal channel.
+    # Read from the session's extracted features (NOT just raw_voice_transcripts —
+    # session-dated notes are excluded from that list by the caller). Pattern type
+    # may sit at the top level or under speech_features depending on version, so we
+    # check both and lean on the free-text scan as the reliable anchor.
     voice_hits = []
     for s in (session_context or []):
         if s.get('processing_status') not in (None, 'complete'):
             continue
-        if s.get('crisis_detected'):
-            voice_hits.append((str(s.get('session_date'))[:10], 'crisis language'))
-        else:
-            sf = (s.get('features') or {}).get('speech_features') or {}
-            if sf.get('clinical_pattern_type') in ('crisis', 'depressive'):
-                voice_hits.append((str(s.get('session_date'))[:10],
-                                   f"{sf['clinical_pattern_type']} speech pattern"))
+        d = str(s.get('session_date'))[:10]
+        feat = s.get('features') or {}
+        sf = feat.get('speech_features') or {}
+        pattern = feat.get('clinical_pattern_type') or sf.get('clinical_pattern_type')
+        if s.get('crisis_detected') or feat.get('crisis_language_detected'):
+            voice_hits.append((d, 'crisis language'))
+        elif pattern in ('crisis', 'depressive'):
+            voice_hits.append((d, f'{pattern} pattern'))
+        elif any(term in _session_hopelessness_text(s) for term in _HOPELESSNESS_TERMS):
+            voice_hits.append((d, 'hopelessness language'))
     for vt in (raw_voice_transcripts or []):
         t = (vt.get('transcript') or '').lower()
         if any(term in t for term in _HOPELESSNESS_TERMS):
@@ -1052,9 +1085,13 @@ def _compute_suicidality_escalation(session_context, journal_rows,
                   or e.get('max_prompt_gap', 0) >= 5
                   or e.get('max_consecutive_gap', 0) >= 5)
 
-    # Consolidate only when the safety-relevant hopelessness signal co-occurs with
-    # at least one other convergent signal (spec §22: ≥2 of a/b/c).
-    if not (hopelessness_signal and (bool(no_response_targets) or gap_signal)):
+    # Spec §22: consolidate when >= 2 of the three signals co-occur —
+    # (a) hopelessness language, (b) engagement gap, (c) a suicidality/mood target
+    # with no responses. An active suicidality target left unanswered through a
+    # silent period is a convergent concern even without explicit hopelessness, so
+    # the gate is a true 2-of-3, not "hopelessness AND one more".
+    signal_count = sum([hopelessness_signal, gap_signal, bool(no_response_targets)])
+    if signal_count < 2:
         return empty
 
     reasons = []
