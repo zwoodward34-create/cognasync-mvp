@@ -523,6 +523,12 @@ def _verify_date_claims(text, checkin_dates):
     units = _re.split(r'(?<=[.!?])\s+|\n', text)
     date_pat = _re.compile(r'\b(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})\b')
     checkin_pat = _re.compile(r'check[\s-]?in|checked[\s-]?in', _re.IGNORECASE)
+    # A date sitting next to one of these words belongs to a voice note, session,
+    # or journal — NOT a check-in score — and may legitimately be a non-check-in
+    # date. Divergence sentences ("voice note 2026-06-12 vs check-in 2026-06-08")
+    # are the common case; only the check-in date there needs to be valid.
+    qualifier_pat = _re.compile(r'\b(voice|recording|session|journal|transcript|note)\b',
+                                _re.IGNORECASE)
     for unit in units:
         if not checkin_pat.search(unit):
             continue
@@ -532,12 +538,20 @@ def _verify_date_claims(text, checkin_dates):
                       unit, _re.IGNORECASE):
             continue
         for m in date_pat.finditer(unit):
-            if m.group(1) not in valid:
-                excerpt = unit.strip()
-                if len(excerpt) > 160:
-                    excerpt = excerpt[:157] + '…'
-                flagged.append(excerpt)
-                break
+            if m.group(1) in valid:
+                continue
+            # Is this date qualified as a voice/session/journal date? Look in a
+            # tight window around it (bounded so a real check-in claim elsewhere
+            # in the sentence is still checked independently).
+            ctx = unit[max(0, m.start() - 30): m.end() + 30]
+            if qualifier_pat.search(ctx):
+                continue
+            excerpt = unit.strip()
+            if len(excerpt) > 220:
+                cut = excerpt.rfind(' ', 0, 220)
+                excerpt = excerpt[:cut if cut > 0 else 220].rstrip() + ' …'
+            flagged.append(excerpt)
+            break
     return flagged
 
 

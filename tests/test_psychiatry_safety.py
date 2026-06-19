@@ -231,6 +231,33 @@ def test_trend_ignores_noisy_endpoints():
     assert ca._directional_trend(series, favorable_is_high=True) == 'stable'
 
 
+# ── P1 #5 — date verifier must not false-flag voice-divergence sentences ──────
+def test_verify_skips_voice_note_dates():
+    # The live 06-19 footnote false-flagged these (voice dates 06-09/06-12 sit
+    # next to "voice note"; the only check-in score is correctly tied to 06-08).
+    text = ("Voice-note to check-in divergence — 2026-06-12 voice note (flat affect, "
+            "low arousal) vs nearest check-in 2026-06-08 (mood 10/10, stability 9.5/10, "
+            "4 days prior). 2026-06-09 voice note (flat affect, low arousal) vs nearest "
+            "check-in 2026-06-08 (1 day prior, same elevated scores).")
+    assert ca._verify_date_claims(text, ['2026-06-08']) == []
+
+
+def test_verify_still_flags_bad_checkin_score_date():
+    # A genuine hallucination: a check-in SCORE attributed to a dateless day.
+    text = "Per the logs, check-in mood 9/10 on 2026-06-12 was the high point of the week."
+    flagged = ca._verify_date_claims(text, ['2026-06-08'])
+    assert any('2026-06-12' in f for f in flagged)
+
+
+def test_verify_flags_bad_checkin_date_even_beside_a_voice_date():
+    # Two dates in one sentence: a voice date (skip) and a bad check-in score date
+    # (flag). The voice qualifier must not shield the unrelated check-in claim.
+    text = ("Voice note 2026-06-09 preceded the check-in; per the record, check-in "
+            "mood 8/10 was logged on 2026-06-13 during the window.")
+    flagged = ca._verify_date_claims(text, ['2026-06-08'])
+    assert any('2026-06-13' in f for f in flagged)
+
+
 # ── Guard: the weak estimator must not return to any summary function ─────────
 def test_no_endpoint_only_trend_estimator_remains():
     src = open(os.path.join(_REPO, 'claude_api.py'), encoding='utf-8').read()
