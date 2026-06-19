@@ -523,12 +523,16 @@ def _verify_date_claims(text, checkin_dates):
     units = _re.split(r'(?<=[.!?])\s+|\n', text)
     date_pat = _re.compile(r'\b(\d{4}-\d{2}-\d{2}|\d{2}-\d{2})\b')
     checkin_pat = _re.compile(r'check[\s-]?in|checked[\s-]?in', _re.IGNORECASE)
-    # A date sitting next to one of these words belongs to a voice note, session,
-    # or journal — NOT a check-in score — and may legitimately be a non-check-in
-    # date. Divergence sentences ("voice note 2026-06-12 vs check-in 2026-06-08")
-    # are the common case; only the check-in date there needs to be valid.
-    qualifier_pat = _re.compile(r'\b(voice|recording|session|journal|transcript|note)\b',
-                                _re.IGNORECASE)
+    # The dangerous hallucination class is a check-in SCORE attributed to a dateless
+    # day ("check-in mood 9/10 on 2026-06-12"). Require POSITIVE evidence that the
+    # date carries a check-in score before flagging: a score token (N/10) within
+    # ~30 chars, OR a check-in token immediately preceding the date. Keyword-based
+    # skipping of voice/session dates is too brittle — it misses plurals
+    # ("recordings", "sessions"), date lists governed by one noun ("recordings on
+    # 06-09 and 06-12"), and headings like "Voice-check-in divergence". Voice-date
+    # lists never attach a /10 to the voice date (the score is on the check-in
+    # date), so requiring score-proximity ignores them cleanly.
+    score_pat = _re.compile(r'\b\d{1,2}(?:\.\d)?\s*/\s*10\b')
     for unit in units:
         if not checkin_pat.search(unit):
             continue
@@ -540,12 +544,14 @@ def _verify_date_claims(text, checkin_dates):
         for m in date_pat.finditer(unit):
             if m.group(1) in valid:
                 continue
-            # Is this date qualified as a voice/session/journal date? Look in a
-            # tight window around it (bounded so a real check-in claim elsewhere
-            # in the sentence is still checked independently).
-            ctx = unit[max(0, m.start() - 30): m.end() + 30]
-            if qualifier_pat.search(ctx):
-                continue
+            near   = unit[max(0, m.start() - 30): m.end() + 30]
+            before = unit[max(0, m.start() - 14): m.start()]
+            tied_to_checkin = (
+                score_pat.search(near) is not None
+                or _re.search(r'check[\s-]?in', before, _re.IGNORECASE) is not None
+            )
+            if not tied_to_checkin:
+                continue   # date not tied to a check-in score → not the hallucination class
             excerpt = unit.strip()
             if len(excerpt) > 220:
                 cut = excerpt.rfind(' ', 0, 220)

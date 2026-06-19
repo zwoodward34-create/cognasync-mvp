@@ -249,6 +249,23 @@ def test_verify_still_flags_bad_checkin_score_date():
     assert any('2026-06-12' in f for f in flagged)
 
 
+def test_verify_skips_plural_voice_recording_date_lists():
+    # Verbatim from the live 06-19 brief — my first fix missed it because
+    # "recordings" is plural and 06-12 sits past the qualifier window.
+    text = ("Voice recordings on 2026-06-09 and 2026-06-12 show flat affect and low "
+            "arousal, diverging sharply from check-in mood of 10/10 on 2026-06-08.")
+    assert ca._verify_date_claims(text, ['2026-06-08']) == []
+
+
+def test_verify_skips_divergence_heading_with_session_dates():
+    # The "Voice-check-in divergence" heading contains "check-in"; the voice dates
+    # (06-09/06-12) carry no score, only the valid 06-08 check-in does.
+    text = ("Voice-check-in divergence — 2026-06-09 and 2026-06-12 sessions document "
+            "flat affect, low arousal, and hopelessness language; nearest check-in "
+            "(2026-06-08) recorded mood 10/10, stability 9.5/10.")
+    assert ca._verify_date_claims(text, ['2026-06-08']) == []
+
+
 def test_verify_flags_bad_checkin_date_even_beside_a_voice_date():
     # Two dates in one sentence: a voice date (skip) and a bad check-in score date
     # (flag). The voice qualifier must not shield the unrelated check-in claim.
