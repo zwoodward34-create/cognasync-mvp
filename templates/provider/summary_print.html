@@ -421,6 +421,9 @@
         <div class="chart-card-title">Stim Load per Day</div>
         <canvas id="chartStimLoad"></canvas>
         <div class="chart-averages">
+          {% if chart_data.averages.stim_load is not none %}
+          <span class="chart-avg-pill">Stim Load avg <strong>{{ chart_data.averages.stim_load }}/10</strong></span>
+          {% endif %}
           {% if chart_data.averages.energy is not none %}
           <span class="chart-avg-pill">Energy avg <strong>{{ chart_data.averages.energy }}/10</strong></span>
           {% endif %}
