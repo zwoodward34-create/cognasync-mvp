@@ -417,6 +417,50 @@ def verify_reset_token(token: str, secret: str):
         return None
 
 
+_BRIEF_TTL = 3600  # 1 hour — a print session; the print button mints a fresh token
+
+
+def _brief_sig(blob: str, secret: str) -> str:
+    return hmac.new(secret.encode(), blob.encode(), hashlib.sha256).hexdigest()
+
+
+def generate_brief_token(patient_id: str, brief_id, days: int, secret: str) -> str:
+    """Opaque, signed, expiring token for the provider print/PDF view.
+
+    Mirrors generate_reset_token's HMAC scheme, but base64-wraps the payload so
+    the patient/brief UUIDs never appear in the URL (the printed footer). This is
+    a privacy measure only — the route still requires provider login + patient
+    ownership; the token is NOT a bearer credential.
+    """
+    import base64
+    expires = int(time.time()) + _BRIEF_TTL
+    nonce = uuid.uuid4().hex[:12]
+    payload = f"brief:{patient_id}:{brief_id or ''}:{int(days)}:{expires}:{nonce}"
+    sig = _brief_sig(payload, secret)
+    blob = base64.urlsafe_b64encode(payload.encode()).decode().rstrip('=')
+    return f"{blob}.{sig}"
+
+
+def verify_brief_token(token: str, secret: str):
+    """Return {'patient_id','brief_id','days'} if valid + unexpired, else None."""
+    import base64
+    try:
+        blob, sig = token.split('.', 1)
+        pad = '=' * (-len(blob) % 4)
+        payload = base64.urlsafe_b64decode(blob + pad).decode()
+        if not hmac.compare_digest(sig, _brief_sig(payload, secret)):
+            return None
+        parts = payload.split(':')
+        if len(parts) != 6 or parts[0] != 'brief':
+            return None
+        _, patient_id, brief_id, days, expires, _nonce = parts
+        if time.time() > int(expires):
+            return None
+        return {'patient_id': patient_id, 'brief_id': brief_id or None, 'days': int(days)}
+    except Exception:
+        return None
+
+
 def initiate_password_reset(email: str):
     """Look up the email and return (user_id, None) if a resetable account exists.
     Always returns (None, None) for unknown emails to prevent enumeration."""
