@@ -83,6 +83,7 @@ def ensure_user(email, name, role):
         "email": email.lower().strip(),
         "full_name": name,
         "role": role,
+        "status": "approved",   # seeded accounts skip email-verify + admin-approval gates
     }).execute()
     print(f"  created {role}: {name} ({email})")
     return uid

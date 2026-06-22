@@ -49,6 +49,7 @@ try:
         'email': email.lower().strip(),
         'full_name': full_name.strip(),
         'role': 'provider',
+        'status': 'approved',   # created directly by admin → skip email-verify + approval gates
     }).execute()
     print(f'Profile created with role=provider')
 except Exception as e:
