@@ -339,6 +339,42 @@ def set_checkin_reminders_enabled(user_id: str, enabled: bool) -> bool:
 # CHECK-INS
 # ═══════════════════════════════════════════════════════════════════════════
 
+# ── Patient-local date helpers ───────────────────────────────────────────────
+# The app runs on a UTC host (Render). Stamping patient data with date.today()
+# records the UTC date, so a patient's evening entry rolls to the next day (e.g.
+# a Phoenix check-in at 8:35pm Mon = 03:35 UTC Tue → logged as Tuesday). All
+# patient-facing date stamps must use the patient's local timezone instead.
+APP_DEFAULT_TZ = os.environ.get('APP_DEFAULT_TIMEZONE', 'America/New_York')
+
+
+def get_patient_timezone(patient_id: str) -> str:
+    """Return the patient's IANA timezone (from checkin_schedules), else the app default."""
+    try:
+        res = supabase_admin.table('checkin_schedules').select('timezone') \
+            .eq('patient_id', str(patient_id)).limit(1).execute()
+        if res.data and res.data[0].get('timezone'):
+            return res.data[0]['timezone']
+    except Exception:
+        logger.exception('[db] get_patient_timezone error')
+    return APP_DEFAULT_TZ
+
+
+def patient_local_today(patient_id: str = None, tz: str = None) -> str:
+    """Today's date (YYYY-MM-DD) in the patient's local timezone.
+
+    Fixes the UTC-rollover bug: on a UTC host date.today() mis-dates evening
+    entries. Resolves the zone from the patient's schedule unless one is passed.
+    """
+    import pytz
+    from datetime import timezone as _tz
+    zone = tz or (get_patient_timezone(patient_id) if patient_id else APP_DEFAULT_TZ)
+    try:
+        return datetime.now(_tz.utc).astimezone(pytz.timezone(zone)).date().isoformat()
+    except Exception:
+        logger.exception('[db] patient_local_today error')
+        return date.today().isoformat()
+
+
 def create_checkin(patient_id, date_str, time_of_day, mood_score, medications, sleep_hours, stress_score, symptoms, notes, checkin_type='on_demand', extended_data=None, ai_insights=None):
     """Create a new check-in, persisting all fields."""
     try:
@@ -556,7 +592,7 @@ def create_journal(patient_id, entry_type, raw_entry, ai_analysis=None, share_wi
     try:
         journal_data = {
             'user_id': str(patient_id),
-            'entry_date': date.today().isoformat(),
+            'entry_date': patient_local_today(patient_id),
             'content': raw_entry,
             'entry_type': entry_type,
             'ai_analysis': ai_analysis,
@@ -6769,10 +6805,9 @@ def record_sms_med_events(user_id: str, results: list, responded_at: str | None 
     from datetime import timezone as _tz
     try:
         now_iso = responded_at or datetime.now(_tz.utc).isoformat()
-        try:
-            today = datetime.fromisoformat(now_iso.replace('Z', '+00:00')).date().isoformat()
-        except Exception:
-            today = date.today().isoformat()
+        # event_date must be the patient's LOCAL date — a dose taken in the evening
+        # would otherwise roll to the next UTC day. actual_time keeps the real instant.
+        today = patient_local_today(user_id)
 
         written = 0
         for r in (results or []):

@@ -1483,9 +1483,10 @@ def api_create_checkin():
     if checkin_type not in ('morning', 'afternoon', 'evening', 'on_demand'):
         checkin_type = 'on_demand'
 
-    raw_date = data.get('date', date.today().isoformat())
-    if not re.match(r'^\d{4}-\d{2}-\d{2}$', str(raw_date)):
-        raw_date = date.today().isoformat()
+    # Stamp the check-in in the PATIENT's local date, not the UTC host date.
+    # The deprecated web client sends an inconsistent (sometimes UTC) date, which
+    # mis-dated evening entries to the next day; the server is the authority now.
+    raw_date = db.patient_local_today(user['id'])
 
     notes = data.get('notes', '')
 
@@ -4653,10 +4654,9 @@ def api_sms_inbound():
                     'dissociation_source':  'sms_default',
                     'checkin_source':       'sms',
                 }
-                from datetime import date as _date
                 checkin_id = db.create_checkin(
                     patient_id   = patient_id,
-                    date_str     = _date.today().isoformat(),
+                    date_str     = db.patient_local_today(patient_id),
                     time_of_day  = 'self-prompted',
                     mood_score   = int(round(parsed['mood'])),
                     medications  = [],

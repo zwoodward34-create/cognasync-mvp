@@ -188,6 +188,38 @@ providers need PRN-usage frequency, it needs its own SMS capture (e.g. a periodi
 
 ---
 
+### 5. UTC date-rollover on patient writes — FIXED (verified vs prod)
+
+Symptom (prod): a check-in completed Monday evening in Phoenix showed as Tuesday.
+Root cause: patient data was stamped with `date.today()` on the UTC host (Render),
+so any entry after ~5pm Phoenix rolled to the next UTC day. Confirmed in prod —
+a check-in with `created_at = 2026-06-23 03:35 UTC` (= Jun 22 8:35pm Phoenix) was
+stored as `checkin_date = 2026-06-23`; same +1 error on other evening entries.
+
+Fix: `db.patient_local_today(patient_id)` + `db.get_patient_timezone(patient_id)`
+(resolves the patient's IANA tz from `checkin_schedules.timezone`, else
+`APP_DEFAULT_TIMEZONE` env, default America/New_York). Applied at the patient-facing
+date stamps: web check-in (server is now authoritative — the deprecated client sent
+an inconsistent/UTC date), SMS check-in, journal `entry_date`, and SMS medication
+`event_date` (in `record_sms_med_events`; `actual_time` still keeps the true UTC
+instant). Verified: 2026-06-23 03:35 UTC → Phoenix 2026-06-22.
+
+Notes / not-yet-done:
+- The reporting patient (`202a6659…`) already has `timezone='America/Phoenix'` in
+  `checkin_schedules`, so the fix is correct for them with no config change.
+  Patients with no schedule row fall back to `APP_DEFAULT_TIMEZONE` — set that env
+  on Render if the default region isn't Eastern.
+- **Read-side `today` still UTC.** Analytics window boundaries (`compute_engagement_stats`,
+  trends, etc.) still use `date.today()`; window edges can be off by the UTC offset.
+  Lower impact than write-side mis-dating, but worth a pass before the pilot.
+- **Historical rows are not corrected** — only new writes are localized.
+- The "11:54 reminder didn't fire" was NOT a bug: `medication_sms_logs` shows it
+  sent at 19:01 UTC (12:01pm Phoenix) — the cron runs every 15 min, so a dose time
+  fires at the next tick, not to the minute. (Also confirmed the combined multi-med
+  reminder is live: a reminder listing "Adderall, Aripiprazole" went out + got a Y.)
+
+---
+
 ## Smaller follow-ups (surfaced this session)
 
 - **Seeder idempotency for the original 3 patients.** Re-running the seeder
