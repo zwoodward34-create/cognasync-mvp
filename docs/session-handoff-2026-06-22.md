@@ -136,6 +136,58 @@ first — adding it to requirements.txt isn't enough without a reinstall).
 
 ---
 
+### 4. Multi-medication SMS adherence — IMPLEMENTED, NEEDS LIVE-SMS VERIFICATION
+
+Reframed mid-task by a discovery: **two disconnected adherence stores.** The live
+inbound Y/N path wrote only to `medication_sms_logs` (one boolean, med by name, no
+`medication_id`); the provider calendar + briefs read `medication_events`
+(per-med, status TAKEN/MISSED). Nothing bridged them, and the bridging cluster
+(`log_medication_adherence_from_sms`, `_check_consecutive_non_adherence`) was
+written against an OLD `medication_events` schema (`taken`/`date`/`patient_id` —
+none of which exist now; real cols are `user_id`/`event_date`/`status`), so it
+would error. Verified against the dev DB: no trigger bridges them. Net: live SMS
+replies were not reaching provider adherence views.
+
+Decision (Zach): make `medication_events` the source of truth. Built:
+
+- `db.record_sms_med_events(user_id, results, responded_at)` — writes per-med
+  TAKEN/MISSED rows into `medication_events` (correct cols, user_id-scoped,
+  idempotent delete-then-insert per med/day). `log_medication_adherence_from_sms`
+  reimplemented to scope the med lookup by `user_id` (was global — a real
+  cross-patient bug) and delegate here. `_check_consecutive_non_adherence` fixed to
+  real columns. `medication_sms_logs` is now an **audit trail only**.
+- `db.get_scheduled_med_patients` returns `scheduled_meds` (active, **non-PRN** —
+  `is_as_needed`/frequency excluded) with `medication_id`, from the `medications`
+  table. PRN meds are never reminded and never counted (analytics already excluded
+  them from the denominator).
+- `sms_engine.compose_med_reminder` / `compose_med_drilldown` / `parse_drilldown_reply`
+  — pure, offline-tested. Combined reminder for ≥2 meds ("Y if you took all, N if
+  not"); 1 tap on the normal day.
+- Inbound (`app.py api_sms_inbound`): Y → all scheduled meds TAKEN; N (≥2 meds) →
+  drill-down "Which did you miss? A) … B) … or NONE", state held in the
+  `med_pending` session `metadata.stage` (reused session_type — the CHECK
+  constraint only allows checkin/med/help/rotating, so NO new type); drill-down
+  reply → named letters MISSED, rest TAKEN; N (1 med) → MISSED. Follow-up chain
+  deferred until the drill-down resolves. Legacy/in-flight sessions with no med
+  list fall back to the old audit-only behavior.
+- Verified offline: all files compile; pure SMS logic 14/14
+  (`/tmp/sms_med_test.py` pattern — compose, labels, drill-down parse incl.
+  NONE/letters/unknown).
+- **NEEDS LIVE-SMS VERIFICATION** (the local loop stubs Twilio — inbound can't be
+  exercised on localhost, and the webhook enforces a Twilio signature). Test on a
+  deployed env with a patient configured with 2 daily meds + 1 PRN: confirm (a) the
+  reminder lists both daily meds and omits the PRN, (b) "Y" logs both TAKEN and they
+  appear in the provider calendar, (c) "N" → drill-down → "A" logs A missed / B
+  taken, (d) PRN never appears. Historical `medication_sms_logs` rows are NOT
+  backfilled into `medication_events` — bridge applies going forward.
+
+**Open product question (SMS-only context):** PRN doses now have **no logging
+path** — the app is deprecated, and PRN is (correctly) excluded from reminders. If
+providers need PRN-usage frequency, it needs its own SMS capture (e.g. a periodic
+"How many times did you use {prn} this week? Reply a number"). Flagged, not built.
+
+---
+
 ## Smaller follow-ups (surfaced this session)
 
 - **Seeder idempotency for the original 3 patients.** Re-running the seeder

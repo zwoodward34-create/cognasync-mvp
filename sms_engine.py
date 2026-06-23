@@ -388,12 +388,88 @@ def send_medication_sms(
     medication_name: str,
     dose_str: str,
 ) -> dict:
-    """Send a daily medication adherence reminder."""
+    """Send a single-medication daily adherence reminder (legacy helper)."""
     body = (
         f'CognaSync: Time for your {medication_name} {dose_str}. '
         f'Reply Y if taken, N if skipped.'
     )
     return send_sms(to_number, body)
+
+
+# ── Combined multi-medication reminder + drill-down ──────────────────────────
+_MED_LABELS = 'ABCDEFGH'
+
+
+def label_meds(meds: list) -> list:
+    """Attach a letter label (A, B, C…) to each med dict. meds: [{id,name,dose_str}]."""
+    labeled = []
+    for i, m in enumerate(meds):
+        lbl = _MED_LABELS[i] if i < len(_MED_LABELS) else str(i + 1)
+        labeled.append({**m, 'label': lbl})
+    return labeled
+
+
+def compose_med_reminder(meds: list):
+    """Build the daily reminder body for one or more scheduled meds.
+
+    meds: [{id, name, dose_str}]. Returns (body, labeled_meds). One med → simple
+    Y/N. Multiple → a single combined message; Y means "took all", N opens the
+    drill-down. Returns (None, []) if there are no meds.
+    """
+    labeled = label_meds(meds)
+    if not labeled:
+        return None, []
+    if len(labeled) == 1:
+        m = labeled[0]
+        nd = (m['name'] + (' ' + m['dose_str'] if m.get('dose_str') else '')).strip()
+        return f'CognaSync: Time for your {nd}. Reply Y if taken, N if not.', labeled
+    listing = ', '.join(
+        f"{m['label']}) {m['name']}" + (f" {m['dose_str']}" if m.get('dose_str') else '')
+        for m in labeled
+    )
+    body = (f'CognaSync: Time for your meds — {listing}. '
+            f'Reply Y if you took all, N if not.')
+    return body, labeled
+
+
+def compose_med_drilldown(labeled: list) -> str:
+    """Follow-up asking which of the combined meds were missed."""
+    listing = ', '.join(f"{m['label']}) {m['name']}" for m in labeled)
+    return (f'Which did you miss? Reply the letter(s) — {listing} — '
+            f'or NONE if you took them all.')
+
+
+MSG_MED_DRILLDOWN_RETRY = (
+    "Sorry, I didn't catch that. Reply the letter(s) of any med you missed "
+    "(e.g. A or AB), or NONE if you took them all."
+)
+
+
+def parse_drilldown_reply(body: str, labeled: list):
+    """Map a drill-down reply to per-med taken/missed results.
+
+    Letters name the meds that were MISSED; everything else counts as taken.
+    'NONE'/'ALL'/'0' means nothing was missed (all taken). Returns a list of
+    {'medication_id', 'taken'} aligned to `labeled`, or None if unparseable.
+    """
+    import re as _re
+    if not body or not labeled:
+        return None
+    cleaned = body.strip().lower()
+    if cleaned in ('none', 'na', 'n/a', '0', 'all', 'none missed', 'took all'):
+        return [{'medication_id': m['id'], 'taken': True} for m in labeled]
+    label_set = {m['label'].lower() for m in labeled}
+    letters = list(_re.sub(r'[^a-z]', '', cleaned))
+    if not letters:
+        return None
+    missed = set()
+    for c in letters:
+        if c in label_set:
+            missed.add(c)
+        else:
+            return None  # an unknown letter → re-prompt rather than guess
+    return [{'medication_id': m['id'], 'taken': (m['label'].lower() not in missed)}
+            for m in labeled]
 
 
 # ── Reply parsing ─────────────────────────────────────────────────────────────

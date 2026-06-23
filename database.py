@@ -6755,53 +6755,84 @@ def validate_sms_token_readonly(token: str) -> dict | None:
 # TWILIO SMS — LOGGING
 # ═══════════════════════════════════════════════════════════════════════════
 
+def record_sms_med_events(user_id: str, results: list, responded_at: str | None = None) -> int:
+    """Write per-medication adherence events from an SMS reply into medication_events.
+
+    `results`: list of {'medication_id': uuid, 'taken': bool}. This is the table the
+    provider adherence calendar and briefs read — the SMS reply path now lands here
+    (per-medication, status TAKEN/MISSED), not just in the medication_sms_logs audit.
+
+    Replaces any same-day event for a given medication so a corrected re-reply
+    overwrites rather than duplicates. Runs the consecutive-non-adherence provider
+    flag check for any medication marked missed. Returns the number of events written.
+    """
+    from datetime import timezone as _tz
+    try:
+        now_iso = responded_at or datetime.now(_tz.utc).isoformat()
+        try:
+            today = datetime.fromisoformat(now_iso.replace('Z', '+00:00')).date().isoformat()
+        except Exception:
+            today = date.today().isoformat()
+
+        written = 0
+        for r in (results or []):
+            med_id = r.get('medication_id')
+            if not med_id:
+                continue  # cannot write a medication_event without a medication_id
+            taken  = bool(r.get('taken'))
+            status = 'TAKEN' if taken else 'MISSED'
+            # Idempotent: clear any existing same-day event for this med, then insert.
+            supabase_admin.table('medication_events') \
+                .delete() \
+                .eq('user_id', str(user_id)) \
+                .eq('medication_id', str(med_id)) \
+                .eq('event_date', today) \
+                .execute()
+            supabase_admin.table('medication_events').insert({
+                'user_id':       str(user_id),
+                'medication_id': str(med_id),
+                'event_date':    today,
+                'status':        status,
+                'actual_time':   now_iso if taken else None,
+                'custom_note':   'SMS adherence reply',
+            }).execute()
+            written += 1
+            if not taken:
+                _check_consecutive_non_adherence(user_id, med_id)
+        return written
+    except Exception as e:
+        logger.exception(f'[db] record_sms_med_events error: {e}')
+        return written if 'written' in dir() else 0
+
+
 def log_medication_adherence_from_sms(
     patient_id: str,
     adhered: bool,
     medication_name: str,
     responded_at: str | None = None,
 ) -> bool:
+    """Single-medication SMS adherence (legacy Twilio Studio path).
+
+    Resolves the medication scoped to THIS patient (the old version matched the
+    name globally, so a shared drug name could attach the event to another
+    patient's record), then writes a correct per-med medication_events row via
+    record_sms_med_events. Returns True on success.
     """
-    Log a medication adherence event received via Twilio SMS.
-
-    Inserts a row into medication_events with source='sms'.
-    Also checks for 3+ consecutive non-adherence days and sets a provider flag
-    on patient_profiles if the threshold is crossed.
-
-    Returns True on success, False on failure.
-    """
-    from datetime import timezone as _tz
-
     try:
-        now_iso = responded_at or datetime.now(_tz.utc).isoformat()
-        today = datetime.fromisoformat(now_iso.replace('Z', '+00:00')).date().isoformat()
-
-        # Find the medication record for this patient + medication name
-        med_result = supabase_admin.table('medications') \
-            .select('id') \
-            .eq('name', medication_name) \
-            .limit(1) \
-            .execute()
-
-        medication_id = med_result.data[0]['id'] if med_result.data else None
-
-        event_data = {
-            'patient_id':    str(patient_id),
-            'medication_id': medication_id,
-            'taken':         adhered,
-            'taken_at':      now_iso if adhered else None,
-            'notes':         f'SMS adherence response: {"Y" if adhered else "N"}',
-            'date':          today,
-        }
-
-        supabase_admin.table('medication_events').insert(event_data).execute()
-
-        # Check consecutive non-adherence (3+ days) — flag for provider review
-        if not adhered:
-            _check_consecutive_non_adherence(patient_id, medication_id)
-
+        med_id = None
+        res = supabase_admin.table('medications').select('id') \
+            .eq('user_id', str(patient_id)).ilike('name', medication_name) \
+            .eq('is_active', True).limit(1).execute()
+        if res.data:
+            med_id = res.data[0]['id']
+        else:
+            med_id = find_or_create_profile_medication(patient_id, medication_name)
+        if not med_id:
+            return False
+        record_sms_med_events(patient_id,
+                              [{'medication_id': med_id, 'taken': adhered}],
+                              responded_at)
         return True
-
     except Exception as e:
         logger.exception(f'[db] log_medication_adherence_from_sms error: {e}')
         return False
@@ -6811,13 +6842,13 @@ def _check_consecutive_non_adherence(patient_id: str, medication_id: str | None)
     """
     Internal: check last 3 medication events for consecutive non-adherence.
     If 3+ consecutive misses, set a flag on patient_profiles for provider review.
-    Non-response is treated the same as non-adherence (NULL taken_at with taken=False).
+    A status other than 'TAKEN' (MISSED/SKIPPED) counts as non-adherence.
     """
     try:
         query = supabase_admin.table('medication_events') \
-            .select('taken, date') \
-            .eq('patient_id', str(patient_id)) \
-            .order('date', desc=True) \
+            .select('status, event_date') \
+            .eq('user_id', str(patient_id)) \
+            .order('event_date', desc=True) \
             .limit(3)
 
         if medication_id:
@@ -6826,7 +6857,7 @@ def _check_consecutive_non_adherence(patient_id: str, medication_id: str | None)
         result = query.execute()
         events = result.data or []
 
-        if len(events) >= 3 and all(not e.get('taken') for e in events):
+        if len(events) >= 3 and all((e.get('status') or '').upper() != 'TAKEN' for e in events):
             # 3+ consecutive misses — flag on patient profile
             supabase_admin.table('patient_profiles') \
                 .update({'adherence_alert': True}) \
@@ -7091,17 +7122,53 @@ def get_scheduled_med_patients() -> list:
         ).in_('user_id', ids).execute()
         prof_map = {p['user_id']: p for p in (profs.data or [])}
 
+        # Scheduled (non-PRN) active medications per patient, from the medications
+        # table (which carries medication_id + the is_as_needed/frequency flags that
+        # current_medications JSONB lacks). PRN meds are EXCLUDED from reminders —
+        # "did you take your as-needed med Y/N" is clinically meaningless and would
+        # pollute the adherence denominator.
+        def _fmt_dose(dose, unit):
+            if dose is None:
+                return ''
+            try:
+                dose = int(dose) if float(dose) == int(dose) else dose
+            except (TypeError, ValueError):
+                pass
+            return f"{dose}{unit or 'mg'}"
+
+        meds_by_user: dict = {}
+        try:
+            med_rows = supabase_admin.table('medications').select(
+                'id, user_id, name, standard_dose, dose_unit, is_as_needed, frequency'
+            ).in_('user_id', ids).eq('is_active', True).execute()
+            for m in (med_rows.data or []):
+                if m.get('is_as_needed') or (m.get('frequency') or '').lower() in ('as_needed', 'prn'):
+                    continue
+                meds_by_user.setdefault(m['user_id'], []).append({
+                    'id':       m['id'],
+                    'name':     m['name'],
+                    'dose_str': _fmt_dose(m.get('standard_dose'), m.get('dose_unit')),
+                })
+        except Exception as _me:
+            logger.warning(f'[db] get_scheduled_med_patients meds fetch: {_me}')
+
         patients = []
         for row in rows:
             profile = prof_map.get(row['patient_id']) or {}
             if not profile.get('phone_number'):
                 continue
             meds = profile.get('current_medications') or []
+            scheduled_meds = meds_by_user.get(row['patient_id'], [])
             patients.append({
                 'patient_id':      row['patient_id'],
                 'phone':           profile.get('phone_number'),
-                'medication_name': meds[0].get('name', 'medication') if meds else 'medication',
-                'dose_str':        meds[0].get('dose', '') if meds else '',
+                # Backward-compatible single-med fields (first scheduled med, else
+                # the first current_medications entry) for any legacy caller.
+                'medication_name': (scheduled_meds[0]['name'] if scheduled_meds
+                                    else (meds[0].get('name', 'medication') if meds else 'medication')),
+                'dose_str':        (scheduled_meds[0]['dose_str'] if scheduled_meds
+                                    else (meds[0].get('dose', '') if meds else '')),
+                'scheduled_meds':  scheduled_meds,   # full non-PRN list w/ medication_id
                 'dose_time_local': row['medication_dose_time'],
                 'timezone':        row['timezone'],
                 'checkin_days':    row.get('short_checkin_days') or [],

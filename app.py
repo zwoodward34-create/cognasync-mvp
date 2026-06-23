@@ -4521,25 +4521,60 @@ def api_sms_inbound():
             # Discard any suspended session — patient needs space, not a re-prompt
         return _twiml_empty()
 
-    # ── Priority 3: Y / N medication reply ───────────────────────────────────
+    # ── Priority 2.7: medication drill-down (which combined meds were missed) ──
+    _med_sess = db.get_sms_session(patient_id)
+    if (_med_sess and _med_sess['session_type'] == 'med_pending'
+            and (_med_sess.get('metadata') or {}).get('stage') == 'await_drilldown'):
+        labeled = (_med_sess.get('metadata') or {}).get('meds') or []
+        results = _sms.parse_drilldown_reply(cleaned, labeled)
+        if results is None:
+            _sms.send_sms(from_number, _sms.MSG_MED_DRILLDOWN_RETRY)
+            return _twiml_empty()
+        try:
+            db.record_sms_med_events(patient_id, results)
+            _update_med_sms_log(patient_id, cleaned, all(r['taken'] for r in results))
+            db.resolve_sms_session(patient_id)
+            _maybe_send_med_followup_now(patient_id, from_number)
+        except Exception as e:
+            app.logger.error(f'[sms_inbound] med drilldown error: {e}')
+        return _twiml_empty()
+
+    # ── Priority 3: Y / N medication reply (opens the med flow) ───────────────
     taken = _sms.parse_medication_reply(cleaned)
     if taken is not None:
         session = db.get_sms_session(patient_id)
-        if session and session['session_type'] == 'med_pending':
+        if (session and session['session_type'] == 'med_pending'
+                and (session.get('metadata') or {}).get('stage', 'await_yn') == 'await_yn'):
+            meta    = session.get('metadata') or {}
+            labeled = meta.get('meds') or []
             try:
-                log_res = db.supabase_admin.table('medication_sms_logs').select(
-                    'id').eq('patient_id', patient_id).is_(
-                    'replied_at', 'null').order('sent_at', desc=True).limit(1).execute()
-                if log_res.data:
-                    db.supabase_admin.table('medication_sms_logs').update({
-                        'replied_at': 'now()',
-                        'taken':      taken,
-                        'raw_reply':  cleaned[:200],
-                    }).eq('id', log_res.data[0]['id']).execute()
-                db.resolve_sms_session(patient_id)
-                # Chain today's follow-up immediately after the reply (one per day;
-                # the cron fallback covers patients who never reply).
-                _maybe_send_med_followup_now(patient_id, from_number)
+                if not labeled:
+                    # Legacy/in-flight session with no med list — preserve the old
+                    # audit-only behavior so nothing regresses.
+                    _update_med_sms_log(patient_id, cleaned, taken)
+                    db.resolve_sms_session(patient_id)
+                    _maybe_send_med_followup_now(patient_id, from_number)
+                elif taken:
+                    # Y = took every scheduled med
+                    db.record_sms_med_events(
+                        patient_id, [{'medication_id': m['id'], 'taken': True} for m in labeled])
+                    _update_med_sms_log(patient_id, cleaned, True)
+                    db.resolve_sms_session(patient_id)
+                    _maybe_send_med_followup_now(patient_id, from_number)
+                elif len(labeled) >= 2:
+                    # N with multiple meds → ask which were missed (keep session open)
+                    db.set_sms_session(patient_id, 'med_pending',
+                                       metadata={**meta, 'stage': 'await_drilldown'})
+                    _update_med_sms_log(patient_id, cleaned, False)
+                    _sms.send_sms(from_number, _sms.compose_med_drilldown(labeled))
+                    # follow-up deferred until the drill-down reply lands
+                else:
+                    # N with a single med → that med missed
+                    db.record_sms_med_events(
+                        patient_id, [{'medication_id': m['id'], 'taken': False} for m in labeled])
+                    _update_med_sms_log(patient_id, cleaned, False)
+                    db.resolve_sms_session(patient_id)
+                    _maybe_send_med_followup_now(patient_id, from_number)
             except Exception as e:
                 app.logger.error(f'[sms_inbound] med reply error: {e}')
         return _twiml_empty()
@@ -4689,6 +4724,26 @@ def _twiml_empty():
         '<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
         mimetype='text/xml',
     )
+
+
+def _update_med_sms_log(patient_id, raw_reply, taken):
+    """Mark the latest unreplied medication_sms_logs row (raw audit trail).
+
+    medication_sms_logs is now an audit record only; the authoritative per-med
+    adherence lives in medication_events (written via db.record_sms_med_events).
+    """
+    try:
+        log_res = db.supabase_admin.table('medication_sms_logs').select('id') \
+            .eq('patient_id', patient_id).is_('replied_at', 'null') \
+            .order('sent_at', desc=True).limit(1).execute()
+        if log_res.data:
+            db.supabase_admin.table('medication_sms_logs').update({
+                'replied_at': 'now()',
+                'taken':      taken,
+                'raw_reply':  (raw_reply or '')[:200],
+            }).eq('id', log_res.data[0]['id']).execute()
+    except Exception as e:
+        app.logger.error(f'[sms_inbound] med log update error: {e}')
 
 
 # ── Clinical thresholds for real-time numeric escalation ────────────────────
@@ -5833,13 +5888,25 @@ def internal_trigger_medication_sms():
 
         # ── Daily medication reminder (catch-up: first tick at/after dose time) ──
         if local_now >= dose_dt and not med_already_sent:
+            scheduled = patient.get('scheduled_meds') or []
+            if not scheduled:
+                # No medications-table rows — resolve/create one id from the single
+                # configured med so the Y/N reply can still write a per-med event.
+                _mid = db.find_or_create_profile_medication(
+                    pid, patient['medication_name'], patient.get('dose_str', ''))
+                scheduled = [{'id': _mid, 'name': patient['medication_name'],
+                              'dose_str': patient.get('dose_str', '')}]
+            body, labeled = _sms.compose_med_reminder(scheduled)
             db.log_medication_sms_sent(
-                patient_id=pid, medication_name=patient['medication_name'],
+                patient_id=pid,
+                medication_name=', '.join(m['name'] for m in labeled) or patient['medication_name'],
                 scheduled_time=dose_str, phone_number=patient['phone'])
-            db.set_sms_session(pid, 'med_pending')
-            result = _sms.send_medication_sms(
-                patient['phone'], '', patient['medication_name'],
-                patient.get('dose_str', ''))
+            db.set_sms_session(pid, 'med_pending', metadata={
+                'stage': 'await_yn',
+                'meds':  [{'id': m['id'], 'name': m['name'], 'label': m['label']} for m in labeled],
+                'date':  today,
+            })
+            result = _sms.send_sms(patient['phone'], body)
             if result.get('ok'):
                 db.record_daily_send(pid, 'medication', today)
                 med_sent += 1
