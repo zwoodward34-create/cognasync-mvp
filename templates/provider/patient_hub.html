@@ -3740,7 +3740,7 @@ function buildAdherenceGrid() {
   var weeksHtml = '';
   var todayStr = today.toISOString().slice(0, 10);
 
-  for (var w = 3; w >= 0; w--) {  // newest week first
+  for (var w = 0; w <= 3; w++) {  // oldest week at top → reads top-to-bottom like a calendar, current week last
     var week = days.slice(w * 7, w * 7 + 7);
     weeksHtml += '<div class="ch-adh-week">';
     week.forEach(function(day) {
