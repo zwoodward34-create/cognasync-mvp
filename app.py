@@ -1081,21 +1081,33 @@ def provider_patient_trends(patient_id):
 @app.route('/provider/patient/<patient_id>/summary/print')
 @limiter.limit("10/hour")
 def provider_summary_print(patient_id):
-    """Render a print-optimized Mode C clinical summary.
-
-    If ?brief_id=<uuid> is provided, renders the already-generated saved brief
-    (same text the provider saw in the modal). Otherwise generates fresh.
-    This prevents the print version from being a different Claude call.
-    """
-    import claude_api
+    """Print-optimized Mode C clinical summary (HTML view)."""
     user, redir = _require_provider()
     if redir:
         return redir
+    return _summary_print_html(
+        user, patient_id,
+        request.args.get('days', 30),
+        request.args.get('brief_id'),
+    )
+
+
+def _summary_print_html(user, patient_id, days, brief_id):
+    """Build and render the print-view HTML for a brief.
+
+    Returns the rendered HTML string, or a Flask redirect Response on error
+    (patient not found / not owned). Shared by the HTML print route, the
+    server-side PDF route, and the tokenized brief route. ``brief_id`` may be
+    None (generate fresh); if set, the saved brief is rendered verbatim — this
+    keeps the printed PDF identical to what the provider saw, with no second
+    Claude call.
+    """
+    import claude_api
     if not _provider_owns_patient(user['id'], patient_id):
         flash('Patient not found', 'error')
         return redirect(url_for('provider_dashboard'))
 
-    days = min(int(request.args.get('days', 30)), 365)
+    days = min(int(days or 30), 365)
     end_dt = date.today()
     start_dt = end_dt - timedelta(days=days)
     period_start = start_dt.isoformat()
@@ -1113,7 +1125,6 @@ def provider_summary_print(patient_id):
     provider_type = user.get('provider_type') or 'psychiatrist'
 
     # ── Fast path: render a previously saved brief by ID ─────────────────────
-    brief_id = request.args.get('brief_id')
     if brief_id:
         saved = db.get_summary_by_id(brief_id, patient_id)
         if saved:
@@ -1186,6 +1197,7 @@ def provider_summary_print(patient_id):
                         patient_name=patient.get('full_name'),
                         engagement_data=engagement_data,
                         focus_config=focus_config,
+                        current_medications=patient.get('current_medications'),
                     )
                     chart_data = result.get('chart_data')
                 elif provider_type in ('therapist', 'counselor'):
@@ -1255,6 +1267,127 @@ def provider_summary_print(patient_id):
         chart_data=chart_data,
         degraded_sections=degraded,
     )
+
+
+def _render_brief_pdf(html: str) -> bytes:
+    """Render print-view HTML to a PDF via headless Chromium (Playwright).
+
+    Uses set_content (the template is self-contained except Chart.js from a CDN),
+    waits for network-idle so the chart library loads and the inline renderer
+    paints (chart animation is disabled in the template), then prints with the
+    browser header/footer OFF — the whole point: no patient UUID in the page-margin
+    URL. print_background=True preserves the styled score panels. WeasyPrint/
+    wkhtmltopdf are not viable here because they don't execute JS (blank charts).
+    """
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        browser = p.chromium.launch(args=['--no-sandbox', '--disable-dev-shm-usage'])
+        try:
+            page = browser.new_page(viewport={'width': 1120, 'height': 1500})
+            # Emulate PRINT media BEFORE the content paints. The Chart.js charts are
+            # responsive (size to their container on a paint frame). If we render
+            # under screen media, page.pdf() then re-emulates print and resizes the
+            # containers — and capture can beat the responsive redraw, dropping
+            # whichever charts haven't repainted (the right-column blank-chart bug).
+            # Rendering in print media from the start means each chart sizes once,
+            # correctly.
+            page.emulate_media(media='print')
+            page.set_content(html, wait_until='networkidle')
+            # Force a resize, then wait two animation frames so every responsive
+            # chart finishes its (animation-disabled) first paint before capture.
+            page.evaluate(
+                "() => new Promise(resolve => {"
+                "  window.dispatchEvent(new Event('resize'));"
+                "  requestAnimationFrame(() => requestAnimationFrame(resolve));"
+                "})"
+            )
+            page.wait_for_timeout(300)
+            pdf = page.pdf(
+                format='Letter',
+                print_background=True,
+                display_header_footer=False,
+                margin={'top': '0.5in', 'bottom': '0.5in',
+                        'left': '0.5in', 'right': '0.5in'},
+            )
+        finally:
+            browser.close()
+    return pdf
+
+
+def _brief_pdf_response(user, patient_id, days, brief_id):
+    """Build the print HTML, render it to PDF, return a Flask Response.
+
+    Propagates the redirect Response from _summary_print_html on auth/ownership
+    failure; falls back to the HTML print view if PDF rendering itself errors.
+    """
+    html = _summary_print_html(user, patient_id, days, brief_id)
+    if not isinstance(html, str):
+        return html   # error redirect from the shared builder
+    try:
+        pdf = _render_brief_pdf(html)
+    except Exception as e:
+        app.logger.exception(f'[brief pdf] render failed: {e}')
+        flash('Could not generate the PDF — opening the print view instead.', 'error')
+        return redirect(url_for('provider_summary_print',
+                                patient_id=patient_id, days=days, brief_id=brief_id))
+    resp = Response(pdf, mimetype='application/pdf')
+    resp.headers['Content-Disposition'] = 'inline; filename="clinical-summary.pdf"'
+    return resp
+
+
+@app.route('/provider/patient/<patient_id>/summary/pdf')
+@limiter.limit("20/hour")
+def provider_summary_pdf(patient_id):
+    """Server-side PDF of the clinical summary — no browser print-footer / UUID."""
+    user, redir = _require_provider()
+    if redir:
+        return redir
+    return _brief_pdf_response(
+        user, patient_id,
+        request.args.get('days', 30),
+        request.args.get('brief_id'),
+    )
+
+
+@app.route('/provider/brief/<token>')
+@limiter.limit("20/hour")
+def provider_brief_pdf_token(token):
+    """Tokenized PDF route — patient/brief UUIDs never appear in the URL.
+
+    Still requires provider login + patient ownership; the token is a privacy
+    measure (opaque, signed, 1-hour TTL), not a bearer credential.
+    """
+    user, redir = _require_provider()
+    if redir:
+        return redir
+    payload = auth_module.verify_brief_token(token, app.secret_key)
+    if not payload:
+        flash('This brief link is invalid or has expired. Open the patient and try again.', 'error')
+        return redirect(url_for('provider_dashboard'))
+    patient_id = payload['patient_id']
+    if not _provider_owns_patient(user['id'], patient_id):
+        flash('Patient not found', 'error')
+        return redirect(url_for('provider_dashboard'))
+    return _brief_pdf_response(user, patient_id, payload['days'], payload['brief_id'])
+
+
+@app.route('/provider/patient/<patient_id>/brief-token')
+def provider_brief_token_mint(patient_id):
+    """Mint an opaque token URL for a patient's brief PDF (provider-auth + ownership).
+
+    The hub builds the brief URL in client JS and JS can't sign, so it calls this
+    to get a UUID-free '/provider/brief/<token>' to open.
+    """
+    user, redir = _require_provider()
+    if redir:
+        return redir
+    if not _provider_owns_patient(user['id'], patient_id):
+        return jsonify({'error': 'not found'}), 404
+    days = min(int(request.args.get('days', 30)), 365)
+    brief_id = request.args.get('brief_id')
+    token = auth_module.generate_brief_token(patient_id, brief_id, days, app.secret_key)
+    return jsonify({'url': url_for('provider_brief_pdf_token', token=token)})
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2985,6 +3118,7 @@ def api_provider_generate_summary(patient_id):
         elif provider_type == 'psychiatrist':
             _pt_profile = db.supabase_admin.table('profiles').select('full_name').eq('id', patient_id).limit(1).execute()
             _pt_name = (_pt_profile.data[0].get('full_name') if _pt_profile.data else None)
+            _pt_meds = (db.get_patient_profile(patient_id) or {}).get('current_medications')
             result = claude_api.generate_psychiatry_summary(
                 checkins, journals,
                 days=summary_days,
@@ -2999,6 +3133,7 @@ def api_provider_generate_summary(patient_id):
                 patient_name=_pt_name,
                 engagement_data=engagement_data,
                 focus_config=focus_config,
+                current_medications=_pt_meds,
             )
         else:
             # unknown / None — fall back to Mode C provider brief

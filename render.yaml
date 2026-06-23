@@ -17,7 +17,7 @@ services:
   - type: web
     name: cognasync
     runtime: python
-    buildCommand: pip install -r requirements.txt && cd client && npm install && npm run build
+    buildCommand: pip install -r requirements.txt && playwright install --with-deps chromium && cd client && npm install && npm run build
     startCommand: gunicorn app:app --bind 0.0.0.0:$PORT --workers 2 --timeout 120
     envVars:
       - key: FLASK_ENV

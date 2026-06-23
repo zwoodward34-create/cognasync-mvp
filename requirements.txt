@@ -51,6 +51,7 @@ StrEnum==0.4.15
 supabase==2.10.0
 supafunc==0.7.0
 twilio==9.10.9
+playwright==1.60.0
 typing-inspection==0.4.2
 typing_extensions==4.15.0
 uvicorn==0.34.0

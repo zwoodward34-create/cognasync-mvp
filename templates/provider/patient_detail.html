@@ -691,7 +691,7 @@
     <div class="hub-nav-actions">
       <a href="{{ url_for('provider_patient_trends', patient_id=patient.patient_id) }}"
          class="hub-nav-btn">📊 Full Data</a>
-      <a href="{{ url_for('provider_summary_print', patient_id=patient.patient_id) }}"
+      <a href="{{ url_for('provider_summary_pdf', patient_id=patient.patient_id) }}"
          target="_blank" class="hub-nav-btn">🖨 Print Brief</a>
       <a href="{{ url_for('provider_intel_dashboard') }}"
          class="hub-nav-btn">🧠 Intelligence</a>

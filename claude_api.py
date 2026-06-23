@@ -1187,7 +1187,8 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                                  raw_voice_transcripts=None,
                                  patient_name=None,
                                  engagement_data=None,
-                                 focus_config=None):
+                                 focus_config=None,
+                                 current_medications=None):
     """Mode C (Psychiatrist) — medication-first, quantitative-primary brief.
 
     Returns {'status', 'text', 'raw', 'chart_data'} where chart_data contains
@@ -1886,8 +1887,34 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         )
 
     patient_line = f"PATIENT: {patient_name}\n" if patient_name else ""
+
+    # ── Current regimen (authoritative, from patient profile) ─────────────────
+    # The per-check-in medication log is collapsed to a taken-count above, so the
+    # drug name/dose never reached the model — the brief read "not provided" while
+    # the page header (which reads the profile) showed the regimen. Pass the
+    # profile regimen in explicitly so ## Medication can name it.
+    regimen_line = ""
+    if current_medications:
+        _meds = []
+        for _m in current_medications:
+            if not isinstance(_m, dict):
+                continue
+            _name = (_m.get('name') or '').strip()
+            if not _name:
+                continue
+            _dose = str(_m.get('dose') or '').strip()
+            _unit = (_m.get('dose_unit') or '').strip()
+            _meds.append(_name + (f" {_dose}{(' ' + _unit) if _unit else ''}" if _dose else ""))
+        if _meds:
+            regimen_line = (
+                "CURRENT REGIMEN (from patient profile — authoritative; name the "
+                "medication(s) in ## Medication, do not write \"not provided\"): "
+                + "; ".join(_meds) + "\n"
+            )
+
     user_content = (
         f"{patient_line}"
+        f"{regimen_line}"
         f"REVIEW PERIOD: {period_label}\n\n"
         f"AGGREGATE STATS:\n{json.dumps(stats, indent=2)}"
         f"{adv_section}"

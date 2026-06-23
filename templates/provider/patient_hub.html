@@ -2710,11 +2710,21 @@ async function copyBrief() {
 }
 
 function printBrief() {
-  // Prefer brief_id so the print route renders the exact same saved brief
-  // (avoids a second independent Claude call that produces different output).
-  let url = '/provider/patient/' + PATIENT_ID + '/summary/print?days=' + (_currentBriefDays || 14);
-  if (_currentBriefId) url += '&brief_id=' + encodeURIComponent(_currentBriefId);
-  window.open(url, '_blank');
+  // Server-side PDF: no browser print-footer, so no patient UUID in the artifact.
+  // Open the tab synchronously to preserve the click gesture (window.open AFTER
+  // an await/fetch trips pop-up blockers), then point it at a freshly minted,
+  // UUID-free token URL. Prefer brief_id so the PDF matches the saved brief
+  // verbatim (no second Claude call).
+  const w = window.open('about:blank', '_blank');
+  let mint = '/provider/patient/' + PATIENT_ID + '/brief-token?days=' + (_currentBriefDays || 14);
+  if (_currentBriefId) mint += '&brief_id=' + encodeURIComponent(_currentBriefId);
+  fetch(mint, { headers: { 'Accept': 'application/json' } })
+    .then(r => r.json())
+    .then(d => {
+      if (d && d.url) { if (w) { w.location = d.url; } else { window.location = d.url; } }
+      else { if (w) w.close(); showToast('Could not open the brief PDF', true); }
+    })
+    .catch(() => { if (w) w.close(); showToast('Could not open the brief PDF', true); });
 }
 
 // ── Brief bank ────────────────────────────────────────────────────────────────

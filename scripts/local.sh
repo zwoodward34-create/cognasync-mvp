@@ -29,6 +29,8 @@ case "${1:-}" in
     echo "==> Installing Python deps"
     "$VENV/bin/pip" install --upgrade pip >/dev/null
     "$VENV/bin/pip" install -r requirements.txt
+    echo "==> Installing Chromium for server-side PDF (Playwright)"
+    "$VENV/bin/playwright" install chromium
     echo "==> Building React client (vite build -> static/dist)"
     ( cd client && npm install && npm run build )
     echo "==> Done. Next: cp .env.local.example .env.local && edit, then scripts/local.sh seed"
