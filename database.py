@@ -2563,7 +2563,15 @@ def find_symptom_correlations(patient_id, days=60):
                 off_vals = [day_data[d][var] for d in non_s_dates
                             if d in day_data and day_data[d].get(var) is not None]
 
-                if len(on_vals) < 3 or len(off_vals) < 2:
+                # Spec §8: a correlation claim requires ≥10 matched observations.
+                # The on-symptom-day sample is the binding constraint for the
+                # on-side mean, so the gate is applied to it. A symptom logged on
+                # fewer than 10 days still surfaces at the symptom level (≥3 days,
+                # §16) with its raw frequency — it simply carries no co-occurrence
+                # claim until the data supports one. Under-surfacing is the only
+                # safe failure direction here: a fragile correlation shown to a
+                # provider is worse than none.
+                if len(on_vals) < 10 or len(off_vals) < 2:
                     continue
 
                 avg_on  = sum(on_vals)  / len(on_vals)
@@ -3916,10 +3924,19 @@ def create_patient_invite(provider_id: str, patient_email: str,
 
 
 def get_patient_invite_by_token(token: str) -> dict | None:
-    """Fetch a valid pending invite by token."""
+    """Fetch a valid pending invite by token.
+
+    An invite is valid only if it is still 'pending' AND not past its
+    expires_at. Enforcing expiry here closes a replay vector: a leaked invite
+    link stops working after its expiry window instead of lingering forever.
+    """
+    from datetime import datetime as _dt, timezone as _tz
+    if not token:
+        return None
+    now_iso = _dt.now(_tz.utc).isoformat()
     try:
         res = supabase_admin.table('patient_invites').select('*, profiles!patient_invites_provider_id_fkey(full_name)').eq(
-            'token', token).eq('status', 'pending').execute()
+            'token', token).eq('status', 'pending').gt('expires_at', now_iso).execute()
         if not res.data:
             return None
         row = res.data[0]
@@ -7997,13 +8014,24 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
 # SMS SESSION + CRISIS HELPERS
 # ═══════════════════════════════════════════════════════════════════════════
 
+# An unresolved SMS session older than this is treated as stale and ignored —
+# mirroring the TTL the sms_tokens layer already enforces. Prevents an orphaned
+# session (e.g. a med prompt the patient never answered) from silently
+# capturing or misattributing a much later reply. Sized to comfortably cover a
+# same-local-day reply to a morning prompt while expiring multi-day orphans.
+# NOTE: this never affects crisis screening — Priority 1 in /api/sms/inbound
+# runs check_crisis BEFORE get_sms_session is ever consulted.
+SMS_SESSION_TTL_HOURS = 18
+
 def get_sms_session(patient_id: str) -> dict | None:
-    """Return the most recent unresolved SMS session for a patient, or None."""
+    """Return the most recent unresolved, non-stale SMS session, or None."""
     try:
+        cutoff = (datetime.utcnow() - timedelta(hours=SMS_SESSION_TTL_HOURS)).isoformat()
         res = supabase_admin.table('sms_checkin_sessions') \
             .select('*') \
             .eq('patient_id', str(patient_id)) \
             .is_('resolved_at', 'null') \
+            .gte('sent_at', cutoff) \
             .order('sent_at', desc=True) \
             .limit(1) \
             .execute()

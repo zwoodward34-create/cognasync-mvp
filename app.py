@@ -330,11 +330,56 @@ def login_post():
     return redirect(url_for('home'))
 
 
+# --- Registration gate (private beta) ---------------------------------------
+# Public sign-ups are disabled by default while CognaSync is pre-launch, so that
+# random visitors cannot create accounts and enter health data into a system
+# that is not yet ready to be a data custodian. Set the env var
+# PUBLIC_REGISTRATION_ENABLED=true to reopen open registration. Anyone holding a
+# valid patient invite token can always register, so chosen testers still work.
+PUBLIC_REGISTRATION_ENABLED = os.environ.get('PUBLIC_REGISTRATION_ENABLED', 'false').lower() == 'true'
+# Optional shared beta access code. When set, anyone registering with this value
+# as their invite token is let through — the simple way to onboard chosen testers
+# pre-launch. Share one link: <APP_URL>/register?invite=<code>. Leave unset to
+# allow only real per-patient invites. Rotate by changing the env var.
+BETA_ACCESS_CODE = (os.environ.get('BETA_ACCESS_CODE') or '').strip()
+
+
+def _registration_allowed(invite_token: str = '') -> bool:
+    if PUBLIC_REGISTRATION_ENABLED:
+        return True
+    invite_token = (invite_token or '').strip()
+    if not invite_token:
+        return False
+    if BETA_ACCESS_CODE and invite_token == BETA_ACCESS_CODE:
+        return True
+    if db.get_patient_invite_by_token(invite_token):
+        return True
+    return False
+
+
+@app.after_request
+def _add_noindex_header(response):
+    # Private beta: keep the entire app out of search indexes regardless of which
+    # template (Jinja or React SPA) rendered the page. Remove at public launch.
+    response.headers['X-Robots-Tag'] = 'noindex, nofollow, noarchive'
+    return response
+
+
+@app.route('/robots.txt')
+def robots_txt():
+    return ("User-agent: *\nDisallow: /\n", 200, {'Content-Type': 'text/plain'})
+
+
 @app.route('/register')
+@limiter.limit("30 per minute")
 def register_page():
     if _current_user():
         return redirect(url_for('home'))
     invite_token = request.args.get('invite', '').strip()
+    if not _registration_allowed(invite_token):
+        flash('CognaSync is currently in private beta and not accepting new sign-ups. '
+              'If you have an invitation, please use the link you were sent.', 'error')
+        return redirect(url_for('login_page'))
     invite_email = request.args.get('email', '').strip()
     invite_context = None
     if invite_token:
@@ -346,6 +391,7 @@ def register_page():
 
 
 @app.route('/register', methods=['POST'])
+@limiter.limit("5 per minute")
 def register_post():
     email = request.form.get('email', '').strip()
     password = request.form.get('password', '')
@@ -354,8 +400,33 @@ def register_post():
     role = request.form.get('role', 'patient')
     invite_token = request.form.get('invite_token', '').strip()
     provider_type = request.form.get('provider_type', '').strip() or None
+    # Honeypot: a hidden field no human can see or fill. Automated form-spam
+    # bots fill every field, so a non-empty value means a bot. Silently show
+    # the normal "check your email" page WITHOUT creating an account, so the
+    # bot gets no signal that it was caught.
+    if request.form.get('company_website', '').strip():
+        app.logger.warning('register_post: honeypot triggered (bot signup blocked) email=%r', email)
+        return render_template('auth/verify_sent.html', email=email, email_sent=True)
+    if not _registration_allowed(invite_token):
+        flash('CognaSync is currently in private beta and not accepting new sign-ups.', 'error')
+        return redirect(url_for('login_page'))
     # Rebuild invite context for re-rendering on error
     invite_context = db.get_patient_invite_by_token(invite_token) if invite_token else None
+
+    # Bind an invite link to the email it was sent to. Without this, a single
+    # leaked invite URL can be replayed to create unlimited accounts with any
+    # email — the invite stays 'pending' because the bot's email never matches
+    # the original recipient, so it is never consumed and keeps working. Skip
+    # for the shared beta code (which has no invite row).
+    if invite_context and not (BETA_ACCESS_CODE and invite_token == BETA_ACCESS_CODE):
+        invited_email = (invite_context.get('patient_email') or '').lower().strip()
+        if invited_email and email.lower().strip() != invited_email:
+            app.logger.warning(
+                'register_post: invite email mismatch — invite sent to %r but signup used %r',
+                invited_email, email)
+            flash('This invitation was sent to a different email address. Please '
+                  'register using the email address your invitation was sent to.', 'error')
+            return redirect(url_for('login_page'))
 
     # Validate provider_type when registering as provider
     valid_provider_types = ('psychiatrist', 'therapist', 'counselor')
@@ -1420,6 +1491,8 @@ def _api_user(required_role=None):
 @limiter.limit("5 per minute")
 def api_register():
     data = request.json or {}
+    if not _registration_allowed((data.get('invite_token') or '').strip()):
+        return jsonify({'error': 'Registration is currently closed (private beta).'}), 403
     result, error = auth_module.register_user(
         data.get('email', ''),
         data.get('password', ''),
@@ -5953,6 +6026,39 @@ def internal_trigger_checkin_sms():
     skipped = 0
 
     for patient in patients:
+        # ── Short check-in: direct/session path (NOT a Studio flow) ───────────
+        # Sent as a plain SMS that opens a checkin_pending session; the reply is
+        # handled by /api/sms/inbound (Priority 5), which runs crisis screening
+        # first and writes the check-in + rotating follow-up. This keeps a single
+        # inbound handler and a single state store, so a Studio flow can never
+        # silently capture a reply meant for the medication prompt.
+        if check_in_type == 'short':
+            pid   = patient['patient_id']
+            phone = patient.get('phone')
+            if not phone:
+                skipped += 1
+                continue
+            today = db.patient_local_today(pid)
+            # Dedupe: the med-follow-up path also records a 'checkin' send, so a
+            # patient already prompted today isn't sent a second check-in.
+            if db.has_daily_send(pid, 'checkin', today):
+                skipped += 1
+                continue
+            # Guard: never clobber an open conversation (e.g. an unanswered med
+            # prompt). set_sms_session would resolve it; skip and let it finish.
+            if db.get_sms_session(pid):
+                skipped += 1
+                continue
+            result = _sms.send_daily_checkin_prompt(phone)
+            if result.get('ok'):
+                db.set_sms_session(pid, 'checkin_pending')
+                db.record_daily_send(pid, 'checkin', today)
+                triggered += 1
+            else:
+                skipped += 1
+            continue
+
+        # ── Full check-in: Studio flow (carries appointment + voice-link) ─────
         # Build token metadata
         metadata = {}
         if check_in_type == 'full' and patient.get('appt_id'):

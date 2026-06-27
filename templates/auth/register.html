@@ -40,6 +40,13 @@
       {% if invite_token %}
         <input type="hidden" name="invite_token" value="{{ invite_token }}">
       {% endif %}
+      {# Honeypot: hidden from humans, off-screen and skipped by tab order.
+         Spam bots fill every field; a non-empty value is rejected server-side. #}
+      <div aria-hidden="true" style="position:absolute;left:-9999px;top:-9999px;height:0;width:0;overflow:hidden;">
+        <label for="company_website">Company website</label>
+        <input type="text" id="company_website" name="company_website"
+               tabindex="-1" autocomplete="off">
+      </div>
       <div class="form-group">
         <label for="full_name">Full name</label>
         <input type="text" id="full_name" name="full_name" required
