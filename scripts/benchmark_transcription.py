@@ -282,7 +282,7 @@ def load_clinical_terms() -> list[str]:
 
 # ── Transcription (live path) ────────────────────────────────────────────────
 
-def transcribe_live(audio_path: str) -> str:
+def transcribe_live(audio_path: str) -> tuple:
     """Run a file through the REAL transcription path (incl. word_boost).
 
     Passes an empty patient_id so the medication-merge step short-circuits
@@ -302,7 +302,7 @@ def transcribe_live(audio_path: str) -> str:
     )
     if result.get('status') != 'completed' or not result.get('text'):
         raise RuntimeError(f"transcription failed: {result.get('error')}")
-    return result['text']
+    return result['text'], result.get('confidence')
 
 
 # ── Runner ───────────────────────────────────────────────────────────────────
@@ -335,12 +335,14 @@ def run(audio_dir: str, score_only: bool) -> dict:
     agg_term_exp = agg_term_found = agg_fp = 0
     miss_counter: Counter = Counter()
     fp_counter: Counter = Counter()
+    asr_confidences: list = []
 
     for base, audio_path, ref_path in pairs:
         with open(ref_path, encoding='utf-8') as f:
             ref = f.read()
 
         hyp_cache = os.path.join(audio_dir, base + '.hyp.txt')
+        asr_conf = None   # only known on a live run; None in --score-only
         if score_only:
             if not os.path.exists(hyp_cache):
                 print(f"  (skip {base}: --score-only but no {base}.hyp.txt)")
@@ -349,7 +351,7 @@ def run(audio_dir: str, score_only: bool) -> dict:
                 hyp = f.read()
         else:
             print(f"  transcribing {base} ...")
-            hyp = transcribe_live(audio_path)
+            hyp, asr_conf = transcribe_live(audio_path)
             with open(hyp_cache, 'w', encoding='utf-8') as f:
                 f.write(hyp)
 
@@ -364,12 +366,15 @@ def run(audio_dir: str, score_only: bool) -> dict:
             miss_counter[term] += 1
         for term in fp_list:
             fp_counter[term] += 1
+        if asr_conf is not None:
+            asr_confidences.append(asr_conf)
 
         per_file.append({
             'file': base,
             'wer': w.wer,
             'ref_words': w.ref_words,
             'sub': w.substitutions, 'del': w.deletions, 'ins': w.insertions,
+            'asr_confidence': round(asr_conf, 4) if asr_conf is not None else None,
             'clinical_terms_expected': t.expected,
             'clinical_terms_found': t.found,
             'clinical_recall': t.recall,
@@ -389,6 +394,8 @@ def run(audio_dir: str, score_only: bool) -> dict:
         'overall_wer': overall_wer,
         'overall_clinical_term_recall': overall_recall,
         'overall_clinical_false_positives': agg_fp,
+        'overall_asr_confidence': (round(sum(asr_confidences) / len(asr_confidences), 4)
+                                   if asr_confidences else None),
         'aggregate_counts': {
             'substitutions': agg_s, 'deletions': agg_d,
             'insertions': agg_i, 'ref_words': agg_n,
@@ -433,6 +440,10 @@ def _print_report(report: dict, out_path: str) -> None:
           f"/{report['aggregate_counts']['clinical_terms_expected']})")
     print(f"invented med names   : {report.get('overall_clinical_false_positives', 0)}  "
           f"(false positives — want this at 0)")
+    _ac = report.get('overall_asr_confidence')
+    if _ac is not None:
+        print(f"mean ASR confidence  : {_ac:.3f}  (transcript audio quality, 0-1; "
+              f"<0.65 is low)")
     if report.get('most_missed_terms'):
         print("most-missed terms    : " +
               ", ".join(f"{t}×{n}" for t, n in report['most_missed_terms']))

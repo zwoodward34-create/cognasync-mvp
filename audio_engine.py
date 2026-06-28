@@ -93,6 +93,34 @@ ASSEMBLYAI_VOCAB_MODE = (os.environ.get('ASSEMBLYAI_VOCAB_MODE', 'word_boost').s
 if ASSEMBLYAI_VOCAB_MODE not in ('keyterms', 'word_boost', 'off'):
     ASSEMBLYAI_VOCAB_MODE = 'word_boost'
 
+# Transcript-confidence thresholds (AssemblyAI top-level confidence is 0–1).
+# Clean conversational audio typically lands 0.85–0.97; values below ~0.65
+# usually mean the audio was noisy, clipped, or unintelligible enough that the
+# transcript — and every signal derived from it — should be read with caution.
+# Tunable via env without code change.
+TRANSCRIPT_CONF_HIGH = float(os.environ.get('TRANSCRIPT_CONF_HIGH', '0.85'))
+TRANSCRIPT_CONF_LOW  = float(os.environ.get('TRANSCRIPT_CONF_LOW', '0.65'))
+
+
+def transcript_confidence_label(value) -> str | None:
+    """Map an ASR confidence float (0–1) to 'high' | 'medium' | 'low'.
+
+    Returns None when no confidence was reported (e.g. a recovery run that
+    reused an existing transcript), so callers can distinguish "low confidence"
+    from "confidence unknown" — they are not the same and must not be conflated.
+    """
+    if value is None:
+        return None
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        return None
+    if v >= TRANSCRIPT_CONF_HIGH:
+        return 'high'
+    if v >= TRANSCRIPT_CONF_LOW:
+        return 'medium'
+    return 'low'
+
 ACCEPTED_MIME_TYPES = {
     'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a',
     'audio/wav', 'audio/wave', 'audio/x-wav',
@@ -381,6 +409,10 @@ def _poll_transcription_job(job_id: str) -> dict:
                     'entities':          data.get('entities') or [],
                     'auto_highlights':   (data.get('auto_highlights_result') or {}).get('results') or [],
                     'sentiment_results': data.get('sentiment_analysis_results') or [],
+                    # Top-level ASR confidence (0–1) — how sure the model is about
+                    # this transcript overall. Used downstream to caveat the brief
+                    # when a transcript is too poor to trust (see §8 uncertainty).
+                    'confidence':        data.get('confidence'),
                     'error':             None,
                 }
 
@@ -803,6 +835,28 @@ def _merge_acoustic_into_extraction(extraction, acoustic_result, session_id):
         )
 
 
+def _attach_transcript_confidence(extraction: dict, transcription: dict | None) -> None:
+    """Attach ASR transcript confidence to extraction['scores'] so
+    store_session_features persists it and the Mode C brief can caveat
+    low-confidence transcripts.
+
+    No-op when no confidence was reported (e.g. a recovery run reusing an
+    existing transcript) — "confidence unknown" must not be recorded as low.
+    """
+    if not transcription:
+        return
+    value = transcription.get('confidence')
+    label = transcript_confidence_label(value)
+    if label is None:
+        return
+    if extraction.get('scores') is None:
+        extraction['scores'] = {}
+    extraction['scores']['transcript_confidence'] = {
+        'value': round(float(value), 4),
+        'label': label,
+    }
+
+
 def _run_audio_pipeline(db, extract_features, session_id, patient_id,
                          file_bytes, filename, session_date, session_type):
     """Inner pipeline extracted so the outer function can wrap it with a safety net."""
@@ -917,6 +971,9 @@ def _run_audio_pipeline(db, extract_features, session_id, patient_id,
     # Both acoustic_features and affect_dimensions stored in scores so
     # store_session_features persists them alongside transcript-derived scores.
     _merge_acoustic_into_extraction(extraction, acoustic_result, session_id)
+
+    # ── Attach transcript ASR confidence (quality signal for the brief) ───────
+    _attach_transcript_confidence(extraction, transcription)
 
     # ── Persist features ──────────────────────────────────────────
     db.store_session_features(
@@ -1145,6 +1202,10 @@ def process_voice_note(
             assemblyai_hints=_vn_hints,
         )
         _merge_acoustic_into_extraction(extraction, acoustic_result, session_id)
+
+        # ── Transcript ASR confidence (skipped on existing-transcript recovery,
+        # where _transcription_result is {} → no confidence recorded) ──────────
+        _attach_transcript_confidence(extraction, _transcription_result)
 
         # ── 6.5 Crisis escalation (patient-facing safety net) ────────────────
         # Voice is async and patient-initiated, so a self-harm disclosure here

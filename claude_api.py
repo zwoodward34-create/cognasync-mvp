@@ -4379,7 +4379,27 @@ def generate_brief_from_sessions(
                 'pattern':   afd.get('pattern'),
                 'disclaimer': '⚠ Research signal — ~70–75% accuracy ceiling. Not a diagnostic instrument.',
             }
+        tc = s.get('transcript_confidence') or {}
+        if tc.get('label'):
+            row['transcript_quality'] = tc['label']
         session_rows.append(row)
+
+    # ── Transcript-quality caveat (flag-and-caveat, never suppress) ───────────
+    # ASR confidence is captured per session in audio_engine. A low-confidence
+    # transcript means every observation derived from it is shakier, so we flag
+    # it in the data-boundary statement the model must surface — mirroring §26's
+    # handling of insufficient engagement data. The session content is NOT dropped.
+    _low_conf_dates = [
+        feat.get('session_date', 'unknown')
+        for feat in (session_features or [])
+        if ((feat.get('scores') or {}).get('transcript_confidence') or {}).get('label') == 'low'
+    ]
+    if _low_conf_dates:
+        data_boundary += (
+            f" Note: transcript audio quality was low on {len(_low_conf_dates)} of "
+            f"{n_sessions} session(s) ({', '.join(_low_conf_dates)}); observations from "
+            f"those sessions rest on a less reliable transcript and should be weighted accordingly."
+        )
 
     # ── Build aggregate stats block ────────────────────────────────────────
     agg = aggregated_scores
