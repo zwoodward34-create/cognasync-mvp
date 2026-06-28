@@ -67,6 +67,32 @@ MAX_AUDIO_BYTES      = 500 * 1024 * 1024   # 500 MB hard limit
 # Leave unset (or set to false/0) to run on free-tier keys without error.
 ASSEMBLYAI_ENHANCED = os.environ.get('ASSEMBLYAI_ENHANCED', '').lower() in ('1', 'true', 'yes')
 
+# Boost strength for the clinical word_boost vocabulary: 'low' | 'default' | 'high'.
+# 'default' balances recovering missed drug names against the risk of the model
+# inventing medication names that were never said (false positives that would
+# poison §16 medication-context detection). Raise to 'high' via this env var and
+# re-run scripts/benchmark_transcription.py to measure both recall AND false
+# positives before setting it in the Render production environment.
+ASSEMBLYAI_BOOST_PARAM = (os.environ.get('ASSEMBLYAI_BOOST_PARAM', 'default').strip().lower()
+                          or 'default')
+if ASSEMBLYAI_BOOST_PARAM not in ('low', 'default', 'high'):
+    ASSEMBLYAI_BOOST_PARAM = 'default'
+
+# How the clinical vocabulary is injected into the transcription request:
+#   'keyterms'   → keyterms_prompt (universal-2's actual term-boosting parameter;
+#                  also boosts related variations of each term)
+#   'word_boost' → legacy word_boost + boost_param
+#   'off'        → no vocabulary injection (clean baseline)
+# Benchmark finding (2026-06-27): word_boost/boost_param had ZERO measurable
+# effect on universal-2 output — default and high produced byte-identical results
+# — so word_boost appears inert on this model. Production default is kept at
+# 'word_boost' (a known no-op that cannot error) until 'keyterms' is validated
+# against scripts/benchmark_transcription.py and promoted via this env var.
+ASSEMBLYAI_VOCAB_MODE = (os.environ.get('ASSEMBLYAI_VOCAB_MODE', 'word_boost').strip().lower()
+                         or 'word_boost')
+if ASSEMBLYAI_VOCAB_MODE not in ('keyterms', 'word_boost', 'off'):
+    ASSEMBLYAI_VOCAB_MODE = 'word_boost'
+
 ACCEPTED_MIME_TYPES = {
     'audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a',
     'audio/wav', 'audio/wave', 'audio/x-wav',
@@ -77,6 +103,104 @@ ACCEPTED_MIME_TYPES = {
 ACCEPTED_EXTENSIONS = {
     '.mp3', '.mp4', '.m4a', '.wav', '.flac', '.ogg', '.webm', '.aac',
 }
+
+# ── Custom transcription vocabulary ──────────────────────────────────────────
+# Passed to AssemblyAI as `word_boost` on every job. General ASR routinely
+# mangles low-frequency clinical tokens — especially psychiatric drug names —
+# and those exact tokens drive downstream medication-context and symptom
+# correlation signals (CLAUDE.md §16). Boosting them protects accuracy on the
+# words that matter most clinically.
+#
+# Kept under 200 entries so it stays compatible with the universal-2
+# `keyterms_prompt` feature if we migrate to it later. To extend this with the
+# patient's actual medication list at call time, merge rows from the
+# `medications` table into the payload in _submit_transcription_job().
+CLINICAL_VOCAB = [
+    # Antidepressants — SSRIs / SNRIs / atypicals (generic)
+    'Fluoxetine', 'Sertraline', 'Paroxetine', 'Citalopram', 'Escitalopram',
+    'Fluvoxamine', 'Venlafaxine', 'Desvenlafaxine', 'Duloxetine', 'Bupropion',
+    'Mirtazapine', 'Trazodone', 'Vortioxetine', 'Vilazodone', 'Amitriptyline',
+    'Nortriptyline', 'Clomipramine', 'Imipramine',
+    # Mood stabilizers
+    'Lithium', 'Lamotrigine', 'Valproate', 'Divalproex', 'Carbamazepine',
+    'Oxcarbazepine', 'Topiramate',
+    # Antipsychotics
+    'Aripiprazole', 'Risperidone', 'Quetiapine', 'Olanzapine', 'Ziprasidone',
+    'Lurasidone', 'Paliperidone', 'Clozapine', 'Haloperidol', 'Cariprazine',
+    'Brexpiprazole', 'Asenapine',
+    # Stimulants / ADHD
+    'Methylphenidate', 'Dexmethylphenidate', 'Amphetamine', 'Lisdexamfetamine',
+    'Atomoxetine', 'Guanfacine',
+    # Anxiolytics / benzodiazepines
+    'Alprazolam', 'Lorazepam', 'Clonazepam', 'Diazepam', 'Buspirone',
+    'Hydroxyzine',
+    # Sleep agents
+    'Zolpidem', 'Eszopiclone', 'Ramelteon',
+    # Common brand names
+    'Prozac', 'Zoloft', 'Lexapro', 'Effexor', 'Cymbalta', 'Wellbutrin',
+    'Remeron', 'Abilify', 'Seroquel', 'Zyprexa', 'Risperdal', 'Latuda',
+    'Klonopin', 'Xanax', 'Ativan', 'Lamictal', 'Depakote', 'Vyvanse',
+    'Adderall', 'Ritalin', 'Concerta', 'Strattera', 'Trintellix',
+    # Clinical terms commonly mistranscribed
+    'anhedonia', 'hypomania', 'dysphoria', 'dissociation', 'rumination',
+    'psychomotor', 'akathisia', 'titration', 'titrate', 'milligram',
+    'milligrams',
+]
+
+
+def _patient_medication_terms(patient_id: str | None) -> list[str]:
+    """Medication-name terms from the patient's own profile for word_boost.
+
+    Reads patient_profiles.current_medications (JSONB array of
+    {name, dose, dose_unit}) and returns each distinct name plus its individual
+    alphabetic tokens — so 'Wellbutrin XL' boosts both the phrase and
+    'Wellbutrin'. The patient's actual regimen is the highest-value boost: these
+    are the exact names that must transcribe correctly for §16
+    medication-context detection. Non-fatal — any error returns [].
+    """
+    if not patient_id:
+        return []
+    try:
+        import database as db
+        profile = db.get_patient_profile(patient_id)
+    except Exception as e:
+        logger.warning("word_boost: medication lookup failed for patient %s: %s", patient_id, e)
+        return []
+    if not profile:
+        return []
+
+    terms: list[str] = []
+    for m in (profile.get('current_medications') or []):
+        if not isinstance(m, dict):
+            continue
+        name = (m.get('name') or '').strip()
+        if not name:
+            continue
+        terms.append(name)
+        for tok in name.replace('/', ' ').split():
+            tok = tok.strip('.,()')
+            if len(tok) > 3 and tok.isalpha():
+                terms.append(tok)
+    return terms
+
+
+def _build_word_boost(patient_id: str | None, max_terms: int = 190) -> list[str]:
+    """Merge the static clinical vocab with the patient's own medication names.
+
+    De-duplicates case-insensitively and caps the total so it stays within
+    AssemblyAI limits and remains compatible with the universal-2
+    keyterms_prompt path (≤200). Patient-specific medication terms are added
+    FIRST so that if the cap trims anything it trims the least-critical tail of
+    the static vocab, never the patient's actual regimen.
+    """
+    seen: set[str] = set()
+    merged: list[str] = []
+    for term in _patient_medication_terms(patient_id) + CLINICAL_VOCAB:
+        key = term.lower()
+        if key and key not in seen:
+            seen.add(key)
+            merged.append(term)
+    return merged[:max_terms]
 
 
 # ── Validation ───────────────────────────────────────────────────────────────
@@ -160,10 +284,13 @@ def _assemblyai_headers() -> dict:
     return {'authorization': ASSEMBLYAI_API_KEY, 'content-type': 'application/json'}
 
 
-def _submit_transcription_job(audio_url: str) -> tuple:
+def _submit_transcription_job(audio_url: str, patient_id: str | None = None) -> tuple:
     """
     Submit a transcription job to AssemblyAI.
     Returns (job_id, error_message). job_id is None on failure.
+
+    When patient_id is provided, the patient's own medication names are merged
+    into the word_boost vocabulary (highest-value, patient-specific boost).
     """
     if not ASSEMBLYAI_API_KEY:
         return None, 'ASSEMBLYAI_API_KEY is not configured.'
@@ -176,6 +303,18 @@ def _submit_transcription_job(audio_url: str) -> tuple:
         'speech_models': ['universal-2'],
         'language_code': 'en',
     }
+    # Inject the clinical vocabulary (static list + patient meds) using whichever
+    # mechanism ASSEMBLYAI_VOCAB_MODE selects. keyterms_prompt is universal-2's
+    # real term-boosting parameter; word_boost is the legacy (and empirically
+    # inert) path; 'off' is the clean baseline. The vocabulary list is identical
+    # across modes so the benchmark isolates the *mechanism*, not the word list.
+    _vocab = _build_word_boost(patient_id)
+    if _vocab and ASSEMBLYAI_VOCAB_MODE == 'keyterms':
+        payload['keyterms_prompt'] = _vocab
+    elif _vocab and ASSEMBLYAI_VOCAB_MODE == 'word_boost':
+        payload['word_boost'] = _vocab
+        payload['boost_param'] = ASSEMBLYAI_BOOST_PARAM
+    # 'off' → inject nothing.
     if ASSEMBLYAI_ENHANCED:
         payload['speaker_labels']      = True
         payload['sentiment_analysis']  = True
@@ -407,8 +546,8 @@ def transcribe_audio_file(
             'error':        'Failed to upload audio to AssemblyAI.',
         }
 
-    # Submit transcription job
-    job_id, submit_err = _submit_transcription_job(audio_url)
+    # Submit transcription job (patient_id merges their meds into word_boost)
+    job_id, submit_err = _submit_transcription_job(audio_url, patient_id=patient_id)
     if not job_id:
         return {
             'status':       'error',

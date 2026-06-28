@@ -652,7 +652,7 @@ Only symptoms with `days_reported ≥ 3` are included in results.
 2. Build a symptom occurrence map: `{date: [symptom, ...]}`.
 3. For each unique symptom with ≥3 occurrences:
    a. Classify each check-in day as "symptom day" or "non-symptom day."
-   b. For each numeric variable in scope (see list below), compute the mean on symptom days vs. non-symptom days. If `|delta| ≥ 1.5` AND `n ≥ 3`, add as a co-occurring signal.
+   b. For each numeric variable in scope (see list below), compute the mean on symptom days vs. non-symptom days. If `|delta| ≥ 1.5` AND `n ≥ 10` (matched observations on symptom days — aligns with the §8 minimum for a correlation claim), add as a co-occurring signal. A symptom logged on fewer than 10 days still surfaces at the symptom level (≥3 occurrences, step 3) with its raw frequency; it simply carries no co-occurrence claim until the data supports one.
    c. Note `first_seen` date — the earliest check-in where the symptom appears.
    d. Query `medication_events` for any new medications, discontinued medications, or dose changes within ±14 days of `first_seen`. Add as `medication_context` if found.
 4. Return sorted by `days_reported` descending.
@@ -704,13 +704,13 @@ These are in addition to all standard forbidden language patterns.
 ### Example Outputs
 
 **Mode B (patient), headache with sleep co-occurrence, medication context present:**
-> "You logged headaches on 7 of the past 22 days — something worth mentioning. On those days, your sleep disruption was notably higher than on headache-free days. These entries also started around the same time as a recent change in Escitalopram. Your provider will have context on whether that's relevant — it's worth bringing up."
+> "You logged headaches on 12 of the past 30 days — something worth mentioning. On those days, your sleep disruption was notably higher than on headache-free days. These entries also started around the same time as a recent change in Escitalopram. Your provider will have context on whether that's relevant — it's worth bringing up."
 
 **Mode B (patient), brain fog with stim load co-occurrence, no medication context:**
-> "Brain fog showed up on 4 of your logged days this period. On those days, your Stim Load averaged 8.2 — higher than your 4.1 average on other days. It could be worth asking your provider about the pattern."
+> "Brain fog showed up on 11 of your logged days this period. On those days, your Stim Load averaged 8.2 — higher than your 4.1 average on other days. It could be worth asking your provider about the pattern."
 
 **Mode C (provider), same headache data:**
-> `Headache: reported on 7 of 22 days. Co-occurring signals: sleep_disruption_score elevated on symptom days (avg 7.2 vs. 3.1 on non-symptom days, Δ=4.1, n=7). Medication context: Escitalopram change logged 5 days before first symptom entry (2025-04-10).`
+> `Headache: reported on 12 of 30 days. Co-occurring signals: sleep_disruption_score elevated on symptom days (avg 7.2 vs. 3.1 on non-symptom days, Δ=4.1, n=12). Medication context: Escitalopram change logged 5 days before first symptom entry (2025-04-10).`
 
 ---
 

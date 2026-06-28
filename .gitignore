@@ -18,3 +18,25 @@ build/
 .replit
 replit.nix
 .env
+
+# transcription benchmark: keep reference scripts, ignore recordings + outputs
+data/benchmark/*.m4a
+data/benchmark/*.mp3
+data/benchmark/*.wav
+data/benchmark/*.mp4
+data/benchmark/*.webm
+data/benchmark/*.flac
+data/benchmark/*.ogg
+data/benchmark/*.aac
+data/benchmark/*.hyp.txt
+data/benchmark/benchmark_results.json
+data/benchmark/*.m4a
+data/benchmark/*.mp3
+data/benchmark/*.wav
+data/benchmark/*.mp4
+data/benchmark/*.webm
+data/benchmark/*.flac
+data/benchmark/*.ogg
+data/benchmark/*.aac
+data/benchmark/*.hyp.txt
+data/benchmark/benchmark_results.json
