@@ -200,6 +200,8 @@
   .session-item.selected { border-color: var(--primary); background: var(--primary-light, #f0f4ff); }
   .session-item.processing { cursor: default; opacity: 0.8; }
   .session-item input[type="checkbox"] { margin-top: 2px; flex-shrink: 0; cursor: pointer; }
+  .session-retry-btn { margin-top: 6px; font-size: 0.72rem; padding: 3px 10px; border: 1px solid var(--primary, #4a5cff); background: transparent; color: var(--primary, #4a5cff); border-radius: 6px; cursor: pointer; }
+  .session-retry-btn:disabled { opacity: 0.6; cursor: default; }
   .session-info { flex: 1; min-width: 0; }
   .session-date { font-size: 0.85rem; font-weight: 500; }
   .session-meta { font-size: 0.75rem; color: var(--text-secondary); margin-top: 1px; }
@@ -629,11 +631,13 @@
                 <div class="session-themes">{{ s.features.themes | join(' · ') }}</div>
               {% endif %}
             {% elif s.processing_status == 'error' %}
-              <div class="session-crisis" title="{{ s.processing_error or '' }}">⚠ {{ s.processing_error or 'Processing error' }}</div>
+              <div class="session-crisis" title="{{ s.processing_error or '' }}">⚠ Processing failed — not included in briefs</div>
+              <button type="button" class="session-retry-btn"
+                      onclick="event.stopPropagation(); retrySession('{{ s.session_id }}', this)">Retry processing</button>
             {% else %}
               <div class="session-processing" id="proc-{{ s.session_id }}">
                 <span class="mini-spinner"></span>
-                <span id="proc-label-{{ s.session_id }}">{{ s.processing_status | capitalize }}…</span>
+                <span id="proc-label-{{ s.session_id }}">Processing… (selectable when done)</span>
               </div>
             {% endif %}
           </div>
@@ -898,6 +902,25 @@ async function uploadAudio() {
     progressWrap.classList.remove('visible');
   } finally {
     btn.disabled = false;
+  }
+}
+
+// ── Retry a session whose extraction failed ──────────────────────────
+async function retrySession(sessionId, btn) {
+  if (btn) { btn.disabled = true; btn.textContent = 'Retrying…'; }
+  try {
+    const res = await fetch(
+      `/api/intel/patient/${PATIENT_ID}/session/${sessionId}/retry`,
+      { method: 'POST', credentials: 'same-origin' }
+    );
+    if (!res.ok) throw new Error('retry failed');
+    // Processing is now running server-side; poll until it completes.
+    pollingSessions.add(sessionId);
+    startPolling();
+    setTimeout(() => window.location.reload(), 1200);
+  } catch (e) {
+    if (btn) { btn.disabled = false; btn.textContent = 'Retry processing'; }
+    setStatus('Could not retry — please try again.', 'error');
   }
 }
 

@@ -3120,6 +3120,10 @@ def api_provider_generate_summary(patient_id):
     period_end   = data.get('period_end')
     appointment_date = data.get('appointment_date')
 
+    # Unstick any session whose extraction never completed, so its features are
+    # available to briefs going forward (fire-and-forget; see _reconcile_pending_sessions).
+    _reconcile_pending_sessions(patient_id)
+
     perms = _get_provider_perms(user['id'], patient_id)
 
     if period_start and period_end:
@@ -3982,6 +3986,53 @@ def api_intel_upload_session(patient_id):
         return jsonify({'error': f'Server error: {str(_exc)}'}), 500
 
 
+def _reconcile_pending_sessions(patient_id, limit=5):
+    """
+    Process any clinical_sessions that are stuck in 'pending' but already have a
+    transcript — decoupling feature extraction from brief generation.
+
+    Runs the REAL extraction pipeline (transcript_engine + store_session_features),
+    the same path a brief would use, but triggered by simply viewing the session
+    list. Each row is atomically claimed (pending -> extracting) so overlapping
+    requests never double-process. Failures land the row in 'error' (surfaced in
+    the UI) rather than looping.
+
+    Fire-and-forget: call via a daemon thread so the HTTP request returns fast;
+    the UI's status poll picks up the completion.
+    """
+    def _work():
+        try:
+            pending = db.get_pending_transcript_sessions(patient_id, limit=limit)
+            if not pending:
+                return
+            from transcript_engine import extract_features as _ef
+            population_flags = db.get_patient_population_flags(patient_id)
+            for s in pending:
+                sid = s['session_id']
+                if not db.claim_session_for_processing(sid):
+                    continue  # another worker already claimed it
+                try:
+                    extraction = _ef(
+                        transcript_text=s['transcript_raw'],
+                        session_date=s['session_date'],
+                        session_type=s.get('session_type', 'voice_note'),
+                        population_flags=population_flags or None,
+                    )
+                    db.store_session_features(
+                        session_id=sid,
+                        patient_id=patient_id,
+                        extraction_result=extraction,
+                        extraction_model=os.environ.get('CLAUDE_MODEL', 'claude-haiku-4-5-20251001'),
+                    )
+                except Exception as _e:
+                    app.logger.warning(f'[reconcile] session {sid[:8]} failed: {_e}')
+                    db.update_clinical_session_status(sid, 'error', f'reconcile: {_e}')
+        except Exception as _outer:
+            app.logger.warning(f'[reconcile] outer failure for {patient_id}: {_outer}')
+
+    threading.Thread(target=_work, daemon=True, name=f'reconcile-{str(patient_id)[:8]}').start()
+
+
 @app.route('/api/intel/patient/<patient_id>/sessions', methods=['GET'])
 def api_intel_get_sessions(patient_id):
     """
@@ -3994,6 +4045,10 @@ def api_intel_get_sessions(patient_id):
     own_err = _require_owned_patient(provider['id'], patient_id)
     if own_err:
         return own_err
+
+    # Unstick any session whose extraction never completed. Fire-and-forget:
+    # completion is reflected on the next poll of this same endpoint.
+    _reconcile_pending_sessions(patient_id)
 
     period_start = request.args.get('period_start')
     period_end   = request.args.get('period_end')
@@ -4042,6 +4097,38 @@ def api_intel_session_status(patient_id, session_id):
         'crisis_detected':   session['crisis_detected'],
         'themes':            themes,
     })
+
+
+@app.route('/api/intel/patient/<patient_id>/session/<session_id>/retry', methods=['POST'])
+def api_intel_retry_session(patient_id, session_id):
+    """
+    Re-queue a session whose feature extraction failed ('error') so the
+    reconciler processes it again. Only transcript-bearing sessions qualify —
+    audio that never transcribed belongs to the audio pipeline, not here.
+    """
+    provider, err = _api_user('provider')
+    if err:
+        return err
+    own_err = _require_owned_patient(provider['id'], patient_id)
+    if own_err:
+        return own_err
+
+    session = db.get_clinical_session_by_id(session_id)
+    if not session or str(session.get('patient_id')) != str(patient_id):
+        return jsonify({'error': 'Session not found'}), 404
+
+    try:
+        row = (db.supabase_admin.table('clinical_sessions')
+               .select('transcript_raw').eq('id', session_id).single().execute())
+        has_text = bool(((row.data or {}).get('transcript_raw') or '').strip())
+    except Exception:
+        has_text = False
+    if not has_text:
+        return jsonify({'error': 'No transcript available to reprocess for this session.'}), 400
+
+    db.update_clinical_session_status(session_id, 'pending')
+    _reconcile_pending_sessions(patient_id)
+    return jsonify({'ok': True, 'status': 'pending'}), 202
 
 
 @app.route('/api/intel/patient/<patient_id>/brief', methods=['POST'])

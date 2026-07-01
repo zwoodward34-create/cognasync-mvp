@@ -6488,6 +6488,68 @@ def update_clinical_session_status(
         return False
 
 
+def get_pending_transcript_sessions(patient_id: str, limit: int = 10) -> list[dict]:
+    """
+    Return clinical_sessions that are stuck: processing_status = 'pending' but
+    already carry a transcript (transcript_raw non-empty). These are sessions
+    whose feature extraction never ran or never completed.
+
+    Used by the reconciler to decouple processing from brief generation — any
+    such row can be (re)processed on demand rather than waiting for a brief.
+
+    Each dict: {session_id, session_date, session_type, transcript_raw}.
+    """
+    try:
+        result = (
+            supabase_admin.table('clinical_sessions')
+            .select('id, session_date, session_type, transcript_raw')
+            .eq('patient_id', patient_id)
+            .eq('processing_status', 'pending')
+            .order('session_date', desc=True)
+            .limit(limit)
+            .execute()
+        )
+        out = []
+        for row in (result.data or []):
+            text = (row.get('transcript_raw') or '').strip()
+            if not text:
+                continue  # genuinely unprocessed (e.g. audio still transcribing)
+            out.append({
+                'session_id':   str(row['id']),
+                'session_date': row.get('session_date'),
+                'session_type': row.get('session_type', 'voice_note'),
+                'transcript_raw': text,
+            })
+        return out
+    except Exception as e:
+        logger.exception(f"Error in get_pending_transcript_sessions: {e}")
+        return []
+
+
+def claim_session_for_processing(session_id: str) -> bool:
+    """
+    Atomically claim a pending session for processing by flipping its status
+    'pending' -> 'extracting'. Returns True only if THIS caller won the claim.
+
+    The .eq('processing_status', 'pending') guard makes the update a no-op for
+    any concurrent caller that already claimed the row, so two overlapping
+    reconciler runs can never both extract the same session (which would insert
+    duplicate session_features rows).
+    """
+    try:
+        result = (
+            supabase_admin.table('clinical_sessions')
+            .update({'processing_status': 'extracting'})
+            .eq('id', session_id)
+            .eq('processing_status', 'pending')
+            .execute()
+        )
+        return bool(result.data)
+    except Exception as e:
+        logger.exception(f"Error in claim_session_for_processing: {e}")
+        return False
+
+
 def store_session_transcript(
     session_id: str,
     transcript_text: str,
