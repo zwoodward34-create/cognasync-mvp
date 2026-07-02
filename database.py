@@ -211,8 +211,13 @@ def get_patient_population_flags(patient_user_id: str) -> dict:
             return response.data[0].get('population_flags') or {}
         return {}
     except Exception as e:
-        logger.exception(f"Error getting population flags for {patient_user_id}: {e}")
-        raise DataUnavailableError(f"Error getting population flags for {patient_user_id}", source="get_patient_population_flags")
+        # Degrade gracefully (per this function's contract) rather than raise.
+        # A missing/absent population_flags column or a transient read error must
+        # NOT abort voice-note/transcript processing — the flags only ADD crisis
+        # sensitivity in the passive range, so their absence is safe. Raising here
+        # previously killed the entire voice pipeline on prod schema drift.
+        logger.warning(f"population flags unavailable for {patient_user_id} (returning empty): {e}")
+        return {}
 
 
 def set_patient_population_flags(patient_user_id: str, flags: dict) -> bool:
@@ -8187,15 +8192,21 @@ def get_provider_for_patient(patient_id: str) -> dict | None:
     """Return provider profile (id, phone_number, full_name) for a patient,
     or None if no active provider relationship exists."""
     try:
-        rel = supabase_admin.table('provider_patient_relationships') \
-            .select('provider_id') \
+        # The active care relationship lives in care_team_members. (The legacy
+        # provider_patient_relationships table is not the source of truth and is
+        # absent on prod — reading it returned no provider and stranded the voice
+        # pipeline with "No provider linked".) Prefer a psychiatrist, else any
+        # active member.
+        rel = supabase_admin.table('care_team_members') \
+            .select('provider_id, role') \
             .eq('patient_id', str(patient_id)) \
             .eq('status', 'active') \
-            .limit(1) \
             .execute()
-        if not rel.data:
+        rows = rel.data or []
+        if not rows:
             return None
-        provider_id = rel.data[0]['provider_id']
+        chosen = next((r for r in rows if r.get('role') == 'psychiatrist'), rows[0])
+        provider_id = chosen['provider_id']
         prof = supabase_admin.table('profiles') \
             .select('id, full_name, phone_number') \
             .eq('id', str(provider_id)) \
