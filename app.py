@@ -930,19 +930,12 @@ def provider_patient_detail(patient_id):
         return redirect(url_for('provider_dashboard'))
 
     try:
-        app.logger.info(f"[patient_detail] step=perms patient={patient_id}")
         perms        = _get_provider_perms(user['id'], patient_id)
-        app.logger.info(f"[patient_detail] step=apply_perms")
         patient      = _apply_perms_to_patient_detail(patient, perms)
-        app.logger.info(f"[patient_detail] step=get_patients")
         patients     = db.get_provider_patients(user['id'])
-        app.logger.info(f"[patient_detail] step=trends")
         trends       = _apply_perms_to_trends(db.get_trends_data(patient_id, days=30) or {}, perms)
-        app.logger.info(f"[patient_detail] step=appointments")
         appointments = db.get_patient_appointments(user['id'], patient_id)
-        app.logger.info(f"[patient_detail] step=interactions")
         interactions = db.check_medication_interactions(patient_id) if perms.get('medication_data', True) else []
-        app.logger.info(f"[patient_detail] step=crisis")
         current_p = next((p for p in patients if str(p['patient_id']) == str(patient_id)), {})
         patient_has_crisis = current_p.get('suicide_risk', False)
         patient_crisis_context = current_p.get('suicide_risk_context', [])
@@ -956,9 +949,7 @@ def provider_patient_detail(patient_id):
             except Exception:
                 pass
 
-        app.logger.info(f"[patient_detail] step=care_role")
         provider_role = db.get_care_team_member_role(user['id'], patient_id) or 'psychiatrist'
-        app.logger.info(f"[patient_detail] step=render")
 
         return render_template('provider/patient_detail.html',
                                user=user, patient=patient,
@@ -3954,7 +3945,7 @@ def api_intel_upload_session(patient_id):
 
         # 2. Extract features (crisis detection runs inside extract_features)
         from transcript_engine import extract_features
-        population_flags = db.get_patient_population_flags(patient_id)
+        population_flags = db.get_patient_population_flags_or_empty(patient_id)
         extraction = extract_features(
             transcript_text=transcript,
             session_date=session_date,
@@ -4006,7 +3997,7 @@ def _reconcile_pending_sessions(patient_id, limit=5):
             if not pending:
                 return
             from transcript_engine import extract_features as _ef
-            population_flags = db.get_patient_population_flags(patient_id)
+            population_flags = db.get_patient_population_flags_or_empty(patient_id)
             for s in pending:
                 sid = s['session_id']
                 if not db.claim_session_for_processing(sid):
@@ -5906,9 +5897,17 @@ def twilio_checkin():
         data=data,
         check_in_type=check_in_type,
     )
-    app.logger.info(
-        f"[twilio/checkin] stored id={checkin_id!r} type={check_in_type!r} patient={patient_id!r}"
-    )
+    if checkin_id is None:
+        # Storage failure must be loud: silently dropping a patient check-in is
+        # exactly the failure class the data layer exists to prevent.
+        app.logger.error(
+            f"[twilio/checkin] STORAGE FAILED type={check_in_type!r} patient={patient_id!r} — "
+            f"check-in data lost; see database.log_checkin_from_sms logs"
+        )
+    else:
+        app.logger.info(
+            f"[twilio/checkin] stored id={checkin_id!r} type={check_in_type!r} patient={patient_id!r}"
+        )
 
     # On crisis: escalate immediately via the shared handler — sends the patient
     # crisis resources, SMS-alerts the provider, and writes a care_flags row — then

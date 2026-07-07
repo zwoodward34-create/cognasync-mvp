@@ -951,8 +951,9 @@ def _run_audio_pipeline(db, extract_features, session_id, patient_id,
     # ── Feature extraction ────────────────────────────────────────
     db.update_clinical_session_status(session_id, 'extracting')
     # Fetch population flags so the graduated crisis scorer (spec §23) can apply
-    # population-aware modifiers. Returns {} if no flags are set — safe default.
-    population_flags = db.get_patient_population_flags(patient_id)
+    # population-aware modifiers. Uses the _or_empty wrapper: a failed read is
+    # logged but must not strand the session in 'extracting'.
+    population_flags = db.get_patient_population_flags_or_empty(patient_id)
     assemblyai_hints  = {
         'entities':          transcription.get('entities') or [],
         'auto_highlights':   transcription.get('auto_highlights') or [],
@@ -1198,7 +1199,7 @@ def process_voice_note(
             transcript_text=transcript_text,
             session_date=session_date,
             session_type='voice_note',
-            population_flags=db.get_patient_population_flags(patient_id) or None,
+            population_flags=db.get_patient_population_flags_or_empty(patient_id) or None,
             assemblyai_hints=_vn_hints,
         )
         _merge_acoustic_into_extraction(extraction, acoustic_result, session_id)

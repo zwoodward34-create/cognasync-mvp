@@ -195,8 +195,16 @@ def get_patient_population_flags(patient_user_id: str) -> dict:
     """Return the population_flags JSONB dict for a patient.
 
     Used by transcript_engine.extract_features() to apply population-aware
-    crisis escalation modifiers. Returns an empty dict if the column is absent,
-    null, or the profile row doesn't exist yet.
+    crisis escalation modifiers. Returns an empty dict when the profile row
+    doesn't exist yet or the column is null (genuinely-empty is NOT an error).
+
+    Raises DataUnavailableError when the underlying read FAILS, per the
+    data-layer contract (see class docstring): a failed read must never
+    masquerade as "no flags set" — these flags add crisis sensitivity for
+    high-risk populations (spec §23), so silently dropping them lowers crisis
+    scoring exactly where false negatives are most costly. Pipeline callers
+    that must survive a read failure should use
+    get_patient_population_flags_or_empty() so the degradation is explicit.
 
     Supported flag keys (all boolean):
         adolescent, older_adult, veteran, prior_self_harm, serious_mental_illness,
@@ -211,12 +219,30 @@ def get_patient_population_flags(patient_user_id: str) -> dict:
             return response.data[0].get('population_flags') or {}
         return {}
     except Exception as e:
-        # Degrade gracefully (per this function's contract) rather than raise.
-        # A missing/absent population_flags column or a transient read error must
-        # NOT abort voice-note/transcript processing — the flags only ADD crisis
-        # sensitivity in the passive range, so their absence is safe. Raising here
-        # previously killed the entire voice pipeline on prod schema drift.
-        logger.warning(f"population flags unavailable for {patient_user_id} (returning empty): {e}")
+        logger.error(f"population flags read failed for {patient_user_id}: {e}")
+        raise DataUnavailableError(
+            "Error fetching population flags",
+            source="get_patient_population_flags",
+        ) from e
+
+
+def get_patient_population_flags_or_empty(patient_user_id: str) -> dict:
+    """Graceful-degradation wrapper for the voice-note/transcript pipeline.
+
+    A missing population_flags column (prod schema drift) or a transient read
+    error must NOT abort voice-note processing — the flags only ADD crisis
+    sensitivity in the passive range, so proceeding without them is safer than
+    stranding the session (raising here previously killed the entire voice
+    pipeline). The failure is still logged loudly; it is just non-fatal HERE,
+    by explicit caller choice rather than hidden inside the data layer.
+    """
+    try:
+        return get_patient_population_flags(patient_user_id)
+    except DataUnavailableError as e:
+        logger.warning(
+            f"population flags unavailable for {patient_user_id} — proceeding "
+            f"without §23 population modifiers (non-fatal for this pipeline): {e}"
+        )
         return {}
 
 
@@ -1480,7 +1506,10 @@ def _compute_checkin_scores(mood, stress, sleep_hours, ext, meds):
     tier = 0
     if caffeine is not None:
         c = float(caffeine)
-        tier = 2 if c < 100 else 5 if c < 250 else 7 if c < 400 else 9
+        # 0mg logged means no caffeine — tier 0, not the 1–99mg tier. (Spec §5
+        # table reads "<100mg → 2"; the intended floor is 1mg. See CLAUDE.md §5.)
+        if c > 0:
+            tier = 2 if c < 100 else 5 if c < 250 else 7 if c < 400 else 9
     stim_meds = 0
     STIMULANT_CATEGORIES = {'stimulant', 'adhd', 'amphetamine'}
     STIMULANT_NAMES = {'adderall', 'vyvanse', 'ritalin', 'concerta', 'dexedrine',
@@ -1529,7 +1558,34 @@ def _compute_checkin_scores(mood, stress, sleep_hours, ext, meds):
         has_sd = True
         if fae is False or str(fae).lower() in ('false', 'no', '0'):
             sd += 3
+    # Spec §5: +3 if Time Awake Overnight > 60 min (field collected by the
+    # React check-in as extended_data.time_awake_minutes).
+    time_awake = ext.get('time_awake_minutes')
+    if time_awake is not None:
+        has_sd = True
+        if float(time_awake) > 60:
+            sd += 3
     s['sleep_disruption'] = min(sd, 10) if has_sd else None
+
+    # ── Dopamine Efficiency (spec §5) ──────────────────────────────
+    # (Energy + Focus) / 2 — None unless both fields are logged.
+    focus = ext.get('focus')
+    if energy is not None and focus is not None:
+        s['dopamine_efficiency'] = round((float(energy) + float(focus)) / 2, 2)
+    else:
+        s['dopamine_efficiency'] = None
+
+    # ── Advanced Stability Score (spec §5) ─────────────────────────
+    # (Mood + Energy + (10−Dissociation) + (10−Anxiety) + (10−Irritability)
+    #  + Motivation) / 6 — requires the advanced check-in fields.
+    irritability = ext.get('irritability')
+    motivation   = ext.get('motivation')
+    if all(v is not None for v in [mood, energy, dissoc, stress, irritability, motivation]):
+        s['advanced_stability'] = round(
+            (float(mood) + float(energy) + (10 - float(dissoc)) + (10 - float(stress))
+             + (10 - float(irritability)) + float(motivation)) / 6, 2)
+    else:
+        s['advanced_stability'] = None
 
     # ── Nervous System Load ────────────────────────────────────────
     sq = ext.get('sleep_quality')
@@ -7014,12 +7070,15 @@ def log_checkin_from_sms(
 
     try:
         now_iso = datetime.now(_tz.utc).isoformat()
-        today = datetime.now(_tz.utc).date().isoformat()
+        # Patient-local date, consistent with the web check-in path (avoids the
+        # UTC-rollover bug that mis-dates evening SMS check-ins).
+        today = patient_local_today(patient_id)
 
-        # Build checkin record — map SMS field names to existing schema columns
+        # Build checkin record — column names MUST match the checkins table
+        # (checkin_date / mood_score; there is no 'date' or 'mood' column).
         checkin = {
             'user_id':        str(patient_id),
-            'date':           today,
+            'checkin_date':   today,
             'created_at':     now_iso,
             'source':         'sms',
             'check_in_type':  check_in_type,
@@ -7027,13 +7086,11 @@ def log_checkin_from_sms(
 
         # Core numeric fields
         if data.get('mood') is not None:
-            checkin['mood'] = int(data['mood'])
+            checkin['mood_score'] = int(data['mood'])
         if data.get('sleep_hours') is not None:
             checkin['sleep_hours'] = float(data['sleep_hours'])
         if data.get('stress') is not None:
             checkin['stress_score'] = int(data['stress'])
-        if data.get('energy') is not None:
-            checkin['energy'] = int(data['energy'])
 
         # Adaptive follow-up
         if data.get('follow_up_note'):
@@ -7041,18 +7098,35 @@ def log_checkin_from_sms(
         if data.get('follow_up_type'):
             checkin['follow_up_type'] = str(data['follow_up_type'])
 
-        # Full check-in extras — stored in extended_data JSONB
+        # Full check-in extras — stored in extended_data JSONB. There is no
+        # 'energy' column on checkins; energy lives in extended_data, matching
+        # the web check-in path.
         extended = {}
+        if data.get('energy') is not None:
+            extended['energy'] = int(data['energy'])
         if data.get('medication_note'):
             extended['medication_note'] = str(data['medication_note'])[:500]
         if data.get('agenda_note'):
             extended['agenda_note'] = str(data['agenda_note'])[:500]
-        if extended:
-            checkin['extended_data'] = extended
 
-        # Compute behavioral scores using the existing deterministic engine
-        scores = _compute_checkin_scores(checkin)
-        checkin.update(scores)
+        # Compute behavioral scores using the existing deterministic engine.
+        # Signature: (mood, stress, sleep_hours, ext, meds). SMS check-ins carry
+        # no structured medication log, so meds=[].
+        scores = _compute_checkin_scores(
+            data.get('mood'),
+            data.get('stress'),
+            data.get('sleep_hours'),
+            extended,
+            [],
+        )
+        # Mirror the web path's storage shape: the full computed dict rides in
+        # extended_data['scores']; only stability_score is a real column (int).
+        extended['scores'] = scores
+        checkin['extended_data'] = extended
+        if scores.get('stability_score') is not None:
+            checkin['stability_score'] = int(round(float(scores['stability_score'])))
+        elif data.get('mood') is not None:
+            checkin['stability_score'] = int(data['mood'])
 
         # Build silent flags based on thresholds
         flags = _compute_sms_flags(data)

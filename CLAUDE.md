@@ -234,6 +234,36 @@ CognaSync has four distinct AI output surfaces. Each has its own tone, format, a
 **Example:** `⚠ Mood Declining — average 3.8/10 over 14 days, statistically significant downward trend (R²=0.41, p=0.02).`
 Alert levels: 🔴 Urgent, 🟡 Watch, 🔵 Informational.
 
+### Mode E — Proactive Patient Insight (Between Appointments)
+**Context:** Threshold-triggered pattern surfaced to the patient between appointments. Generated in `generate_proactive_insight()` from a named pattern type plus its supporting data.
+**Audience:** Patient only.
+**Tone:** Warm, grounded, non-alarming. Anchored to at least one specific number.
+**Length:** 2–3 sentences. `max_tokens=150`.
+**Must not include:** Diagnoses, medication references, clinical terminology, or openers like "I noticed." Concerning patterns end with one gentle forward-looking nudge (worth watching / worth mentioning to the provider); positive patterns are acknowledged without sycophancy.
+
+### Mode F — "What Worked" Narrative (Patient-Facing Co-occurrence)
+**Context:** Describes what was true on the patient's highest-stability days, from `get_what_worked_patterns()` co-occurrence data. Generated in `generate_what_worked_summary()`.
+**Audience:** Patient only.
+**Tone:** Matter-of-fact, warm — "reading data aloud to a friend."
+**Length:** 2–3 sentences. `max_tokens=200`.
+**Hard rule — co-occurrence framing ONLY:** "On your [N] best days, [variable] averaged [X] — [delta] higher/lower than other days." Never "helped," "worked," "caused," "improved," "led to," "this suggests" — and never a recommendation to try anything. Causal framing here is the mode's defining failure case.
+
+### Mode G — Provider Appointment Synthesis (Alignment Check)
+**Context:** Compares the 14 days of behavioral data before/after an appointment against optional session notes and guided Q&A. Generated in `generate_provider_synthesis()`.
+**Audience:** Clinician only. Never patient-facing.
+**Tone:** Clinically neutral, data-first.
+**Length:** 3–4 sentences. `max_tokens=300`.
+**Structure:** (1) pre→post trajectory with numbers for ≥2 metrics; (2) self-report discrepancy check ("Patient reported [X] — behavioral data shows [Y]") only where the gap is meaningful; (3) direction check vs. the session summary, never quoting notes verbatim; (4) one metric worth tracking. Skips (2)/(3) when notes/Q&A absent; skips the direction check when post-window has <3 check-ins.
+
+### Mode H — Patient Appointment Story (Behavioral Journey)
+**Context:** Patient-facing counterpart to Mode G — pre/post-appointment behavioral averages only, with NO access to session notes or clinical content. Generated in `generate_patient_synthesis()`.
+**Audience:** Patient only.
+**Tone:** Warm but not cheerful; honest without alarm. Second person, plain time references.
+**Length:** 2–3 sentences. `max_tokens=250`.
+**Must not include:** Any mention of the session, provider, or notes; the words "improved/declined/worsened" (use "rose/dropped/was higher/was lower"); causal phrases; advice. Sparse post-data is named as "too early to see the full picture."
+
+**Note on the psychiatric brief:** `generate_psychiatry_summary()` is a Mode C variant for the psychiatry workflow with a larger budget (`max_tokens=2000`) and its own deterministic guards and retry-on-violation loop (see tests/test_psychiatry_safety.py). All Mode C language rules apply unchanged.
+
 ---
 
 ## 5. Scoring Engine — Deterministic Calculations
@@ -256,7 +286,8 @@ Convergent signals require ≥2 independent data streams pointing in the same di
 ### Core Scores
 
 **Stim Load** = MIN(caffeine_tier + stimulant_meds + booster_used, 10)
-- Caffeine tiers: <100mg → 2 | <250mg → 5 | <400mg → 7 | ≥400mg → 9
+- Caffeine tiers: 0mg → 0 | 1–99mg → 2 | 100–249mg → 5 | 250–399mg → 7 | ≥400mg → 9
+  (0mg logged means no caffeine and contributes nothing — the tier floor starts at 1mg)
 - Add +1 for each scheduled stimulant medication taken (e.g., Adderall, Vyvanse, Ritalin)
 - Add booster_used count (extra doses or PRN stimulants taken that day)
 
@@ -283,6 +314,7 @@ Convergent signals require ≥2 independent data streams pointing in the same di
 - Hydration: +3 if ≥80oz | +2 if ≥60oz | else 0
 
 **Crash Risk** = (Sleep Disruption × 0.4) + (Nervous System Load × 0.4) + ((10 − Nutrition) × 0.2)
+- Fallback when no nutrition data is logged: (Sleep Disruption × 0.5) + (Nervous System Load × 0.5). Never treat missing nutrition as 0 — that would inflate Crash Risk by the full 2.0 nutrition term.
 
 **Mood Distortion** = |Reported Mood − Stability Score|
 
@@ -593,7 +625,7 @@ When modifying any function in `claude_api.py`, verify:
 - [ ] The advanced check-in fields in `extended_data` are extracted and passed explicitly when available
 - [ ] Medication timing stats are passed to provider summaries when `timing_stats` is available
 - [ ] Symptom pattern data from `find_symptom_correlations()` is passed when ≥1 symptom meets threshold
-- [ ] Output stays within the appropriate max_tokens limit: 200 for Mode A, 900 for Mode B/C
+- [ ] Output stays within the appropriate max_tokens limit: 200 Mode A, 900 Mode B/C, 150 Mode E, 200 Mode F, 300 Mode G, 250 Mode H, 2000 psychiatric brief
 
 ---
 
