@@ -53,24 +53,34 @@ function totalCaffeine(caf) {
 }
 
 function calcScores(d, bl) {
+  // Formulas MUST mirror CLAUDE.md §5 / database._compute_checkin_scores —
+  // the server stores this component's 'stability' value, so drift here is
+  // stored-data drift, not just display drift.
   const caffeineMg = totalCaffeine(d.caffeine);
   const stability = (d.mood + d.energy + (10 - d.dissociation) + (10 - d.anxiety)) / 4;
   const dopamine  = (d.energy + d.focus) / 2;
-  const stim      = caffeineMg > 300 ? 8 : caffeineMg > 200 ? 5 : 2;
+  // Spec §5 caffeine tiers: 0mg → 0 | 1–99 → 2 | 100–249 → 5 | 250–399 → 7 | ≥400 → 9
+  const stim      = caffeineMg <= 0 ? 0 : caffeineMg < 100 ? 2 : caffeineMg < 250 ? 5 : caffeineMg < 400 ? 7 : 9;
   const nsLoad    = (d.anxiety + (10 - d.sleepQuality) + stim) / 3;
 
+  // Spec §5 Sleep Disruption: +3 time awake >60min; +3 latency >45min;
+  // +2 awakenings ≥2; +2 hours <6; capped at 10.
   let sleepDis = 0;
-  if ((d.timeAwakeMinutes / 480) * 100 > 20) sleepDis += 3;
-  if (d.sleepLatencyMinutes > 30) sleepDis += 3;
+  if (d.timeAwakeMinutes > 60) sleepDis += 3;
+  if (d.sleepLatencyMinutes > 45) sleepDis += 3;
   if (d.nightAwakenings >= 2) sleepDis += 2;
   if (d.sleepHours < 6) sleepDis += 2;
+  sleepDis = Math.min(sleepDis, 10);
 
+  // Spec §5 fallback weighting — the check-in form carries no nutrition data.
   const crashRisk   = sleepDis * 0.5 + nsLoad * 0.5;
   const moodDistort = Math.abs(d.mood - stability);
 
-  // Advanced composite — motivation and irritability modulate the stability reading
-  const advancedStability = d.irritability !== undefined
-    ? (stability + (10 - d.irritability) / 2 + d.motivation / 2) / 2
+  // Spec §5 Advanced Stability Score:
+  // (Mood + Energy + (10−Dissoc) + (10−Anx) + (10−Irrit) + Motivation) / 6
+  const advancedStability = (d.irritability !== undefined && d.motivation !== undefined)
+    ? (d.mood + d.energy + (10 - d.dissociation) + (10 - d.anxiety)
+       + (10 - d.irritability) + d.motivation) / 6
     : stability;
 
   return {

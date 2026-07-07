@@ -4,6 +4,7 @@ import io
 import json
 import re
 import hmac
+import threading
 from datetime import date, timedelta
 from flask import Flask, request, jsonify, render_template, redirect, url_for, session, flash, Response
 from flask_cors import CORS
@@ -39,6 +40,39 @@ _allowed_origin = os.environ.get('ALLOWED_ORIGIN', '*')
 CORS(app, resources={r"/api/*": {"origins": _allowed_origin}})
 
 limiter = Limiter(app=app, key_func=get_remote_address, default_limits=["1000/day"])
+
+
+@app.before_request
+def _reject_cross_origin_writes():
+    """CSRF defense-in-depth: same-origin enforcement on state-changing requests.
+
+    SESSION_COOKIE_SAMESITE='Lax' already blocks the classic cross-site POST,
+    but Lax is a browser default we don't control forever. This adds the
+    standards-backed backstop (OWASP: verify Origin against the target origin).
+
+    Policy: browsers attach an Origin header to every cross-origin request and
+    to same-origin POSTs. If Origin is present and its host differs from ours
+    (and it isn't the configured ALLOWED_ORIGIN), reject. If Origin is ABSENT
+    the request is not from a browser form/fetch context — server-to-server
+    callers like the Twilio webhooks (which carry their own X-Twilio-Signature
+    validation) pass through untouched.
+    """
+    if request.method not in ('POST', 'PUT', 'PATCH', 'DELETE'):
+        return None
+    origin = request.headers.get('Origin')
+    if not origin:
+        return None
+    from urllib.parse import urlparse
+    origin_host = urlparse(origin).netloc
+    if origin_host == request.host:
+        return None
+    if _allowed_origin != '*' and origin == _allowed_origin.rstrip('/'):
+        return None
+    app.logger.warning(
+        f"[csrf] rejected cross-origin {request.method} to {request.path} "
+        f"from origin={origin!r}"
+    )
+    return jsonify({'error': 'Cross-origin request rejected'}), 403
 
 # Log which email provider is active at startup so Render logs make it obvious.
 import email_utils as _eu
@@ -1331,6 +1365,15 @@ def _summary_print_html(user, patient_id, days, brief_id):
     )
 
 
+# At most ONE headless Chromium at a time. Each render launches a full browser
+# (~300MB RSS); two concurrent PDF requests on a small Render instance can OOM
+# the worker. A shared browser singleton is NOT safe here — Playwright's sync
+# API is greenlet-bound to the creating thread, and Flask serves requests from
+# multiple threads — so we serialize launches instead. Waiters time out after
+# 20s and fall back to the HTML print view via _brief_pdf_response's handler.
+_pdf_render_slot = threading.BoundedSemaphore(1)
+
+
 def _render_brief_pdf(html: str) -> bytes:
     """Render print-view HTML to a PDF via headless Chromium (Playwright).
 
@@ -1341,6 +1384,17 @@ def _render_brief_pdf(html: str) -> bytes:
     URL. print_background=True preserves the styled score panels. WeasyPrint/
     wkhtmltopdf are not viable here because they don't execute JS (blank charts).
     """
+    from playwright.sync_api import sync_playwright
+
+    if not _pdf_render_slot.acquire(timeout=20):
+        raise RuntimeError('PDF renderer busy — another export is in progress')
+    try:
+        return _render_brief_pdf_locked(html)
+    finally:
+        _pdf_render_slot.release()
+
+
+def _render_brief_pdf_locked(html: str) -> bytes:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as p:

@@ -21,8 +21,10 @@ EXCLUDE_DIRS = {'.venv', 'venv', 'env', 'site-packages', 'node_modules',
                 '.git', '__pycache__', 'client'}
 
 # The app's own modules. If any of these vanish, the app won't boot.
+# (auth.py was removed 2026-07: fully dead — app.py's auth_module aliases
+# supabase_auth, and nothing imported auth.)
 CRITICAL_MODULES = [
-    'app.py', 'database.py', 'claude_api.py', 'supabase_auth.py', 'auth.py',
+    'app.py', 'database.py', 'claude_api.py', 'supabase_auth.py',
     'email_utils.py', 'sms_engine.py', 'twilio_client.py', 'transcript_engine.py',
     'audio_engine.py', 'acoustic_engine.py', 'affect_model.py',
 ]
