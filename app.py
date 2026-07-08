@@ -4855,8 +4855,10 @@ def api_sms_inbound():
                 ext = {
                     'energy':               parsed['energy'],
                     'sleep_quality':        parsed['sleep_quality'],
-                    'dissociation':         0,
-                    'dissociation_source':  'sms_default',
+                    # dissociation is intentionally NOT stored: the SMS short
+                    # check-in never asks for it, and spec §12 says missing
+                    # fields are absent, not zero. Stability Score falls back
+                    # to the 3-term formula in _compute_checkin_scores().
                     'checkin_source':       'sms',
                 }
                 checkin_id = db.create_checkin(
@@ -4873,14 +4875,14 @@ def api_sms_inbound():
                     extended_data= ext,
                 )
                 db.resolve_sms_session(patient_id)
-                mood_int  = int(round(parsed['mood']))
-                energy_int= int(round(parsed['energy']))
-                stress_int= int(round(parsed['stress']))
-                sleep_disp= (f'{sleep_hrs:.1f}' if sleep_hrs is not None
-                             else '—').rstrip('0').rstrip('.')
-                confirm = (
-                    f"✓ Logged — Mood {mood_int} · Energy {energy_int} · "
-                    f"Stress {stress_int} · Sleep {sleep_disp}hrs. Have a good day."
+                sleep_disp = (f'{sleep_hrs:.1f}' if sleep_hrs is not None
+                              else '—').rstrip('0').rstrip('.')
+                confirm = _sms.MSG_CHECKIN_CONFIRM.format(
+                    mood          = int(round(parsed['mood'])),
+                    energy        = int(round(parsed['energy'])),
+                    stress        = int(round(parsed['stress'])),
+                    sleep_quality = int(round(parsed['sleep_quality'])),
+                    sleep_hours   = sleep_disp,
                 )
                 _sms.send_sms(from_number, confirm)
 

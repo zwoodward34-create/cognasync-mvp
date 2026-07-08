@@ -292,6 +292,7 @@ Convergent signals require ≥2 independent data streams pointing in the same di
 - Add booster_used count (extra doses or PRN stimulants taken that day)
 
 **Stability Score** = (Mood + Energy + (10 − Dissociation) + (10 − Anxiety)) / 4
+- Fallback when dissociation is not recorded (e.g., SMS short check-ins): (Mood + Energy + (10 − Anxiety)) / 3. Never treat missing dissociation as 0 — that inflates stability by up to +2.5 and corrupts Mood Distortion. `_compute_checkin_scores()` reports which formula was used via `stability_basis` (`core4` | `no_dissociation`).
 
 **Advanced Stability Score** (if advanced check-in data available) =
 (Mood + Energy + (10 − Dissociation) + (10 − Anxiety) + (10 − Irritability) + Motivation) / 6

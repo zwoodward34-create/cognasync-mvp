@@ -1532,9 +1532,20 @@ def _compute_checkin_scores(mood, stress, sleep_hours, ext, meds):
         stab = (float(mood) + float(energy) + (10 - float(dissoc)) + (10 - float(stress))) / 4
         s['stability_score'] = round(stab, 2)
         s['mood_distortion'] = round(abs(float(mood) - stab), 2)
+        s['stability_basis'] = 'core4'
+    elif all(v is not None for v in [mood, energy, stress]):
+        # Fallback when dissociation is not recorded (e.g. SMS short
+        # check-ins). Spec §12: missing fields are absent, not zero —
+        # assuming dissociation=0 inflates stability by up to +2.5.
+        # Mirrors the Crash Risk missing-nutrition fallback (spec §5).
+        stab = (float(mood) + float(energy) + (10 - float(stress))) / 3
+        s['stability_score'] = round(stab, 2)
+        s['mood_distortion'] = round(abs(float(mood) - stab), 2)
+        s['stability_basis'] = 'no_dissociation'
     else:
         s['stability_score'] = None
         s['mood_distortion'] = None
+        s['stability_basis'] = None
 
     # ── Sleep Disruption Score ─────────────────────────────────────
     sd = 0

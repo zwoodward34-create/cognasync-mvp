@@ -97,10 +97,27 @@ class TestStabilityAndDistortion(unittest.TestCase):
         self.assertEqual(s['stability_score'], 7.0)
         self.assertEqual(s['mood_distortion'], 1.0)
 
-    def test_none_when_field_missing(self):
+    def test_three_term_fallback_when_dissociation_missing(self):
+        # Spec §5 fallback: dissociation not recorded (e.g. SMS short
+        # check-in) → (Mood + Energy + (10 − Anxiety)) / 3, never dissoc=0.
+        # mood 8, energy 6, stress(anxiety) 4 → (8 + 6 + 6) / 3 = 6.67
         s = score(8, 4, 7, {'energy': 6}, [])   # dissociation absent
+        self.assertEqual(s['stability_score'], 6.67)
+        self.assertEqual(s['mood_distortion'], 1.33)
+        self.assertEqual(s['stability_basis'], 'no_dissociation')
+
+    def test_fallback_beats_dissoc_zero_inflation(self):
+        # The old sms_default behavior stored dissociation=0, which inflated
+        # stability. The fallback must NOT reproduce that inflation.
+        inflated = score(8, 4, 7, {'energy': 6, 'dissociation': 0}, [])
+        fallback = score(8, 4, 7, {'energy': 6}, [])
+        self.assertLess(fallback['stability_score'], inflated['stability_score'])
+
+    def test_none_when_energy_missing(self):
+        s = score(8, 4, 7, {}, [])   # energy AND dissociation absent
         self.assertIsNone(s['stability_score'])
         self.assertIsNone(s['mood_distortion'])
+        self.assertIsNone(s['stability_basis'])
 
 
 class TestSleepDisruption(unittest.TestCase):

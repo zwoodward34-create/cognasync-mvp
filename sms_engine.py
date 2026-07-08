@@ -584,9 +584,9 @@ MSG_CHECKIN_PROMPT = (
 )  # 111 chars
 
 MSG_CHECKIN_CONFIRM = (
-    "✓ Logged — Mood {mood} · Energy {energy} · "
-    "Stress {stress} · Sleep {sleep_hours}hrs. Have a good day."
-)
+    "✓ Logged — Mood {mood} · Energy {energy} · Stress {stress} · "
+    "SleepQ {sleep_quality} · Sleep {sleep_hours}hrs. Have a good day."
+)  # single source of truth — app.py formats this; do not duplicate inline
 
 MSG_CHECKIN_PARSE_FAIL = (
     "Didn't catch that. Reply with 5 numbers separated by spaces or commas:\n"
