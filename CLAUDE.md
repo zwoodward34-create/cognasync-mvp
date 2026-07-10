@@ -873,9 +873,9 @@ The top-level `alert_level` in the return dict is the highest alert level found 
 
 ---
 
-### Journal and Notes Language Patterns
+### Journal, Notes, and Voice-Note Language Patterns
 
-Scan journal `content` and check-in `notes` for any of the following (case-insensitive):
+Scan journal `content` (legacy), check-in `notes`, and **voice-note transcripts** (the successor text stream since the patient web app was retired — 2026-07-10) for any of the following (case-insensitive). Clinical-session transcripts are excluded (two-speaker dialogs; provider speech would false-positive these patterns). Low-ASR-confidence voice notes ARE scanned — flags are recall-biased and provider-reviewed:
 
 #### Alcohol patterns
 
@@ -1009,7 +1009,7 @@ Returns `{"signals_found": False, "alert_level": None}` when no signals are dete
 
 ### Language Patterns to Detect
 
-Scan journal `content` and check-in `notes` for any of the following (case-insensitive, whole-word or phrase match):
+Scan journal `content` (legacy), check-in `notes`, and **voice-note transcripts** (successor text stream, 2026-07-10; same injury/partner-context rule applies; low-ASR-confidence transcripts included — recall matters most, the provider reviews flagged recordings directly; clinical-session dialogs excluded to avoid provider-speech false positives) for any of the following (case-insensitive, whole-word or phrase match):
 
 | Category | Phrases |
 |---|---|
@@ -1392,7 +1392,7 @@ Every linguistic observation should be classified along two axes before being su
 
 **How CognaSync should use it:**
 
-`compute_lexical_diversity(patient_id, days=30)` computes this across journal entries in the window. Results are passed as `lexical_data` in the context dict for Mode B and Mode C generation.
+`compute_lexical_diversity(patient_id, days=30)` computes this across the patient's text stream. **Source policy (2026-07-10, post web retirement):** voice-note transcripts are the primary source; legacy journal entries are used only when they, and not voice notes, meet the 10-entry minimum. Modalities are NEVER pooled in one window — spoken and written language have different baseline TTR, and mixing them manufactures fake trends. The chosen source is returned as `source` (`voice_notes` | `journals`) and must be named in any output that cites the metric. Low-ASR-confidence transcripts are excluded from lexical metrics (noise), but NOT from the §17/§18 language scans (recall-biased, provider-reviewed). Clinical-session transcripts are never used for patient-language analytics — they are two-speaker dialogs and provider speech would contaminate the metrics; sessions are handled by `extract_features()`. Speech-mode thresholds are provisional pending real data: the ±0.10 delta rule carries over unchanged for now. Results are passed as `lexical_data` in the context dict for Mode B and Mode C generation.
 
 The field returns:
 ```python
@@ -1488,7 +1488,8 @@ Linguistic biomarker analysis operates at the accuracy level of a high-volume sc
 ### Integration Points
 
 - `compute_lexical_diversity(patient_id, days=30)` — called in `generate_appointment_summary()` for both Mode B and Mode C
-- Results passed as `lexical_data` in context dict
+- Source selection: `_pick_language_source()` (voice notes primary, legacy journals fallback, never pooled); `get_voice_note_texts()` is the transcript accessor
+- Results passed as `lexical_data` in context dict, including `source`; outputs must name the source ("voice-note transcripts" vs. "journal entries")
 - If `entries_analyzed < 10` or `trend = "insufficient_data"`: omit entirely from all output
 - Narrative coherence observations come from the AI's own analysis of journal content passed in the prompt — not a separate function; the AI applies the rules above when analyzing raw journal text
 - Readability analysis is handled by `compute_readability(entries)` in `database.py` — returns grade level per entry and trend direction

@@ -2949,6 +2949,16 @@ def check_substance_patterns(patient_id, days=30):
                         'pattern': ', '.join(matches),
                     })
 
+        # ── Voice-note transcript scan (successor to journals, 2026-07-10) ──
+        # Low-ASR-confidence transcripts included: language flags are
+        # recall-biased and provider-reviewed (§24 flag-and-caveat).
+        for vn in get_voice_note_texts(patient_id, days=days,
+                                       include_low_confidence=True):
+            matches = _scan_text_for_patterns(vn['text'], _SUBSTANCE_PATTERNS)
+            if matches:
+                journal_flags.append({'date': vn['date'],
+                                      'pattern': ', '.join(matches)})
+
         # Deduplicate by date
         seen_dates, unique_flags = set(), []
         for f in sorted(journal_flags, key=lambda x: x['date'], reverse=True):
@@ -3052,6 +3062,19 @@ def check_safety_signals(patient_id, days=60):
             if matches == ['injury'] and not _has_partner_context(notes):
                 continue
             signal_dates.append(row.get('checkin_date', ''))
+
+        # ── Voice-note transcript scan (successor to journals, 2026-07-10) ──
+        # Same phrase categories and injury/partner-context rule as journals.
+        # Low-ASR-confidence transcripts included — recall matters most here;
+        # the provider reviews the flagged recordings directly.
+        for vn in get_voice_note_texts(patient_id, days=days,
+                                       include_low_confidence=True):
+            matches = _scan_text_for_patterns(vn['text'], _SAFETY_PATTERNS)
+            if not matches:
+                continue
+            if matches == ['injury'] and not _has_partner_context(vn['text']):
+                continue
+            signal_dates.append(vn['date'])
 
         # Deduplicate and sort
         signal_dates = sorted(set(d for d in signal_dates if d))
@@ -7672,82 +7695,150 @@ def mark_appointment_checkin_triggered(appt_id: str) -> bool:
 
 
 # ── Linguistic Biomarker Analysis ─────────────────────────────────────────────
+#
+# Source policy (decision 2026-07-10): the patient web app — and with it the
+# journal — is retired. Voice-note transcripts are the successor text stream
+# for all patient-language analytics. Rules:
+#   * Voice notes ONLY, never clinical-session transcripts: sessions are
+#     two-speaker dialogs, and provider speech would false-positive the
+#     patient-language scanners (e.g. a provider asking "are you afraid of
+#     him?" matches a §18 fear pattern). Session dialogs are handled by
+#     transcript_engine.extract_features, which has its own safety path.
+#   * Never pool modalities in one trend window: spoken and written language
+#     have different baseline TTR/complexity, so mixing journals and
+#     transcripts manufactures fake trends. Pick one source per window.
+#   * Lexical metrics EXCLUDE low-ASR-confidence transcripts (noise in =
+#     noise out); the §17/§18 safety-language scans INCLUDE them
+#     (recall-biased — a provider reviews the flag, per §24 flag-and-caveat).
 
-def compute_lexical_diversity(patient_id: str, days: int = 30) -> dict:
+
+def get_voice_note_texts(patient_id: str, days: int = 30,
+                         include_low_confidence: bool = True) -> list:
+    """Return completed voice-note transcripts in the window, oldest first.
+
+    [{'date': 'YYYY-MM-DD', 'text': str, 'confidence_label': 'high'|'medium'|'low'|None}]
+    confidence_label None means ASR confidence was not reported — per §24 it
+    must NOT be treated as low.
     """
-    Compute Type-Token Ratio (TTR) across journal entries to measure vocabulary
-    richness over time. Returns trend direction and delta for use in appointment
-    summaries (CLAUDE.md §25).
+    try:
+        since = (date.today() - timedelta(days=days)).isoformat()
+        res = supabase_admin.table('clinical_sessions').select(
+            'id, session_date, transcript_raw'
+        ).eq('patient_id', str(patient_id)) \
+         .eq('transcript_source', 'voice_note') \
+         .eq('processing_status', 'complete') \
+         .gte('session_date', since) \
+         .order('session_date', desc=False).execute()
+        rows = [r for r in (res.data or []) if (r.get('transcript_raw') or '').strip()]
+        if not rows:
+            return []
+        conf = {}
+        try:
+            ids = [r['id'] for r in rows]
+            fres = supabase_admin.table('session_features').select(
+                'session_id, scores').in_('session_id', ids).execute()
+            for f in (fres.data or []):
+                tc = ((f.get('scores') or {}).get('transcript_confidence') or {})
+                conf[f['session_id']] = tc.get('label')
+        except Exception:
+            pass  # confidence unavailable → None labels
+        out = []
+        for r in rows:
+            label = conf.get(r['id'])
+            if not include_low_confidence and label == 'low':
+                continue
+            out.append({'date': (r.get('session_date') or '')[:10],
+                        'text': r['transcript_raw'],
+                        'confidence_label': label})
+        return out
+    except Exception as e:
+        logger.debug(f'get_voice_note_texts error: {e}')
+        return []
 
-    Returns dict with keys:
-      type_token_ratio   — TTR across all words in the window (float)
-      trend              — "improving" | "declining" | "stable" | "insufficient_data"
-      entries_analyzed   — count of entries used
-      earliest_ttr       — TTR in the first half of entries
-      latest_ttr         — TTR in the second half of entries
-      delta              — latest_ttr - earliest_ttr (negative = declining)
 
-    Minimum 10 entries required; otherwise trend = "insufficient_data".
+def _ttr_trend_from_texts(texts: list) -> dict:
+    """Pure TTR trend computation over an ordered list of texts (§25)."""
+    def _ttr(ts: list) -> float:
+        words = []
+        for t in ts:
+            words.extend(re.findall(r"[a-z']+", t.lower()))
+        if not words:
+            return 0.0
+        return round(len(set(words)) / len(words), 4)
+
+    mid = len(texts) // 2
+    early_ttr = _ttr(texts[:mid])
+    late_ttr  = _ttr(texts[mid:])
+    overall   = _ttr(texts)
+    delta     = round(late_ttr - early_ttr, 4)
+    if abs(delta) < 0.10:
+        trend = 'stable'
+    elif delta > 0:
+        trend = 'improving'
+    else:
+        trend = 'declining'
+    return {
+        'type_token_ratio': overall,
+        'trend': trend,
+        'entries_analyzed': len(texts),
+        'earliest_ttr': early_ttr,
+        'latest_ttr': late_ttr,
+        'delta': delta,
+    }
+
+
+def _pick_language_source(patient_id: str, days: int) -> tuple:
+    """Choose the text source for lexical analytics: ('voice_notes'|'journals', texts).
+
+    Voice notes (current channel, low-ASR-confidence excluded) win when they
+    meet the §25 minimum of 10; otherwise legacy journals if THEY meet it;
+    otherwise whichever has more entries (result will be insufficient_data).
+    Modalities are never pooled.
     """
+    voice = [v['text'] for v in get_voice_note_texts(
+        patient_id, days=days, include_low_confidence=False)]
     try:
         since = (datetime.utcnow() - timedelta(days=days)).date().isoformat()
         res = supabase_admin.table('journal_entries').select(
             'content, entry_date'
         ).eq('user_id', str(patient_id)).gte('entry_date', since).order(
-            'entry_date', desc=False
-        ).execute()
-        entries = [e for e in (res.data or []) if e.get('content')]
+            'entry_date', desc=False).execute()
+        journals = [e['content'] for e in (res.data or []) if e.get('content')]
+    except Exception:
+        journals = []
+    if len(voice) >= 10:
+        return 'voice_notes', voice
+    if len(journals) >= 10:
+        return 'journals', journals
+    return ('voice_notes', voice) if len(voice) >= len(journals) else ('journals', journals)
 
-        if len(entries) < 10:
-            return {
-                'type_token_ratio': None,
-                'trend': 'insufficient_data',
-                'entries_analyzed': len(entries),
-                'earliest_ttr': None,
-                'latest_ttr': None,
-                'delta': None,
-            }
 
-        def _ttr(texts: list) -> float:
-            words = []
-            for t in texts:
-                words.extend(re.findall(r"[a-z']+", t.lower()))
-            if not words:
-                return 0.0
-            return round(len(set(words)) / len(words), 4)
+def compute_lexical_diversity(patient_id: str, days: int = 30) -> dict:
+    """
+    Compute Type-Token Ratio (TTR) trend across the patient's text stream —
+    voice-note transcripts (primary) or legacy journal entries — per CLAUDE.md
+    §25. Sources are never pooled; the chosen source is reported in 'source'.
 
-        all_contents = [e['content'] for e in entries]
-        mid = len(entries) // 2
-        early_ttr = _ttr(all_contents[:mid])
-        late_ttr  = _ttr(all_contents[mid:])
-        overall   = _ttr(all_contents)
-        delta     = round(late_ttr - early_ttr, 4)
+    Returns dict with keys:
+      type_token_ratio, trend ("improving"|"declining"|"stable"|"insufficient_data"),
+      entries_analyzed, earliest_ttr, latest_ttr, delta,
+      source ("voice_notes"|"journals")
 
-        if abs(delta) < 0.10:
-            trend = 'stable'
-        elif delta > 0:
-            trend = 'improving'
-        else:
-            trend = 'declining'
-
-        return {
-            'type_token_ratio': overall,
-            'trend': trend,
-            'entries_analyzed': len(entries),
-            'earliest_ttr': early_ttr,
-            'latest_ttr': late_ttr,
-            'delta': delta,
-        }
+    Minimum 10 entries in the chosen source; otherwise trend = "insufficient_data".
+    """
+    empty = {
+        'type_token_ratio': None, 'trend': 'insufficient_data',
+        'entries_analyzed': 0, 'earliest_ttr': None, 'latest_ttr': None,
+        'delta': None, 'source': None,
+    }
+    try:
+        source, texts = _pick_language_source(patient_id, days)
+        if len(texts) < 10:
+            return {**empty, 'entries_analyzed': len(texts), 'source': source}
+        return {**_ttr_trend_from_texts(texts), 'source': source}
     except Exception as e:
         logger.debug(f'compute_lexical_diversity error: {e}')
-        return {
-            'type_token_ratio': None,
-            'trend': 'insufficient_data',
-            'entries_analyzed': 0,
-            'earliest_ttr': None,
-            'latest_ttr': None,
-            'delta': None,
-        }
+        return empty
 
 
 def compute_readability(patient_id: str, days: int = 30) -> dict:
@@ -7768,25 +7859,23 @@ def compute_readability(patient_id: str, days: int = 30) -> dict:
 
     Minimum 10 entries required; otherwise trend = "insufficient_data".
     Grade level shift of ≥2 points sustained across the window is clinically surfaceable.
+
+    Source: voice-note transcripts (primary) or legacy journals — never pooled;
+    reported in 'source'. Note: on ASR transcripts, sentence boundaries come
+    from the transcription service's punctuation, so treat FK on speech as a
+    complexity proxy, not a literal grade level (CLAUDE.md §25).
     """
+    empty = {
+        'avg_grade_level': None, 'trend': 'insufficient_data',
+        'earliest_grade': None, 'latest_grade': None, 'delta': None,
+        'entries_analyzed': 0, 'source': None,
+    }
     try:
-        since = (datetime.utcnow() - timedelta(days=days)).date().isoformat()
-        res = supabase_admin.table('journal_entries').select(
-            'content, entry_date'
-        ).eq('user_id', str(patient_id)).gte('entry_date', since).order(
-            'entry_date', desc=False
-        ).execute()
-        entries = [e for e in (res.data or []) if e.get('content')]
+        source, texts = _pick_language_source(patient_id, days)
+        entries = [{'content': t} for t in texts]
 
         if len(entries) < 10:
-            return {
-                'avg_grade_level': None,
-                'trend': 'insufficient_data',
-                'earliest_grade': None,
-                'latest_grade': None,
-                'delta': None,
-                'entries_analyzed': len(entries),
-            }
+            return {**empty, 'entries_analyzed': len(entries), 'source': source}
 
         def _syllables(word: str) -> int:
             word = word.lower()
@@ -7825,17 +7914,11 @@ def compute_readability(patient_id: str, days: int = 30) -> dict:
             'latest_grade': late_avg,
             'delta': delta,
             'entries_analyzed': len(entries),
+            'source': source,
         }
     except Exception as e:
         logger.debug(f'compute_readability error: {e}')
-        return {
-            'avg_grade_level': None,
-            'trend': 'insufficient_data',
-            'earliest_grade': None,
-            'latest_grade': None,
-            'delta': None,
-            'entries_analyzed': 0,
-        }
+        return empty
 
 
 def compute_engagement_stats(patient_id, days=None, period_start=None, period_end=None):

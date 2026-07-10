@@ -2651,8 +2651,10 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             if (early_ttr is not None and late_ttr is not None and delta is not None)
             else ""
         )
+        _src_label = ('voice-note transcripts'
+                      if ld.get('source') == 'voice_notes' else 'journal entries')
         lexical_section += (
-            f"\n\nLINGUISTIC BIOMARKERS (from {entries_n} journal entries, CLAUDE.md §25):\n"
+            f"\n\nLINGUISTIC BIOMARKERS (from {entries_n} {_src_label}, CLAUDE.md §25):\n"
             f"- Lexical diversity (TTR): {ttr_str} — trend: {trend}{delta_str}\n"
         )
 
@@ -2672,7 +2674,9 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
             else ""
         )
         if not lexical_section:
-            lexical_section = f"\n\nLINGUISTIC BIOMARKERS (from {r_entries} journal entries, CLAUDE.md §25):\n"
+            _r_src = ('voice-note transcripts'
+                      if rd.get('source') == 'voice_notes' else 'journal entries')
+            lexical_section = f"\n\nLINGUISTIC BIOMARKERS (from {r_entries} {_r_src}, CLAUDE.md §25):\n"
         lexical_section += f"- Readability (Flesch-Kincaid grade level): {grade_str} — trend: {r_trend}{r_delta_str}\n"
 
     # Only inject linguistic guidance into system prompts when data is present
@@ -2686,7 +2690,8 @@ def generate_appointment_summary(checkin_data, journal_data, days=14,
                 "Readability: grade level [value], [trend].' "
                 "If trend is declining for TTR or increasing for FK grade, note it as worth tracking. "
                 "NEVER say these patterns indicate a diagnosis or explain symptoms. "
-                "Use 'observed in journal entries' framing only.\n"
+                "Frame as 'observed in [the stated source]' — voice-note transcripts or "
+                "journal entries per the LINGUISTIC BIOMARKERS header above; never mix sources.\n"
             )
         else:
             summary_system += (
