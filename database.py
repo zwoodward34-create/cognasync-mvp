@@ -905,6 +905,37 @@ def get_medication_events(user_id: str, medication_id: str = None, days: int = 3
         logger.exception(f"Error fetching medication events: {e}")
         raise DataUnavailableError(f"Error fetching medication events", source="get_medication_events")
 
+def get_med_events_as_checkin_list(user_id: str, date_str: str) -> list:
+    """Return the day's medication_events as a check-in-style medications list.
+
+    Shape matches what the retired web check-in stored on checkins.medications
+    ([{name, category, taken}]) so the stim_meds term of Stim Load works for
+    SMS check-ins, which otherwise store an empty list (decision 2026-07-10).
+    Best-effort: returns [] on any failure — scoring treats [] as no med data.
+    Known limit: med events logged AFTER the check-in is stored are not
+    retroactively attached; the daily adherence SMS normally precedes it.
+    """
+    try:
+        ev = supabase_admin.table('medication_events') \
+            .select('medication_id, status') \
+            .eq('user_id', str(user_id)).eq('event_date', date_str).execute()
+        events = ev.data or []
+        if not events:
+            return []
+        med_ids = list({e['medication_id'] for e in events if e.get('medication_id')})
+        meds = supabase_admin.table('medications') \
+            .select('id, name, category').in_('id', med_ids).execute()
+        info = {m['id']: m for m in (meds.data or [])}
+        return [{
+            'name':     (info.get(e.get('medication_id')) or {}).get('name') or '',
+            'category': (info.get(e.get('medication_id')) or {}).get('category'),
+            'taken':    (e.get('status') or '').upper() == 'TAKEN',
+        } for e in events]
+    except Exception as e:
+        logger.warning(f"get_med_events_as_checkin_list failed: {e}")
+        return []
+
+
 def get_medication_names() -> list:
     """Return a sorted list of all medication names from the reference table."""
     try:
@@ -1503,6 +1534,7 @@ def _compute_checkin_scores(mood, stress, sleep_hours, ext, meds):
 
     # ── Stim Load ──────────────────────────────────────────────────
     caffeine = ext.get('caffeine_mg')
+    caffeine_drinks = ext.get('caffeine_drinks')
     tier = 0
     if caffeine is not None:
         c = float(caffeine)
@@ -1510,6 +1542,12 @@ def _compute_checkin_scores(mood, stress, sleep_hours, ext, meds):
         # table reads "<100mg → 2"; the intended floor is 1mg. See CLAUDE.md §5.)
         if c > 0:
             tier = 2 if c < 100 else 5 if c < 250 else 7 if c < 400 else 9
+    elif caffeine_drinks is not None:
+        # SMS rotating question logs drink count, not mg. Tier via ~95mg/drink
+        # (spec §5 fallback table): 0→0, 1→2, 2→5, 3–4→7, ≥5→9.
+        d = float(caffeine_drinks)
+        if d > 0:
+            tier = 2 if d < 2 else 5 if d < 3 else 7 if d < 5 else 9
     stim_meds = 0
     STIMULANT_CATEGORIES = {'stimulant', 'adhd', 'amphetamine'}
     STIMULANT_NAMES = {'adderall', 'vyvanse', 'ritalin', 'concerta', 'dexedrine',
@@ -1523,7 +1561,9 @@ def _compute_checkin_scores(mood, stress, sleep_hours, ext, meds):
             if cat in STIMULANT_CATEGORIES or any(n in name for n in STIMULANT_NAMES):
                 stim_meds += 1
     booster = int(ext.get('booster_used') or 0)
-    s['stim_load'] = min(tier + stim_meds + booster, 10) if (caffeine is not None or stim_meds or booster) else None
+    s['stim_load'] = (min(tier + stim_meds + booster, 10)
+                      if (caffeine is not None or caffeine_drinks is not None
+                          or stim_meds or booster) else None)
 
     # ── Stability Score ────────────────────────────────────────────
     energy = ext.get('energy')
@@ -1554,7 +1594,12 @@ def _compute_checkin_scores(mood, stress, sleep_hours, ext, meds):
         has_sd = True
         if float(sleep_hours) < 6:
             sd += 2
+    # Canonical key is 'sleep_latency_minutes'; the SMS rotating question
+    # historically wrote 'sleep_latency_min' (orphaned-key bug, fixed 2026-07-10
+    # — writer now uses the canonical key; legacy rows carry the old one).
     latency = ext.get('sleep_latency_minutes')
+    if latency is None:
+        latency = ext.get('sleep_latency_min')
     if latency is not None:
         has_sd = True
         if float(latency) > 45:

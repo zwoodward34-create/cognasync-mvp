@@ -86,6 +86,37 @@ class TestStimLoad(unittest.TestCase):
         self.assertIsNone(self._sl())
 
 
+class TestStimLoadDrinksFallback(unittest.TestCase):
+    """SMS rotating question logs caffeine_drinks (count). Tier fallback
+    per spec §5: 0 → 0, 1 → 2, 2 → 5, 3–4 → 7, ≥5 → 9."""
+
+    def _sl(self, drinks):
+        return score(5, 5, 7, {'caffeine_drinks': drinks}, [])['stim_load']
+
+    def test_drink_tiers(self):
+        self.assertEqual(self._sl(0), 0)
+        self.assertEqual(self._sl(1), 2)
+        self.assertEqual(self._sl(2), 5)
+        self.assertEqual(self._sl(3), 7)
+        self.assertEqual(self._sl(4), 7)
+        self.assertEqual(self._sl(5), 9)
+
+    def test_zero_drinks_still_computes_not_none(self):
+        # 0 drinks is logged data (Stim Load 0), not missing data (None).
+        self.assertEqual(self._sl(0), 0)
+
+    def test_mg_takes_precedence_over_drinks(self):
+        s = score(5, 5, 7, {'caffeine_mg': 300, 'caffeine_drinks': 1}, [])
+        self.assertEqual(s['stim_load'], 7)
+
+    def test_drinks_feed_ns_load_chain(self):
+        # With caffeine_drinks + sleep_quality + stress, NS Load computes —
+        # the SMS restoration path for the Stim→NS→Crash chain.
+        s = score(5, 6, 7, {'caffeine_drinks': 2, 'sleep_quality': 4}, [])
+        self.assertEqual(s['stim_load'], 5)
+        self.assertEqual(s['nervous_system_load'], round((6 + (10 - 4) + 5) / 3, 2))
+
+
 class TestStabilityAndDistortion(unittest.TestCase):
     """Stability = (Mood + Energy + (10−Dissoc) + (10−Anx)) / 4;
     Mood Distortion = |Reported Mood − Stability|."""
@@ -134,6 +165,15 @@ class TestSleepDisruption(unittest.TestCase):
     def test_time_awake_at_threshold_not_counted(self):
         # Spec: "> 60 min" — exactly 60 does not add.
         self.assertEqual(score(5, 5, None, {'time_awake_minutes': 60}, [])['sleep_disruption'], 0)
+
+    def test_legacy_sms_latency_key_accepted(self):
+        # SMS rotating question historically wrote 'sleep_latency_min';
+        # scoring must accept it (orphaned-key fix, 2026-07-10).
+        self.assertEqual(score(5, 5, None, {'sleep_latency_min': 50}, [])['sleep_disruption'], 3)
+
+    def test_canonical_latency_key_wins_over_legacy(self):
+        ext = {'sleep_latency_minutes': 10, 'sleep_latency_min': 50}
+        self.assertEqual(score(5, 5, None, ext, [])['sleep_disruption'], 0)
 
     def test_cap_at_ten(self):
         ext = {'sleep_latency_minutes': 90, 'time_awake_minutes': 120,

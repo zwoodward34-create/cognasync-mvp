@@ -4861,12 +4861,17 @@ def api_sms_inbound():
                     # to the 3-term formula in _compute_checkin_scores().
                     'checkin_source':       'sms',
                 }
+                local_date = db.patient_local_today(patient_id)
                 checkin_id = db.create_checkin(
                     patient_id   = patient_id,
-                    date_str     = db.patient_local_today(patient_id),
+                    date_str     = local_date,
                     time_of_day  = 'self-prompted',
                     mood_score   = int(round(parsed['mood'])),
-                    medications  = [],
+                    # Attach the day's adherence-SMS med events so the
+                    # stim_meds term of Stim Load works for SMS check-ins
+                    # (decision 2026-07-10; was hardcoded []).
+                    medications  = db.get_med_events_as_checkin_list(
+                                       patient_id, local_date),
                     sleep_hours  = sleep_hrs,
                     stress_score = int(round(parsed['stress'])),
                     symptoms     = '',
@@ -4988,7 +4993,12 @@ def _trigger_rotating_followup(patient_id: str, checkin_id: str,
         # Get all active focus domains across care team
         focus_domains = db.get_active_focus_domains_for_patient(patient_id)
         if not focus_domains:
-            return
+            # Default rotation (decision 2026-07-10): caffeine is required to
+            # compute Stim Load → NS Load → Crash Risk now that the web
+            # check-in (the only other caffeine source) is retired. When no
+            # provider has set focus targets, ask the caffeine question so the
+            # score chain stays computable for SMS-only patients.
+            focus_domains = ['stimulants']
 
         # Determine which rotating fields to ask today
         checkin_index   = db.get_patient_sms_checkin_count(patient_id)

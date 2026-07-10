@@ -753,7 +753,9 @@ ROTATING_QUESTIONS = {
     'sleep': {
         'label': 'Sleep latency',
         'prompt_text': 'Minutes to fall asleep? Reply number (e.g. 20)',
-        'field_name': 'sleep_latency_min',
+        # Canonical scoring key (was 'sleep_latency_min', which the Sleep
+        # Disruption score never read — fixed 2026-07-10).
+        'field_name': 'sleep_latency_minutes',
         'scale': 'count',
         'is_crisis_field': False,
     },
@@ -817,6 +819,13 @@ ROTATING_QUESTIONS = {
         'label': 'Drinks',
         'prompt_text': 'Drinks today? Reply number (0=none)',
         'field_name': 'alcohol_units',
+        'scale': 'count',
+        'is_crisis_field': False,
+    },
+    'stimulants': {
+        'label': 'Caffeine',
+        'prompt_text': 'Caffeinated drinks today — coffee, energy drink, or soda? Reply number (0=none)',
+        'field_name': 'caffeine_drinks',
         'scale': 'count',
         'is_crisis_field': False,
     },

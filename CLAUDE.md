@@ -288,6 +288,7 @@ Convergent signals require ≥2 independent data streams pointing in the same di
 **Stim Load** = MIN(caffeine_tier + stimulant_meds + booster_used, 10)
 - Caffeine tiers: 0mg → 0 | 1–99mg → 2 | 100–249mg → 5 | 250–399mg → 7 | ≥400mg → 9
   (0mg logged means no caffeine and contributes nothing — the tier floor starts at 1mg)
+- SMS fallback: the rotating caffeine question logs `caffeine_drinks` (a count, not mg). When `caffeine_mg` is absent, tier from drink count at ~95mg/drink: 0 → 0 | 1 → 2 | 2 → 5 | 3–4 → 7 | ≥5 → 9. Raw counts are stored as logged — never convert to fake mg precision.
 - Add +1 for each scheduled stimulant medication taken (e.g., Adderall, Vyvanse, Ritalin)
 - Add booster_used count (extra doses or PRN stimulants taken that day)
 

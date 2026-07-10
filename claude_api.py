@@ -1304,7 +1304,8 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
             is_advanced = True
         # Rotating question fields not captured by the core advanced fields
         for _rq_field in ('enjoyment', 'anxiety', 'focus', 'medication_effectiveness',
-                          'appetite', 'side_effect_burden', 'sleep_latency_min'):
+                          'appetite', 'side_effect_burden', 'caffeine_drinks',
+                          'sleep_latency_minutes', 'sleep_latency_min'):
             if ext.get(_rq_field) is not None:
                 row[_rq_field] = float(ext[_rq_field])
         if is_advanced:
@@ -1810,7 +1811,8 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
         'appetite_nutrition': ('appetite',                'Appetite/Nutrition target', '0–10'),
         'substance_use':      ('alcohol_units',           'Substance Use target',      'count'),
         'side_effects':       ('side_effect_burden',      'Side Effects target',       '0–10'),
-        'sleep':              ('sleep_latency_min',       'Sleep target',              'count'),
+        'sleep':              ('sleep_latency_minutes',   'Sleep target',              'count'),
+        'stimulants':         ('caffeine_drinks',         'Caffeine target',           'count'),
     }
     # Channel-aware suicidality escalation (spec §22). Computed BEFORE the target
     # lines so a target that is folded into the consolidated 🔴 flag is never also
