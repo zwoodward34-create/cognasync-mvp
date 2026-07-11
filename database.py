@@ -6076,10 +6076,16 @@ def _verify_anchor_state(patient_id: str, recorded_at: str) -> tuple:
     """
     try:
         recording_date = recorded_at[:10]
+        # Column is 'checkin_date' — the previous 'check_in_date' key raised
+        # inside PostgREST, was swallowed by the except, and silently returned
+        # (None, False): every anchor recorded as state-unverified. Fixed
+        # 2026-07-10. Note: checkins.stability_score is the legacy stored
+        # composite (web-era scores, or mood_score fallback for SMS rows) —
+        # acceptable as a good-day proxy; see voice-baseline protocol doc.
         result = supabase_admin.table('checkins') \
             .select('stability_score') \
             .eq('user_id', patient_id) \
-            .eq('check_in_date', recording_date) \
+            .eq('checkin_date', recording_date) \
             .limit(1) \
             .execute()
         if not result.data:
