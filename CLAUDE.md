@@ -1650,3 +1650,39 @@ Mode B may include a neutral, non-shaming acknowledgment of engagement (e.g., "Y
 - Mode A (`analyze_checkin()`) — engagement data is NOT passed; these signals do not appear in post-check-in insights
 - Mode B (`generate_appointment_summary(audience='patient')`) — only the neutral participation sentence; no flags
 
+
+---
+
+## 27. Clinician Anchor Ratings — The 60-Second Check-In
+
+### Purpose
+
+Behavioral self-report data needs periodic ground truth. The 60-second check-in captures a clinician's same-day read on the patient — a structured rating recorded during the appointment, stored alongside the patient's self-reported and derived data. Its value is calibration, not volume: appointments are too infrequent to be a data stream, but a clinician rating recorded the same day as patient self-report is the anchor that lets CognaSync eventually validate that its derived scores track clinical judgment.
+
+This is clinician INPUT, not AI output. The AI never generates, suggests, or pre-fills these ratings.
+
+### Fields (stored in `provider_appointments.clinician_ratings` JSONB)
+
+| Field | Values | Required |
+|---|---|---|
+| `severity` | 1–7 (CGI-S: 1 Normal · 2 Borderline · 3 Mildly ill · 4 Moderately ill · 5 Markedly ill · 6 Severely ill · 7 Extremely ill) | Yes |
+| `improvement` | 1–7 (CGI-I: 1 Very much improved · 4 No change · 7 Very much worse) or null (first visit / not rated) | No |
+| `speech` | Optional subset of §24 vocabulary: `speech_rate` (slowed/normal/pressured), `prosody` (flat/normal/elevated), `arousal` (low/normal/elevated/agitated), `speech_coherence` (intact/disorganized) | No |
+| `note` | Free text, ≤200 chars | No |
+| `rated_at` / `version` | Server-set ISO timestamp / schema version | — |
+
+The speech block deliberately reuses the §24 constrained values so clinician observations and transcript-derived speech features are directly comparable — a convergent-signal pair (§5): clinician-observed flat prosody + transcript-detected flat prosody is a stronger signal than either alone.
+
+### Validation
+
+`database.validate_clinician_ratings()` is the only write path (called from the appointment autosave route). Severity is required; payloads without a valid severity are never stored. Out-of-vocabulary speech values are dropped, never stored. `rated_at` is set server-side.
+
+### Output Rules
+
+- **Provider-only, absolutely.** Never surfaced in Mode A, B, E, F, or H. `get_appointment_synthesis()` carries `clinician_ratings` for the provider path; `generate_patient_synthesis()` (Mode H) reads only behavioral fields and must never consume it.
+- **Mode G:** the rating is passed as a "Clinician anchor rating" context line. The AI treats it as clinician-entered input — it may check whether behavioral-data direction agrees with the CGI-I rating and name a meaningful disagreement in one clause. It must never restate the rating as a finding, convert it to other scales, recompute it, or speculate about the clinician's reasoning.
+- **No score coupling.** Anchor ratings do not enter any §5 formula. Their analytical use (self-report vs. clinician-rating concordance, Mood Distortion validation) is a future analytics layer, not a runtime computation.
+
+### UI Contract
+
+One card on the provider appointment workspace, above Session Notes. Two 1–7 segmented scales with CGI anchor tooltips, four optional speech dropdowns, one optional one-line note. Autosaves with the rest of the workspace; read-only once the appointment is completed. If it takes longer than 60 seconds, it has failed its design goal — resist adding fields.

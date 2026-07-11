@@ -3305,11 +3305,66 @@ def get_patient_appointments(provider_id: str, patient_id: str) -> list:
         return []
 
 
+# ── 60-second clinician check-in (spec §27) ──────────────────────────────────
+
+_CGI_RANGE = range(1, 8)
+_RATING_SPEECH_VALUES = {
+    # Reuses the §24 constrained vocabulary so clinician observations and
+    # transcript-derived speech features speak the same language.
+    'speech_rate':      {'slowed', 'normal', 'pressured'},
+    'prosody':          {'flat', 'normal', 'elevated'},
+    'arousal':          {'low', 'normal', 'elevated', 'agitated'},
+    'speech_coherence': {'intact', 'disorganized'},
+}
+
+
+def validate_clinician_ratings(data) -> dict | None:
+    """Validate/normalize the 60-second clinician check-in payload (spec §27).
+
+    Returns the clean dict to store, or None if the payload is not storable
+    (no valid severity — severity is the one required field). Unknown speech
+    features/values are dropped, never stored. rated_at is set server-side.
+    """
+    if not isinstance(data, dict):
+        return None
+    try:
+        severity = int(data.get('severity'))
+    except (TypeError, ValueError):
+        return None
+    if severity not in _CGI_RANGE:
+        return None
+    out = {'severity': severity, 'version': 1,
+           'rated_at': datetime.utcnow().isoformat()}
+    imp = data.get('improvement')
+    if imp is None or imp == '':
+        out['improvement'] = None          # first visit / not rated
+    else:
+        try:
+            imp = int(imp)
+        except (TypeError, ValueError):
+            return None
+        if imp not in _CGI_RANGE:
+            return None
+        out['improvement'] = imp
+    speech = data.get('speech')
+    clean_speech = {}
+    if isinstance(speech, dict):
+        for k, allowed in _RATING_SPEECH_VALUES.items():
+            if speech.get(k) in allowed:
+                clean_speech[k] = speech[k]
+    if clean_speech:
+        out['speech'] = clean_speech
+    note = str(data.get('note') or '').strip()
+    if note:
+        out['note'] = note[:200]
+    return out
+
+
 def update_provider_appointment(appt_id: str, provider_id: str, updates: dict) -> bool:
     """Patch an appointment row. Only allowed fields are applied."""
     ALLOWED = {
         'status', 'period_days', 'guided_qa', 'notes',
-        'care_plan_changes', 'actions',
+        'care_plan_changes', 'actions', 'clinician_ratings',
         'next_appointment_date', 'next_appointment_time', 'next_appointment_notes', 'completed_at',
     }
     payload = {k: v for k, v in updates.items() if k in ALLOWED}
@@ -5778,6 +5833,9 @@ def get_appointment_synthesis(patient_id: str, appt_id: str) -> dict | None:
             'notes_text':     (appt.get('notes') or '').strip(),
             'care_plan_text': (appt.get('care_plan_changes') or '').strip(),
             'guided_qa':      answered_qa,
+            # Provider-only (spec §27) — generate_patient_synthesis (Mode H)
+            # reads only the behavioral fields and must never consume this.
+            'clinician_ratings': appt.get('clinician_ratings') or None,
             'pre_window':     f"{pre_start} to {pre_end}",
             'post_window':    f"{post_start} to {post_end}",
         }

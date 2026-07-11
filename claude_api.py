@@ -3914,6 +3914,13 @@ _MODE_G_SYSTEM = (
     "the session summary describes. Name the specific divergence if one exists. "
     "Do NOT quote notes verbatim.\n"
     "4. Name 1 metric or pattern worth tracking in the next review period.\n\n"
+    "If a 'Clinician anchor rating' line is present, treat it as clinician-entered "
+    "input, never as computed data. Check whether the behavioral-data direction "
+    "agrees with the clinician's improvement rating and name a meaningful "
+    "disagreement in one clause (e.g., 'clinician rated minimally improved while "
+    "post-window mood dropped 1.4 points'). Never restate the rating as a finding, "
+    "never convert it into other scales, and never speculate about why the "
+    "clinician chose it.\n\n"
     "STRICT RULES:\n"
     "- Every claim must cite a specific number from the provided data\n"
     "- Never diagnose, never prescribe, never evaluate quality of clinical care\n"
@@ -4029,6 +4036,30 @@ def generate_provider_synthesis(synthesis: dict) -> dict:
         lines.append(f"Session summary: {notes[:400]}")
     else:
         lines.append("Session notes: not recorded")
+
+    # ── Clinician anchor rating (60-second check-in, spec §27) ────────
+    # Clinician-entered same-day ratings — the calibration anchor for the
+    # behavioral data. Provider-channel only; Mode H never receives this.
+    cr = synthesis.get('clinician_ratings') or {}
+    if cr.get('severity'):
+        _imp_lbl = {1: 'very much improved', 2: 'much improved',
+                    3: 'minimally improved', 4: 'no change',
+                    5: 'minimally worse', 6: 'much worse',
+                    7: 'very much worse'}
+        parts = [f"severity {cr['severity']}/7 (CGI-S)"]
+        if cr.get('improvement'):
+            parts.append(f"change since last visit: "
+                         f"{_imp_lbl.get(cr['improvement'], cr['improvement'])} "
+                         f"(CGI-I {cr['improvement']}/7)")
+        sp = cr.get('speech') or {}
+        if sp:
+            parts.append("speech observations: " +
+                         ", ".join(f"{k.replace('_', ' ')}={v}"
+                                   for k, v in sp.items()))
+        if cr.get('note'):
+            parts.append(f"note: {cr['note'][:200]}")
+        lines.append("Clinician anchor rating (same-day, clinician-entered): "
+                     + "; ".join(parts))
 
     user_content = f"Appointment date: {appt_dt}\n" + "\n".join(lines)
 

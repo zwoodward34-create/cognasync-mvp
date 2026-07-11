@@ -382,6 +382,23 @@
         <!-- ── RIGHT: Notes, Care Plan, Actions ──────────── -->
         <div>
 
+          <!-- 60-second clinician check-in (spec §27 anchor rating) -->
+          <div style="margin-bottom:20px;" id="cr-card">
+            <label class="aw-field-label">60-Second Check-In</label>
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
+              Your same-day read on the patient — stored alongside their self-reported data as a calibration anchor. Only severity is required.
+            </div>
+            <div style="font-size:11px;color:#666;margin-bottom:4px;">Severity today <span style="color:#999;">(CGI-S · 1 = normal … 7 = extremely ill)</span></div>
+            <div id="cr-severity" style="margin-bottom:10px;"></div>
+            <div style="font-size:11px;color:#666;margin-bottom:4px;">Change since last visit <span style="color:#999;">(CGI-I · 1 = very much improved · 4 = no change · 7 = very much worse)</span></div>
+            <div id="cr-improve" style="margin-bottom:10px;"></div>
+            <div style="font-size:11px;color:#666;margin-bottom:4px;">Speech &amp; presentation <span style="color:#999;">(optional)</span></div>
+            <div id="cr-speech" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"></div>
+            <input id="cr-note" maxlength="200" placeholder="One-line observation (optional)"
+                   style="width:100%;font-size:12px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;"
+                   {% if appt.status == 'completed' %}readonly{% else %}oninput="clinicianRatings.note = this.value; scheduleSave();"{% endif %} />
+          </div>
+
           <!-- Session notes -->
           <div style="margin-bottom:20px;">
             <label class="aw-field-label">Session Notes</label>
@@ -801,6 +818,74 @@ const AI_QUESTIONS = {{ ai_questions | tojson }};
 let qAndA = {{ appt.guided_qa | tojson }};
 let actions = {{ appt.actions | tojson }};
 
+// ── 60-second clinician check-in state (spec §27) ────────────────────
+let clinicianRatings = {{ (appt.clinician_ratings or {}) | tojson }};
+const CR_READONLY = {{ 'true' if appt.status == 'completed' else 'false' }};
+const CR_SPEECH_OPTS = {   // §24 constrained vocabulary — do not extend here
+  speech_rate:      ['slowed', 'normal', 'pressured'],
+  prosody:          ['flat', 'normal', 'elevated'],
+  arousal:          ['low', 'normal', 'elevated', 'agitated'],
+  speech_coherence: ['intact', 'disorganized'],
+};
+
+function crSet(field, val) {
+  if (CR_READONLY) return;
+  clinicianRatings[field] = val;
+  renderCrScales();
+  scheduleSave();
+}
+function crSetSpeech(feat, val) {
+  if (CR_READONLY) return;
+  clinicianRatings.speech = clinicianRatings.speech || {};
+  if (val) clinicianRatings.speech[feat] = val;
+  else delete clinicianRatings.speech[feat];
+  scheduleSave();
+}
+function renderCrScales() {
+  const sev = document.getElementById('cr-severity');
+  const imp = document.getElementById('cr-improve');
+  if (!sev || !imp) return;
+  const btn = (n, active, fn, label) =>
+    `<button type="button" title="${label || ''}" onclick="${fn}" ${CR_READONLY ? 'disabled' : ''}
+       style="width:34px;height:30px;margin-right:4px;border-radius:6px;cursor:pointer;font-size:13px;
+              border:1px solid ${active ? 'var(--accent,#4a6fa5)' : '#ddd'};
+              background:${active ? 'var(--accent,#4a6fa5)' : '#fff'};
+              color:${active ? '#fff' : '#444'};">${n}</button>`;
+  const sevLabels = ['Normal', 'Borderline', 'Mildly ill', 'Moderately ill',
+                     'Markedly ill', 'Severely ill', 'Extremely ill'];
+  const impLabels = ['Very much improved', 'Much improved', 'Minimally improved',
+                     'No change', 'Minimally worse', 'Much worse', 'Very much worse'];
+  sev.innerHTML = [1,2,3,4,5,6,7].map(n =>
+    btn(n, clinicianRatings.severity === n, `crSet('severity',${n})`, sevLabels[n-1])).join('');
+  const naActive = clinicianRatings.improvement == null;
+  imp.innerHTML = [1,2,3,4,5,6,7].map(n =>
+    btn(n, clinicianRatings.improvement === n, `crSet('improvement',${n})`, impLabels[n-1])).join('')
+    + `<button type="button" onclick="crSet('improvement',null)" ${CR_READONLY ? 'disabled' : ''}
+         style="height:30px;padding:0 10px;border-radius:6px;cursor:pointer;font-size:11px;
+                border:1px solid ${naActive ? 'var(--accent,#4a6fa5)' : '#ddd'};
+                background:${naActive ? 'var(--accent,#4a6fa5)' : '#fff'};
+                color:${naActive ? '#fff' : '#444'};" title="First visit / not rated">N/A</button>`;
+}
+function renderCrSpeech() {
+  const wrap = document.getElementById('cr-speech');
+  if (!wrap) return;
+  wrap.innerHTML = Object.entries(CR_SPEECH_OPTS).map(([feat, opts]) => {
+    const cur = (clinicianRatings.speech || {})[feat] || '';
+    return `<label style="font-size:11px;color:#666;">${feat.replace('_', ' ')}
+      <select onchange="crSetSpeech('${feat}', this.value)" ${CR_READONLY ? 'disabled' : ''}
+              style="width:100%;font-size:12px;padding:4px;border:1px solid #ddd;border-radius:6px;margin-top:2px;">
+        <option value="">— not noted —</option>
+        ${opts.map(o => `<option value="${o}" ${cur === o ? 'selected' : ''}>${o}</option>`).join('')}
+      </select></label>`;
+  }).join('');
+}
+renderCrScales();
+renderCrSpeech();
+(function () {
+  const n = document.getElementById('cr-note');
+  if (n) n.value = clinicianRatings.note || '';
+})();
+
 // ── Autosave machinery ───────────────────────────────────────────────
 let saveTimer = null;
 let lastSaved = null;
@@ -816,6 +901,7 @@ async function doSave() {
     care_plan_changes:      document.getElementById('care-plan-field')?.value || '',
     guided_qa:              qAndA,
     actions:                actions,
+    clinician_ratings:      clinicianRatings,
     next_appointment_date:  document.getElementById('next-appt-date')?.value || '',
     next_appointment_time:  document.getElementById('next-appt-time')?.value || '',
     next_appointment_notes: document.getElementById('next-appt-notes')?.value || '',
@@ -840,6 +926,7 @@ async function completeAppointment() {
     care_plan_changes:      document.getElementById('care-plan-field')?.value || '',
     guided_qa:              qAndA,
     actions:                actions,
+    clinician_ratings:      clinicianRatings,
     next_appointment_date:  document.getElementById('next-appt-date')?.value || '',
     next_appointment_time:  document.getElementById('next-appt-time')?.value || '',
     next_appointment_notes: document.getElementById('next-appt-notes')?.value || '',

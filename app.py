@@ -2446,6 +2446,13 @@ def api_appointment_save(appt_id):
         updates['next_appointment_time'] = nt if nt else None
     if 'next_appointment_notes' in data:
         updates['next_appointment_notes'] = str(data['next_appointment_notes'])
+    if 'clinician_ratings' in data:
+        # 60-second clinician check-in (spec §27). Only persisted once a
+        # valid severity exists — empty/partial UI state is skipped, and
+        # invalid values are dropped by the validator, never stored.
+        cr = db.validate_clinician_ratings(data['clinician_ratings'])
+        if cr is not None:
+            updates['clinician_ratings'] = cr
     if data.get('complete'):
         from datetime import datetime as _dt
         updates['status'] = 'completed'
