@@ -1685,7 +1685,7 @@ The speech block deliberately reuses the §24 constrained values so clinician ob
 
 ### UI Contract
 
-One card on the appointment workspace's Check-In step. Two 1–7 segmented scales with CGI anchor tooltips, four optional speech dropdowns, one optional one-line note. Autosaves with the rest of the workspace; read-only once the appointment is completed. If it takes longer than 60 seconds, it has failed its design goal — resist adding fields.
+One card on the appointment workspace's Check-In step. Each item is phrased as a plain question ("Overall, how unwell is this patient today?") with plain-language labels ON the buttons ("Not ill" … "Extremely ill"; "Much better" … "Much worse" + "First visit / N/A"); the stored values remain the standard CGI 1–7 anchors, with full anchor text on hover. Speech dropdowns show plain labels ("Speaking pace: Rapid / hard to interrupt") but store the §24 constrained vocabulary — display language may change freely; stored values may not. One optional one-line note. Autosaves with the rest of the workspace; read-only once the appointment is completed. If it takes longer than 60 seconds, it has failed its design goal — resist adding fields.
 
 ### The Appointment Anchor Model (2026-07-10)
 

@@ -385,16 +385,18 @@
           <!-- 60-second clinician check-in (spec §27 anchor rating) -->
           <div style="margin-bottom:20px;" id="cr-card">
             <label class="aw-field-label">60-Second Check-In</label>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
-              Your same-day read on the patient — stored alongside their self-reported data as a calibration anchor. Only severity is required.
+            <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">
+              Your quick read on the patient, stored alongside their self-reported data as a calibration reference. Only the first question is required.
             </div>
-            <div style="font-size:11px;color:#666;margin-bottom:4px;">Severity today <span style="color:#999;">(CGI-S · 1 = normal … 7 = extremely ill)</span></div>
-            <div id="cr-severity" style="margin-bottom:10px;"></div>
-            <div style="font-size:11px;color:#666;margin-bottom:4px;">Change since last visit <span style="color:#999;">(CGI-I · 1 = very much improved · 4 = no change · 7 = very much worse)</span></div>
-            <div id="cr-improve" style="margin-bottom:10px;"></div>
-            <div style="font-size:11px;color:#666;margin-bottom:4px;">Speech &amp; presentation <span style="color:#999;">(optional)</span></div>
+            <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:5px;">Overall, how unwell is this patient today?
+              <span style="color:#aaa;font-weight:400;font-size:10px;" title="Stored as the standard Clinical Global Impressions severity scale (CGI-S 1–7)">CGI-S</span></div>
+            <div id="cr-severity" style="margin-bottom:12px;"></div>
+            <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:5px;">Compared to their last visit, how are they doing?
+              <span style="color:#aaa;font-weight:400;font-size:10px;" title="Stored as the standard Clinical Global Impressions improvement scale (CGI-I 1–7)">CGI-I</span></div>
+            <div id="cr-improve" style="margin-bottom:12px;"></div>
+            <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:5px;">Did anything stand out about how they spoke? <span style="color:#999;font-weight:400;">(optional)</span></div>
             <div id="cr-speech" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px;"></div>
-            <input id="cr-note" maxlength="200" placeholder="One-line observation (optional)"
+            <input id="cr-note" maxlength="200" placeholder="Anything else worth remembering? One line, optional."
                    style="width:100%;font-size:12px;padding:6px 8px;border:1px solid #ddd;border-radius:6px;box-sizing:border-box;"
                    {% if appt.status == 'completed' %}readonly{% else %}oninput="clinicianRatings.note = this.value; scheduleSave();"{% endif %} />
           </div>
@@ -760,12 +762,6 @@ let qAndA = {{ appt.guided_qa | tojson }};
 // ── 60-second clinician check-in state (spec §27) ────────────────────
 let clinicianRatings = {{ (appt.clinician_ratings or {}) | tojson }};
 const CR_READONLY = {{ 'true' if appt.status == 'completed' else 'false' }};
-const CR_SPEECH_OPTS = {   // §24 constrained vocabulary — do not extend here
-  speech_rate:      ['slowed', 'normal', 'pressured'],
-  prosody:          ['flat', 'normal', 'elevated'],
-  arousal:          ['low', 'normal', 'elevated', 'agitated'],
-  speech_coherence: ['intact', 'disorganized'],
-};
 
 function crSet(field, val) {
   if (CR_READONLY) return;
@@ -784,40 +780,81 @@ function renderCrScales() {
   const sev = document.getElementById('cr-severity');
   const imp = document.getElementById('cr-improve');
   if (!sev || !imp) return;
-  const btn = (n, active, fn, label) =>
-    `<button type="button" title="${label || ''}" onclick="${fn}" ${CR_READONLY ? 'disabled' : ''}
-       style="width:34px;height:30px;margin-right:4px;border-radius:6px;cursor:pointer;font-size:13px;
+  // Plain-language labels shown ON the buttons; the stored values remain the
+  // standard CGI 1-7 anchors (full anchor text in the hover title).
+  const btn = (val, label, active, fn, fullAnchor) =>
+    `<button type="button" title="${fullAnchor}" onclick="${fn}" ${CR_READONLY ? 'disabled' : ''}
+       style="padding:5px 10px;margin:0 4px 4px 0;border-radius:14px;cursor:pointer;font-size:12px;white-space:nowrap;
               border:1px solid ${active ? 'var(--accent,#4a6fa5)' : '#ddd'};
               background:${active ? 'var(--accent,#4a6fa5)' : '#fff'};
-              color:${active ? '#fff' : '#444'};">${n}</button>`;
-  const sevLabels = ['Normal', 'Borderline', 'Mildly ill', 'Moderately ill',
-                     'Markedly ill', 'Severely ill', 'Extremely ill'];
-  const impLabels = ['Very much improved', 'Much improved', 'Minimally improved',
-                     'No change', 'Minimally worse', 'Much worse', 'Very much worse'];
-  sev.innerHTML = [1,2,3,4,5,6,7].map(n =>
-    btn(n, clinicianRatings.severity === n, `crSet('severity',${n})`, sevLabels[n-1])).join('');
-  const naActive = clinicianRatings.improvement == null;
-  imp.innerHTML = [1,2,3,4,5,6,7].map(n =>
-    btn(n, clinicianRatings.improvement === n, `crSet('improvement',${n})`, impLabels[n-1])).join('')
-    + `<button type="button" onclick="crSet('improvement',null)" ${CR_READONLY ? 'disabled' : ''}
-         style="height:30px;padding:0 10px;border-radius:6px;cursor:pointer;font-size:11px;
-                border:1px solid ${naActive ? 'var(--accent,#4a6fa5)' : '#ddd'};
-                background:${naActive ? 'var(--accent,#4a6fa5)' : '#fff'};
-                color:${naActive ? '#fff' : '#444'};" title="First visit / not rated">N/A</button>`;
+              color:${active ? '#fff' : '#444'};">${label}</button>`;
+  const SEV = [
+    [1, 'Not ill',        'CGI-S 1 — Normal, not at all ill'],
+    [2, 'Borderline',     'CGI-S 2 — Borderline ill'],
+    [3, 'Mildly ill',     'CGI-S 3 — Mildly ill'],
+    [4, 'Moderately ill', 'CGI-S 4 — Moderately ill'],
+    [5, 'Markedly ill',   'CGI-S 5 — Markedly ill'],
+    [6, 'Severely ill',   'CGI-S 6 — Severely ill'],
+    [7, 'Extremely ill',  'CGI-S 7 — Among the most extremely ill'],
+  ];
+  const IMP = [
+    [1, 'Much better',    'CGI-I 1 — Very much improved'],
+    [2, 'Better',         'CGI-I 2 — Much improved'],
+    [3, 'Slightly better','CGI-I 3 — Minimally improved'],
+    [4, 'No change',      'CGI-I 4 — No change'],
+    [5, 'Slightly worse', 'CGI-I 5 — Minimally worse'],
+    [6, 'Worse',          'CGI-I 6 — Much worse'],
+    [7, 'Much worse',     'CGI-I 7 — Very much worse'],
+  ];
+  sev.innerHTML = SEV.map(([v, label, anchor]) =>
+    btn(v, label, clinicianRatings.severity === v, `crSet('severity',${v})`, anchor)).join('');
+  imp.innerHTML = IMP.map(([v, label, anchor]) =>
+    btn(v, label, clinicianRatings.improvement === v, `crSet('improvement',${v})`, anchor)).join('')
+    + btn('na', 'First visit / N/A', clinicianRatings.improvement == null,
+          `crSet('improvement',null)`, 'Not rated — no prior visit to compare against');
+  sev.style.display = 'flex'; sev.style.flexWrap = 'wrap';
+  imp.style.display = 'flex'; imp.style.flexWrap = 'wrap';
 }
+
 function renderCrSpeech() {
   const wrap = document.getElementById('cr-speech');
   if (!wrap) return;
-  wrap.innerHTML = Object.entries(CR_SPEECH_OPTS).map(([feat, opts]) => {
+  // Display labels are plain language; the stored values are the §24
+  // constrained vocabulary (value attribute), so clinician observations stay
+  // directly comparable with transcript-derived speech features.
+  const FEATURES = [
+    ['speech_rate', 'Speaking pace', [
+      ['slowed',    'Slower than usual'],
+      ['normal',    'Typical'],
+      ['pressured', 'Rapid / hard to interrupt'],
+    ]],
+    ['prosody', 'Voice tone', [
+      ['flat',     'Flat or monotone'],
+      ['normal',   'Typical'],
+      ['elevated', 'Heightened / animated'],
+    ]],
+    ['arousal', 'Energy level', [
+      ['low',      'Low / sluggish'],
+      ['normal',   'Typical'],
+      ['elevated', 'Keyed up'],
+      ['agitated', 'Agitated'],
+    ]],
+    ['speech_coherence', 'Train of thought', [
+      ['intact',       'Easy to follow'],
+      ['disorganized', 'Hard to follow / jumps around'],
+    ]],
+  ];
+  wrap.innerHTML = FEATURES.map(([feat, label, opts]) => {
     const cur = (clinicianRatings.speech || {})[feat] || '';
-    return `<label style="font-size:11px;color:#666;">${feat.replace('_', ' ')}
+    return `<label style="font-size:11px;color:#666;">${label}
       <select onchange="crSetSpeech('${feat}', this.value)" ${CR_READONLY ? 'disabled' : ''}
               style="width:100%;font-size:12px;padding:4px;border:1px solid #ddd;border-radius:6px;margin-top:2px;">
-        <option value="">— not noted —</option>
-        ${opts.map(o => `<option value="${o}" ${cur === o ? 'selected' : ''}>${o}</option>`).join('')}
+        <option value="">Nothing notable</option>
+        ${opts.map(([v, text]) => `<option value="${v}" ${cur === v ? 'selected' : ''}>${text}</option>`).join('')}
       </select></label>`;
   }).join('');
 }
+
 renderCrScales();
 renderCrSpeech();
 (function () {
