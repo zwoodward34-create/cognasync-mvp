@@ -129,7 +129,7 @@
         <div class="aw-step-badge">2</div>
         <div class="aw-step-info">
           <div class="aw-step-label">Session</div>
-          <div class="aw-step-sub">Q&amp;A, notes &amp; plan</div>
+          <div class="aw-step-sub">Check-in &amp; Q&amp;A</div>
         </div>
       </div>
 
@@ -335,7 +335,7 @@
 
     </div><!-- /tab-data -->
 
-    <!-- ═══ TAB: SESSION (Q&A + Notes + Care Plan + Actions) ═══════════ -->
+    <!-- ═══ TAB: SESSION (60-second check-in + guided Q&A) ═══════════ -->
     <div class="aw-tab-pane" id="tab-session">
 
       <!-- Header -->
@@ -350,7 +350,7 @@
         <button class="btn btn-sm" onclick="toggleLibrary()">📚 Question Library</button>
       </div>
 
-      <!-- Two-column: Q&A left | Notes + Care Plan + Actions right -->
+      <!-- Two-column: Q&A left | 60-second check-in right -->
       <div class="pv-grid-2" style="gap:24px;align-items:start;">
 
         <!-- ── LEFT: Guided Q&A ────────────────────────── -->
@@ -379,7 +379,7 @@
 
         </div><!-- /left -->
 
-        <!-- ── RIGHT: Notes, Care Plan, Actions ──────────── -->
+        <!-- ── RIGHT: 60-second clinician check-in ──────────── -->
         <div>
 
           <!-- 60-second clinician check-in (spec §27 anchor rating) -->
@@ -399,72 +399,12 @@
                    {% if appt.status == 'completed' %}readonly{% else %}oninput="clinicianRatings.note = this.value; scheduleSave();"{% endif %} />
           </div>
 
-          <!-- Session notes -->
-          <div style="margin-bottom:20px;">
-            <label class="aw-field-label">Session Notes</label>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
-              Clinical observations, patient-reported topics, discussion highlights.
-            </div>
-            <textarea id="notes-field" class="aw-textarea" rows="9"
-                      placeholder="Enter session notes…"
-                      {% if appt.status == 'completed' %}readonly style="opacity:0.75;background:var(--surface-alt,#f8f8f8);"{% else %}oninput="scheduleSave()"{% endif %}>{{ appt.notes or '' }}</textarea>
-          </div>
-
-          <!-- Care plan -->
-          <div style="margin-bottom:20px;">
-            <label class="aw-field-label">Care Plan Changes</label>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:8px;">
-              Adjustments to treatment plan discussed or decided this session.
-            </div>
-            <textarea id="care-plan-field" class="aw-textarea" rows="7"
-                      placeholder="Document any care plan changes…"
-                      {% if appt.status == 'completed' %}readonly style="opacity:0.75;background:var(--surface-alt,#f8f8f8);"{% else %}oninput="scheduleSave()"{% endif %}>{{ appt.care_plan_changes or '' }}</textarea>
-          </div>
-
           {% if appt.status == 'completed' %}
           <div style="margin-bottom:20px;padding:10px 14px;background:#f0f7f0;border:1px solid #c3e0c3;
                       font-size:12px;color:#2a6b2a;border-radius:4px;">
-            ✓ This appointment is complete. Notes are locked and have been carried forward to the between-session brief.
+            ✓ This appointment is complete. The check-in is locked and feeds the post-visit synthesis.
           </div>
           {% endif %}
-
-          <!-- Action items -->
-          <div>
-            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
-              <label class="aw-field-label" style="margin:0;">Action Items</label>
-              {% if appt.status != 'completed' %}
-              <div style="display:flex;gap:8px;">
-                <input type="text" id="action-input" placeholder="Add an action item…"
-                       class="gq-custom-input" style="width:220px;"
-                       onkeydown="if(event.key==='Enter')addAction()">
-                <button class="btn btn-sm" onclick="addAction()">Add</button>
-              </div>
-              {% endif %}
-            </div>
-            <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">
-              Tasks to be completed before the next appointment.
-            </div>
-            <div id="actions-list" class="aw-actions-list"></div>
-            {% if appt.status != 'completed' %}
-            <div class="aw-action-templates" style="margin-top:12px;">
-              <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--text-muted);font-weight:500;margin-bottom:8px;">Common Actions</div>
-              <div style="display:flex;flex-wrap:wrap;gap:6px;">
-                {% for tmpl in [
-                  'Schedule follow-up labs',
-                  'Patient to track sleep for 2 weeks',
-                  'Refer to therapy',
-                  'Review medication timing logs',
-                  'Complete PHQ-9 before next visit',
-                  'Check in via portal if symptoms worsen',
-                  'Patient to try sleep hygiene protocol',
-                  'Coordinate with pharmacy',
-                ] %}
-                <button class="aw-action-template-btn" onclick="addActionFromTemplate('{{ tmpl }}')">{{ tmpl }}</button>
-                {% endfor %}
-              </div>
-            </div>
-            {% endif %}
-          </div>
 
         </div><!-- /right -->
 
@@ -816,7 +756,6 @@ const AI_QUESTIONS = {{ ai_questions | tojson }};
 
 // ── Guided Q&A state (loaded from appt) ──────────────────────────────
 let qAndA = {{ appt.guided_qa | tojson }};
-let actions = {{ appt.actions | tojson }};
 
 // ── 60-second clinician check-in state (spec §27) ────────────────────
 let clinicianRatings = {{ (appt.clinician_ratings or {}) | tojson }};
@@ -897,10 +836,7 @@ function scheduleSave() {
 
 async function doSave() {
   const payload = {
-    notes:                  document.getElementById('notes-field')?.value || '',
-    care_plan_changes:      document.getElementById('care-plan-field')?.value || '',
     guided_qa:              qAndA,
-    actions:                actions,
     clinician_ratings:      clinicianRatings,
     next_appointment_date:  document.getElementById('next-appt-date')?.value || '',
     next_appointment_time:  document.getElementById('next-appt-time')?.value || '',
@@ -922,10 +858,7 @@ async function doSave() {
 async function completeAppointment() {
   if (!confirm('Mark this appointment as complete? You can still view it, but it will be closed.')) return;
   const payload = {
-    notes:                  document.getElementById('notes-field')?.value || '',
-    care_plan_changes:      document.getElementById('care-plan-field')?.value || '',
     guided_qa:              qAndA,
-    actions:                actions,
     clinician_ratings:      clinicianRatings,
     next_appointment_date:  document.getElementById('next-appt-date')?.value || '',
     next_appointment_time:  document.getElementById('next-appt-time')?.value || '',
@@ -1193,52 +1126,6 @@ function toggleLibrary() {
 }
 
 // ── Actions ────────────────────────────────────────────────────────────
-function renderActions() {
-  const list = document.getElementById('actions-list');
-  if (!list) return;
-  if (actions.length === 0) {
-    list.innerHTML = '<div style="font-size:13px;color:var(--text-muted);padding:8px 0;">No action items yet.</div>';
-    return;
-  }
-  const locked = {{ 'true' if appt.status == 'completed' else 'false' }};
-  list.innerHTML = actions.map((a, i) => `
-    <div class="aw-action-item ${a.done ? 'aw-action-done' : ''}">
-      <input type="checkbox" class="aw-action-check" ${a.done ? 'checked' : ''}
-             ${locked ? 'disabled' : `onchange="toggleAction(${i}, this.checked)"`}>
-      <span class="aw-action-text">${escHtml(a.text)}</span>
-      ${locked ? '' : `<button class="aw-action-remove" onclick="removeAction(${i})">✕</button>`}
-    </div>
-  `).join('');
-}
-
-function addAction() {
-  const inp = document.getElementById('action-input');
-  const text = inp.value.trim();
-  if (!text) return;
-  actions.push({ text, done: false });
-  inp.value = '';
-  renderActions();
-  scheduleSave();
-}
-
-function addActionFromTemplate(text) {
-  actions.push({ text, done: false });
-  renderActions();
-  scheduleSave();
-}
-
-function toggleAction(idx, done) {
-  if (actions[idx]) actions[idx].done = done;
-  renderActions();
-  scheduleSave();
-}
-
-function removeAction(idx) {
-  actions.splice(idx, 1);
-  renderActions();
-  scheduleSave();
-}
-
 // ── Schedule save ─────────────────────────────────────────────────────
 function saveSchedule() {
   scheduleSave();
@@ -1456,7 +1343,6 @@ async function loadSynthesis(force) {
 
 // ── Init ──────────────────────────────────────────────────────────────
 renderQA();
-renderActions();
 
 // Autosave every 30s — only for active appointments
 {% if appt.status != 'completed' %}
@@ -1487,8 +1373,6 @@ function exportRecap() {
   const patientName = document.querySelector('.aw-header-name')?.textContent?.trim() || 'Patient';
   const apptDate    = '{{ appt.started_at[:10] if appt.started_at else "" }}';
   const period      = '{{ selected_days }}';
-  const notes       = document.getElementById('notes-field')?.value || '';
-  const carePlan    = document.getElementById('care-plan-field')?.value || '';
   const nextDate    = document.getElementById('next-appt-date')?.value || '';
   const nextNotes   = document.getElementById('next-appt-notes')?.value || '';
 
@@ -1511,12 +1395,6 @@ function exportRecap() {
       <div class="qa-q"><strong>Q:</strong> ${escHtml(item.question)}</div>
       ${item.answer ? `<div class="qa-a"><strong>A:</strong> ${escHtml(item.answer)}</div>` : '<div class="qa-a qa-empty">No answer recorded</div>'}
     </div>`).join('');
-
-  const actionRows = actions.map(a =>
-    `<div class="action-item ${a.done ? 'done' : ''}">
-       <span class="chk">${a.done ? '✓' : '○'}</span> ${escHtml(a.text)}
-     </div>`
-  ).join('') || '<div style="color:#888;font-size:13px;">No action items.</div>';
 
   const html = `<!DOCTYPE html>
 <html lang="en">
@@ -1570,19 +1448,9 @@ ${summaryText ? `<div class="section">
   <div class="summary-text">${summaryText.trim()}</div>
 </div>` : ''}
 
-${notes ? `<div class="section">
-  <div class="section-title">Session Notes</div>
-  <div class="notes-text">${escHtml(notes)}</div>
-</div>` : ''}
-
-${carePlan ? `<div class="section">
-  <div class="section-title">Care Plan Changes</div>
-  <div class="notes-text">${escHtml(carePlan)}</div>
-</div>` : ''}
-
-${actions.length ? `<div class="section">
-  <div class="section-title">Action Items</div>
-  ${actionRows}
+${clinicianRatings.severity ? `<div class="section">
+  <div class="section-title">60-Second Check-In (clinician-entered)</div>
+  <div class="notes-text">CGI-S severity: ${clinicianRatings.severity}/7${clinicianRatings.improvement ? ` &nbsp;·&nbsp; CGI-I change: ${clinicianRatings.improvement}/7` : ''}${clinicianRatings.note ? `<br>${escHtml(clinicianRatings.note)}` : ''}</div>
 </div>` : ''}
 
 ${qAndA.length ? `<div class="section">

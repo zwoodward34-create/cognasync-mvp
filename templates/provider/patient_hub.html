@@ -1524,6 +1524,20 @@
     <!-- Row 3: Action bar -->
     <div class="ch-header-actions">
       <button class="ch-action-btn ch-action-btn--primary" id="btn-generate-brief" onclick="generateBrief()">✦ Generate Brief</button>
+      {# Appointment anchor entry point (2026-07-10): continue the active
+         appointment if one exists, otherwise start one. This was previously
+         only reachable from the superseded patient_detail page. #}
+      {% set _active_appts = appointments | selectattr('status', 'equalto', 'active') | list %}
+      {% if _active_appts %}
+      <a href="{{ url_for('provider_appointment_workspace', patient_id=patient.patient_id, appt_id=_active_appts[0].id) }}"
+         class="ch-action-btn" style="text-decoration:none;">▸ Continue Appointment</a>
+      {% else %}
+      <form method="POST"
+            action="{{ url_for('provider_appointment_new', patient_id=patient.patient_id) }}"
+            style="margin:0;display:inline;">
+        <button type="submit" class="ch-action-btn">▸ Start Appointment</button>
+      </form>
+      {% endif %}
       <div class="ch-sms-group">
         <button class="ch-action-btn" id="btn-checkin-sms" onclick="sendSMS('checkin')">Send SMS Check-In</button>
         <button class="ch-action-btn" id="btn-voice-sms" onclick="sendVoiceSMS()">Voice Question</button>

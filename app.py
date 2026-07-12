@@ -2430,14 +2430,12 @@ def api_appointment_save(appt_id):
         return err
     data = request.get_json(silent=True) or {}
     updates = {}
-    if 'notes' in data:
-        updates['notes'] = str(data['notes'])
-    if 'care_plan_changes' in data:
-        updates['care_plan_changes'] = str(data['care_plan_changes'])
+    # notes / care_plan_changes / actions intentionally NOT accepted
+    # (2026-07-10 anchor-model decision): CognaSync is not a documentation
+    # system — clinical notes belong in the EHR. Columns remain for legacy
+    # rows; the workspace UI no longer collects them.
     if 'guided_qa' in data and isinstance(data['guided_qa'], list):
         updates['guided_qa'] = data['guided_qa']
-    if 'actions' in data and isinstance(data['actions'], list):
-        updates['actions'] = data['actions']
     if 'next_appointment_date' in data:
         nd = str(data['next_appointment_date']).strip()
         updates['next_appointment_date'] = nd if nd else None

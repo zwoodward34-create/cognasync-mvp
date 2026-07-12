@@ -1685,4 +1685,8 @@ The speech block deliberately reuses the §24 constrained values so clinician ob
 
 ### UI Contract
 
-One card on the provider appointment workspace, above Session Notes. Two 1–7 segmented scales with CGI anchor tooltips, four optional speech dropdowns, one optional one-line note. Autosaves with the rest of the workspace; read-only once the appointment is completed. If it takes longer than 60 seconds, it has failed its design goal — resist adding fields.
+One card on the appointment workspace's Check-In step. Two 1–7 segmented scales with CGI anchor tooltips, four optional speech dropdowns, one optional one-line note. Autosaves with the rest of the workspace; read-only once the appointment is completed. If it takes longer than 60 seconds, it has failed its design goal — resist adding fields.
+
+### The Appointment Anchor Model (2026-07-10)
+
+The appointment is a **lightweight anchor, not a documentation workflow**. CognaSync is not a clinical documentation system: session notes, care-plan changes, and action items were removed from the workspace UI and the save API on 2026-07-10 — clinical documentation belongs in the provider's EHR, and duplicating it here creates record-of-truth ambiguity and unnecessary legal surface. What an appointment IS: a date that anchors the pre-visit brief (Mode B/C windows), the 60-second clinician check-in (this section), the guided Q&A (patient self-report for Mode G discrepancy checks), the next-appointment date (drives SMS cadence), and the post-visit synthesis windows (Mode G/H). The `notes`/`care_plan_changes`/`actions` columns remain for legacy rows only; Mode G's session-summary direction check applies only when legacy notes exist and is otherwise skipped by design.
