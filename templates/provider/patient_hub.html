@@ -1925,28 +1925,16 @@
   <!-- ── Two-column body ──────────────────────────────────────────────────── -->
   <div class="ch-body-grid">
 
-    <!-- LEFT: Session Notes -->
+    <!-- LEFT: Sessions (anchor model 2026-07-10: note-taking removed —
+         clinical documentation belongs in the provider's EHR) -->
     <div class="ch-card ch-notes-col">
       <div class="ch-card-hdr">
-        <span class="ch-card-title">Session Notes</span>
-        <span class="ch-live-badge"><span class="ch-live-dot">●</span> Current Session</span>
+        <span class="ch-card-title">Sessions</span>
       </div>
 
-      <!-- Current note textarea -->
-      <div class="ch-note-section">
-        <div class="ch-note-hdr">
-          <span class="ch-note-title">Current Note</span>
-          <div class="ch-fmt-wrap">
-            <button class="ch-fmt-btn ch-fmt-btn--active" id="fmt-SOAP" onclick="setNoteFormat('SOAP')">SOAP</button>
-            <button class="ch-fmt-btn" id="fmt-DAP" onclick="setNoteFormat('DAP')">DAP</button>
-            <button class="ch-fmt-btn" id="fmt-Free" onclick="setNoteFormat('Free')">Free</button>
-          </div>
-        </div>
-        <textarea class="ch-note-ta" id="ch-note-ta" placeholder="Type session notes here…"></textarea>
-        <div class="ch-note-footer">
-          <span class="ch-note-autosave" id="ch-note-status">Draft</span>
-          <button class="ch-action-btn ch-action-btn--sm ch-action-btn--primary" onclick="saveCurrentNote()">Save Note</button>
-        </div>
+      <div style="font-size:0.75rem;color:var(--text-muted);padding:2px 0 10px;">
+        Use <strong>Start Appointment</strong> above to open a session — the pre-visit brief,
+        60-second check-in, and guided Q&amp;A live there. Clinical notes belong in your EHR.
       </div>
 
       <!-- Previous sessions accordion -->
@@ -1965,10 +1953,15 @@
               <span class="ch-prev-chevron">›</span>
             </div>
             <div class="ch-prev-body">
+              {% if appt.clinician_ratings and appt.clinician_ratings.severity %}
+              <p class="ch-prev-text">60-second check-in: severity {{ appt.clinician_ratings.severity }}/7{% if appt.clinician_ratings.improvement %} · change {{ appt.clinician_ratings.improvement }}/7{% endif %}</p>
+              {% endif %}
               {% if appt.notes %}
-              <p class="ch-prev-text">{{ appt.notes }}</p>
-              {% else %}
-              <p class="ch-prev-text ch-prev-text--empty">No notes recorded for this session.</p>
+              <p class="ch-prev-text">{{ appt.notes }}</p>{# legacy rows only #}
+              {% endif %}
+              {% if appt.id %}
+              <a class="ch-prev-text" style="color:var(--accent);text-decoration:none;display:inline-block;"
+                 href="{{ url_for('provider_appointment_workspace', patient_id=patient.patient_id, appt_id=appt.id) }}">Open session →</a>
               {% endif %}
             </div>
           </div>
@@ -3469,44 +3462,6 @@ function switchTab(name) {
 function togglePrevItem(n) {
   var el = document.getElementById('ch-prev-' + n);
   if (el) el.classList.toggle('open');
-}
-
-// ── Note format switcher ──────────────────────────────────────────────────────
-var _noteFmt = 'SOAP';
-function setNoteFormat(fmt) {
-  _noteFmt = fmt;
-  ['SOAP','DAP','Free'].forEach(function(f) {
-    var btn = document.getElementById('fmt-' + f);
-    if (btn) btn.classList.toggle('ch-fmt-btn--active', f === fmt);
-  });
-  var ta = document.getElementById('ch-note-ta');
-  if (!ta || ta.value.trim()) return;
-  if (fmt === 'SOAP') ta.placeholder = 'S: Subjective…\nO: Objective…\nA: Assessment…\nP: Plan…';
-  else if (fmt === 'DAP') ta.placeholder = 'D: Data…\nA: Assessment…\nP: Plan…';
-  else ta.placeholder = 'Type session notes here…';
-}
-
-// ── Note save (localStorage) ──────────────────────────────────────────────────
-var NOTE_KEY = 'ch-note-' + PATIENT_ID;
-(function() {
-  var ta = document.getElementById('ch-note-ta');
-  var status = document.getElementById('ch-note-status');
-  if (!ta) return;
-  var saved = localStorage.getItem(NOTE_KEY);
-  if (saved) { ta.value = saved; if (status) status.textContent = 'Saved draft'; }
-  ta.addEventListener('input', function() {
-    if (status) status.textContent = 'Unsaved…';
-  });
-})();
-
-function saveCurrentNote() {
-  var ta = document.getElementById('ch-note-ta');
-  var status = document.getElementById('ch-note-status');
-  if (!ta) return;
-  localStorage.setItem(NOTE_KEY, ta.value);
-  var t = new Date().toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'});
-  if (status) status.textContent = 'Saved · ' + t;
-  showToast('Note saved');
 }
 
 // ── Timeline builder ──────────────────────────────────────────────────────────

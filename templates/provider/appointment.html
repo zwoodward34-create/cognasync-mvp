@@ -388,7 +388,7 @@
             <div style="font-size:11px;color:var(--text-muted);margin-bottom:10px;">
               Your quick read on the patient, stored alongside their self-reported data as a calibration reference. Only the first question is required.
             </div>
-            <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:5px;">Overall, how unwell is this patient today?
+            <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:5px;">Overall symptom severity today?
               <span style="color:#aaa;font-weight:400;font-size:10px;" title="Stored as the standard Clinical Global Impressions severity scale (CGI-S 1–7)">CGI-S</span></div>
             <div id="cr-severity" style="margin-bottom:12px;"></div>
             <div style="font-size:12px;color:#444;font-weight:500;margin-bottom:5px;">Compared to their last visit, how are they doing?
@@ -788,14 +788,17 @@ function renderCrScales() {
               border:1px solid ${active ? 'var(--accent,#4a6fa5)' : '#ddd'};
               background:${active ? 'var(--accent,#4a6fa5)' : '#fff'};
               color:${active ? '#fff' : '#444'};">${label}</button>`;
+  // Display labels describe symptom state, not the person ("ill" labels the
+  // patient and can read as judgment — and this screen may be visible to the
+  // patient during a session). Stored values remain CGI-S 1-7.
   const SEV = [
-    [1, 'Not ill',        'CGI-S 1 — Normal, not at all ill'],
-    [2, 'Borderline',     'CGI-S 2 — Borderline ill'],
-    [3, 'Mildly ill',     'CGI-S 3 — Mildly ill'],
-    [4, 'Moderately ill', 'CGI-S 4 — Moderately ill'],
-    [5, 'Markedly ill',   'CGI-S 5 — Markedly ill'],
-    [6, 'Severely ill',   'CGI-S 6 — Severely ill'],
-    [7, 'Extremely ill',  'CGI-S 7 — Among the most extremely ill'],
+    [1, 'No symptoms', 'CGI-S 1 — Normal, not at all ill'],
+    [2, 'Minimal',     'CGI-S 2 — Borderline ill'],
+    [3, 'Mild',        'CGI-S 3 — Mildly ill'],
+    [4, 'Moderate',    'CGI-S 4 — Moderately ill'],
+    [5, 'Marked',      'CGI-S 5 — Markedly ill'],
+    [6, 'Severe',      'CGI-S 6 — Severely ill'],
+    [7, 'Very severe', 'CGI-S 7 — Among the most extremely ill'],
   ];
   const IMP = [
     [1, 'Much better',    'CGI-I 1 — Very much improved'],

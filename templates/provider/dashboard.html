@@ -2013,10 +2013,14 @@
     position: fixed;
     inset: 0;
     background: rgba(0,0,0,0.45);
-    z-index: 500;
+    /* Must sit ABOVE .top-nav (z-index 1000): at 500 the fixed nav painted
+       over the panel's topbar — title/tabs/close hidden and unclickable
+       ("calendar cut off by the header", 2026-07-10). Belt-and-suspenders:
+       also pad below the nav so the panel clears it visually. */
+    z-index: 2000;
     align-items: flex-start;
     justify-content: center;
-    padding: 24px 16px;
+    padding: calc(var(--nav-h, 56px) + 16px) 16px 24px;
     overflow-y: auto;
   }
   .apmgr-overlay.open { display: flex; }
