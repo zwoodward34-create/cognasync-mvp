@@ -4998,12 +4998,16 @@ def _trigger_rotating_followup(patient_id: str, checkin_id: str,
         # Get all active focus domains across care team
         focus_domains = db.get_active_focus_domains_for_patient(patient_id)
         if not focus_domains:
-            # Default rotation (decision 2026-07-10): caffeine is required to
-            # compute Stim Load → NS Load → Crash Risk now that the web
-            # check-in (the only other caffeine source) is retired. When no
-            # provider has set focus targets, ask the caffeine question so the
-            # score chain stays computable for SMS-only patients.
-            focus_domains = ['stimulants']
+            # Default follow-up (decisions 2026-07-10/12): with no provider
+            # focus targets, ask the two formula-critical questions in ONE
+            # text (the selector sends both when exactly 2 domains match):
+            #   stimulants → caffeine_drinks → Stim Load → NS Load → Crash Risk
+            #   sleep      → sleep_latency_minutes → Sleep Disruption (+3 term)
+            # Together these make every SMS check-in day fully computable.
+            # Deliberately capped at two — each added question taxes the
+            # response rate every other feature depends on, and 3+ domains
+            # would rotate caffeine OUT of some texts, making Stim Load sparse.
+            focus_domains = ['stimulants', 'sleep']
 
         # Determine which rotating fields to ask today
         checkin_index   = db.get_patient_sms_checkin_count(patient_id)
