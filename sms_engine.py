@@ -849,6 +849,25 @@ def _normalize_target(target: str) -> str:
     return re.sub(r'[\s/\-]+', '_', target.strip().lower())
 
 
+def with_core_stimulants(domains: list) -> list:
+    """Append 'stimulants' to a provider-targeted domain set (option C,
+    decision 2026-07-12).
+
+    Provider focus targets REPLACE the default follow-up domains — without
+    this, targeting any domain silently switches off the caffeine question
+    and kills the Stim Load → NS Load → Crash Risk chain (including the
+    Tier-2 crash-risk trigger) for that patient. Appending keeps caffeine in
+    rotation: 1 provider target → both questions every text; 2 targets →
+    caffeine in 2 of every 3 texts. Sleep latency is deliberately NOT
+    appended — Sleep Disruption keeps its sleep-hours term as a fallback,
+    whereas Stim Load has none. No-op when the provider already targets
+    stimulants. Returns a new list; input is not mutated.
+    """
+    if any(_normalize_target(d) == 'stimulants' for d in domains):
+        return list(domains)
+    return list(domains) + ['stimulants']
+
+
 def get_rotating_fields_for_checkin(focus_domains: list, checkin_index: int) -> list:
     """Return up to 2 rotating question dicts for this check-in.
 

@@ -5008,6 +5008,11 @@ def _trigger_rotating_followup(patient_id: str, checkin_id: str,
             # response rate every other feature depends on, and 3+ domains
             # would rotate caffeine OUT of some texts, making Stim Load sparse.
             focus_domains = ['stimulants', 'sleep']
+        else:
+            # Option C (decision 2026-07-12): provider targets replace the
+            # default, so keep the formula-critical caffeine question in
+            # rotation for targeted patients. See sms_engine.with_core_stimulants.
+            focus_domains = _sms.with_core_stimulants(focus_domains)
 
         # Determine which rotating fields to ask today
         checkin_index   = db.get_patient_sms_checkin_count(patient_id)
