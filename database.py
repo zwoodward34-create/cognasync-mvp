@@ -7985,6 +7985,132 @@ def compute_readability(patient_id: str, days: int = 30) -> dict:
         return empty
 
 
+# ── Response timing (§26 Response Timing Signals) ────────────────────────────
+
+def _parse_sms_ts(raw):
+    """Parse a Supabase timestamp ('2026-06-11 03:03:28.5+00' quirk included)."""
+    if not raw:
+        return None
+    s = str(raw).strip().replace('Z', '+00:00')
+    if len(s) >= 3 and s[-3] in '+-' and s[-2:].isdigit():
+        s += ':00'
+    try:
+        ts = datetime.fromisoformat(s)
+    except ValueError:
+        return None
+    if ts.tzinfo is None:
+        from datetime import timezone as _tzu
+        ts = ts.replace(tzinfo=_tzu.utc)
+    return ts
+
+
+def _median(vals):
+    if not vals:
+        return None
+    v = sorted(vals)
+    n = len(v)
+    mid = n // 2
+    return v[mid] if n % 2 else (v[mid - 1] + v[mid]) / 2
+
+
+def _circular_mean_hour(hours):
+    """Mean clock hour on the 24h circle (so 23:00 and 01:00 average to 0:00)."""
+    if not hours:
+        return None
+    import math
+    a = [h / 24 * 2 * math.pi for h in hours]
+    s = sum(math.sin(x) for x in a) / len(a)
+    c = sum(math.cos(x) for x in a) / len(a)
+    if abs(s) < 1e-9 and abs(c) < 1e-9:
+        return None  # perfectly dispersed — no meaningful typical hour
+    return round((math.atan2(s, c) % (2 * math.pi)) / (2 * math.pi) * 24, 2)
+
+
+def _circular_diff_hours(late, early):
+    """Signed shortest clock distance late−early in hours, in (−12, 12]."""
+    d = (late - early) % 24
+    return round(d - 24, 2) if d > 12 else round(d, 2)
+
+
+# Thresholds (documented in CLAUDE.md §26 Response Timing Signals):
+_TIMING_MIN_ANSWERED       = 3    # below this, report nothing at all
+_TIMING_MIN_PER_HALF       = 4    # per window-half before any shift claim
+_TIMING_LATENCY_RATIO      = 2.0  # late/early median ratio for a shift…
+_TIMING_LATENCY_ABS_MIN    = 30   # …AND ≥ this many minutes absolute change
+_TIMING_HOUR_DRIFT_MIN     = 2.0  # hours of typical-reply-time drift
+
+
+def compute_response_timing(sms_rows: list, tz_name: str = 'America/New_York') -> dict:
+    """Latency + time-of-day drift across answered SMS prompts (§26).
+
+    Pure computation over sms_tokens rows ({created_at, used_at}) — the
+    behavioral exhaust of prompts the patient was already answering. Zero
+    additional collection burden. Output is DESCRIPTIVE ONLY: consumers must
+    report the numbers and never interpret cause (no 'psychomotor slowing',
+    no 'avoidance'). Provider-only, like all §26 signals.
+    """
+    empty = {
+        'n_answered': 0, 'median_latency_min': None,
+        'early_median_latency_min': None, 'late_median_latency_min': None,
+        'latency_shift': None, 'typical_response_hour': None,
+        'early_typical_hour': None, 'late_typical_hour': None,
+        'hour_drift': None, 'hour_shift': None,
+    }
+    pairs = []
+    for r in sms_rows or []:
+        c = _parse_sms_ts(r.get('created_at'))
+        u = _parse_sms_ts(r.get('used_at'))
+        if c and u and u >= c:
+            pairs.append((c, u))
+    if len(pairs) < _TIMING_MIN_ANSWERED:
+        return {**empty, 'n_answered': len(pairs)}
+
+    pairs.sort(key=lambda p: p[0])
+    latencies = [(u - c).total_seconds() / 60 for c, u in pairs]
+    try:
+        import pytz
+        tz = pytz.timezone(tz_name or 'America/New_York')
+    except Exception:
+        from datetime import timezone as _tzu
+        tz = _tzu.utc
+    hours = [u.astimezone(tz).hour + u.astimezone(tz).minute / 60 for _, u in pairs]
+
+    out = {
+        **empty,
+        'n_answered':            len(pairs),
+        'median_latency_min':    round(_median(latencies), 1),
+        'typical_response_hour': _circular_mean_hour(hours),
+    }
+
+    mid = len(pairs) // 2
+    if mid >= _TIMING_MIN_PER_HALF and (len(pairs) - mid) >= _TIMING_MIN_PER_HALF:
+        e_med = _median(latencies[:mid])
+        l_med = _median(latencies[mid:])
+        out['early_median_latency_min'] = round(e_med, 1)
+        out['late_median_latency_min']  = round(l_med, 1)
+        if l_med >= e_med * _TIMING_LATENCY_RATIO and (l_med - e_med) >= _TIMING_LATENCY_ABS_MIN:
+            out['latency_shift'] = 'slower'
+        elif e_med >= l_med * _TIMING_LATENCY_RATIO and (e_med - l_med) >= _TIMING_LATENCY_ABS_MIN:
+            out['latency_shift'] = 'faster'
+        else:
+            out['latency_shift'] = 'stable'
+
+        e_hr = _circular_mean_hour(hours[:mid])
+        l_hr = _circular_mean_hour(hours[mid:])
+        if e_hr is not None and l_hr is not None:
+            drift = _circular_diff_hours(l_hr, e_hr)
+            out['early_typical_hour'] = e_hr
+            out['late_typical_hour']  = l_hr
+            out['hour_drift']         = drift
+            if drift >= _TIMING_HOUR_DRIFT_MIN:
+                out['hour_shift'] = 'later'
+            elif drift <= -_TIMING_HOUR_DRIFT_MIN:
+                out['hour_shift'] = 'earlier'
+            else:
+                out['hour_shift'] = 'stable'
+    return out
+
+
 def compute_engagement_stats(patient_id, days=None, period_start=None, period_end=None):
     """Compute patient engagement and response metrics for a review period.
 
@@ -8101,6 +8227,14 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
                     .lte('created_at', (end + _td(days=1)).isoformat())  # inclusive end
                     .execute())
         sms_rows = sms_resp.data or []
+
+        # Response timing (§26): behavioral exhaust of prompts already sent —
+        # zero collection cost. Best-effort; None-safe on any failure.
+        try:
+            response_timing = compute_response_timing(
+                sms_rows, get_patient_timezone(patient_id))
+        except Exception:
+            response_timing = compute_response_timing([])
 
         # Aggregate check-in prompt metrics (short/full/voice — cross-referenced with
         # checkins table where source='sms'; medication flow tracked separately below)
@@ -8330,6 +8464,7 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
             'gap_segments':               gap_segments,              # [{start, end, days}] ≥3d
             'last_checkin_date':          last_checkin_date,
             'days_since_last':            days_since_last,
+            'response_timing':            response_timing,           # §26 latency + hour drift
             'sms_prompts_sent':           sms_prompts_sent,          # short/full/voice only
             'sms_responses':              sms_responses,
             'sms_response_rate':          sms_response_rate,         # None if no prompts

@@ -1700,6 +1700,32 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                 f"- Overall SMS rate (all channels): {round(overall_sms_rate * 100)}%"
                 + (" ⚠ BELOW 40% — INSUFFICIENT DATA" if insufficient_data else "")
             )
+
+        # Response timing (§26 Response Timing Signals) — descriptive only.
+        # Numbers, never interpretation: no 'psychomotor slowing', no
+        # 'avoidance'. Provider-only like all engagement signals.
+        rt = e.get('response_timing') or {}
+
+        def _fmt_min(m):
+            return f"{m/60:.1f} hrs" if m is not None and m >= 90 else (
+                f"{m:.0f} min" if m is not None else "—")
+
+        def _fmt_hour(h):
+            return f"{int(h):02d}:{int(round((h % 1) * 60)):02d}" if h is not None else "—"
+
+        if rt.get('median_latency_min') is not None:
+            line = (f"- Response timing: median {_fmt_min(rt['median_latency_min'])} "
+                    f"from prompt to reply across {rt['n_answered']} answered prompts")
+            if rt.get('latency_shift') in ('slower', 'faster'):
+                line += (f"; early-window median {_fmt_min(rt['early_median_latency_min'])} "
+                         f"→ recent {_fmt_min(rt['late_median_latency_min'])} "
+                         f"({rt['latency_shift']})")
+            if rt.get('hour_shift') in ('later', 'earlier'):
+                line += (f"; typical reply time moved {abs(rt['hour_drift']):.1f}h "
+                         f"{rt['hour_shift']} "
+                         f"(≈{_fmt_hour(rt['early_typical_hour'])} → "
+                         f"{_fmt_hour(rt['late_typical_hour'])} local)")
+            eg_lines.append(line)
         if src_breakdown:
             # Format as submission counts, not response metrics, to avoid ambiguity
             src_parts = [

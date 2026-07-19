@@ -1605,6 +1605,28 @@ The rest of the summary is NOT suppressed — what data exists should be surface
 
 **This is a distinct concept from low participation rate (which compares active days to calendar days).** A patient could have a low participation rate but still respond to every prompt they receive. The insufficient-data flag specifically measures whether the *prompted* engagement is sufficient to support pattern analysis.
 
+#### 5. Response Timing Signals (latency + time-of-day drift)
+
+**Principle:** *when* a patient responds is behavioral data the system already collects at zero cost — the timestamps of prompts sent and answered (`sms_tokens.created_at` / `used_at`). How long a reply takes, and what time of day it arrives, can shift with a patient's state. CognaSync reports the shift; the clinician interprets it.
+
+`compute_response_timing(sms_rows, tz_name)` (pure, in `database.py`; attached to `compute_engagement_stats()` output as `response_timing`) computes across ALL answered prompts in the window, in the patient's local timezone:
+
+| Field | Meaning |
+|---|---|
+| `median_latency_min` | Median minutes from prompt sent → answered (whole window) |
+| `early/late_median_latency_min` | Same, split by window halves (requires ≥4 answered per half) |
+| `latency_shift` | `slower` \| `faster` \| `stable` — requires ≥2× ratio AND ≥30 min absolute change |
+| `typical_response_hour` | Circular-mean local clock hour of replies (24h wraparound handled) |
+| `hour_drift` / `hour_shift` | Signed drift of typical reply hour between halves; `later`/`earlier` at ≥2.0h |
+
+Minimums: ≥3 answered prompts to report anything; ≥4 per half before any shift claim. Below minimums, fields are None and nothing is surfaced.
+
+**Language rules — strictly descriptive.** Timing is a weak proxy and must never be dressed as a clinical finding:
+- ✅ "Median response time was 12 min in the first half of the period and 3.1 hrs in the second."
+- ✅ "Typical reply time moved 3.2h later (≈14:00 → 17:20 local)."
+- ❌ "psychomotor slowing," "avoidance," "circadian disruption," "disengaging," or ANY causal/clinical gloss.
+- Surfaced in the Mode C Engagement subsection only. **Never patient-facing** (Mode A/B/E/F/H) — same rule as every §26 signal. Not a Mode D alert (timing alone is too weak to page a provider; it contextualizes, it doesn't alarm).
+
 ---
 
 ### Mode D Alert Formats
