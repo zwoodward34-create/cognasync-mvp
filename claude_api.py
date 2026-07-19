@@ -1726,6 +1726,29 @@ def generate_psychiatry_summary(checkin_data, journal_data, days=14,
                          f"(≈{_fmt_hour(rt['early_typical_hour'])} → "
                          f"{_fmt_hour(rt['late_typical_hour'])} local)")
             eg_lines.append(line)
+
+        # Scheduling & attendance (§26.6, phase 1) — counts and observations
+        # only. 'No recorded session' is NOT attendance verification and must
+        # never be phrased as a no-show.
+        att = e.get('attendance') or {}
+        if att.get('has_activity'):
+            parts = []
+            if att.get('scheduled'):
+                parts.append(f"{att['scheduled']} scheduled")
+            if att.get('rescheduled'):
+                parts.append(f"{att['rescheduled']} rescheduled")
+            if att.get('cancelled'):
+                parts.append(f"{att['cancelled']} cancelled")
+            line = "- Scheduling: " + (", ".join(parts) if parts
+                                       else "no logged calendar changes")
+            if att.get('passed_without_session'):
+                dates = [o['date'] for o in att.get('past_scheduled', [])
+                         if o['outcome'] == 'no_session_recorded'][:4]
+                line += (f"; {att['passed_without_session']} scheduled date(s) "
+                         f"passed with no recorded session ({', '.join(dates)}) "
+                         f"— no recorded session means no CognaSync session was "
+                         f"started; it is not attendance verification")
+            eg_lines.append(line)
         if src_breakdown:
             # Format as submission counts, not response metrics, to avoid ambiguity
             src_parts = [

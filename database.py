@@ -3419,6 +3419,23 @@ def get_provider_calendar_appointments(provider_id: str, patient_id: str) -> lis
         return []
 
 
+def _log_scheduling_event(patient_id, provider_id, event_type,
+                          from_date=None, to_date=None, appt_id=None) -> None:
+    """Append to the scheduling_events log (spec §26.6). Best-effort: the log
+    must never break the calendar operation it records."""
+    try:
+        supabase_admin.table('scheduling_events').insert({
+            'patient_id':              str(patient_id),
+            'provider_id':             str(provider_id),
+            'calendar_appointment_id': str(appt_id) if appt_id else None,
+            'event_type':              event_type,
+            'from_date':               from_date,
+            'to_date':                 to_date,
+        }).execute()
+    except Exception as e:
+        logger.warning(f"[db] scheduling_events log skipped ({event_type}): {e}")
+
+
 def create_calendar_appointment(provider_id: str, patient_id: str, event_date: str,
                                 event_time: str | None, title: str, notes: str,
                                 event_type: str = 'appointment') -> dict | None:
@@ -3437,7 +3454,11 @@ def create_calendar_appointment(provider_id: str, patient_id: str, event_date: s
             'period_days':             30,
         }
         resp = supabase_admin.table('provider_appointments').insert(row).execute()
-        return (resp.data or [None])[0]
+        created = (resp.data or [None])[0]
+        if created:
+            _log_scheduling_event(patient_id, provider_id, 'scheduled',
+                                  to_date=event_date, appt_id=created.get('id'))
+        return created
     except Exception as e:
         logger.exception(f"[db] create_calendar_appointment error: {e}")
         return None
@@ -3445,8 +3466,27 @@ def create_calendar_appointment(provider_id: str, patient_id: str, event_date: s
 
 def update_calendar_appointment(appt_id: str, provider_id: str, event_date: str,
                                 event_time: str | None, title: str, notes: str) -> bool:
-    """Update a scheduled calendar entry (only status='scheduled' records)."""
+    """Update a scheduled calendar entry (only status='scheduled' records).
+
+    Date changes are logged to scheduling_events as 'rescheduled' (§26.6) —
+    the row itself is edited in place, so without the log the reschedule
+    would leave no trace.
+    """
     try:
+        # Fetch current date BEFORE the in-place update, to detect a reschedule.
+        old_date = None
+        patient_id = None
+        try:
+            cur = supabase_admin.table('provider_appointments').select(
+                'started_at, patient_id').eq('id', str(appt_id)).eq(
+                'provider_id', str(provider_id)).eq('status', 'scheduled') \
+                .limit(1).execute()
+            if cur.data:
+                old_date   = (cur.data[0].get('started_at') or '')[:10] or None
+                patient_id = cur.data[0].get('patient_id')
+        except Exception:
+            pass
+
         started_at = event_date
         if event_time:
             started_at = f"{event_date}T{event_time}:00"
@@ -3459,6 +3499,11 @@ def update_calendar_appointment(appt_id: str, provider_id: str, event_date: str,
         supabase_admin.table('provider_appointments').update(payload).eq(
             'id', str(appt_id)).eq('provider_id', str(provider_id)).eq(
             'status', 'scheduled').execute()
+
+        if patient_id and old_date and old_date != event_date:
+            _log_scheduling_event(patient_id, provider_id, 'rescheduled',
+                                  from_date=old_date, to_date=event_date,
+                                  appt_id=appt_id)
         return True
     except Exception as e:
         logger.exception(f"[db] update_calendar_appointment error: {e}")
@@ -3466,11 +3511,33 @@ def update_calendar_appointment(appt_id: str, provider_id: str, event_date: str,
 
 
 def delete_calendar_appointment(appt_id: str, provider_id: str) -> bool:
-    """Delete a scheduled calendar entry (only status='scheduled' records)."""
+    """Delete a scheduled calendar entry (only status='scheduled' records).
+
+    Logged to scheduling_events as 'cancelled' (§26.6) — the delete removes
+    the row, so without the log the cancellation would leave no trace.
+    """
     try:
+        # Capture the event's date before it disappears.
+        dropped_date = None
+        patient_id = None
+        try:
+            cur = supabase_admin.table('provider_appointments').select(
+                'started_at, patient_id').eq('id', str(appt_id)).eq(
+                'provider_id', str(provider_id)).eq('status', 'scheduled') \
+                .limit(1).execute()
+            if cur.data:
+                dropped_date = (cur.data[0].get('started_at') or '')[:10] or None
+                patient_id   = cur.data[0].get('patient_id')
+        except Exception:
+            pass
+
         supabase_admin.table('provider_appointments').delete().eq(
             'id', str(appt_id)).eq('provider_id', str(provider_id)).eq(
             'status', 'scheduled').execute()
+
+        if patient_id:
+            _log_scheduling_event(patient_id, provider_id, 'cancelled',
+                                  from_date=dropped_date, appt_id=appt_id)
         return True
     except Exception as e:
         logger.exception(f"[db] delete_calendar_appointment error: {e}")
@@ -7985,6 +8052,81 @@ def compute_readability(patient_id: str, days: int = 30) -> dict:
         return empty
 
 
+# ── Scheduling & attendance signals (§26.6, phase 1) ─────────────────────────
+
+def _attendance_from_rows(event_rows: list, appt_rows: list, today_str: str) -> dict:
+    """Pure §26.6 computation.
+
+    event_rows: scheduling_events rows in window ({event_type, from_date, to_date}).
+    appt_rows:  provider_appointments rows for the patient
+                ({status, started_at}) — all statuses.
+    Outcomes are observations, not events: a past scheduled date with no
+    session row within ±1 day is 'no_session_recorded' — deliberately NOT
+    called a no-show, because phase 1 cannot verify attendance, only whether
+    a CognaSync session was started.
+    """
+    counts = {'scheduled': 0, 'rescheduled': 0, 'cancelled': 0}
+    for r in event_rows or []:
+        et = r.get('event_type')
+        if et in counts:
+            counts[et] += 1
+
+    session_dates = set()
+    past_scheduled = []
+    for r in appt_rows or []:
+        d = (r.get('started_at') or '')[:10]
+        if not d:
+            continue
+        status = r.get('status')
+        if status in ('active', 'completed'):
+            session_dates.add(d)
+        elif status == 'scheduled' and d < today_str:
+            past_scheduled.append(d)
+
+    def _has_session_near(d: str) -> bool:
+        base = date.fromisoformat(d)
+        return any((base + timedelta(days=off)).isoformat() in session_dates
+                   for off in (-1, 0, 1))
+
+    outcomes = [{'date': d,
+                 'outcome': ('session_recorded' if _has_session_near(d)
+                             else 'no_session_recorded')}
+                for d in sorted(past_scheduled)]
+    return {
+        **counts,
+        'sessions_held':          len(session_dates),
+        'past_scheduled':         outcomes,
+        'passed_without_session': sum(1 for o in outcomes
+                                      if o['outcome'] == 'no_session_recorded'),
+        'has_activity': bool(event_rows or past_scheduled),
+    }
+
+
+def compute_attendance_signals(patient_id: str, days: int = 180) -> dict:
+    """Scheduling & attendance signals from CognaSync's own records (§26.6).
+
+    Phase 1 of the attendance stream: counts of scheduled / rescheduled /
+    cancelled calendar events (from the append-only scheduling_events log)
+    plus scheduled dates that passed without a recorded session. Provider-only.
+    """
+    try:
+        since = (date.today() - timedelta(days=days)).isoformat()
+        ev = supabase_admin.table('scheduling_events').select(
+            'event_type, from_date, to_date, created_at'
+        ).eq('patient_id', str(patient_id)).gte('created_at', since).execute()
+        ap = supabase_admin.table('provider_appointments').select(
+            'status, started_at'
+        ).eq('patient_id', str(patient_id)).gte('started_at', since).execute()
+        out = _attendance_from_rows(ev.data or [], ap.data or [],
+                                    date.today().isoformat())
+        out['window_days'] = days
+        return out
+    except Exception as e:
+        logger.debug(f"compute_attendance_signals error: {e}")
+        return {**_attendance_from_rows([], [], date.today().isoformat()),
+                'window_days': days}
+
+
 # ── Response timing (§26 Response Timing Signals) ────────────────────────────
 
 def _parse_sms_ts(raw):
@@ -8236,6 +8378,14 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
         except Exception:
             response_timing = compute_response_timing([])
 
+        # Scheduling & attendance (§26.6, phase 1). Same window as the review
+        # period so the brief's counts match its date range.
+        try:
+            attendance = compute_attendance_signals(
+                patient_id, days=(end - start).days + 1)
+        except Exception:
+            attendance = None
+
         # Aggregate check-in prompt metrics (short/full/voice — cross-referenced with
         # checkins table where source='sms'; medication flow tracked separately below)
         checkin_prompt_rows = [r for r in sms_rows
@@ -8465,6 +8615,7 @@ def compute_engagement_stats(patient_id, days=None, period_start=None, period_en
             'last_checkin_date':          last_checkin_date,
             'days_since_last':            days_since_last,
             'response_timing':            response_timing,           # §26 latency + hour drift
+            'attendance':                 attendance,                # §26.6 scheduling signals
             'sms_prompts_sent':           sms_prompts_sent,          # short/full/voice only
             'sms_responses':              sms_responses,
             'sms_response_rate':          sms_response_rate,         # None if no prompts

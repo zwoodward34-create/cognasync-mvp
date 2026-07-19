@@ -1627,6 +1627,21 @@ Minimums: ≥3 answered prompts to report anything; ≥4 per half before any shi
 - ❌ "psychomotor slowing," "avoidance," "circadian disruption," "disengaging," or ANY causal/clinical gloss.
 - Surfaced in the Mode C Engagement subsection only. **Never patient-facing** (Mode A/B/E/F/H) — same rule as every §26 signal. Not a Mode D alert (timing alone is too weak to page a provider; it contextualizes, it doesn't alarm).
 
+#### 6. Scheduling & Attendance Signals (phase 1 — internal records only)
+
+**Principle:** attendance behavior is the most clinically trusted behavioral signal psychiatry has, and it costs the patient nothing — it falls out of the provider's own scheduling activity. Phase 1 derives it entirely from CognaSync's internal records; phase 2 (external scheduling/EHR integration) is a separate decision.
+
+**Data sources.** The calendar UI stores scheduled entries as `provider_appointments` rows with `status='scheduled'`, edits them in place, and deletes cancellations — so an append-only `scheduling_events` log (written best-effort by `create/update/delete_calendar_appointment`) preserves what would otherwise vanish: `scheduled` (with date), `rescheduled` (old date → new date; logged only when the date actually changes), `cancelled` (with the dropped date). Log failures never break the calendar operation.
+
+**Computation.** `compute_attendance_signals(patient_id, days)` (pure core: `_attendance_from_rows()`) returns event counts for the window plus outcomes for past scheduled dates: a scheduled date in the past with a session row (`active`/`completed`) within ±1 calendar day is `session_recorded`; otherwise `no_session_recorded`. Attached to `compute_engagement_stats()` output as `attendance`, windowed to the review period.
+
+**Language rules — the honesty constraint is the defining rule of this signal:**
+- ✅ "3 scheduled, 2 rescheduled, 1 cancelled; 1 scheduled date passed with no recorded session (2026-07-02)."
+- ❌ "no-show," "missed appointment," "failed to attend," "non-adherent to appointments."
+- Phase 1 cannot verify attendance — it can only observe that no CognaSync session was started. The Mode C line carries this caveat verbatim. When phase 2 brings true attendance events from an external scheduling system, the vocabulary can strengthen; not before.
+- Raw counts are always reportable when activity exists (provider evaluates frequency, as in §16). No trend claims — the base rates are far too low for §8 trend minimums.
+- Mode C Engagement subsection only. **Never patient-facing** (Mode A/B/E/F/H). Not a Mode D alert in phase 1.
+
 ---
 
 ### Mode D Alert Formats
